@@ -21,7 +21,7 @@ type SessionRow = {
 function fmtDate(s: string | null): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleDateString("fr-FR");
+    return new Date(s).toLocaleDateString("en-GB");
   } catch {
     return s;
   }
@@ -73,7 +73,7 @@ export default function Dashboard() {
 
   async function exportPicks(s: SessionRow) {
     const name = prompt(
-      "Nom de l'export (copie RAW des picks vers le dossier d'export C1) :",
+      "Export name (RAW copy of picks to the C1 export folder):",
       `${s.name}-picks`,
     );
     if (!name) return;
@@ -89,8 +89,8 @@ export default function Dashboard() {
     const data = await r.json();
     alert(
       data.export_job_id
-        ? `Export #${data.export_job_id} enfilé. Lance le worker pour copier les RAW.`
-        : `Erreur : ${data.error ?? "inconnue"}`,
+        ? `Export #${data.export_job_id} queued. Run the worker to copy the RAW files.`
+        : `Error: ${data.error ?? "unknown"}`,
     );
   }
 
@@ -98,29 +98,28 @@ export default function Dashboard() {
     <>
       <div className="topbar">
         <h1>🪶 Winnow</h1>
-        <span className="hint">tri média — NAS</span>
+        <span className="hint">media triage — NAS</span>
       </div>
       <div className="container">
         <div className="filterbar">
           <input
             className="input"
             style={{ flex: 1, minWidth: 220 }}
-            placeholder="/chemin/du/dossier/NAS à indexer"
+            placeholder="/path/to/NAS/folder to index"
             value={scanPath}
             onChange={(e) => setScanPath(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && startScan()}
           />
           <button className="btn btn-primary" onClick={startScan} disabled={busy}>
-            {busy ? "…" : "Indexer"}
+            {busy ? "…" : "Index"}
           </button>
         </div>
 
         {loading ? (
-          <div className="spinner">Chargement…</div>
+          <div className="spinner">Loading…</div>
         ) : sessions.length === 0 ? (
           <div className="empty">
-            Aucune session indexée. Renseigne un chemin du NAS ci-dessus pour
-            lancer un scan.
+            No sessions indexed yet. Enter a NAS path above to start a scan.
           </div>
         ) : (
           <div className="session-list">
@@ -134,24 +133,24 @@ export default function Dashboard() {
                     <Link href={`/sessions/${s.id}`}>{s.name}</Link>
                   </h3>
                   <div className="meta">
-                    {s.device_hint ?? "appareil ?"} · {fmtDate(s.captured_at_min)}
+                    {s.device_hint ?? "device ?"} · {fmtDate(s.captured_at_min)}
                     {" → "}
-                    {fmtDate(s.captured_at_max)} · {s.asset_count} fichiers
+                    {fmtDate(s.captured_at_max)} · {s.asset_count} files
                   </div>
                   <div className="counters" style={{ marginTop: 8 }}>
-                    <span className="pill ready">{s.ready_count} prêts</span>
+                    <span className="pill ready">{s.ready_count} ready</span>
                     <span className="pill pending">
-                      {s.pending_count} en attente
+                      {s.pending_count} pending
                     </span>
                     {s.error_count > 0 && (
-                      <span className="pill error">{s.error_count} erreurs</span>
+                      <span className="pill error">{s.error_count} errors</span>
                     )}
                     <span className="pill picks">{s.pick_count} picks</span>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button className="btn" onClick={() => toggleIgnore(s)}>
-                    {s.ignored ? "Réactiver" : "Ignorer"}
+                    {s.ignored ? "Reactivate" : "Ignore"}
                   </button>
                   <button
                     className="btn"

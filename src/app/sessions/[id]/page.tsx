@@ -28,10 +28,10 @@ type AssetRow = {
 };
 
 const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
-  { key: "", label: "Tout" },
-  { key: "unrated", label: "Non triés" },
+  { key: "", label: "All" },
+  { key: "unrated", label: "Unrated" },
   { key: "pick", label: "Picks" },
-  { key: "reject", label: "Rejets" },
+  { key: "reject", label: "Rejects" },
 ];
 
 export default function SessionGrid({
@@ -142,7 +142,7 @@ export default function SessionGrid({
         </Link>
         <h1>Session #{id}</h1>
         <span className="spacer" />
-        <span className="hint">{assets.length} chargés</span>
+        <span className="hint">{assets.length} loaded</span>
       </div>
 
       <div className="container">
@@ -158,12 +158,12 @@ export default function SessionGrid({
           ))}
           <span className="spacer" />
           <span className="hint">
-            Clavier : P pick · X rejet · U annuler · 1-5 étoiles · ←/→
+            Keyboard: P pick · X reject · U clear · 1-5 stars · ←/→
           </span>
         </div>
 
         {assets.length === 0 && !loading ? (
-          <div className="empty">Aucun asset pour ce filtre.</div>
+          <div className="empty">No assets for this filter.</div>
         ) : (
           <div className="grid">
             {assets.map((a, i) => (
@@ -182,10 +182,10 @@ export default function SessionGrid({
                 ) : (
                   <div className="placeholder">
                     {a.derivative_status === "error"
-                      ? "⚠ erreur"
+                      ? "⚠ error"
                       : a.derivative_status === "skipped"
                         ? a.filename
-                        : "⏳ dérivé…"}
+                        : "⏳ deriving…"}
                   </div>
                 )}
                 {a.verdict !== "unrated" && (
@@ -202,7 +202,7 @@ export default function SessionGrid({
         )}
 
         <div ref={sentinel} style={{ height: 40 }} />
-        {loading && <div className="spinner">Chargement…</div>}
+        {loading && <div className="spinner">Loading…</div>}
       </div>
 
       {viewer != null && assets[viewer] && (
@@ -288,7 +288,7 @@ function Viewer({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={`/api/assets/${asset.id}/proxy`} alt={asset.filename} />
         ) : (
-          <div className="placeholder">Dérivé non disponible</div>
+          <div className="placeholder">Derivative unavailable</div>
         )}
       </div>
       <div className="controls">
@@ -299,7 +299,7 @@ function Viewer({
           className={`btn ${asset.verdict === "reject" ? "btn-reject" : ""}`}
           onClick={() => onRate({ verdict: "reject" })}
         >
-          ✕ Rejet
+          ✕ Reject
         </button>
         {[1, 2, 3, 4, 5].map((n) => (
           <button

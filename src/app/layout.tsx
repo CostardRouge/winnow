@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Winnow — tri média",
-  description: "Ingestion, tri et export des photos/vidéos du NAS.",
+  title: "Winnow — media triage",
+  description: "Ingest, triage and export of NAS photos/videos.",
 };
 
 export const viewport: Viewport = {
@@ -19,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );
