@@ -1,0 +1,175 @@
+# Winnow — déploiement Optiplex via Portainer (Traefik + réseau edge externe).
+#
+# Calqué sur la stack motion-pipeline : Traefik en frontal (réseau `edge`
+# externe), services internes sur un réseau privé, volumes en host-path sous
+# /opt/winnow, labels Watchtower. Différence clé : Winnow n'a pas (encore)
+# d'image publiée → on build depuis le repo. Watchtower ne MAJ que des images
+# de registre ; tant qu'on build localement le label reste sans effet (voir note
+# en bas pour basculer sur GHCR).
+#
+# Pré-requis côté hôte (Ubuntu) :
+#   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
+#   - NAS monté en /mnt/nas (RO) et /mnt/nas/incoming (RW)
+#   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
+#
+# Variables (.env, en plus de celles de .env.dist) :
+#   DOMAIN_NAME=winnow.mondomaine.fr
+#
+# Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: winnow_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: winnow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-winnow}
+      POSTGRES_DB: winnow
+    volumes:
+      - /opt/winnow/pgdata:/var/lib/postgresql/data
+    networks:
+      winnow:
+    # Publication hôte optionnelle (accès externe / debug). Le port CONTENEUR
+    # reste 5432 ; seul le port HÔTE est décalé pour ne pas heurter une autre
+    # stack (motion-pipeline). app/worker passent par le réseau interne, non
+    # affectés. Mettre POSTGRES_HOST_PORT="" pour ne rien publier.
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winnow -d winnow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: winnow_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /opt/winnow/redisdata:/data
+    networks:
+      winnow:
+    # Idem postgres : port hôte décalé (6380), conteneur reste 6379.
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot : applique les migrations puis sort. app/worker l'attendent.
+  migrate:
+    build: .
+    container_name: winnow_migrate
+    command: ["npm", "run", "migrate"]
+    env_file: .env
+    init: true
+    restart: "no"
+    networks:
+      winnow:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build: .
+    container_name: winnow_app
+    command: ["npm", "run", "start"]
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    networks:
+      edge:
+      winnow:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
+      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
+      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      - /opt/winnow/inbox:/data/inbox
+      - /opt/winnow/derivatives:/data/derivatives
+      - /opt/winnow/exports:/data/exports
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.winnow.rule=Host(`${DOMAIN_NAME}`)
+      - traefik.http.services.winnow.loadbalancer.server.port=3000
+      # - traefik.http.routers.winnow.middlewares=basic-auth
+      - com.centurylinklabs.watchtower.enable=true
+
+  worker:
+    build: .
+    container_name: winnow_worker
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    networks:
+      winnow:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
+      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      - /opt/winnow/inbox:/data/inbox
+      - /opt/winnow/derivatives:/data/derivatives
+      - /opt/winnow/exports:/data/exports
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  # --- Feeders d'ingest optionnels (écrivent dans l'inbox) ------------------
+  # Partage SMB : déposer cartes/fichiers depuis n'importe quel poste du LAN.
+  # samba:
+  #   image: dperson/samba
+  #   container_name: winnow_samba
+  #   restart: unless-stopped
+  #   command: -s "winnow-inbox;/inbox;yes;no;no;all" -u "shooter;changeme"
+  #   ports: ["445:445"]
+  #   networks:
+  #     winnow:
+  #   volumes:
+  #     - /opt/winnow/inbox:/inbox
+  #
+  # FTP : cible pour le transfert FTP du Sony A7C II (écrit dans l'inbox).
+  # ftp:
+  #   image: garethflowers/ftp-server
+  #   container_name: winnow_ftp
+  #   restart: unless-stopped
+  #   environment:
+  #     FTP_USER: shooter
+  #     FTP_PASS: changeme
+  #   ports: ["21:21", "40000-40009:40000-40009"]
+  #   networks:
+  #     winnow:
+  #   volumes:
+  #     - /opt/winnow/inbox:/home/shooter
+
+networks:
+  # Réseau privé interne aux services Winnow.
+  winnow:
+  # Réseau partagé avec Traefik (créé hors stack : `docker network create edge`).
+  edge:
+    external: true
+
+# --- Bascule sur image GHCR + Watchtower (au lieu de build local) ----------
+# Quand le repo publiera une image (ex. ghcr.io/<user>/winnow:main), remplace
+# dans app/worker/migrate les blocs :
+#     build: .
+# par :
+#     image: ghcr.io/<user>/winnow:main
+# Watchtower (déjà sur l'hôte) prendra alors le relais via le label
+# com.centurylinklabs.watchtower.enable=true. Pense à n'avoir QU'UN service
+# `migrate` one-shot exclu du redéploiement auto si besoin.
