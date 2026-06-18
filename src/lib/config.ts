@@ -34,6 +34,19 @@ export const config = {
   // Répertoire où l'export "copie RAW pour Capture One" dépose les originaux.
   exportDir: process.env.EXPORT_DIR ?? "/data/exports",
 
+  // --- Ingest / import ------------------------------------------------------
+  // Tous les feeders (upload web, dépôt SMB, FTP appareil, offload de carte)
+  // convergent vers l'inbox ; l'import worker vérifie (hash), déduplique, range
+  // dans l'incoming (archive NAS) selon un gabarit, puis l'indexer prend le relais.
+  import: {
+    inboxDir: process.env.INBOX_DIR ?? "/data/inbox",
+    // Destination permanente des originaux importés (zone "incoming" du NAS).
+    incomingDir: process.env.INCOMING_DIR ?? "/nas/incoming",
+    concurrency: int("IMPORT_CONCURRENCY", 1),
+    // Surveille l'inbox et enfile un import à l'arrivée de fichiers (SMB/FTP).
+    watchInbox: (process.env.WATCH_INBOX ?? "true") === "true",
+  },
+
   // --- Concurrence bornée pour ménager le HDD plein du NAS ------------------
   scanConcurrency: int("SCAN_CONCURRENCY", 1),
   derivativeConcurrency: int("DERIVATIVE_CONCURRENCY", 3),

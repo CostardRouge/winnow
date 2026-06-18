@@ -59,8 +59,10 @@ services:
       redis:
         condition: service_started
     volumes:
-      # Montage RO du NAS (adapte la source) + stockage des dérivés/exports.
+      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
       - ${NAS_MOUNT:-./nas}:/nas:ro
+      - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports
 
@@ -75,12 +77,34 @@ services:
         condition: service_started
     volumes:
       - ${NAS_MOUNT:-./nas}:/nas:ro
+      - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports
+
+  # --- Feeders d'ingest optionnels (écrivent dans l'inbox) ------------------
+  # Partage SMB : déposer des cartes/fichiers depuis n'importe quel poste.
+  # samba:
+  #   image: dperson/samba
+  #   command: -s "winnow-inbox;/inbox;yes;no;no;all" -u "shooter;changeme"
+  #   ports: ["445:445"]
+  #   volumes:
+  #     - inbox:/inbox
+  #
+  # FTP : cible pour le transfert FTP du Sony A7C II (écrit dans l'inbox).
+  # ftp:
+  #   image: garethflowers/ftp-server
+  #   environment:
+  #     FTP_USER: shooter
+  #     FTP_PASS: changeme
+  #   ports: ["21:21", "40000-40009:40000-40009"]
+  #   volumes:
+  #     - inbox:/home/shooter
 
 volumes:
   pgdata:
   redisdata:
+  inbox:
   derivatives:
   exports:
   # miniodata:

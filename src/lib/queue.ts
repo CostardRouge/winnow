@@ -18,17 +18,29 @@ export const connection = new IORedis(config.redisUrl, {
 export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };
 export type ExportJob = { exportJobId: number };
+export type ImportJob = {
+  sourceDir: string;
+  origin: "web_upload" | "card_offload" | "inbox" | "ftp";
+  removeAfter: boolean;
+  batchId?: number;
+};
 
 export const QUEUES = {
   index: "winnow-index",
   derivatives: "winnow-derivatives",
   export: "winnow-export",
+  import: "winnow-import",
 } as const;
 
 declare global {
   // eslint-disable-next-line no-var
   var __winnowQueues:
-    | { index: Queue; derivatives: Queue; export: Queue }
+    | {
+        index: Queue;
+        derivatives: Queue;
+        export: Queue;
+        import: Queue;
+      }
     | undefined;
 }
 
@@ -37,6 +49,7 @@ function build() {
     index: new Queue(QUEUES.index, { connection }),
     derivatives: new Queue(QUEUES.derivatives, { connection }),
     export: new Queue(QUEUES.export, { connection }),
+    import: new Queue(QUEUES.import, { connection }),
   };
 }
 
@@ -70,4 +83,8 @@ export async function enqueueExport(exportJobId: number) {
     { exportJobId } satisfies ExportJob,
     defaultJobOpts,
   );
+}
+
+export async function enqueueImport(job: ImportJob) {
+  return queues.import.add("import", job, defaultJobOpts);
 }

@@ -99,6 +99,10 @@ export default function Dashboard() {
       <div className="topbar">
         <h1>🪶 Winnow</h1>
         <span className="hint">media triage — NAS</span>
+        <span className="spacer" />
+        <Link href="/import" className="btn">
+          + Import
+        </Link>
       </div>
       <div className="container">
         <div className="filterbar">

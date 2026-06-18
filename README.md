@@ -99,6 +99,10 @@ Voir `.env.example`. Principales :
 | `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Tri rapide en lot |
 | `POST /api/export` `{ name, target, filter }` | Crée + enfile un export |
 | `GET /api/export/:id` | Statut + résultat |
+| `POST /api/upload` (multipart `files`) | Upload depuis le téléphone → inbox → import |
+| `POST /api/import/offload` `{ path }` | Offload d'une carte montée (source conservée) |
+| `POST /api/import/inbox` | Relance manuelle de l'import de l'inbox |
+| `GET /api/import/:id` | Statut d'un lot d'import |
 | `GET /api/roots` · `POST /api/roots` | Dossiers enregistrés (sources + finaux) |
 | `POST /api/reconcile` | Réconciliation finaux→sources (**V2**, 501) |
 
@@ -117,7 +121,7 @@ grille front charge en infinite-scroll les vignettes au fil de l'eau.
 **Implémenté (MVP)** : indexation incrémentale (mtime+taille), EXIF + hash +
 dédup, extraction de l'aperçu RAW (ARW/DNG…) sans dématriçage, dérivés
 thumb/proxy en WebP, grille de tri mobile-first, ignore-cascade, export copie
-RAW + lignage `exports`.
+RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous).
 
 **V2/V3 (non inclus)** : notes/couleurs/tags avancés, export web + push Immich,
 réconciliation auto des finaux C1, vidéo (proxies FFmpeg), throttling adaptatif,
@@ -125,44 +129,41 @@ agent-sur-NAS, automatisations n8n.
 
 ---
 
-## 💡 Idées pour la partie **ingest / import** (non couverte par les specs)
+## Ingest / import (implémenté)
 
-Les specs partent du principe que les fichiers sont **déjà rangés sur le NAS** :
-Winnow *indexe*, il n'*organise pas*. Reste la question de **comment les octets
-arrivent sur le NAS** depuis les cartes SD / appareils. Proposition d'un étage
-« import » en amont de l'indexer, cohérent avec le principe « toucher une fois » :
+Les specs supposent les fichiers **déjà rangés sur le NAS**. Winnow ajoute en
+amont un étage d'import : **tous les feeders convergent vers une `inbox`**, puis
+un *import worker* **vérifie** (write-then-verify par hash), **déduplique**
+(même `content_hash` que l'indexer → réinsérer une carte ne duplique rien),
+**range** dans l'`incoming` (archive NAS) selon le gabarit
+`{device}/{YYYY}/{YYYY-MM-DD}/`, puis enfile l'indexation habituelle.
 
-1. **Dossiers `inbox` surveillés + worker d'offload.** Nouveau `roots.kind =
-   'inbox'`. Quand une carte SD ou un appareil dépose dans l'inbox, un *import
-   worker* copie vers la structure NAS, **vérifie par hash** (write-then-verify :
-   on relit ce qu'on a écrit), puis déclenche l'indexation. La copie vérifiée
-   est l'unique « toucher » lourd ; l'indexer réutilise ensuite l'aperçu embarqué.
+```
+ iPhone / Ray-Ban ─┐
+ SD card (Sony/DJI)─┼─►  INBOX  ──►  Import worker  ──►  INCOMING (NAS, RW)  ──► index → dérivés
+ caméra Wi-Fi/FTP ──┘     (watch)    verify+dedup+file     {device}/{date}/
+```
 
-2. **Foldering déterministe et configurable.** Gabarit type
-   `/{device}/{YYYY}/{YYYY-MM-DD}_{session}` dérivé de la date de capture EXIF +
-   de l'appareil. Regroupement par « trou temporel » (gap > N h ⇒ nouvelle
-   session), comme le fait l'import de Lightroom/C1.
+**Trois feeders, tous branchés sur l'inbox :**
 
-3. **Dédup dès l'import.** On réutilise `content_hash` : si le contenu existe
-   déjà en base, on **n'importe pas** (réinsérer une carte ne duplique rien).
-   C'est le même invariant que l'indexer, appliqué plus tôt.
+1. **Upload web (téléphone)** — page **Import** dans l'UI : sélecteur de
+   fichiers natif, les médias sont streamés vers `POST /api/upload`, déposés dans
+   l'inbox, puis importés. Aucune app tierce, fonctionne depuis le téléphone sur
+   le LAN. (HEIC/JPEG/vidéo gérés.)
 
-4. **Adaptateurs par appareil :**
-   - *Sony A7C II / drone DJI* : montage de la carte → offload direct.
-   - *iPhone* : app type **PhotoSync**/Working Copy poussant en SMB vers l'inbox,
-     ou import via l'app Immich ; HEIC/DNG gérés tels quels.
-   - *Ray-Ban Meta* : export depuis l'app Meta View → dossier desktop → inbox.
+2. **Offload de carte montée sur l'Optiplex** — `POST /api/import/offload
+   { path }` (ou le champ dédié de la page Import). La carte est **laissée
+   intacte** (`removeAfter=false`).
 
-5. **Sécurité d'éjection.** Un import n'est « terminé » qu'une fois **tous** les
-   fichiers copiés *et* re-hachés OK ; rapport clair avant de retirer la carte.
+3. **Dépôt SMB / FTP** — un partage Samba et/ou un endpoint FTP (services
+   optionnels dans `docker-compose.yml`) écrivent dans l'inbox ; un **watcher**
+   (chokidar, `awaitWriteFinish` pour ne pas importer un transfert en cours)
+   enfile l'import automatiquement. Idéal pour le transfert FTP du Sony A7C II.
 
-6. **Déclenchement mobile.** Bouton « Importer depuis l'inbox » dans l'UI qui
-   enfile un job d'import ; idéal depuis le téléphone.
+**Garanties** : intégrité vérifiée (taille + hash de la copie), dédup globale,
+foldering déterministe, suivi par lot dans `import_batches` (importés / doublons
+/ échecs). Le tout réutilise l'indexer, les dérivés et la dédup existants.
 
-7. **Automatisation (V3).** n8n/watcher : à l'apparition d'un nouveau dossier sur
-   le NAS (ou d'une carte montée), enfiler import → index → dérivés.
-
-> Contrat minimal à ajouter : une file `winnow-import` + `roots.kind='inbox'` +
-> `POST /api/import { inbox_root_id }`. Le reste (foldering, hash, dédup) réutilise
-> les briques existantes. Implémentable en prochaine itération si tu valides
-> l'approche « inbox + offload vérifié ».
+**Pistes V2/V3** : regroupement par « trou temporel » (gap > N h ⇒ session),
+gabarit de foldering configurable, déclenchement n8n à l'insertion d'une carte,
+hash complet (plutôt que partiel) en option pour l'intégrité forte.
