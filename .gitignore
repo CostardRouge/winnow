@@ -13,3 +13,6 @@ coverage/
 *.tsbuildinfo
 nas/
 data/
+
+# Artefact Redis (tests locaux)
+dump.rdb
