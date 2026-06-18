@@ -9,6 +9,11 @@
 #   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
 #   - NAS monté en /mnt/nas (RO) et /mnt/nas/incoming (RW)
 #   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
+#   - SSD dédié (optionnel) : pour mettre inbox/derivatives/exports sur un autre
+#     disque (ex. SSD 2 To), définir WINNOW_DATA dans l'UI Portainer (ex.
+#     WINNOW_DATA=/mnt/2tb/winnow) et créer le dossier :
+#       sudo mkdir -p /mnt/2tb/winnow/{inbox,derivatives,exports}
+#     (pgdata/redisdata restent sous /opt/winnow ; les déplacer = même principe.)
 #
 # Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
 # Renseigner dans l'UI « Environment variables » de la stack : DOMAIN_NAME
@@ -124,9 +129,9 @@ services:
       # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
       - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
       - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
-      - /opt/winnow/inbox:/data/inbox
-      - /opt/winnow/derivatives:/data/derivatives
-      - /opt/winnow/exports:/data/exports
+      - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
+      - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
+      - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
     labels:
       - traefik.enable=true
       - traefik.http.routers.winnow.rule=Host(`${DOMAIN_NAME}`)
@@ -153,9 +158,9 @@ services:
     volumes:
       - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
       - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
-      - /opt/winnow/inbox:/data/inbox
-      - /opt/winnow/derivatives:/data/derivatives
-      - /opt/winnow/exports:/data/exports
+      - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
+      - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
+      - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
     labels:
       - com.centurylinklabs.watchtower.enable=true
 

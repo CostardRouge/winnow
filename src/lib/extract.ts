@@ -80,17 +80,24 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
 
 /**
  * Retourne le chemin d'un JPEG exploitable par sharp pour générer les dérivés,
- * ainsi qu'un éventuel répertoire temporaire à nettoyer.
+ * un éventuel répertoire temporaire à nettoyer, et l'orientation EXIF (1-8) de
+ * l'original.
  *
  *  - Formats lisibles directement (JPEG/PNG/TIFF/WebP/HEIC) : on renvoie
- *    l'original (sharp s'en charge).
+ *    l'original (sharp s'en charge, `orientation` non nécessaire).
  *  - RAW : on extrait l'aperçu JPEG embarqué (JpgFromRaw, sinon PreviewImage,
  *    sinon ThumbnailImage) — extraction quasi instantanée, zéro dématriçage.
+ *    Cet aperçu ne porte souvent PAS le tag Orientation : on renvoie donc
+ *    l'orientation lue sur le RAW pour que le worker la réapplique.
  */
 export async function extractSourceJpeg(
   absPath: string,
   ext: string,
-): Promise<{ jpegPath: string; cleanupDir: string | null }> {
+): Promise<{
+  jpegPath: string;
+  cleanupDir: string | null;
+  orientation?: number;
+}> {
   const e = ext.toLowerCase();
 
   // HEIC/HEIF : sharp peut décoder si libvips a libheif ; sinon on tombe sur
@@ -99,6 +106,9 @@ export async function extractSourceJpeg(
   if (PHOTO_DIRECT_EXTS.has(e) && e !== ".heic" && e !== ".heif") {
     return { jpegPath: absPath, cleanupDir: null };
   }
+
+  // L'aperçu RAW perd généralement le tag Orientation : on le lit sur le RAW.
+  const orientation = await readOrientation(absPath);
 
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
   const dest = path.join(dir, "preview.jpg");
@@ -113,7 +123,7 @@ export async function extractSourceJpeg(
     try {
       await attempt();
       const s = await stat(dest);
-      if (s.size > 0) return { jpegPath: dest, cleanupDir: dir };
+      if (s.size > 0) return { jpegPath: dest, cleanupDir: dir, orientation };
     } catch {
       /* essai suivant */
     }
@@ -125,6 +135,18 @@ export async function extractSourceJpeg(
     return { jpegPath: absPath, cleanupDir: null };
   }
   throw new Error(`Aucun aperçu extractible depuis ${absPath}`);
+}
+
+// Orientation EXIF numérique (1-8) de l'original. `-n` désactive la conversion
+// "humaine" d'exiftool pour obtenir l'entier brut.
+async function readOrientation(absPath: string): Promise<number | undefined> {
+  try {
+    const tags = await exiftool.read(absPath, ["-n"]);
+    const o = (tags as { Orientation?: unknown }).Orientation;
+    return typeof o === "number" ? o : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function closeExiftool(): Promise<void> {

@@ -11,6 +11,10 @@ import type { Asset } from "./types";
 // sharp lit de gros aperçus : on autorise des images très larges.
 sharp.cache(false);
 
+// Angle de rotation (degrés horaires) pour les orientations EXIF non-miroir.
+// 2/4/5/7 (miroirs) sont quasi inexistants en photo RAW → ignorés (0°).
+const ORIENTATION_ANGLE: Record<number, number> = { 3: 180, 6: 90, 8: 270 };
+
 export async function generateDerivative(assetId: number): Promise<void> {
   const asset = await one<Asset>("SELECT * FROM assets WHERE id = $1", [
     assetId,
@@ -43,7 +47,18 @@ export async function generateDerivative(assetId: number): Promise<void> {
     const src = await extractSourceJpeg(asset.abs_path, asset.ext);
     cleanupDir = src.cleanupDir;
 
-    const base = sharp(src.jpegPath, { failOn: "none" }).rotate(); // EXIF orient.
+    // Orientation : si l'image lue par sharp porte son propre tag EXIF (JPEG
+    // direct, ou aperçu RAW qui l'a conservé), `.rotate()` l'applique seul.
+    // Sinon (cas fréquent des aperçus RAW), on applique explicitement l'angle
+    // déduit de l'orientation lue sur le RAW.
+    let base = sharp(src.jpegPath, { failOn: "none" });
+    const probe = await base.metadata();
+    if (probe.orientation && probe.orientation !== 1) {
+      base = base.rotate();
+    } else {
+      const angle = ORIENTATION_ANGLE[src.orientation ?? 1] ?? 0;
+      if (angle) base = base.rotate(angle);
+    }
     const meta = await base.metadata();
 
     const thumbKey = `thumb/${assetId}.webp`;
