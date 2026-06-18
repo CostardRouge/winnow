@@ -2,20 +2,49 @@
 #
 # Calqué sur la stack motion-pipeline : Traefik en frontal (réseau `edge`
 # externe), services internes sur un réseau privé, volumes en host-path sous
-# /opt/winnow, labels Watchtower. Différence clé : Winnow n'a pas (encore)
-# d'image publiée → on build depuis le repo. Watchtower ne MAJ que des images
-# de registre ; tant qu'on build localement le label reste sans effet (voir note
-# en bas pour basculer sur GHCR).
+# /opt/winnow, labels Watchtower. L'image est publiée sur GHCR par la CI
+# (.github/workflows/docker-build.yml) ; Watchtower la re-pull au tag `main`.
 #
 # Pré-requis côté hôte (Ubuntu) :
 #   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
 #   - NAS monté en /mnt/nas (RO) et /mnt/nas/incoming (RW)
 #   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
 #
-# Variables (.env, en plus de celles de .env.dist) :
-#   DOMAIN_NAME=winnow.mondomaine.fr
-#
 # Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
+# Renseigner dans l'UI « Environment variables » de la stack : DOMAIN_NAME
+# (obligatoire, pour Traefik) et tout réglage à surcharger (POSTGRES_PASSWORD,
+# NAS_MOUNT, *_HOST_PORT, concurrences…). Aucun fichier .env n'est requis :
+# les variables runtime des conteneurs sont inlinées via l'ancre `x-winnow-env`.
+
+# Variables d'environnement des conteneurs app/worker/migrate. Inlinées ici (et
+# non via `env_file: .env`) pour que Portainer déploie depuis le dépôt sans qu'un
+# fichier .env existe sur l'hôte. Les valeurs de topologie (noms de services,
+# chemins de volumes) sont figées ; secrets et réglages surchargeables passent
+# par l'UI Portainer (interpolation ${VAR:-défaut}).
+x-winnow-env: &winnow-env
+  DATABASE_URL: postgres://winnow:${POSTGRES_PASSWORD:-winnow}@postgres:5432/winnow
+  REDIS_URL: redis://redis:6379
+  STORAGE_DRIVER: ${STORAGE_DRIVER:-disk}
+  STORAGE_DISK_PATH: /data/derivatives
+  EXPORT_DIR: /data/exports
+  INBOX_DIR: /data/inbox
+  INCOMING_DIR: /nas-incoming
+  WATCH_INBOX: "true"
+  IMPORT_CONCURRENCY: "${IMPORT_CONCURRENCY:-1}"
+  SCAN_CONCURRENCY: "${SCAN_CONCURRENCY:-1}"
+  DERIVATIVE_CONCURRENCY: "${DERIVATIVE_CONCURRENCY:-3}"
+  EXPORT_CONCURRENCY: "${EXPORT_CONCURRENCY:-2}"
+  THUMB_SIZE: "${THUMB_SIZE:-400}"
+  PROXY_SIZE: "${PROXY_SIZE:-2048}"
+  THUMB_QUALITY: "${THUMB_QUALITY:-70}"
+  PROXY_QUALITY: "${PROXY_QUALITY:-80}"
+  # S3 / MinIO — utilisé seulement si STORAGE_DRIVER=s3.
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-winnow}
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  S3_FORCE_PATH_STYLE: "true"
 
 services:
   postgres:
@@ -62,10 +91,10 @@ services:
 
   # One-shot : applique les migrations puis sort. app/worker l'attendent.
   migrate:
-    build: .
+    image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_migrate
     command: ["npm", "run", "migrate"]
-    env_file: .env
+    environment: *winnow-env
     init: true
     restart: "no"
     networks:
@@ -75,10 +104,10 @@ services:
         condition: service_healthy
 
   app:
-    build: .
+    image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_app
     command: ["npm", "run", "start"]
-    env_file: .env
+    environment: *winnow-env
     init: true
     restart: unless-stopped
     networks:
@@ -106,10 +135,10 @@ services:
       - com.centurylinklabs.watchtower.enable=true
 
   worker:
-    build: .
+    image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_worker
     command: ["npm", "run", "worker"]
-    env_file: .env
+    environment: *winnow-env
     init: true
     restart: unless-stopped
     networks:
@@ -193,12 +222,11 @@ networks:
   edge:
     external: true
 
-# --- Bascule sur image GHCR + Watchtower (au lieu de build local) ----------
-# Quand le repo publiera une image (ex. ghcr.io/<user>/winnow:main), remplace
-# dans app/worker/migrate les blocs :
-#     build: .
-# par :
-#     image: ghcr.io/<user>/winnow:main
-# Watchtower (déjà sur l'hôte) prendra alors le relais via le label
-# com.centurylinklabs.watchtower.enable=true. Pense à n'avoir QU'UN service
-# `migrate` one-shot exclu du redéploiement auto si besoin.
+# --- Image GHCR + Watchtower ----------------------------------------------
+# app/worker/migrate tournent sur ghcr.io/costardrouge/winnow:main, publiée à
+# chaque push sur `main` (.github/workflows/docker-build.yml). Watchtower, via le
+# label com.centurylinklabs.watchtower.enable=true, re-pull l'image quand le tag
+# `main` bouge et redéploie. Pour figer une version (rollback), épingle un tag
+# immuable `sha-xxxxxxx` au lieu de `main`.
+# Build local : pour tester sans GHCR, remplace `image:` par `build: .` dans les
+# trois services (et déploie alors depuis une copie locale du dépôt).
