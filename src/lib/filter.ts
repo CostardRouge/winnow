@@ -34,6 +34,7 @@ export const FilterSchema = z
   .object({
     // Portée
     session_id: z.coerce.number().int().optional(),
+    root_id: z.coerce.number().int().optional(),
     processing_state: z
       .enum(["ignored", "unprocessed", "triaged", "exported"])
       .optional(),
@@ -68,6 +69,10 @@ export const FilterSchema = z
     size_min: z.coerce.number().optional(), // octets
     size_max: z.coerce.number().optional(),
 
+    // Tags (libres) : inclusion ANY / exclusion ANY
+    tags: csv,
+    not_tags: csv,
+
     // Divers
     has_gps: z.coerce.boolean().optional(),
   })
@@ -101,6 +106,12 @@ export function buildFilter(
   };
 
   if (filter.session_id != null) eq("a.session_id", filter.session_id);
+  if (filter.root_id != null) {
+    conditions.push(
+      `a.session_id IN (SELECT id FROM sessions WHERE root_id = $${i++})`,
+    );
+    params.push(filter.root_id);
+  }
   if (filter.processing_state != null)
     eq("a.processing_state", filter.processing_state);
 
@@ -137,6 +148,21 @@ export function buildFilter(
   if (filter.size_min != null) gte("a.file_size", filter.size_min);
   if (filter.size_max != null) lte("a.file_size", filter.size_max);
 
+  if (filter.tags) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+               WHERE at.asset_id = a.id AND t.name = ANY($${i++}))`,
+    );
+    params.push(filter.tags);
+  }
+  if (filter.not_tags) {
+    conditions.push(
+      `NOT EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+                   WHERE at.asset_id = a.id AND t.name = ANY($${i++}))`,
+    );
+    params.push(filter.not_tags);
+  }
+
   if (filter.has_gps) conditions.push(`a.gps IS NOT NULL`);
 
   return { conditions, params };
@@ -146,7 +172,10 @@ export function buildFilter(
 export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
   const keys = [
     "session_id",
+    "root_id",
     "processing_state",
+    "tags",
+    "not_tags",
     "verdict",
     "star_min",
     "media_type",

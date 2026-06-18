@@ -20,6 +20,7 @@ export type Facets = {
   lenses: VC[];
   extensions: VC[];
   media_types: VC[];
+  tags: VC[];
 };
 type VC = { value: string | number; count: number };
 
@@ -29,9 +30,13 @@ export type Filters = {
   device: string[];
   camera_model: string[];
   lens: string[];
+  tags: string[];
   year: number[];
   month: number[];
   day: number[];
+  // Pilotés par l'arbre (drill-down) :
+  root_id?: number;
+  session_id?: number;
   date_from?: string;
   date_to?: string;
   verdict?: "pick" | "reject" | "unrated";
@@ -53,6 +58,7 @@ export const EMPTY_FILTERS: Filters = {
   device: [],
   camera_model: [],
   lens: [],
+  tags: [],
   year: [],
   month: [],
   day: [],
@@ -188,6 +194,12 @@ export default function FilterPanel({
         </div>
       </div>
 
+      <Chips
+        title="Tags"
+        options={facets.tags}
+        selected={filters.tags}
+        onToggle={(v) => u({ tags: toggle(filters.tags, String(v)) })}
+      />
       <Chips
         title="Type"
         options={facets.media_types}

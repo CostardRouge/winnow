@@ -76,9 +76,16 @@ export type Rating = {
   reviewed_at: string | null;
 };
 
-// Ligne renvoyée par la grille de tri (asset + verdict joint).
+export type Tag = {
+  id: number;
+  name: string;
+  color: string | null;
+};
+
+// Ligne renvoyée par la grille de tri (asset + verdict joint + tags).
 export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;
   color_label: string | null;
+  tags: string[];
 };

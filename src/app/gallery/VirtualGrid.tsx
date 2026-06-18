@@ -23,12 +23,18 @@ export default function VirtualGrid({
   loading,
   loadMore,
   onOpen,
+  selectMode = false,
+  selectedIds,
+  onToggleSelect,
 }: {
   items: GalleryAsset[];
   hasMore: boolean;
   loading: boolean;
   loadMore: () => void;
   onOpen: (index: number) => void;
+  selectMode?: boolean;
+  selectedIds?: Set<number>;
+  onToggleSelect?: (id: number) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -63,12 +69,15 @@ export default function VirtualGrid({
       <div style={{ ...style, display: "flex", gap: GAP }}>
         {cells.map((a, j) => {
           const idx = start + j;
+          const sel = selectMode && selectedIds?.has(a.id);
           return (
             <div
               key={a.id}
-              className={`cell ${a.verdict}`}
+              className={`cell ${a.verdict}${sel ? " selected" : ""}`}
               style={{ width: cell, height: cell, aspectRatio: "auto" }}
-              onClick={() => onOpen(idx)}
+              onClick={() =>
+                selectMode ? onToggleSelect?.(a.id) : onOpen(idx)
+              }
             >
               {a.derivative_status === "ready" ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -87,6 +96,7 @@ export default function VirtualGrid({
               )}
               {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
               <span className="ext-badge">{a.ext.replace(".", "")}</span>
+              {sel && <span className="select-check">✓</span>}
             </div>
           );
         })}

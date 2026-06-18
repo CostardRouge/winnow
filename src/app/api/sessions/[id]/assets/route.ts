@@ -45,7 +45,10 @@ export async function GET(
       `SELECT a.*,
               COALESCE(r.verdict, 'unrated') AS verdict,
               COALESCE(r.star, 0)            AS star,
-              r.color_label
+              r.color_label,
+              (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
+                 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+                WHERE at.asset_id = a.id) AS tags
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
        ${where}

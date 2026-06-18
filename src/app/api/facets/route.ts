@@ -34,6 +34,7 @@ export async function GET() {
       lenses,
       exts,
       mediaTypes,
+      tags,
     ] = await Promise.all([
       one<{ count: number }>("SELECT count(*)::int AS count FROM assets"),
       one<{
@@ -60,6 +61,11 @@ export async function GET() {
       facet("lens"),
       facet("ext"),
       facet("media_type", "value ASC"),
+      many<{ value: string; count: number }>(
+        `SELECT t.name AS value, count(*)::int AS count
+         FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+         GROUP BY t.name ORDER BY count DESC`,
+      ),
     ]);
 
     return json({
@@ -73,6 +79,7 @@ export async function GET() {
       lenses,
       extensions: exts,
       media_types: mediaTypes,
+      tags,
     });
   } catch (err) {
     return serverError(err);

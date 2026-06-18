@@ -8,16 +8,16 @@ import FilterPanel, {
   type Filters,
   type Facets,
 } from "./FilterPanel";
+import Tree, { type PathSeg } from "./Tree";
 
 type Row = GalleryAsset & {
+  tags?: string[];
   camera_model?: string | null;
   lens?: string | null;
   iso?: number | null;
   shutter?: string | null;
   aperture?: number | null;
   focal_length?: number | null;
-  width?: number | null;
-  height?: number | null;
 };
 
 const MB = 1024 * 1024;
@@ -31,20 +31,18 @@ function toQuery(f: Filters, cursor?: string | null): string {
   arr("device", f.device);
   arr("camera_model", f.camera_model);
   arr("lens", f.lens);
+  arr("tags", f.tags);
   arr("year", f.year);
   arr("month", f.month);
   arr("day", f.day);
+  if (f.root_id != null) sp.set("root_id", String(f.root_id));
+  if (f.session_id != null) sp.set("session_id", String(f.session_id));
   if (f.date_from) sp.set("date_from", f.date_from);
   if (f.date_to) sp.set("date_to", f.date_to);
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.star_min) sp.set("star_min", String(f.star_min));
   for (const k of [
-    "iso_min",
-    "iso_max",
-    "focal_min",
-    "focal_max",
-    "aperture_min",
-    "aperture_max",
+    "iso_min", "iso_max", "focal_min", "focal_max", "aperture_min", "aperture_max",
   ] as const) {
     if (f[k] != null) sp.set(k, String(f[k]));
   }
@@ -53,6 +51,25 @@ function toQuery(f: Filters, cursor?: string | null): string {
   if (f.has_gps) sp.set("has_gps", "true");
   if (cursor) sp.set("cursor", cursor);
   return sp.toString();
+}
+
+// Applique le chemin d'un nœud d'arbre comme scope (réinitialise les dimensions
+// d'arbre, conserve les autres filtres : verdict, tags, type…).
+function applyScope(prev: Filters, path: PathSeg[]): Filters {
+  const base: Filters = {
+    ...prev,
+    year: [], month: [], day: [], device: [],
+    root_id: undefined, session_id: undefined,
+  };
+  for (const s of path) {
+    if (s.key === "year") base.year = [Number(s.value)];
+    else if (s.key === "month") base.month = [Number(s.value)];
+    else if (s.key === "day") base.day = [Number(s.value)];
+    else if (s.key === "device") base.device = [String(s.value)];
+    else if (s.key === "root_id") base.root_id = Number(s.value);
+    else if (s.key === "session_id") base.session_id = Number(s.value);
+  }
+  return base;
 }
 
 export default function Gallery() {
@@ -64,15 +81,18 @@ export default function Gallery() {
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [aside, setAside] = useState<"filters" | "browse">("filters");
+  const [treeKey, setTreeKey] = useState("");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [tagInput, setTagInput] = useState("");
   const loadingRef = useRef(false);
   const filterKey = JSON.stringify(filters);
 
-  useEffect(() => {
-    fetch("/api/facets")
-      .then((r) => r.json())
-      .then(setFacets)
-      .catch(() => setFacets(null));
+  const loadFacets = useCallback(() => {
+    fetch("/api/facets").then((r) => r.json()).then(setFacets).catch(() => {});
   }, []);
+  useEffect(() => loadFacets(), [loadFacets]);
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
@@ -93,7 +113,6 @@ export default function Gallery() {
     [filters],
   );
 
-  // (Re)chargement à chaque changement de filtre.
   useEffect(() => {
     setItems([]);
     setCursor(null);
@@ -104,9 +123,7 @@ export default function Gallery() {
 
   const rate = useCallback(
     async (assetId: number, patch: { verdict?: Row["verdict"]; star?: number }) => {
-      setItems((prev) =>
-        prev.map((a) => (a.id === assetId ? { ...a, ...patch } : a)),
-      );
+      setItems((prev) => prev.map((a) => (a.id === assetId ? { ...a, ...patch } : a)));
       await fetch(`/api/assets/${assetId}/rating`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -116,14 +133,51 @@ export default function Gallery() {
     [],
   );
 
+  // --- Tags ----------------------------------------------------------------
+  const assignTags = useCallback(
+    async (ids: number[], name: string, add: boolean) => {
+      if (!ids.length || !name.trim()) return;
+      const tag = name.trim();
+      await fetch("/api/tags/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
+      });
+      const idset = new Set(ids);
+      setItems((prev) =>
+        prev.map((it) =>
+          idset.has(it.id)
+            ? {
+                ...it,
+                tags: add
+                  ? Array.from(new Set([...(it.tags ?? []), tag])).sort()
+                  : (it.tags ?? []).filter((t) => t !== tag),
+              }
+            : it,
+        ),
+      );
+      loadFacets();
+    },
+    [loadFacets],
+  );
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Navigation clavier dans la visionneuse.
   useEffect(() => {
     if (viewer == null) return;
     const onKey = (e: KeyboardEvent) => {
       const a = items[viewer];
       if (!a) return;
+      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
       if (e.key === "Escape") return setViewer(null);
-      if (e.key === "ArrowRight")
-        return setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1));
+      if (e.key === "ArrowRight") return setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1));
       if (e.key === "ArrowLeft") return setViewer((v) => Math.max((v ?? 0) - 1, 0));
       if (e.key.toLowerCase() === "p") return void rate(a.id, { verdict: "pick" });
       if (e.key.toLowerCase() === "x") return void rate(a.id, { verdict: "reject" });
@@ -141,29 +195,97 @@ export default function Gallery() {
       <div className="topbar">
         <Link href="/" className="btn">←</Link>
         <h1>Gallery</h1>
+        <button className="btn gallery-filter-toggle" onClick={() => setPanelOpen((o) => !o)}>
+          Panel
+        </button>
         <button
-          className="btn gallery-filter-toggle"
-          onClick={() => setPanelOpen((o) => !o)}
+          className={`btn${selectMode ? " btn-primary" : ""}`}
+          onClick={() => {
+            setSelectMode((m) => !m);
+            setSelected(new Set());
+          }}
         >
-          Filters
+          {selectMode ? "Done" : "Select"}
         </button>
         <span className="spacer" />
         <span className="hint">
-          {items.length}
-          {hasMore ? "+" : ""} shown
+          {items.length}{hasMore ? "+" : ""} shown
           {facets ? ` · ${facets.total} total` : ""}
         </span>
       </div>
 
+      {selectMode && (
+        <div className="selectbar">
+          <span className="hint">{selected.size} selected</span>
+          <button
+            className="btn"
+            onClick={() => setSelected(new Set(items.map((i) => i.id)))}
+          >
+            Select all loaded
+          </button>
+          <button className="btn" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+          <span className="spacer" />
+          <input
+            className="input"
+            placeholder="tag name"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            style={{ minWidth: 140 }}
+          />
+          <button
+            className="btn btn-pick"
+            disabled={!selected.size || !tagInput.trim()}
+            onClick={() => assignTags([...selected], tagInput, true)}
+          >
+            + Add tag
+          </button>
+          <button
+            className="btn btn-reject"
+            disabled={!selected.size || !tagInput.trim()}
+            onClick={() => assignTags([...selected], tagInput, false)}
+          >
+            − Remove
+          </button>
+        </div>
+      )}
+
       <div className="gallery-body">
         <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <strong>Filters</strong>
-            <button className="btn" onClick={() => setFilters(EMPTY_FILTERS)}>
-              Reset
+          <div className="chips" style={{ marginBottom: 10 }}>
+            <button
+              className={`chip${aside === "filters" ? " active" : ""}`}
+              onClick={() => setAside("filters")}
+            >
+              Filters
+            </button>
+            <button
+              className={`chip${aside === "browse" ? " active" : ""}`}
+              onClick={() => setAside("browse")}
+            >
+              Browse
             </button>
           </div>
-          <FilterPanel facets={facets} filters={filters} set={setFilters} />
+
+          {aside === "filters" ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                <button className="btn" onClick={() => setFilters(EMPTY_FILTERS)}>
+                  Reset
+                </button>
+              </div>
+              <FilterPanel facets={facets} filters={filters} set={setFilters} />
+            </>
+          ) : (
+            <Tree
+              activeKey={treeKey}
+              onScope={(path) => {
+                setTreeKey(path.map((s) => `${s.key}:${s.value}`).join("/"));
+                setFilters((prev) => applyScope(prev, path));
+              }}
+            />
+          )}
         </aside>
 
         <main className="gallery-main">
@@ -176,6 +298,9 @@ export default function Gallery() {
               loading={loading}
               loadMore={() => fetchPage(cursor)}
               onOpen={setViewer}
+              selectMode={selectMode}
+              selectedIds={selected}
+              onToggleSelect={toggleSelect}
             />
           )}
         </main>
@@ -193,6 +318,30 @@ export default function Gallery() {
             {a.aperture ? `f/${a.aperture} · ` : ""}
             {a.shutter ? `${a.shutter}s · ` : ""}
             {a.iso ? `ISO ${a.iso}` : ""}
+            <div className="viewer-tags">
+              {(a.tags ?? []).map((t) => (
+                <span key={t} className="chip active">
+                  {t}
+                  <button
+                    className="chip-x"
+                    onClick={() => assignTags([a.id], t, false)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                className="input"
+                placeholder="+ tag"
+                style={{ width: 90, padding: "2px 8px" }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    assignTags([a.id], (e.target as HTMLInputElement).value, true);
+                    (e.target as HTMLInputElement).value = "";
+                  }
+                }}
+              />
+            </div>
           </div>
           <div className="stage">
             {a.derivative_status === "ready" ? (
@@ -203,13 +352,7 @@ export default function Gallery() {
             )}
           </div>
           <div className="controls">
-            <button
-              className="btn"
-              onClick={() => setViewer((v) => Math.max((v ?? 0) - 1, 0))}
-              disabled={viewer === 0}
-            >
-              ←
-            </button>
+            <button className="btn" onClick={() => setViewer((v) => Math.max((v ?? 0) - 1, 0))} disabled={viewer === 0}>←</button>
             <button
               className={`btn ${a.verdict === "reject" ? "btn-reject" : ""}`}
               onClick={() => rate(a.id, { verdict: "reject" })}
@@ -234,9 +377,7 @@ export default function Gallery() {
             </button>
             <button
               className="btn"
-              onClick={() =>
-                setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1))
-              }
+              onClick={() => setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1))}
               disabled={viewer === items.length - 1}
             >
               →
