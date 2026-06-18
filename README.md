@@ -27,8 +27,9 @@ Next.js (UI tri + API) ◄── Postgres + Stockage
    └─► Export worker ──► copie RAW pour Capture One  (+ lignage source→export)
 ```
 
-Tout (Postgres, Redis, dérivés, exports) vit sur l'**Optiplex**. Le NAS est
-monté en **lecture seule** : il n'est que source.
+Tout (Postgres, Redis, dérivés, exports, inbox) vit sur l'**Optiplex**. Les
+sessions déjà rangées du NAS sont montées en **lecture seule** ; seule la zone
+`incoming` (arrivée des imports) est montée en **lecture/écriture**.
 
 ### Décisions §12 retenues
 
@@ -46,10 +47,10 @@ monté en **lecture seule** : il n'est que source.
 ### Avec Docker Compose (recommandé)
 
 ```bash
-cp .env.example .env
-# Éditer NAS_MOUNT pour pointer vers le montage RO du NAS, ajuster les chemins.
-docker compose run --rm migrate     # applique le schéma
-docker compose up -d                 # app (http://localhost:3000) + worker
+cp .env.dist .env
+# Éditer NAS_MOUNT (sessions RO) et NAS_INCOMING (imports RW), ajuster les chemins.
+docker compose up -d --build
+# `migrate` applique le schéma, puis app (http://localhost:3000) + worker démarrent.
 ```
 
 Puis, depuis l'UI, saisir un chemin de dossier du NAS (tel que vu **dans le
@@ -62,7 +63,7 @@ les libs de `sharp` (fournies par les binaires prébuild).
 
 ```bash
 npm install
-cp .env.example .env   # adapter DATABASE_URL / REDIS_URL (localhost)
+cp .env.dist .env   # adapter DATABASE_URL / REDIS_URL (localhost)
 npm run migrate
 npm run dev            # UI + API sur http://localhost:3000
 npm run worker         # dans un autre terminal : workers BullMQ
@@ -74,7 +75,7 @@ npm run scan -- /chemin/vers/dossier --sync
 
 ## Variables d'environnement
 
-Voir `.env.example`. Principales :
+Voir `.env.dist`. Principales :
 
 - `DATABASE_URL`, `REDIS_URL`
 - `STORAGE_DRIVER=disk|s3`, `STORAGE_DISK_PATH`, et les `S3_*` pour MinIO
