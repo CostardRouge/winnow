@@ -2,6 +2,9 @@
 import { many } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 
+// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const sessions = await many(

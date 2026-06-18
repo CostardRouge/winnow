@@ -5,6 +5,9 @@ import { z } from "zod";
 import { many, one } from "@/lib/db";
 import { json, badRequest, serverError } from "@/lib/api";
 
+// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const tags = await many(
