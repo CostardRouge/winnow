@@ -2,14 +2,54 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+
+# Cancel an in-progress run when a new commit lands on the same PR. On `main`,
+# head_ref is empty -> fallback to run_id (unique) -> main runs are never
+# cancelled, so every commit pushed to main is validated end-to-end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # Static checks — no services needed, so this fails fast on type errors.
+  # (winnow has no ESLint config; `tsc --noEmit` is its static gate.)
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
 
-    # Postgres pour valider les migrations (le SQL fait partie du contrat).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          # Matches the runtime image (node:22-slim) so CI validates what ships.
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  # Build + migrations against a real Postgres (the SQL is part of the contract).
+  build:
+    name: Build & migrations
+    runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -30,21 +70,20 @@ jobs:
       REDIS_URL: redis://localhost:6379
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - name: Install (reproducible)
+      - name: Install dependencies
         run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
 
       - name: Apply migrations (validates SQL)
         run: npm run migrate
 
-      - name: Build
+      - name: Production build
         run: npm run build
