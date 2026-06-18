@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchJson } from "@/lib/fetchJson";
 
 export type TreeNodeData = {
   key: string;
@@ -30,8 +31,9 @@ async function fetchChildren(
 ): Promise<TreeNodeData[]> {
   const sp = new URLSearchParams({ group });
   for (const s of path) sp.set(s.key, String(s.value));
-  const r = await fetch(`/api/tree?${sp.toString()}`);
-  const d = await r.json();
+  const d = await fetchJson<{ nodes?: TreeNodeData[] }>(
+    `/api/tree?${sp.toString()}`,
+  );
   return d.nodes ?? [];
 }
 
@@ -61,7 +63,13 @@ function Node({
   async function onClick() {
     onScope(myPath);
     if (node.leaf) return;
-    if (children == null) setChildren(await fetchChildren(group, myPath));
+    if (children == null) {
+      try {
+        setChildren(await fetchChildren(group, myPath));
+      } catch {
+        setChildren([]); // évite une boucle de rechargement sur erreur
+      }
+    }
     setOpen((o) => !o);
   }
 
@@ -101,10 +109,18 @@ export default function Tree({
 }) {
   const [group, setGroup] = useState<"date" | "folder" | "device">("date");
   const [roots, setRoots] = useState<TreeNodeData[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setRoots(null);
-    fetchChildren(group, []).then(setRoots);
+    setError(null);
+    fetchChildren(group, [])
+      .then((n) => !cancelled && setRoots(n))
+      .catch((e: Error) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [group]);
 
   return (
@@ -127,7 +143,9 @@ export default function Tree({
       >
         ↺ All (clear scope)
       </button>
-      {!roots ? (
+      {error ? (
+        <div className="hint">Couldn’t load tree: {error}</div>
+      ) : !roots ? (
         <div className="spinner">Loading…</div>
       ) : roots.length === 0 ? (
         <div className="hint">Nothing here.</div>

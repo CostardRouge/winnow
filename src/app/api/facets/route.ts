@@ -21,6 +21,17 @@ async function facet(
     .map((r) => ({ value: r.value as string | number, count: r.count }));
 }
 
+// `allSettled` : une sous-requête en échec (p. ex. table `tags` absente, hoquet
+// DB) renvoie une facette vide au lieu de faire planter tout l'endpoint — la
+// galerie reste utilisable et le front ne reçoit plus un objet d'erreur à la
+// place de la forme attendue.
+async function settledArray(p: Promise<ValueCount[]>): Promise<ValueCount[]> {
+  const r = await Promise.allSettled([p]);
+  if (r[0].status === "fulfilled") return r[0].value;
+  console.error("facet error:", r[0].reason);
+  return [];
+}
+
 export async function GET() {
   try {
     const [
@@ -36,7 +47,9 @@ export async function GET() {
       mediaTypes,
       tags,
     ] = await Promise.all([
-      one<{ count: number }>("SELECT count(*)::int AS count FROM assets"),
+      one<{ count: number }>("SELECT count(*)::int AS count FROM assets").catch(
+        () => null,
+      ),
       one<{
         size_min: number | null;
         size_max: number | null;
@@ -52,19 +65,21 @@ export async function GET() {
                 min(focal_length) focal_min, max(focal_length) focal_max,
                 min(aperture) aperture_min, max(aperture) aperture_max
          FROM assets`,
-      ),
-      facet("capture_year", "value DESC"),
-      facet("capture_month", "value ASC"),
-      facet("capture_day", "value ASC"),
-      facet("device"),
-      facet("camera_model"),
-      facet("lens"),
-      facet("ext"),
-      facet("media_type", "value ASC"),
-      many<{ value: string; count: number }>(
-        `SELECT t.name AS value, count(*)::int AS count
-         FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-         GROUP BY t.name ORDER BY count DESC`,
+      ).catch(() => null),
+      settledArray(facet("capture_year", "value DESC")),
+      settledArray(facet("capture_month", "value ASC")),
+      settledArray(facet("capture_day", "value ASC")),
+      settledArray(facet("device")),
+      settledArray(facet("camera_model")),
+      settledArray(facet("lens")),
+      settledArray(facet("ext")),
+      settledArray(facet("media_type", "value ASC")),
+      settledArray(
+        many<{ value: string; count: number }>(
+          `SELECT t.name AS value, count(*)::int AS count
+           FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+           GROUP BY t.name ORDER BY count DESC`,
+        ),
       ),
     ]);
 

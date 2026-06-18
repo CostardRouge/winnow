@@ -20,13 +20,24 @@ export default function ImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   function pollBatch(id: number) {
+    let errors = 0;
     const t = setInterval(async () => {
-      const r = await fetch(`/api/import/${id}`);
-      const data = await r.json();
-      if (data.batch) {
-        setBatch(data.batch);
-        if (data.batch.status === "done" || data.batch.status === "error") {
+      try {
+        const r = await fetch(`/api/import/${id}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        errors = 0;
+        if (data.batch) {
+          setBatch(data.batch);
+          if (data.batch.status === "done" || data.batch.status === "error") {
+            clearInterval(t);
+          }
+        }
+      } catch {
+        // Tolère quelques hoquets réseau, puis abandonne le polling.
+        if (++errors >= 5) {
           clearInterval(t);
+          setMsg("Lost contact with the import job. Refresh to check status.");
         }
       }
     }, 1500);

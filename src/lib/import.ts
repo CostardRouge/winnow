@@ -3,7 +3,15 @@
 // `sourceDir` ; on les VÉRIFIE (hash), on DÉDUPLIQUE (content_hash partagé avec
 // les assets), on RANGE dans l'incoming (archive NAS) selon un gabarit
 // déterministe, puis on laisse l'indexer faire son travail habituel.
-import { readdir, stat, mkdir, copyFile, rm, access } from "node:fs/promises";
+import {
+  readdir,
+  stat,
+  mkdir,
+  copyFile,
+  rename,
+  rm,
+  access,
+} from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
 import { config, classifyExt } from "./config";
@@ -139,15 +147,20 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       const dest = await uniqueDest(planned);
 
       await mkdir(path.dirname(dest), { recursive: true });
-      await copyFile(src, dest);
 
-      // Vérification d'intégrité de la copie (taille + hash partiel).
-      const destSt = await stat(dest);
-      const destHash = await partialHash(dest, destSt.size);
+      // Copie atomique : écriture dans un `.part`, vérification (taille + hash
+      // partiel), puis rename — un crash en cours ne laisse jamais de fichier
+      // partiel sous le nom final (qui serait ensuite indexé comme valide).
+      const tmp = `${dest}.part`;
+      await rm(tmp, { force: true });
+      await copyFile(src, tmp);
+      const destSt = await stat(tmp);
+      const destHash = await partialHash(tmp, destSt.size);
       if (destSt.size !== st.size || destHash !== hash) {
-        await rm(dest, { force: true });
+        await rm(tmp, { force: true });
         throw new Error("vérification de copie échouée (taille/hash)");
       }
+      await rename(tmp, dest);
 
       if (args.removeAfter) await rm(src, { force: true });
       res.imported++;

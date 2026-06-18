@@ -8,6 +8,7 @@ import {
   use as usePromise,
 } from "react";
 import Link from "next/link";
+import { fetchJson } from "@/lib/fetchJson";
 
 type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
@@ -44,6 +45,7 @@ export default function SessionGrid({
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [verdict, setVerdict] = useState("");
   const [viewer, setViewer] = useState<number | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -64,11 +66,19 @@ export default function SessionGrid({
         const sp = new URLSearchParams();
         if (cur) sp.set("cursor", cur);
         if (verdict) sp.set("verdict", verdict);
-        const r = await fetch(`/api/sessions/${id}/assets?${sp.toString()}`);
-        const data = await r.json();
-        setAssets((prev) => (cur ? [...prev, ...data.assets] : data.assets));
-        setCursor(data.next_cursor);
+        const data = await fetchJson<{
+          assets?: AssetRow[];
+          next_cursor?: string | null;
+        }>(`/api/sessions/${id}/assets?${sp.toString()}`);
+        setError(null);
+        setAssets((prev) =>
+          cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? [],
+        );
+        setCursor(data.next_cursor ?? null);
         setHasMore(Boolean(data.next_cursor));
+      } catch (e) {
+        setError((e as Error).message);
+        setHasMore(false);
       } finally {
         setLoading(false);
         loadingRef.current = false;
@@ -162,7 +172,15 @@ export default function SessionGrid({
           </span>
         </div>
 
-        {assets.length === 0 && !loading ? (
+        {error && (
+          <div className="error-box">
+            <span>Couldn’t load assets: {error}</span>
+            <button className="btn" onClick={() => fetchPage(null)}>
+              Retry
+            </button>
+          </div>
+        )}
+        {assets.length === 0 && !loading && !error ? (
           <div className="empty">No assets for this filter.</div>
         ) : (
           <div className="grid">

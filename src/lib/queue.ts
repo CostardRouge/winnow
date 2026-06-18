@@ -8,12 +8,27 @@ import { config } from "./config";
 
 // BullMQ embarque sa propre copie d'ioredis ; on partage une instance et on
 // neutralise le conflit de types nominaux par un cast à la frontière.
-export const connection = new IORedis(config.redisUrl, {
+const redis = new IORedis(config.redisUrl, {
   maxRetriesPerRequest: null,
   // Pas de connexion tant qu'aucune commande n'est émise (évite les tentatives
   // au build/import quand Redis n'est pas joignable).
   lazyConnect: true,
-}) as unknown as ConnectionOptions;
+});
+export const connection = redis as unknown as ConnectionOptions;
+
+// Sonde de vivacité Redis pour le healthcheck (échec rapide via timeout).
+export async function pingRedis(timeoutMs = 3000): Promise<boolean> {
+  try {
+    const ping = redis.ping();
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("redis ping timeout")), timeoutMs),
+    );
+    await Promise.race([ping, timeout]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };

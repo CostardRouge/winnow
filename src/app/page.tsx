@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { fetchJson } from "@/lib/fetchJson";
 
 type SessionRow = {
   id: number;
@@ -32,12 +33,19 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [scanPath, setScanPath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const r = await fetch("/api/sessions");
-    const data = await r.json();
-    setSessions(data.sessions ?? []);
-    setLoading(false);
+    try {
+      const data = await fetchJson<{ sessions?: SessionRow[] }>("/api/sessions");
+      setSessions(data.sessions ?? []);
+      setError(null);
+    } catch (e) {
+      // Polling : on garde les sessions affichées sur erreur transitoire.
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -122,6 +130,14 @@ export default function Dashboard() {
           </button>
         </div>
 
+        {error && (
+          <div className="error-box">
+            <span>Couldn’t refresh sessions: {error}</span>
+            <button className="btn" onClick={load}>
+              Retry
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="spinner">Loading…</div>
         ) : sessions.length === 0 ? (

@@ -57,6 +57,7 @@ export type IndexResult = {
   skipped: number;
   duplicates: number;
   enqueued: number;
+  failed: number;
 };
 
 export async function indexRoot(rootId: number): Promise<IndexResult> {
@@ -70,6 +71,7 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
     skipped: 0,
     duplicates: 0,
     enqueued: 0,
+    failed: 0,
   };
   const touchedSessions = new Set<number>();
 
@@ -79,6 +81,9 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
     if (!cls) continue; // pas un média reconnu
     res.scanned++;
 
+    // Isolation par fichier : un fichier illisible/corrompu (stat, hash, méta)
+    // ne doit pas faire échouer tout le job d'indexation.
+    try {
     const st = await stat(absPath);
     const size = st.size;
     const mtime = st.mtime.toISOString();
@@ -210,6 +215,10 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
     if (willDerive) {
       await enqueueDerivative(inserted.id);
       res.enqueued++;
+    }
+    } catch (err) {
+      res.failed++;
+      console.warn(`Indexation impossible de ${absPath}:`, (err as Error).message);
     }
   }
 

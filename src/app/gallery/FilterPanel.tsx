@@ -86,7 +86,7 @@ function Chips<T extends string | number>({
   onToggle: (v: T) => void;
   label?: (v: string | number) => string;
 }) {
-  if (options.length === 0) return null;
+  if (!options || options.length === 0) return null;
   return (
     <div className="facet">
       <div className="facet-title">{title}</div>

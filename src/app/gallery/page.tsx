@@ -9,6 +9,7 @@ import FilterPanel, {
   type Facets,
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
+import { fetchJson } from "@/lib/fetchJson";
 
 type Row = GalleryAsset & {
   tags?: string[];
@@ -86,11 +87,19 @@ export default function Gallery() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [tagInput, setTagInput] = useState("");
+  const [facetsError, setFacetsError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const filterKey = JSON.stringify(filters);
 
   const loadFacets = useCallback(() => {
-    fetch("/api/facets").then((r) => r.json()).then(setFacets).catch(() => {});
+    setFacetsError(null);
+    fetchJson<Facets>("/api/facets")
+      .then(setFacets)
+      .catch((e: Error) => {
+        setFacets(null);
+        setFacetsError(e.message);
+      });
   }, []);
   useEffect(() => loadFacets(), [loadFacets]);
 
@@ -100,11 +109,17 @@ export default function Gallery() {
       loadingRef.current = true;
       setLoading(true);
       try {
-        const r = await fetch(`/api/assets?${toQuery(filters, cur)}`);
-        const data = await r.json();
+        const data = await fetchJson<{
+          assets?: Row[];
+          next_cursor?: string | null;
+        }>(`/api/assets?${toQuery(filters, cur)}`);
+        setError(null);
         setItems((prev) => (cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? []));
-        setCursor(data.next_cursor);
+        setCursor(data.next_cursor ?? null);
         setHasMore(Boolean(data.next_cursor));
+      } catch (e) {
+        setError((e as Error).message);
+        setHasMore(false);
       } finally {
         setLoading(false);
         loadingRef.current = false;
@@ -275,7 +290,16 @@ export default function Gallery() {
                   Reset
                 </button>
               </div>
-              <FilterPanel facets={facets} filters={filters} set={setFilters} />
+              {facetsError ? (
+                <div className="error-box">
+                  <span>Couldn’t load filters: {facetsError}</span>
+                  <button className="btn" onClick={loadFacets}>
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <FilterPanel facets={facets} filters={filters} set={setFilters} />
+              )}
             </>
           ) : (
             <Tree
@@ -289,7 +313,15 @@ export default function Gallery() {
         </aside>
 
         <main className="gallery-main">
-          {items.length === 0 && !loading ? (
+          {error && (
+            <div className="error-box">
+              <span>Couldn’t load assets: {error}</span>
+              <button className="btn" onClick={() => fetchPage(null)}>
+                Retry
+              </button>
+            </div>
+          )}
+          {items.length === 0 && !loading && !error ? (
             <div className="empty">No assets match these filters.</div>
           ) : (
             <VirtualGrid

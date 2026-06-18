@@ -480,3 +480,26 @@ button {
   color: var(--muted);
   padding: 24px;
 }
+.error-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--reject, #c0392b);
+  border-radius: 8px;
+  background: rgba(192, 57, 43, 0.12);
+  color: var(--text, inherit);
+  font-size: 14px;
+}
+.error-page {
+  max-width: 480px;
+  margin: 96px auto;
+  text-align: center;
+  padding: 24px;
+}
+.error-page .btn {
+  margin-top: 16px;
+}

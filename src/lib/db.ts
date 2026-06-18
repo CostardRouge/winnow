@@ -20,6 +20,11 @@ export const pool: pg.Pool =
   new pg.Pool({
     connectionString: config.databaseUrl,
     max: 10,
+    // Timeouts : empêchent qu'une requête pendante ou un Postgres injoignable
+    // épuise le pool et fige toutes les routes.
+    connectionTimeoutMillis: 5000, // échec rapide si le serveur ne répond pas
+    idleTimeoutMillis: 30000, // libère les connexions oisives
+    statement_timeout: 30000, // tue une requête trop longue côté serveur
   });
 
 if (process.env.NODE_ENV !== "production") {
