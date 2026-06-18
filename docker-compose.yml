@@ -1,0 +1,86 @@
+# Winnow — déploiement Optiplex (NAS = source RO uniquement).
+# Tout l'état (Postgres, dérivés, exports) vit sur l'Optiplex.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: winnow
+      POSTGRES_PASSWORD: winnow
+      POSTGRES_DB: winnow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winnow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+
+  # MinIO optionnel : décommente et passe STORAGE_DRIVER=s3 pour basculer.
+  # minio:
+  #   image: minio/minio
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: minioadmin
+  #     MINIO_ROOT_PASSWORD: minioadmin
+  #   volumes:
+  #     - miniodata:/data
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+
+  migrate:
+    build: .
+    command: ["npm", "run", "migrate"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build: .
+    command: ["npm", "run", "start"]
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      # Montage RO du NAS (adapte la source) + stockage des dérivés/exports.
+      - ${NAS_MOUNT:-./nas}:/nas:ro
+      - derivatives:/data/derivatives
+      - exports:/data/exports
+
+  worker:
+    build: .
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ${NAS_MOUNT:-./nas}:/nas:ro
+      - derivatives:/data/derivatives
+      - exports:/data/exports
+
+volumes:
+  pgdata:
+  redisdata:
+  derivatives:
+  exports:
+  # miniodata:
