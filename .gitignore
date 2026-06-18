@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+*.log
+npm-debug.log*
+.env
+.env.local
+.DS_Store
+coverage/
+.tsbuildinfo
+*.tsbuildinfo
+nas/
+data/
+
+# Artefact Redis (tests locaux)
+dump.rdb

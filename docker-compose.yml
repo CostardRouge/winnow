@@ -1,0 +1,137 @@
+# Winnow — déploiement Optiplex.
+#   NAS = source (sessions existantes en lecture seule) + zone "incoming" (RW).
+#   Tout l'état (Postgres, Redis, dérivés, exports, inbox) vit sur l'Optiplex.
+#
+# Premier démarrage :
+#   cp .env.dist .env   &&   éditer NAS_MOUNT / NAS_INCOMING
+#   docker compose up -d --build
+# (le service `migrate` applique le schéma avant que app/worker ne démarrent)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: winnow
+      POSTGRES_PASSWORD: winnow
+      POSTGRES_DB: winnow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winnow -d winnow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # MinIO optionnel : décommente et passe STORAGE_DRIVER=s3 dans .env pour basculer.
+  # minio:
+  #   image: minio/minio
+  #   restart: unless-stopped
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: minioadmin
+  #     MINIO_ROOT_PASSWORD: minioadmin
+  #   volumes:
+  #     - miniodata:/data
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+
+  # One-shot : applique les migrations puis sort. app/worker l'attendent.
+  migrate:
+    build: .
+    command: ["npm", "run", "migrate"]
+    env_file: .env
+    init: true
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build: .
+    command: ["npm", "run", "start"]
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
+      - ${NAS_MOUNT:-./nas}:/nas:ro
+      - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      - inbox:/data/inbox
+      - derivatives:/data/derivatives
+      - exports:/data/exports
+
+  worker:
+    build: .
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    init: true
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ${NAS_MOUNT:-./nas}:/nas:ro
+      - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      - inbox:/data/inbox
+      - derivatives:/data/derivatives
+      - exports:/data/exports
+
+  # --- Feeders d'ingest optionnels (écrivent dans l'inbox) ------------------
+  # Partage SMB : déposer cartes/fichiers depuis n'importe quel poste du LAN.
+  # samba:
+  #   image: dperson/samba
+  #   restart: unless-stopped
+  #   command: -s "winnow-inbox;/inbox;yes;no;no;all" -u "shooter;changeme"
+  #   ports: ["445:445"]
+  #   volumes:
+  #     - inbox:/inbox
+  #
+  # FTP : cible pour le transfert FTP du Sony A7C II (écrit dans l'inbox).
+  # ftp:
+  #   image: garethflowers/ftp-server
+  #   restart: unless-stopped
+  #   environment:
+  #     FTP_USER: shooter
+  #     FTP_PASS: changeme
+  #   ports: ["21:21", "40000-40009:40000-40009"]
+  #   volumes:
+  #     - inbox:/home/shooter
+
+volumes:
+  pgdata:
+  redisdata:
+  inbox:
+  derivatives:
+  exports:
+  # miniodata:

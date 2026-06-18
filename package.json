@@ -1,0 +1,41 @@
+{
+  "name": "winnow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Outil de gestion média (ingest / tri / export) — indexe, trie et exporte les RAW/vidéos du NAS sans jamais toucher les originaux plus d'une fois.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/lib/migrate.ts",
+    "worker": "tsx src/worker.ts",
+    "scan": "tsx src/scripts/scan.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.0",
+    "@aws-sdk/s3-request-presigner": "^3.658.0",
+    "bullmq": "^5.34.0",
+    "chokidar": "^4.0.3",
+    "exiftool-vendored": "^28.6.0",
+    "ioredis": "^5.4.1",
+    "next": "^15.1.0",
+    "pg": "^8.13.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-window": "^1.8.11",
+    "sharp": "^0.33.5",
+    "tsx": "^4.19.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/react-window": "^1.8.8",
+    "typescript": "^5.7.2"
+  }
+}
