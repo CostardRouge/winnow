@@ -100,6 +100,9 @@ export default function Dashboard() {
         <h1>🪶 Winnow</h1>
         <span className="hint">media triage — NAS</span>
         <span className="spacer" />
+        <Link href="/gallery" className="btn">
+          Gallery
+        </Link>
         <Link href="/import" className="btn">
           + Import
         </Link>

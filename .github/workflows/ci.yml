@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Postgres pour valider les migrations (le SQL fait partie du contrat).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: winnow
+          POSTGRES_PASSWORD: winnow
+          POSTGRES_DB: winnow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U winnow -d winnow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://winnow:winnow@localhost:5432/winnow
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (reproducible)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Apply migrations (validates SQL)
+        run: npm run migrate
+
+      - name: Build
+        run: npm run build

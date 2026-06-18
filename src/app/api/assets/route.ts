@@ -1,5 +1,5 @@
-// GET /api/sessions/:id/assets ?cursor&filter… → grille paginée (cursor-based).
-// Jamais d'OFFSET : keyset sur (captured_at, id). La grille front est virtualisée.
+// GET /api/assets ?<filtres cumulatifs>&cursor → galerie globale paginée.
+// Keyset sur (captured_at, id) DESC (plus récents d'abord). Jamais d'OFFSET.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
@@ -14,30 +14,25 @@ import type { AssetGridRow } from "@/lib/types";
 
 const PAGE = 200;
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: NextRequest) {
   try {
-    const { id } = await params;
-    const sessionId = Number.parseInt(id, 10);
     const sp = req.nextUrl.searchParams;
-
     let filter;
     try {
-      filter = { ...filterFromSearchParams(sp), session_id: sessionId };
+      filter = filterFromSearchParams(sp);
     } catch (e) {
       return badRequest("Filtre invalide", (e as Error).message);
     }
-    const { conditions, params: fParams } = buildFilter(filter, 1);
 
-    let idx = fParams.length + 1;
+    const { conditions, params } = buildFilter(filter, 1);
+    let idx = params.length + 1;
+
     const cursorStr = sp.get("cursor");
     if (cursorStr) {
       const cur = decodeCursor(cursorStr);
       if (!cur) return badRequest("Cursor invalide");
-      conditions.push(`(a.captured_at, a.id) > ($${idx++}, $${idx++})`);
-      fParams.push(cur.capturedAt, cur.id);
+      conditions.push(`(a.captured_at, a.id) < ($${idx++}, $${idx++})`);
+      params.push(cur.capturedAt, cur.id);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -49,9 +44,9 @@ export async function GET(
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
        ${where}
-       ORDER BY a.captured_at ASC, a.id ASC
+       ORDER BY a.captured_at DESC, a.id DESC
        LIMIT $${idx}`,
-      [...fParams, PAGE + 1],
+      [...params, PAGE + 1],
     );
 
     const hasMore = rows.length > PAGE;

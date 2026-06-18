@@ -31,6 +31,14 @@ Tout (Postgres, Redis, dérivés, exports, inbox) vit sur l'**Optiplex**. Les
 sessions déjà rangées du NAS sont montées en **lecture seule** ; seule la zone
 `incoming` (arrivée des imports) est montée en **lecture/écriture**.
 
+### Authentification / accès
+
+L'auth est gérée **en amont** (pas de login applicatif) : **Traefik** (basic-auth)
++ **Cloudflare Tunnel** exposent l'app derrière un domaine. Winnow tourne donc
+sur le réseau interne et fait confiance au reverse-proxy ; ne pas publier les
+ports `3000`/`5432`/`6379` directement sur Internet — seul Traefik route vers
+l'app. (Pour un accès mobile hors-LAN, l'upload passe par le tunnel.)
+
 ### Décisions §12 retenues
 
 | # | Décision | Choix |
@@ -90,6 +98,8 @@ Voir `.env.dist`. Principales :
 | Méthode & route | Rôle |
 |---|---|
 | `POST /api/index/scan` `{ path }` | Enregistre le root et enfile une indexation |
+| `GET /api/assets` `?<filtres>&cursor` | Galerie globale paginée (filtres cumulatifs) |
+| `GET /api/facets` | Valeurs + comptes pour construire les filtres |
 | `GET /api/sessions` | Liste des sessions + compteurs (prêts/en attente/picks) |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marque le dossier traité (cascade, stoppe les dérivés) |
 | `GET /api/sessions/:id/assets?cursor&verdict&…` | Grille paginée (cursor-based) |
@@ -115,6 +125,24 @@ grille front charge en infinite-scroll les vignettes au fil de l'eau.
 - **Clavier** : `P` pick · `X` rejet · `U` annuler · `1`-`5` étoiles · `←`/`→` naviguer · `Échap` fermer
 - **Tactile** : swipe ↑ = pick, swipe ↓ = rejet, swipe ←/→ = naviguer
 
+### Galerie globale & filtres cumulatifs
+
+Page **Gallery** : grille **virtualisée** (react-window — seules les lignes
+visibles sont dans le DOM, tient les 30k+) sur **tous** les assets, avec un
+panneau de filtres **cumulatifs** (combinés en AND) :
+
+- **Calendrier** : année / mois / jour (multi-sélection) + plage de dates
+- **Appareil / EXIF** : device, modèle d'appareil, objectif (multi) ; plages ISO,
+  focale, ouverture
+- **Type / format** : photo·vidéo, extension (multi)
+- **Taille** (plage Mo), **GPS** présent, **verdict**, **note min**
+
+Ces dimensions sont **matérialisées et indexées en base** (migration 0003 :
+`capture_year/month/day/date` peuplées par trigger + index sur device, ext,
+media_type, file_size, camera_model, lens, iso, focal_length, aperture). Les
+valeurs/comptes disponibles viennent de `GET /api/facets` ; le filtrage est donc
+100 % SQL indexé, sans calcul à la volée.
+
 ---
 
 ## Périmètre & suites
@@ -122,7 +150,9 @@ grille front charge en infinite-scroll les vignettes au fil de l'eau.
 **Implémenté (MVP)** : indexation incrémentale (mtime+taille), EXIF + hash +
 dédup, extraction de l'aperçu RAW (ARW/DNG…) sans dématriçage, dérivés
 thumb/proxy en WebP, grille de tri mobile-first, ignore-cascade, export copie
-RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous).
+RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous), **galerie
+virtualisée à filtres cumulatifs** (attributs indexés en base), **CI** GitHub
+Actions (typecheck + migrations + build).
 
 **V2/V3 (non inclus)** : notes/couleurs/tags avancés, export web + push Immich,
 réconciliation auto des finaux C1, vidéo (proxies FFmpeg), throttling adaptatif,

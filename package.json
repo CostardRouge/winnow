@@ -25,6 +25,7 @@
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-window": "^1.8.11",
     "sharp": "^0.33.5",
     "tsx": "^4.19.2",
     "zod": "^3.24.1"
@@ -34,6 +35,7 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/react-window": "^1.8.8",
     "typescript": "^5.7.2"
   }
 }
