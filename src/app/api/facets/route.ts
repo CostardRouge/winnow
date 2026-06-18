@@ -3,6 +3,10 @@
 import { many, one } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 
+// Route adossée à la DB : jamais pré-rendue/mise en cache au build (sinon Next
+// exécute la requête au build et fige une réponse vide dans l'image).
+export const dynamic = "force-dynamic";
+
 type ValueCount = { value: string | number; count: number };
 
 async function facet(

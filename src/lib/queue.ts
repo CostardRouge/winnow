@@ -68,9 +68,13 @@ function build() {
   };
 }
 
-export const queues = global.__winnowQueues ?? build();
-if (process.env.NODE_ENV !== "production") {
-  global.__winnowQueues = queues;
+// Instanciation paresseuse : construire un `Queue` BullMQ ouvre aussitôt une
+// connexion Redis (chargement des scripts Lua). On ne veut pas que le simple
+// import de ce module — au build Next, par exemple — tente de joindre Redis.
+// Les files ne sont créées qu'au premier enqueue.
+function getQueues() {
+  if (!global.__winnowQueues) global.__winnowQueues = build();
+  return global.__winnowQueues;
 }
 
 const defaultJobOpts = {
@@ -81,11 +85,15 @@ const defaultJobOpts = {
 };
 
 export async function enqueueIndex(rootId: number) {
-  return queues.index.add("scan", { rootId } satisfies IndexJob, defaultJobOpts);
+  return getQueues().index.add(
+    "scan",
+    { rootId } satisfies IndexJob,
+    defaultJobOpts,
+  );
 }
 
 export async function enqueueDerivative(assetId: number) {
-  return queues.derivatives.add(
+  return getQueues().derivatives.add(
     "derive",
     { assetId } satisfies DerivativeJob,
     defaultJobOpts,
@@ -93,7 +101,7 @@ export async function enqueueDerivative(assetId: number) {
 }
 
 export async function enqueueExport(exportJobId: number) {
-  return queues.export.add(
+  return getQueues().export.add(
     "export",
     { exportJobId } satisfies ExportJob,
     defaultJobOpts,
@@ -101,5 +109,5 @@ export async function enqueueExport(exportJobId: number) {
 }
 
 export async function enqueueImport(job: ImportJob) {
-  return queues.import.add("import", job, defaultJobOpts);
+  return getQueues().import.add("import", job, defaultJobOpts);
 }
