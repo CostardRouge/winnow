@@ -97,6 +97,11 @@ export const PHOTO_RAW_EXTS = new Set([
   ".orf",
 ]);
 
+// HEIF/HEVC stills: iPhone (.heic/.heif), Sony A7C II / Canon (.hif).
+// sharp's prebuilt libvips ships the AVIF decoder but NOT the HEVC one, so these
+// are decoded via libheif (heic-convert) before sharp builds the derivatives.
+export const HEIC_EXTS = new Set([".heic", ".heif", ".hif"]);
+
 export const PHOTO_DIRECT_EXTS = new Set([
   ".jpg",
   ".jpeg",
@@ -104,8 +109,10 @@ export const PHOTO_DIRECT_EXTS = new Set([
   ".tif",
   ".tiff",
   ".webp",
+  ".avif", // AV1-in-HEIF: decoded natively by sharp's libvips
   ".heic", // iPhone
   ".heif",
+  ".hif", // Sony A7C II / Canon HEIF
 ]);
 
 export const VIDEO_EXTS = new Set([

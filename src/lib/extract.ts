@@ -1,10 +1,11 @@
 // EXIF reading + extraction of the embedded preview (cf. §4 - THE critical point).
 // We NEVER decode the RAW sensor: we extract the embedded JPEG preview.
 import { exiftool, type Tags } from "exiftool-vendored";
+import heicConvert from "heic-convert";
 import { tmpdir } from "node:os";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PHOTO_DIRECT_EXTS } from "./config";
+import { HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
 
 export type Metadata = {
   captured_at: string | null;
@@ -83,8 +84,12 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
  * a possible temporary directory to clean up, and the EXIF orientation (1-8) of
  * the original.
  *
- *  - Directly readable formats (JPEG/PNG/TIFF/WebP/HEIC): we return
+ *  - Directly readable formats (JPEG/PNG/TIFF/WebP/AVIF): we return
  *    the original (sharp handles it, `orientation` not needed).
+ *  - HEIF/HEVC stills (.heic/.heif/.hif): sharp's prebuilt libvips ships the
+ *    AVIF decoder but NOT the HEVC one, and these files rarely embed an
+ *    extractable JPEG preview, so we decode them via libheif (heic-convert) to a
+ *    temporary JPEG.
  *  - RAW: we extract the embedded JPEG preview (JpgFromRaw, otherwise PreviewImage,
  *    otherwise ThumbnailImage) - near-instant extraction, zero demosaicing.
  *    This preview often does NOT carry the Orientation tag: so we return
@@ -100,11 +105,35 @@ export async function extractSourceJpeg(
 }> {
   const e = ext.toLowerCase();
 
-  // HEIC/HEIF: sharp can decode if libvips has libheif; otherwise we fall back
-  // to the preview extraction below. We first try the original for the
-  // classic raster formats.
-  if (PHOTO_DIRECT_EXTS.has(e) && e !== ".heic" && e !== ".heif") {
+  // Raster formats sharp decodes natively (JPEG/PNG/TIFF/WebP/AVIF): pass through.
+  if (PHOTO_DIRECT_EXTS.has(e) && !HEIC_EXTS.has(e)) {
     return { jpegPath: absPath, cleanupDir: null };
+  }
+
+  // HEIF/HEVC stills: decode via libheif to a temporary JPEG. libheif applies
+  // the irot/imir transforms but NOT the EXIF Orientation, so we carry the
+  // latter over and let the worker re-apply it (same as for RAW previews).
+  if (HEIC_EXTS.has(e)) {
+    const orientation = await readOrientation(absPath);
+    const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
+    const dest = path.join(dir, "decoded.jpg");
+    try {
+      const input = await readFile(absPath);
+      const jpeg = await heicConvert({
+        buffer: input.buffer.slice(
+          input.byteOffset,
+          input.byteOffset + input.byteLength,
+        ),
+        format: "JPEG",
+      });
+      await writeFile(dest, Buffer.from(jpeg));
+      return { jpegPath: dest, cleanupDir: dir, orientation };
+    } catch (err) {
+      await rm(dir, { recursive: true, force: true });
+      throw new Error(
+        `HEIF decode failed for ${absPath}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // The RAW preview usually loses the Orientation tag: we read it on the RAW.
@@ -129,11 +158,7 @@ export async function extractSourceJpeg(
     }
   }
 
-  // Last resort for HEIC: let sharp try the original.
   await rm(dir, { recursive: true, force: true });
-  if (e === ".heic" || e === ".heif") {
-    return { jpegPath: absPath, cleanupDir: null };
-  }
   throw new Error(`No extractable preview from ${absPath}`);
 }
 
