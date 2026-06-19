@@ -1,6 +1,7 @@
-// PATCH /api/sessions/:id { ignored } → marque le dossier traité.
-// Cascade processing_state=ignored et stoppe la génération de dérivés (§5).
-// Inverse : remet les assets en `unprocessed` et ré-enfile les dérivés manquants.
+// PATCH /api/sessions/:id { ignored?, completed? } → met à jour le dossier.
+//  - ignored : marque traité ; cascade processing_state=ignored et stoppe les
+//    dérivés (§5). Inverse : remet en `unprocessed` et ré-enfile les manquants.
+//  - completed : simple drapeau visuel (badge), aucune cascade ni traitement.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
@@ -8,7 +9,14 @@ import { enqueueDerivative } from "@/lib/queue";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
 import type { Session } from "@/lib/types";
 
-const Body = z.object({ ignored: z.boolean() });
+const Body = z
+  .object({
+    ignored: z.boolean().optional(),
+    completed: z.boolean().optional(),
+  })
+  .refine((b) => b.ignored !== undefined || b.completed !== undefined, {
+    message: "ignored ou completed requis",
+  });
 
 export async function PATCH(
   req: NextRequest,
@@ -18,15 +26,31 @@ export async function PATCH(
     const { id } = await params;
     const sessionId = Number.parseInt(id, 10);
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("ignored requis");
+    if (!parsed.success) return badRequest("ignored ou completed requis");
+    const { ignored, completed } = parsed.data;
 
-    const session = await one<Session>(
+    let session: Session | null = null;
+
+    // Drapeau "terminé" : pur flip, sans toucher aux assets.
+    if (completed !== undefined) {
+      session = await one<Session>(
+        "UPDATE sessions SET completed = $2 WHERE id = $1 RETURNING *",
+        [sessionId, completed],
+      );
+      if (!session) return notFound("Session introuvable");
+    }
+
+    if (ignored === undefined) {
+      return json({ session });
+    }
+
+    session = await one<Session>(
       "UPDATE sessions SET ignored = $2 WHERE id = $1 RETURNING *",
-      [sessionId, parsed.data.ignored],
+      [sessionId, ignored],
     );
     if (!session) return notFound("Session introuvable");
 
-    if (parsed.data.ignored) {
+    if (ignored) {
       // Cascade : tout passe en ignored ; on coupe les dérivés en attente.
       await q(
         `UPDATE assets

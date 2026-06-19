@@ -38,8 +38,9 @@ export async function POST(req: NextRequest) {
        RETURNING *`,
       [path, kind, watch],
     );
-    // Un root source est indexé immédiatement.
-    if (kind === "source") await enqueueIndex(root!.id);
+    // Sources ET finaux sont indexés (les finaux pour générer leurs miniatures,
+    // afin d'être consultables). L'inbox n'est jamais enregistré via cette route.
+    await enqueueIndex(root!.id);
     return json({ root }, 201);
   } catch (err) {
     return serverError(err);

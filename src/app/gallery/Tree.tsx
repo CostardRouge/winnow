@@ -28,8 +28,10 @@ function pathKey(path: PathSeg[]): string {
 async function fetchChildren(
   group: string,
   path: PathSeg[],
+  scope?: "incoming" | "final",
 ): Promise<TreeNodeData[]> {
   const sp = new URLSearchParams({ group });
+  if (scope) sp.set("kind", scope);
   for (const s of path) sp.set(s.key, String(s.value));
   const d = await fetchJson<{ nodes?: TreeNodeData[] }>(
     `/api/tree?${sp.toString()}`,
@@ -44,6 +46,7 @@ function Node({
   depth,
   activeKey,
   onScope,
+  scope,
 }: {
   group: string;
   parent: PathSeg[];
@@ -51,6 +54,7 @@ function Node({
   depth: number;
   activeKey: string;
   onScope: (path: PathSeg[]) => void;
+  scope?: "incoming" | "final";
 }) {
   const [open, setOpen] = useState(false);
   const [children, setChildren] = useState<TreeNodeData[] | null>(null);
@@ -65,7 +69,7 @@ function Node({
     if (node.leaf) return;
     if (children == null) {
       try {
-        setChildren(await fetchChildren(group, myPath));
+        setChildren(await fetchChildren(group, myPath, scope));
       } catch {
         setChildren([]); // évite une boucle de rechargement sur erreur
       }
@@ -94,6 +98,7 @@ function Node({
             depth={depth + 1}
             activeKey={activeKey}
             onScope={onScope}
+            scope={scope}
           />
         ))}
     </div>
@@ -103,9 +108,11 @@ function Node({
 export default function Tree({
   activeKey,
   onScope,
+  scope,
 }: {
   activeKey: string;
   onScope: (path: PathSeg[]) => void;
+  scope?: "incoming" | "final";
 }) {
   const [group, setGroup] = useState<"date" | "folder" | "device">("date");
   const [roots, setRoots] = useState<TreeNodeData[] | null>(null);
@@ -115,13 +122,13 @@ export default function Tree({
     let cancelled = false;
     setRoots(null);
     setError(null);
-    fetchChildren(group, [])
+    fetchChildren(group, [], scope)
       .then((n) => !cancelled && setRoots(n))
       .catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
-  }, [group]);
+  }, [group, scope]);
 
   return (
     <div>
@@ -159,6 +166,7 @@ export default function Tree({
             depth={0}
             activeKey={activeKey}
             onScope={onScope}
+            scope={scope}
           />
         ))
       )}

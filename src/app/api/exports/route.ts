@@ -1,0 +1,31 @@
+// GET /api/exports → jobs d'export + nombre de fichiers + échantillon d'assets
+// source (pour les miniatures, servies via /api/assets/:id/thumb puisque chaque
+// export pointe sur un asset qui conserve ses dérivés).
+import { many } from "@/lib/db";
+import { json, serverError } from "@/lib/api";
+
+// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const jobs = await many(
+      `SELECT j.id, j.name, j.target, j.status, j.created_at, j.finished_at,
+              j.result,
+              COALESCE(e.cnt, 0) AS export_count,
+              COALESCE(e.sample, '[]'::jsonb) AS sample_asset_ids
+       FROM export_jobs j
+       LEFT JOIN (
+         SELECT export_job_id,
+                count(*)::int AS cnt,
+                to_jsonb((array_agg(source_asset_id ORDER BY id))[1:8]) AS sample
+         FROM exports
+         GROUP BY export_job_id
+       ) e ON e.export_job_id = j.id
+       ORDER BY j.created_at DESC`,
+    );
+    return json({ jobs });
+  } catch (err) {
+    return serverError(err);
+  }
+}
