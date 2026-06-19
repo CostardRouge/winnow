@@ -91,6 +91,9 @@ export default function VirtualGrid({
                       : "⏳"}
                 </div>
               )}
+              {a.media_type === "video" && a.derivative_status === "ready" && (
+                <span className="play-badge">▶</span>
+              )}
               {a.verdict !== "unrated" && (
                 <span className="badge">{a.verdict === "pick" ? "✓" : "✕"}</span>
               )}

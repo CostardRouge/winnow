@@ -396,8 +396,21 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
           </div>
           <div className="stage">
             {a.derivative_status === "ready" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/assets/${a.id}/proxy`} alt={a.filename} />
+              a.media_type === "video" ? (
+                <video
+                  key={a.id}
+                  src={`/api/assets/${a.id}/proxy`}
+                  poster={`/api/assets/${a.id}/thumb`}
+                  controls
+                  playsInline
+                  autoPlay
+                  muted
+                  loop
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/assets/${a.id}/proxy`} alt={a.filename} />
+              )
             ) : (
               <div className="placeholder">Derivative unavailable</div>
             )}

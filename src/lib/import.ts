@@ -10,6 +10,7 @@ import {
   copyFile,
   rename,
   rm,
+  rmdir,
   access,
 } from "node:fs/promises";
 import path from "node:path";
@@ -19,6 +20,15 @@ import { partialHash } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
 import { slug } from "./slug";
+
+// Sous-dossiers CACHÉS de l'inbox (préfixe « . ») — donc ignorés à la fois par
+// le watcher et par le walk d'import de l'inbox entière :
+//   .uploads : staging des uploads web (importés explicitement, par lot) → évite
+//              le double déclenchement watcher + import de lot sur les mêmes octets.
+//   .failed  : quarantaine des fichiers en échec → ne sont plus re-tentés en
+//              boucle à chaque dépôt ; réessayables manuellement.
+export const uploadStagingDir = path.join(config.import.inboxDir, ".uploads");
+export const quarantineDir = path.join(config.import.inboxDir, ".failed");
 
 export type ImportOrigin = "web_upload" | "card_offload" | "inbox" | "ftp";
 
@@ -167,7 +177,30 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
     } catch (err) {
       res.failed++;
       res.errors.push({ file: src, error: (err as Error).message });
+      // Quarantaine : on sort le fichier de l'inbox pour ne pas le re-tenter en
+      // boucle à chaque dépôt. (Pas pour une carte : removeAfter=false la laisse
+      // intacte ; ni pour un fichier déjà en quarantaine, qu'on laisse en place.)
+      if (args.removeAfter && !src.startsWith(quarantineDir)) {
+        try {
+          await mkdir(quarantineDir, { recursive: true });
+          const dest = await uniqueDest(
+            path.join(quarantineDir, path.basename(src)),
+          );
+          await rename(src, dest).catch(async () => {
+            await copyFile(src, dest);
+            await rm(src, { force: true });
+          });
+        } catch {
+          /* dernier recours : on laisse le fichier (sera re-tenté) */
+        }
+      }
     }
+  }
+
+  // Staging d'upload vidé après import : on retire le dossier de lot (rmdir
+  // n'efface que s'il est vide — les éventuels échecs sont déjà en quarantaine).
+  if (args.removeAfter && args.sourceDir.startsWith(uploadStagingDir)) {
+    await rmdir(args.sourceDir).catch(() => {});
   }
 
   // L'incoming est un root "source" : on l'enregistre et on enfile l'indexation

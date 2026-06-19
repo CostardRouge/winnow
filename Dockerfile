@@ -4,9 +4,17 @@
 # (NFS/SMB, mapping d'uid propre) sont ainsi accessibles en écriture sans friction.
 FROM node:22-slim
 
-# exiftool-vendored a besoin de perl sur Linux. (ffmpeg : réservé à la vidéo, V3.)
+# Dépendances système :
+#  - perl            : requis par exiftool-vendored sur Linux.
+#  - ffmpeg          : dérivés vidéo (poster + proxie mp4).
+#  - i965-va-driver  : pilote VAAPI (Intel ≤ Gen8) pour l'encodage matériel
+#    + vainfo        : diagnostic VAAPI (`vainfo` dans le conteneur).
+# L'accélération matérielle reste OPTIONNELLE (VIDEO_HWACCEL=none par défaut →
+# ffmpeg logiciel libx264, fonctionne sans /dev/dri). Pour un iGPU Intel récent
+# (Gen8+ / iHD), ajouter `intel-media-va-driver-non-free` (dépôt non-free).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends perl \
+  && apt-get install -y --no-install-recommends \
+       perl ffmpeg i965-va-driver vainfo \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

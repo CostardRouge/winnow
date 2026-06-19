@@ -4,6 +4,7 @@
 // + contrôle du pipeline : pause/reprise du scan et débits horaires (sliders).
 // S'auto-rafraîchit toutes les 5 s via /api/stats.
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 
 type QueueCounts = Record<string, number>;
@@ -26,6 +27,7 @@ type Stats = {
   } | null;
   paused: boolean;
   settings: { scanPerHour: number; analyzePerHour: number };
+  failures?: { derivative: number; scan: number; import: number };
 };
 
 const RATE_MAX = 3000;
@@ -95,6 +97,8 @@ export default function ControlPanel() {
 
   const paused = stats?.paused ?? false;
   const a = stats?.assets;
+  const f = stats?.failures;
+  const totalFail = (f?.derivative ?? 0) + (f?.scan ?? 0) + (f?.import ?? 0);
 
   return (
     <div className="control">
@@ -113,7 +117,16 @@ export default function ControlPanel() {
           sub={`+ ${active(stats?.queues?.analyze)} in analyze queue`}
           tone="warn"
         />
-        {!!a?.errors && <Stat label="Errors" value={a.errors} sub="failed" tone="bad" />}
+        {totalFail > 0 && (
+          <Link href="/failures" className="stat-link">
+            <Stat
+              label="Failures"
+              value={totalFail}
+              sub="scan · analyze · import →"
+              tone="bad"
+            />
+          </Link>
+        )}
         <Stat label="Picks" value={a?.picks} sub="selected" tone="accent" />
       </div>
 
