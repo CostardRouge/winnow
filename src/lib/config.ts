@@ -61,6 +61,18 @@ export const config = {
     watchInbox: (process.env.WATCH_INBOX ?? "true") === "true",
   },
 
+  // --- Vidéo (dérivés via ffmpeg) ------------------------------------------
+  // Poster (vignette) + proxie mp4 H.264 rejouable pour le tri. L'accélération
+  // matérielle est OPTIONNELLE : par défaut "none" (logiciel libx264, marche
+  // partout) ; passer VIDEO_HWACCEL=vaapi une fois /dev/dri partagé au conteneur
+  // (repli logiciel automatique si l'encodage matériel échoue).
+  video: {
+    proxyHeight: int("VIDEO_PROXY_HEIGHT", 720),
+    proxyCrf: int("VIDEO_PROXY_CRF", 24),
+    hwaccel: (process.env.VIDEO_HWACCEL ?? "none") as "none" | "vaapi",
+    vaapiDevice: process.env.VIDEO_VAAPI_DEVICE ?? "/dev/dri/renderD128",
+  },
+
   // --- Concurrence bornée pour ménager le HDD plein du NAS ------------------
   scanConcurrency: int("SCAN_CONCURRENCY", 1),
   derivativeConcurrency: int("DERIVATIVE_CONCURRENCY", 3),

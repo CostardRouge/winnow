@@ -23,6 +23,7 @@ import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
 import { getSettings } from "./lib/settings";
 import { reserveSlot, sleep } from "./lib/rate";
+import { one } from "./lib/db";
 
 console.log("Winnow workers — démarrage");
 console.log(`  stockage : ${config.storage.driver}`);
@@ -134,11 +135,21 @@ for (const [name, w] of [
 // configurés) dès le démarrage, sans bloquer la boucle des workers.
 void bootstrapRoots();
 
-// Surveillance de l'inbox : dépôts SMB / FTP / upload → import automatique.
+// Surveillance de l'inbox : dépôts SMB / FTP → import automatique. On crée un
+// batch pour que ces imports passifs soient visibles/suivis comme les autres.
 const stopWatcher = config.import.watchInbox
-  ? startInboxWatcher(config.import.inboxDir, (sourceDir) =>
-      enqueueImport({ sourceDir, origin: "inbox", removeAfter: true }),
-    )
+  ? startInboxWatcher(config.import.inboxDir, async (sourceDir) => {
+      const batch = await one<{ id: number }>(
+        "INSERT INTO import_batches (source_dir, origin) VALUES ($1, 'inbox') RETURNING id",
+        [sourceDir],
+      );
+      return enqueueImport({
+        sourceDir,
+        origin: "inbox",
+        removeAfter: true,
+        batchId: batch?.id,
+      });
+    })
   : null;
 
 async function shutdown() {

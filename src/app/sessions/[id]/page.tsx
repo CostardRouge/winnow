@@ -14,6 +14,7 @@ type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
   id: number;
   filename: string;
+  media_type: "photo" | "video";
   derivative_status: string;
   captured_at: string | null;
   camera_model: string | null;
@@ -206,6 +207,9 @@ export default function SessionGrid({
                         : "⏳ deriving…"}
                   </div>
                 )}
+                {a.media_type === "video" && (
+                  <span className="play-badge">▶</span>
+                )}
                 {a.verdict !== "unrated" && (
                   <span className="badge">
                     {a.verdict === "pick" ? "✓" : "✕"}
@@ -303,8 +307,21 @@ function Viewer({
       </div>
       <div className="stage">
         {asset.derivative_status === "ready" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/api/assets/${asset.id}/proxy`} alt={asset.filename} />
+          asset.media_type === "video" ? (
+            <video
+              key={asset.id}
+              src={`/api/assets/${asset.id}/proxy`}
+              poster={`/api/assets/${asset.id}/thumb`}
+              controls
+              playsInline
+              autoPlay
+              muted
+              loop
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={`/api/assets/${asset.id}/proxy`} alt={asset.filename} />
+          )
         ) : (
           <div className="placeholder">Derivative unavailable</div>
         )}
