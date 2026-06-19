@@ -1,5 +1,72 @@
 /** Small shared presentational helpers: skeleton loaders + composed empty states. */
-import type { ReactNode } from "react";
+"use client";
+
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+
+/**
+ * `<img>` that only fetches once it scrolls into view. An IntersectionObserver
+ * watches the element and swaps in the real `src` on sight (with a small
+ * rootMargin so the image is ready just before it's revealed). Falls back to an
+ * eager load where IntersectionObserver is unavailable. Fades in on decode.
+ */
+export function LazyImage({
+  src,
+  alt = "",
+  className,
+  style,
+  rootMargin = "300px",
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+  style?: CSSProperties;
+  rootMargin?: string;
+}) {
+  const ref = useRef<HTMLImageElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visible, rootMargin]);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={ref}
+      src={visible ? src : undefined}
+      alt={alt}
+      className={["lazy-img", loaded && "is-loaded", className]
+        .filter(Boolean)
+        .join(" ")}
+      style={style}
+      onLoad={() => setLoaded(true)}
+    />
+  );
+}
 
 /** Card-shaped skeleton rows — used while session/export lists load. */
 export function SkeletonCards({ rows = 4 }: { rows?: number }) {
@@ -86,6 +153,20 @@ export const Icons = {
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <circle cx="8.5" cy="9" r="1.5" />
       <path d="m4 17 5-5 4 4 3-3 4 4" />
+    </svg>
+  ),
+  viewList: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6h13M8 12h13M8 18h13" />
+      <path d="M3 6h.01M3 12h.01M3 18h.01" />
+    </svg>
+  ),
+  viewCard: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
 };

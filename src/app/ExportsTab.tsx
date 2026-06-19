@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { SkeletonCards, EmptyState, Icons } from "./ui";
+import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 
 // Exports tab: view the exports that were made (thumbnails reused from
 // the source assets' derivatives) and delete them once no longer needed (erases the
@@ -113,13 +113,7 @@ export default function ExportsTab() {
                 {job.sample_asset_ids.length > 0 && (
                   <div className="thumb-strip">
                     {job.sample_asset_ids.map((id) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={id}
-                        src={`/api/assets/${id}/thumb`}
-                        alt=""
-                        loading="lazy"
-                      />
+                      <LazyImage key={id} src={`/api/assets/${id}/thumb`} alt="" />
                     ))}
                   </div>
                 )}
