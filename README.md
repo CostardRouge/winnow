@@ -45,7 +45,7 @@ the internal network and trusts the reverse proxy; do not publish ports
 |---|----------|-------|
 | 1 | Derivatives: MinIO or disk | **Disk cache**, behind an S3-style interface (`src/lib/storage`) → switch to **MinIO** via `STORAGE_DRIVER=s3` without touching the code. |
 | 2 | Mount vs NAS agent | **RO mount** for the MVP (decided by the specs). |
-| 3 | Hash-based deduplication | **Yes from the MVP**: partial `content_hash` (size + endpoints) + unique index. |
+| 3 | Hash-based deduplication | **Yes from the MVP**: partial `content_hash` (size + endpoints) + unique index. A suspected duplicate is **verified by full-content compare** before being dropped — a false partial-hash collision is indexed anyway (never lost), and every hit is logged in `duplicate_hits` for audit. |
 | 4 | Linking key for C1 finals → source | Deferred to V2 (reconciliation), `POST /reconcile` endpoint reserved. |
 
 ---
@@ -265,7 +265,9 @@ then enqueues the usual indexing.
    `awaitWriteFinish` so a transfer in progress isn't imported) enqueues the
    import automatically. Ideal for the Sony A7C II's FTP transfer.
 
-**Guarantees**: verified integrity (size + hash of the copy), global dedup,
+**Guarantees**: verified integrity (size + hash of the copy), global dedup
+(false partial-hash collisions are caught by a full-content compare, so a
+distinct shot is never silently discarded; all hits land in `duplicate_hits`),
 deterministic foldering, per-batch tracking in `import_batches` (imported /
 duplicates / failures). It all reuses the existing indexer, derivatives and dedup.
 
@@ -280,4 +282,7 @@ they stop looping; retriable from `/failures`).
 
 **V2/V3 ideas**: grouping by "time gap" (gap > N h ⇒ session), configurable
 foldering template, n8n trigger on card insertion, full hash (instead of partial)
-as an option for strong integrity.
+as an option for strong integrity — note the silent-loss risk of the partial
+hash is already mitigated: collisions are verified by a full-content compare and
+audited in `duplicate_hits`, so a full-hash default would be an optimization, not
+a correctness fix.

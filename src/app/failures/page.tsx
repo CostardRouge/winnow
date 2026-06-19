@@ -27,10 +27,24 @@ type ImportItem = {
   error: string;
   created_at: string;
 };
+type DuplicateItem = {
+  abs_path: string;
+  content_hash: string;
+  existing_asset_id: number | null;
+  source: string;
+  verified: boolean | null;
+  hits: number;
+  updated_at: string;
+};
 type Failures = {
   derivative: { count: number; items: DerivItem[] };
   scan: { count: number; items: ScanItem[] };
   import: { count: number; items: ImportItem[] };
+  duplicates: {
+    count: number;
+    falseCollisions: number;
+    items: DuplicateItem[];
+  };
 };
 
 type Kind = "derivative" | "scan" | "import";
@@ -157,6 +171,40 @@ export default function FailuresPage() {
             />
           ))}
         </Section>
+
+        <Section
+          title="Deduplication"
+          hint={`Files matched as duplicates by partial hash. False collisions (genuinely distinct content) are indexed anyway — never dropped — and flagged here for audit.${
+            data && data.duplicates.falseCollisions > 0
+              ? ` ${data.duplicates.falseCollisions} false collision(s) recovered.`
+              : ""
+          }`}
+          count={data?.duplicates.count ?? 0}
+        >
+          {(data?.duplicates.items ?? []).map((it, i) => (
+            <FailRow
+              key={`u${it.abs_path}-${i}`}
+              title={it.abs_path}
+              error={`${it.source} · ${
+                it.verified === false
+                  ? "FALSE collision → indexed separately (kept)"
+                  : it.verified === true
+                    ? "confirmed duplicate (not reprocessed)"
+                    : "unverified (existing file unreadable) — treated as duplicate"
+              }${
+                it.existing_asset_id ? ` · matched asset #${it.existing_asset_id}` : ""
+              } · ${it.content_hash.slice(0, 12)}…`}
+              when={it.updated_at}
+              badge={
+                it.verified === false
+                  ? "false collision"
+                  : it.hits > 1
+                    ? `${it.hits}×`
+                    : undefined
+              }
+            />
+          ))}
+        </Section>
       </div>
     </>
   );
@@ -174,9 +222,9 @@ function Section({
   title: string;
   hint: string;
   count: number;
-  onRetry: () => void;
-  busy: boolean;
-  retryLabel: string;
+  onRetry?: () => void;
+  busy?: boolean;
+  retryLabel?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -186,9 +234,15 @@ function Section({
           {title} <span className="hint">({count})</span>
         </h3>
         <span className="spacer" />
-        <button className="btn" onClick={onRetry} disabled={busy || count === 0}>
-          {busy ? "…" : retryLabel}
-        </button>
+        {onRetry && (
+          <button
+            className="btn"
+            onClick={onRetry}
+            disabled={busy || count === 0}
+          >
+            {busy ? "…" : retryLabel}
+          </button>
+        )}
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
         {hint}

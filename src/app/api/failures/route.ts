@@ -10,6 +10,34 @@ export const dynamic = "force-dynamic";
 
 const LIMIT = 200;
 
+// Deduplication audit (review §4): files matched as duplicates by partial hash.
+// Guarded so a missing table (pre-migration) never breaks the other families.
+async function duplicateHits() {
+  try {
+    const [items, counts] = await Promise.all([
+      many(
+        `SELECT abs_path, content_hash, existing_asset_id, source, verified,
+                hits, updated_at
+           FROM duplicate_hits
+          ORDER BY updated_at DESC
+          LIMIT ${LIMIT}`,
+      ),
+      one<{ n: number; false_collisions: number }>(
+        `SELECT count(*) AS n,
+                count(*) FILTER (WHERE verified IS FALSE) AS false_collisions
+           FROM duplicate_hits`,
+      ),
+    ]);
+    return {
+      count: Number(counts?.n ?? 0),
+      falseCollisions: Number(counts?.false_collisions ?? 0),
+      items,
+    };
+  } catch {
+    return { count: 0, falseCollisions: 0, items: [] };
+  }
+}
+
 export async function GET() {
   try {
     const [derivItems, derivCount, scanItems, scanCount, batches] =
@@ -77,6 +105,7 @@ export async function GET() {
       derivative: { count: derivCount?.n ?? 0, items: derivItems },
       scan: { count: scanCount?.n ?? 0, items: scanItems },
       import: { count: importCount, items: importItems },
+      duplicates: await duplicateHits(),
     });
   } catch (err) {
     return serverError(err);

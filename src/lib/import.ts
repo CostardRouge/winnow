@@ -16,9 +16,10 @@ import {
 import path from "node:path";
 import { q, one } from "./db";
 import { config, classifyExt } from "./config";
-import { partialHash } from "./hash";
+import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
+import { recordDuplicateHit } from "./duplicates";
 import { slug } from "./slug";
 
 // HIDDEN subfolders of the inbox (prefix ". ") — therefore ignored both by
@@ -126,15 +127,32 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       const st = await stat(src);
       const hash = await partialHash(src, st.size);
 
-      // Deduplication: same content_hash already known → we copy nothing.
-      const dup = await one<{ id: number }>(
-        "SELECT id FROM assets WHERE content_hash = $1",
+      // Deduplication: same partial content_hash already known. Verify the FULL
+      // content before discarding (and possibly deleting) the source — a false
+      // partial-hash collision would otherwise silently lose a distinct shot
+      // (review §4).
+      const dup = await one<{ id: number; abs_path: string }>(
+        "SELECT id, abs_path FROM assets WHERE content_hash = $1",
         [hash],
       );
       if (dup) {
-        res.duplicates++;
-        if (args.removeAfter) await rm(src, { force: true });
-        continue;
+        const same = await sameContent(src, dup.abs_path);
+        await recordDuplicateHit({
+          absPath: src,
+          contentHash: hash,
+          existingAssetId: dup.id,
+          source: "import",
+          verified: same,
+          fileSize: st.size,
+        });
+        if (same !== false) {
+          // Confirmed (or unverifiable) duplicate: copy nothing.
+          res.duplicates++;
+          if (args.removeAfter) await rm(src, { force: true });
+          continue;
+        }
+        // FALSE collision: fall through and import it normally. The indexer
+        // will later store it with a NULL content_hash.
       }
 
       const meta = await readMetadata(src);
@@ -149,9 +167,32 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
         const existSt = await stat(planned);
         const existHash = await partialHash(planned, existSt.size);
         if (existHash === hash) {
-          res.duplicates++;
-          if (args.removeAfter) await rm(src, { force: true });
-          continue;
+          // Same partial hash as the file already on disk: confirm before
+          // treating it as a duplicate (review §4).
+          const same = await sameContent(src, planned);
+          if (same !== false) {
+            await recordDuplicateHit({
+              absPath: src,
+              contentHash: hash,
+              existingAssetId: null,
+              source: "import",
+              verified: same,
+              fileSize: st.size,
+            });
+            res.duplicates++;
+            if (args.removeAfter) await rm(src, { force: true });
+            continue;
+          }
+          // FALSE collision at the destination path: keep both — uniqueDest()
+          // below picks a non-colliding filename.
+          await recordDuplicateHit({
+            absPath: src,
+            contentHash: hash,
+            existingAssetId: null,
+            source: "import",
+            verified: false,
+            fileSize: st.size,
+          });
         }
       }
       const dest = await uniqueDest(planned);
