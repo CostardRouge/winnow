@@ -32,7 +32,6 @@ export async function GET() {
       pending: number;
       errors: number;
       skipped: number;
-      picks: number;
     }>(
       `SELECT
          count(*)                                                            AS total,
@@ -41,10 +40,8 @@ export async function GET() {
          count(*) FILTER (WHERE derivative_status = 'ready')                 AS analyzed,
          count(*) FILTER (WHERE derivative_status IN ('pending','processing')) AS pending,
          count(*) FILTER (WHERE derivative_status = 'error')                 AS errors,
-         count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped,
-         count(*) FILTER (WHERE r.verdict = 'pick')                          AS picks
-       FROM assets a
-       LEFT JOIN ratings r ON r.asset_id = a.id`,
+         count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped
+       FROM assets a`,
     );
 
     // BullMQ queues + settings: tolerant of a Redis outage (null values rather
@@ -67,7 +64,6 @@ export async function GET() {
         pending: 0,
         errors: 0,
         skipped: 0,
-        picks: 0,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,

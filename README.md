@@ -177,7 +177,7 @@ refreshed every 5 s (`GET /api/stats`):
 
 - **Counters**: number of indexed **media**, **scan** (folders in the indexing
   queue), **analyzed** (derivatives ready), **pending** (to analyze), plus
-  errors and picks — to see at a glance what's left to do.
+  errors — to see at a glance what's left to do.
 - **Pause / resume**: suspends indexing **and** derivative generation
   (`POST /api/scan/control`). The pause is persisted in Redis (`queue.pause()`)
   *and* via a database flag, read by the indexer to stop **mid-scan**; resuming

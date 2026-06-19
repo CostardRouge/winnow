@@ -17,7 +17,6 @@ type Stats = {
     pending: number;
     errors: number;
     skipped: number;
-    picks: number;
   };
   queues: {
     scan: QueueCounts;
@@ -127,7 +126,6 @@ export default function ControlPanel() {
             />
           </Link>
         )}
-        <Stat label="Picks" value={a?.picks} sub="selected" tone="accent" />
       </div>
 
       <div className="control-row">
