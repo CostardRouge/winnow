@@ -8,7 +8,13 @@ import FilterPanel, {
   type Facets,
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
+import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import { fetchJson } from "@/lib/fetchJson";
+import {
+  deleteAssets,
+  exportAssets,
+  rateAssets,
+} from "@/lib/assetActions";
 import { EmptyState, Icons } from "../ui";
 
 // Reusable gallery shell, parameterized by a `scope` (folder role):
@@ -100,10 +106,19 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [tagInput, setTagInput] = useState("");
+  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [facetsError, setFacetsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const filterKey = JSON.stringify(filters);
+
+  // Transient confirmation ("Export queued", "3 deleted") — auto-clears.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const loadFacets = useCallback(() => {
     setFacetsError(null);
@@ -198,6 +213,73 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
     });
   }, []);
 
+  // --- Rate / delete / export (one or many) --------------------------------
+  // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
+  const rateMany = useCallback(
+    async (ids: number[], patch: { verdict?: Row["verdict"]; star?: number }) => {
+      if (readOnly || !ids.length) return;
+      const idset = new Set(ids);
+      setItems((prev) => prev.map((a) => (idset.has(a.id) ? { ...a, ...patch } : a)));
+      await rateAssets(ids, patch);
+    },
+    [readOnly],
+  );
+
+  // Soft delete (hidden from the library, original untouched). Returns whether
+  // it actually ran (false if the confirm was dismissed).
+  const removeAssets = useCallback(
+    async (ids: number[]): Promise<boolean> => {
+      if (readOnly || !ids.length) return false;
+      const msg =
+        ids.length > 1
+          ? `Delete ${ids.length} assets? They’ll be hidden from the library — the originals are untouched.`
+          : "Delete this asset? It’ll be hidden from the library — the original is untouched.";
+      if (!window.confirm(msg)) return false;
+      const idset = new Set(ids);
+      setItems((prev) => prev.filter((a) => !idset.has(a.id)));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((i) => next.delete(i));
+        return next;
+      });
+      await deleteAssets(ids);
+      setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
+      loadFacets();
+      return true;
+    },
+    [readOnly, loadFacets],
+  );
+
+  // Queues a RAW-copy export job for exactly these ids.
+  const exportSelection = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    try {
+      const jobId = await exportAssets(ids);
+      setNotice(`Export queued (#${jobId})`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
+  // Dispatch a context-menu action onto a single asset.
+  const onMenuAction = useCallback(
+    (id: number, action: AssetMenuAction) => {
+      switch (action.kind) {
+        case "verdict":
+          return void rate(id, { verdict: action.verdict });
+        case "star":
+          return void rate(id, { star: action.star });
+        case "tag":
+          return void assignTags([id], action.name, true);
+        case "export":
+          return void exportSelection([id]);
+        case "delete":
+          return void removeAssets([id]);
+      }
+    },
+    [rate, assignTags, exportSelection, removeAssets],
+  );
+
   // Keyboard navigation in the viewer.
   useEffect(() => {
     if (viewer == null) return;
@@ -238,6 +320,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
           </button>
         )}
         <span className="spacer" />
+        {notice && <span className="notice">{notice}</span>}
         <span className="hint">
           {items.length}{hasMore ? "+" : ""} shown
           {facets ? ` · ${facets.total} total` : ""}
@@ -256,27 +339,70 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
           <button className="btn" onClick={() => setSelected(new Set())}>
             Clear
           </button>
+          <span className="ctx-sep-v" />
+          <button
+            className="btn btn-pick"
+            disabled={!selected.size}
+            onClick={() => rateMany([...selected], { verdict: "pick" })}
+          >
+            ✓ Pick
+          </button>
+          <button
+            className="btn btn-reject"
+            disabled={!selected.size}
+            onClick={() => rateMany([...selected], { verdict: "reject" })}
+          >
+            ✕ Reject
+          </button>
+          <span className="bulk-stars" role="group" aria-label="Rate selection">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                className="btn bulk-star"
+                disabled={!selected.size}
+                title={`${n} star${n > 1 ? "s" : ""}`}
+                onClick={() => rateMany([...selected], { star: n })}
+              >
+                ★
+              </button>
+            ))}
+          </span>
           <span className="spacer" />
           <input
             className="input"
             placeholder="tag name"
             value={tagInput}
             onChange={(e) => setTagInput(e.target.value)}
-            style={{ minWidth: 140 }}
+            style={{ minWidth: 120 }}
           />
           <button
-            className="btn btn-pick"
+            className="btn"
             disabled={!selected.size || !tagInput.trim()}
             onClick={() => assignTags([...selected], tagInput, true)}
           >
-            + Add tag
+            + Tag
           </button>
           <button
-            className="btn btn-reject"
+            className="btn"
             disabled={!selected.size || !tagInput.trim()}
             onClick={() => assignTags([...selected], tagInput, false)}
           >
-            − Remove
+            − Tag
+          </button>
+          <span className="ctx-sep-v" />
+          <button
+            className="btn"
+            disabled={!selected.size}
+            onClick={() => exportSelection([...selected])}
+          >
+            ⤓ Export
+          </button>
+          <button
+            className="btn btn-reject"
+            disabled={!selected.size}
+            onClick={() => removeAssets([...selected])}
+          >
+            🗑 Delete
           </button>
         </div>
       )}
@@ -353,6 +479,14 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
               selectMode={!readOnly && selectMode}
               selectedIds={selected}
               onToggleSelect={toggleSelect}
+              onContextMenu={
+                readOnly
+                  ? undefined
+                  : (e, asset) => {
+                      e.preventDefault();
+                      setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
+                    }
+              }
             />
           )}
         </main>
@@ -446,6 +580,17 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
                 >
                   ✓ Pick
                 </button>
+                <button className="btn" onClick={() => exportSelection([a.id])}>
+                  ⤓ Export
+                </button>
+                <button
+                  className="btn btn-reject"
+                  onClick={async () => {
+                    if (await removeAssets([a.id])) setViewer(null);
+                  }}
+                >
+                  🗑 Delete
+                </button>
               </>
             )}
             <button
@@ -457,6 +602,16 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
             </button>
           </div>
         </div>
+      )}
+
+      {menu && (
+        <AssetActionMenu
+          x={menu.x}
+          y={menu.y}
+          label={items.find((i) => i.id === menu.id)?.filename}
+          onAction={(action) => onMenuAction(menu.id, action)}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );

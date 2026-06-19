@@ -19,8 +19,10 @@ const csv = z
     return out.length ? out : undefined;
   });
 
+// Like intList, but also tolerates a JSON array of numbers (export jobs persist
+// `filter.ids` as numbers, not strings).
 const intList = z
-  .union([z.string(), z.array(z.string())])
+  .union([z.string(), z.array(z.union([z.string(), z.number()]))])
   .optional()
   .transform((v) => {
     if (v == null) return undefined;
@@ -33,6 +35,8 @@ const intList = z
 
 export const FilterSchema = z
   .object({
+    // Explicit selection (per-asset / bulk actions, e.g. export a selection).
+    ids: intList,
     // Scope
     session_id: z.coerce.number().int().optional(),
     root_id: z.coerce.number().int().optional(),
@@ -91,6 +95,11 @@ export function buildFilter(
   const params: unknown[] = [];
   let i = startIdx;
 
+  // Soft-deleted assets are hidden everywhere (gallery, sessions, facets,
+  // exports). No param: a constant predicate the planner uses with the
+  // assets_not_deleted_idx partial index.
+  conditions.push("a.deleted_at IS NULL");
+
   const eq = (col: string, val: unknown) => {
     conditions.push(`${col} = $${i++}`);
     params.push(val);
@@ -108,6 +117,7 @@ export function buildFilter(
     params.push(val);
   };
 
+  if (filter.ids) inAny("a.id", filter.ids);
   if (filter.session_id != null) eq("a.session_id", filter.session_id);
   if (filter.root_id != null) {
     conditions.push(
@@ -184,6 +194,7 @@ export function buildFilter(
 // Parses the filters from a URL's query params (all dimensions).
 export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
   const keys = [
+    "ids",
     "session_id",
     "root_id",
     "kind",
