@@ -26,7 +26,8 @@ export async function GET(req: NextRequest) {
          COALESCE(d.ready, 0)   AS ready_count,
          COALESCE(d.pending, 0) AS pending_count,
          COALESCE(d.error, 0)   AS error_count,
-         COALESCE(d.picks, 0)   AS pick_count
+         COALESCE(d.picks, 0)   AS pick_count,
+         COALESCE(d.sample, '[]'::jsonb) AS sample_asset_ids
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (
@@ -35,7 +36,16 @@ export async function GET(req: NextRequest) {
            count(*) FILTER (WHERE a.derivative_status = 'ready')                       AS ready,
            count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))     AS pending,
            count(*) FILTER (WHERE a.derivative_status = 'error')                       AS error,
-           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks
+           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks,
+           -- A handful of ready thumbnails (earliest first) to preview the session.
+           -- COALESCE the slice so sessions with no ready assets yield [] not null.
+           to_jsonb(
+             COALESCE(
+               (array_agg(a.id ORDER BY a.captured_at ASC NULLS LAST, a.id ASC)
+                  FILTER (WHERE a.derivative_status = 'ready'))[1:8],
+               '{}'::bigint[]
+             )
+           )                                                                            AS sample
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
          GROUP BY a.session_id

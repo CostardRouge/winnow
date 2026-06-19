@@ -386,6 +386,84 @@
     background: var(--color-surface-2);
   }
 
+  /* Shared action cluster (right-aligned in list rows, footer in cards). */
+  .session-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  /* Lazy-loaded thumbnails fade in once decoded (src is set on sight). */
+  .lazy-img {
+    opacity: 0;
+    transition: opacity 0.3s var(--ease-out);
+  }
+  .lazy-img.is-loaded {
+    opacity: 1;
+  }
+
+  /* ---- Sessions: card layout (a grid of stacked-thumbnail decks) -------- */
+  .session-list.as-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (min-width: 720px) {
+    .session-list.as-cards {
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    }
+  }
+  .session-card.as-card {
+    @apply flex-col flex-nowrap items-stretch gap-3 p-3;
+  }
+  .session-card.as-card .session-card-body {
+    @apply flex flex-col gap-2;
+  }
+  .session-card.as-card .session-actions {
+    @apply mt-auto;
+  }
+  .session-card.as-card h3 {
+    @apply truncate;
+  }
+  /* Padding reserves room for the deck's back cards to peek out. */
+  .session-preview {
+    @apply block;
+    padding: 0 16px 16px 0;
+  }
+  .thumb-stack {
+    @apply relative w-full;
+    aspect-ratio: 4 / 3;
+  }
+  .thumb-stack-item {
+    @apply absolute inset-0 h-full w-full rounded-[var(--radius)] border object-cover;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+    box-shadow: var(--shadow-card);
+  }
+  .thumb-stack.is-empty {
+    @apply flex items-center justify-center rounded-[var(--radius)] border border-dashed text-xs;
+    aspect-ratio: 4 / 3;
+    color: var(--color-faint);
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+
+  /* ---- Sessions: list / card layout toggle ----------------------------- */
+  .layout-toggle {
+    @apply ml-auto inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .layout-btn {
+    @apply inline-flex items-center justify-center rounded-[var(--radius-sm)] border-0 bg-transparent p-1.5 transition duration-150;
+    color: var(--color-muted);
+  }
+  .layout-btn:hover {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+  }
+  .layout-btn.active {
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  }
+
   /* ---- Triage grid (sessions/[id]) -------------------------------------- */
   .grid {
     @apply grid gap-1.5;
