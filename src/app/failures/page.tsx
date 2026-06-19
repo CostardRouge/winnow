@@ -1,8 +1,11 @@
 "use client";
 
 // Centralized list of what has failed (scan / analyze / import), with the
-// error message for debugging, and a "retry" button per family.
-import { useCallback, useEffect, useState } from "react";
+// error message for debugging. Retry is available three ways:
+//   - per item   : the "Retry" button on each row,
+//   - selected   : the checked rows ("Retry selected"),
+//   - everything : the whole family ("Retry all").
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 
@@ -48,11 +51,23 @@ type Failures = {
 };
 
 type Kind = "derivative" | "scan" | "import";
+type Scope = { ids?: number[]; paths?: string[] };
+
+type RowData<K extends string | number> = {
+  key: K;
+  title: string;
+  path?: string;
+  error: string;
+  when: string;
+  badge?: string;
+};
 
 export default function FailuresPage() {
   const [data, setData] = useState<Failures | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<Kind | null>(null);
+  // Key of the in-flight retry (e.g. "scan:all", "derivative:one:42"), so a
+  // single button spins while the rest are disabled to prevent double-submits.
+  const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string>("");
 
   const load = useCallback(async () => {
@@ -70,26 +85,53 @@ export default function FailuresPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  async function retry(kind: Kind) {
-    setBusy(kind);
-    setMsg("");
-    try {
-      const r = await fetch("/api/failures/retry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind }),
-      });
-      const d = await r.json();
-      setMsg(
-        r.ok
-          ? `Re-queued ${kind} (${d.retried ?? 0}). Watch the counts drop as it reprocesses.`
-          : `Error: ${d.error ?? "unknown"}`,
-      );
-      await load();
-    } finally {
-      setBusy(null);
-    }
-  }
+  const doRetry = useCallback(
+    async (kind: Kind, scope: Scope, busyKey: string) => {
+      if (busy) return;
+      setBusy(busyKey);
+      setMsg("");
+      try {
+        const r = await fetch("/api/failures/retry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind, ...scope }),
+        });
+        const d = await r.json();
+        setMsg(
+          r.ok
+            ? `Re-queued ${kind} (${d.retried ?? 0}). Watch the counts drop as it reprocesses.`
+            : `Error: ${d.error ?? "unknown"}`,
+        );
+        await load();
+      } finally {
+        setBusy(null);
+      }
+    },
+    [busy, load],
+  );
+
+  // null = retry everything in the family; otherwise the picked keys.
+  const onRetryDeriv = (keys: number[] | null, busyKey: string) =>
+    doRetry("derivative", keys ? { ids: keys } : {}, busyKey);
+  const onRetryScan = (keys: string[] | null, busyKey: string) =>
+    doRetry("scan", keys ? { paths: keys } : {}, busyKey);
+
+  const derivRows: RowData<number>[] = (data?.derivative.items ?? []).map(
+    (it) => ({
+      key: it.asset_id,
+      title: `#${it.asset_id} · ${it.filename} (${it.media_type})`,
+      path: it.abs_path,
+      error: it.error ?? "—",
+      when: it.updated_at,
+    }),
+  );
+  const scanRows: RowData<string>[] = (data?.scan.items ?? []).map((it) => ({
+    key: it.abs_path,
+    title: it.abs_path,
+    error: it.error,
+    when: it.updated_at,
+    badge: `${it.attempts}×`,
+  }));
 
   return (
     <>
@@ -115,50 +157,35 @@ export default function FailuresPage() {
         )}
         {msg && <p className="hint">{msg}</p>}
 
-        <Section
+        <RetrySection<number>
           title="Analyze (derivatives)"
           hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
           count={data?.derivative.count ?? 0}
-          onRetry={() => retry("derivative")}
-          busy={busy === "derivative"}
-          retryLabel="Retry all"
-        >
-          {(data?.derivative.items ?? []).map((it) => (
-            <FailRow
-              key={`d${it.asset_id}`}
-              title={`#${it.asset_id} · ${it.filename} (${it.media_type})`}
-              path={it.abs_path}
-              error={it.error ?? "—"}
-              when={it.updated_at}
-            />
-          ))}
-        </Section>
+          rows={derivRows}
+          retryAllLabel="Retry all"
+          prefix="derivative"
+          busy={busy}
+          onRetry={onRetryDeriv}
+        />
 
-        <Section
+        <RetrySection<string>
           title="Scan (indexing)"
-          hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the roots."
+          hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the affected roots."
           count={data?.scan.count ?? 0}
-          onRetry={() => retry("scan")}
-          busy={busy === "scan"}
-          retryLabel="Retry scans"
-        >
-          {(data?.scan.items ?? []).map((it) => (
-            <FailRow
-              key={`s${it.abs_path}`}
-              title={it.abs_path}
-              error={it.error}
-              when={it.updated_at}
-              badge={`${it.attempts}×`}
-            />
-          ))}
-        </Section>
+          rows={scanRows}
+          retryAllLabel="Retry all"
+          prefix="scan"
+          busy={busy}
+          onRetry={onRetryScan}
+        />
 
         <Section
           title="Import"
-          hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them."
+          hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them (whole quarantine)."
           count={data?.import.count ?? 0}
-          onRetry={() => retry("import")}
-          busy={busy === "import"}
+          onRetry={() => doRetry("import", {}, "import:all")}
+          busy={busy === "import:all"}
+          disabled={busy !== null}
           retryLabel="Retry quarantine"
         >
           {(data?.import.items ?? []).map((it, i) => (
@@ -210,20 +237,152 @@ export default function FailuresPage() {
   );
 }
 
+// A failure family with selectable rows: per-row retry, "Retry selected"
+// (checked rows) and "Retry all" (the whole family, server-side — even rows
+// beyond the listing cap).
+function RetrySection<K extends string | number>({
+  title,
+  hint,
+  count,
+  rows,
+  retryAllLabel,
+  prefix,
+  busy,
+  onRetry,
+}: {
+  title: string;
+  hint: React.ReactNode;
+  count: number;
+  rows: RowData<K>[];
+  retryAllLabel: string;
+  prefix: string;
+  busy: string | null;
+  onRetry: (keys: K[] | null, busyKey: string) => void;
+}) {
+  const [sel, setSel] = useState<Set<K>>(new Set());
+  const anyBusy = busy !== null;
+  const allKey = `${prefix}:all`;
+  const selKey = `${prefix}:selected`;
+
+  // Prune the selection when the rows change (e.g. items resolved after a
+  // retry) so vanished items never stay checked. Keyed on the row signature so
+  // the effect doesn't loop on every render.
+  const sig = rows.map((r) => r.key).join(" ");
+  useEffect(() => {
+    setSel((prev) => {
+      const valid = new Set(rows.map((r) => r.key));
+      const next = new Set<K>();
+      for (const k of prev) if (valid.has(k)) next.add(k);
+      return next.size === prev.size ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+
+  const allChecked = rows.length > 0 && sel.size === rows.length;
+  const someChecked = sel.size > 0 && !allChecked;
+  const headRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (headRef.current) headRef.current.indeterminate = someChecked;
+  }, [someChecked]);
+
+  const toggle = (k: K) =>
+    setSel((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+
+  const retrySelected = () => {
+    const keys = [...sel];
+    if (!keys.length) return;
+    setSel(new Set());
+    onRetry(keys, selKey);
+  };
+
+  return (
+    <section style={{ marginBottom: 28 }}>
+      <div className="filterbar" style={{ marginBottom: 6 }}>
+        {count > 0 && (
+          <input
+            ref={headRef}
+            type="checkbox"
+            className="fail-check"
+            aria-label={`Select all — ${title}`}
+            checked={allChecked}
+            onChange={(e) =>
+              setSel(
+                e.target.checked ? new Set(rows.map((r) => r.key)) : new Set(),
+              )
+            }
+          />
+        )}
+        <h3 style={{ margin: 0 }}>
+          {title} <span className="hint">({count})</span>
+        </h3>
+        <span className="spacer" />
+        <button
+          className="btn"
+          onClick={retrySelected}
+          disabled={anyBusy || sel.size === 0}
+        >
+          {busy === selKey ? "…" : `Retry selected (${sel.size})`}
+        </button>
+        <button
+          className="btn"
+          onClick={() => onRetry(null, allKey)}
+          disabled={anyBusy || count === 0}
+        >
+          {busy === allKey ? "…" : retryAllLabel}
+        </button>
+      </div>
+      <p className="hint" style={{ marginTop: 0 }}>
+        {hint}
+      </p>
+      {count === 0 ? (
+        <div className="empty" style={{ padding: 16 }}>
+          Nothing here. 🎉
+        </div>
+      ) : (
+        <div className="fail-list">
+          {rows.map(({ key, ...row }) => {
+            const oneKey = `${prefix}:one:${key}`;
+            return (
+              <FailRow
+                key={String(key)}
+                {...row}
+                selected={sel.has(key)}
+                onToggle={() => toggle(key)}
+                onRetry={() => onRetry([key], oneKey)}
+                retrying={busy === oneKey}
+                disabled={anyBusy}
+              />
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// A failure family with no per-row retry: a single family-wide action (or none,
+// for the audit-only deduplication list).
 function Section({
   title,
   hint,
   count,
   onRetry,
   busy,
+  disabled,
   retryLabel,
   children,
 }: {
   title: string;
-  hint: string;
+  hint: React.ReactNode;
   count: number;
   onRetry?: () => void;
   busy?: boolean;
+  disabled?: boolean;
   retryLabel?: string;
   children: React.ReactNode;
 }) {
@@ -238,7 +397,7 @@ function Section({
           <button
             className="btn"
             onClick={onRetry}
-            disabled={busy || count === 0}
+            disabled={busy || disabled || count === 0}
           >
             {busy ? "…" : retryLabel}
           </button>
@@ -264,16 +423,35 @@ function FailRow({
   error,
   when,
   badge,
+  selected,
+  onToggle,
+  onRetry,
+  retrying,
+  disabled,
 }: {
   title: string;
   path?: string;
   error: string;
   when: string;
   badge?: string;
+  selected?: boolean;
+  onToggle?: () => void;
+  onRetry?: () => void;
+  retrying?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <div className="fail-row">
+    <div className={`fail-row${selected ? " selected" : ""}`}>
       <div className="fail-head">
+        {onToggle && (
+          <input
+            type="checkbox"
+            className="fail-check"
+            checked={!!selected}
+            onChange={onToggle}
+            aria-label={`Select ${title}`}
+          />
+        )}
         <strong className="fail-title">{title}</strong>
         {badge && <span className="pill">{badge}</span>}
         <span className="spacer" />
@@ -286,6 +464,15 @@ function FailRow({
             }
           })()}
         </span>
+        {onRetry && (
+          <button
+            className="btn btn-sm"
+            onClick={onRetry}
+            disabled={disabled}
+          >
+            {retrying ? "…" : "Retry"}
+          </button>
+        )}
       </div>
       {path && path !== title && <div className="fail-path">{path}</div>}
       <div className="fail-err">{error}</div>

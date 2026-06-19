@@ -808,6 +808,17 @@
     background: var(--color-surface);
     border-color: var(--color-border);
   }
+  .fail-row.selected {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  }
+  .fail-check {
+    @apply h-4 w-4 shrink-0 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
+  }
   .fail-head {
     @apply flex items-center gap-2;
   }
