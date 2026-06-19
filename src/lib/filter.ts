@@ -6,6 +6,7 @@
 // acceptent des bornes min/max. Tout repose sur des colonnes indexées (cf.
 // migration 0003) — aucun calcul à la volée.
 import { z } from "zod";
+import { kindsForRole } from "./roles";
 
 // "a,b,c" | ["a","b"] | "a"  →  ["a","b","c"]  (vide → undefined)
 const csv = z
@@ -35,6 +36,8 @@ export const FilterSchema = z
     // Portée
     session_id: z.coerce.number().int().optional(),
     root_id: z.coerce.number().int().optional(),
+    // Portée par rôle de dossier (Incoming/Final) — mappée en kinds Postgres.
+    kind: z.enum(["incoming", "final"]).optional(),
     processing_state: z
       .enum(["ignored", "unprocessed", "triaged", "exported"])
       .optional(),
@@ -112,6 +115,16 @@ export function buildFilter(
     );
     params.push(filter.root_id);
   }
+  if (filter.kind != null) {
+    // Scope par rôle via sessions→roots (sous-requête, comme root_id : pas de
+    // JOIN supplémentaire à propager aux appelants).
+    conditions.push(
+      `a.session_id IN (
+         SELECT s.id FROM sessions s JOIN roots rt ON rt.id = s.root_id
+         WHERE rt.kind = ANY($${i++}))`,
+    );
+    params.push(kindsForRole(filter.kind));
+  }
   if (filter.processing_state != null)
     eq("a.processing_state", filter.processing_state);
 
@@ -173,6 +186,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
   const keys = [
     "session_id",
     "root_id",
+    "kind",
     "processing_state",
     "tags",
     "not_tags",

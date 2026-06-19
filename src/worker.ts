@@ -18,6 +18,7 @@ import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runImport } from "./lib/import";
+import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
 import { getSettings } from "./lib/settings";
@@ -128,6 +129,10 @@ for (const [name, w] of [
     console.error(`[${name}] échec job ${job?.id}:`, err.message),
   );
 }
+
+// Enregistre + (ré)indexe les roots connus (incoming + dossiers finaux
+// configurés) dès le démarrage, sans bloquer la boucle des workers.
+void bootstrapRoots();
 
 // Surveillance de l'inbox : dépôts SMB / FTP / upload → import automatique.
 const stopWatcher = config.import.watchInbox

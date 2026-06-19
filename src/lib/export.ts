@@ -28,7 +28,9 @@ async function copyVerified(src: string, dest: string): Promise<void> {
   await rename(tmp, dest);
 }
 
-function sanitize(name: string): string {
+// Nom de dossier d'export déterministe à partir du nom de job. Exporté pour que
+// la suppression d'un export retrouve le même dossier (cf. api/exports/[id]).
+export function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "export";
 }
 

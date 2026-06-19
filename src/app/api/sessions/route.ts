@@ -1,20 +1,34 @@
-// GET /api/sessions → liste des sessions + compteurs (dérivés prêts/en attente, picks).
+// GET /api/sessions?kind=incoming|final → sessions + compteurs (dérivés
+// prêts/en attente, picks) + le kind du root parent. Le paramètre `kind`
+// optionnel restreint au rôle (Incoming = source/inbox, Final = finals).
+import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
+import { kindsForRole } from "@/lib/roles";
 
 // Route adossée à la DB : jamais pré-rendue/mise en cache au build.
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const role = req.nextUrl.searchParams.get("kind");
+    const params: unknown[] = [];
+    let whereKind = "";
+    if (role === "incoming" || role === "final") {
+      params.push(kindsForRole(role));
+      whereKind = `WHERE rt.kind = ANY($1)`;
+    }
+
     const sessions = await many(
       `SELECT
          s.*,
+         rt.kind AS root_kind,
          COALESCE(d.ready, 0)   AS ready_count,
          COALESCE(d.pending, 0) AS pending_count,
          COALESCE(d.error, 0)   AS error_count,
          COALESCE(d.picks, 0)   AS pick_count
        FROM sessions s
+       JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (
          SELECT
            a.session_id,
@@ -26,7 +40,9 @@ export async function GET() {
          LEFT JOIN ratings r ON r.asset_id = a.id
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
+       ${whereKind}
        ORDER BY s.captured_at_max DESC NULLS LAST, s.id DESC`,
+      params,
     );
     return json({ sessions });
   } catch (err) {

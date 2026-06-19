@@ -83,6 +83,8 @@ services:
       # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
       - ${NAS_MOUNT:-./nas}:/nas:ro
       - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      # Dossier "final" du NAS (sortie Immich) : indexé pour consultation, RO.
+      - ${NAS_FINAL:-./nas-final}:/nas-final:ro
       - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports
@@ -103,6 +105,7 @@ services:
     volumes:
       - ${NAS_MOUNT:-./nas}:/nas:ro
       - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
+      - ${NAS_FINAL:-./nas-final}:/nas-final:ro
       - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports

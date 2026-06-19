@@ -8,6 +8,17 @@ function int(name: string, def: number): number {
   return Number.isFinite(n) ? n : def;
 }
 
+// Liste de chemins (séparés par virgule ou deux-points) → tableau nettoyé.
+// Permet plusieurs dossiers (p. ex. plusieurs zones finales) dès aujourd'hui.
+function list(name: string, def: string[]): string[] {
+  const v = process.env[name];
+  if (!v) return def;
+  return v
+    .split(/[,:]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export const config = {
   databaseUrl:
     process.env.DATABASE_URL ??
@@ -42,6 +53,9 @@ export const config = {
     inboxDir: process.env.INBOX_DIR ?? "/data/inbox",
     // Destination permanente des originaux importés (zone "incoming" du NAS).
     incomingDir: process.env.INCOMING_DIR ?? "/nas/incoming",
+    // Dossiers "finaux" du NAS (sortie Immich) : indexés pour la consultation
+    // (miniatures) mais jamais triés/exportés. Liste → multi-dossiers possible.
+    finalsDirs: list("FINALS_DIRS", []),
     concurrency: int("IMPORT_CONCURRENCY", 1),
     // Surveille l'inbox et enfile un import à l'arrivée de fichiers (SMB/FTP).
     watchInbox: (process.env.WATCH_INBOX ?? "true") === "true",
