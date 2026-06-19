@@ -9,8 +9,9 @@
 #   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
 #   - paquet NFS client :  sudo apt-get install -y nfs-common
 #   - NAS Synology : autoriser l'IP de l'Optiplex sur les règles NFS des deux
-#     dossiers partagés (bibliothèque RO + captures RW). Le montage est géré par
-#     la stack (volumes `nas` / `nas_incoming` en bas), pas par fstab.
+#     dossiers partagés `Data` (/volume1/Data, RO) et `Computing`
+#     (/volume4/Computing, RW). Le montage est géré par la stack (volumes
+#     `nas` / `nas_incoming` en bas), pas par fstab.
 #   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
 #   - SSD dédié (optionnel) : pour mettre inbox/derivatives/exports sur un autre
 #     disque (ex. SSD 2 To), définir WINNOW_DATA dans l'UI Portainer (ex.
@@ -130,9 +131,20 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Bibliothèque NAS (RO) + arrivée NAS (RW) — volumes NFS définis plus bas.
-      - nas:/nas:ro
-      - nas_incoming:/nas-incoming
+      # NAS Synology : on monte la racine du partage exporté puis on n'expose au
+      # conteneur que la sous-arbo utile (subpath). /nas = uniquement la
+      # bibliothèque (RO), /nas-incoming = uniquement la zone d'arrivée (RW).
+      - type: volume
+        source: nas
+        target: /nas
+        read_only: true
+        volume:
+          subpath: ${NAS_LIBRARY_SUBPATH:-Media/Photos/Photography}
+      - type: volume
+        source: nas_incoming
+        target: /nas-incoming
+        volume:
+          subpath: ${NAS_INCOMING_SUBPATH:-captures}
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -160,8 +172,17 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - nas:/nas:ro
-      - nas_incoming:/nas-incoming
+      - type: volume
+        source: nas
+        target: /nas
+        read_only: true
+        volume:
+          subpath: ${NAS_LIBRARY_SUBPATH:-Media/Photos/Photography}
+      - type: volume
+        source: nas_incoming
+        target: /nas-incoming
+        volume:
+          subpath: ${NAS_INCOMING_SUBPATH:-captures}
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -225,14 +246,18 @@ services:
   #     - /opt/winnow/inbox:/home/shooter
 
 # --- Volumes NFS du NAS Synology ------------------------------------------
-# Montés par le driver `local` (mount NFS côté noyau hôte). Renseigner NAS_IP
-# dans l'UI Portainer ; les chemins d'export ont des défauts surchargeables.
-#   - nas          : bibliothèque existante, LECTURE SEULE (triage/dérivés).
-#   - nas_incoming : zone d'arrivée des imports, LECTURE/ÉCRITURE.
-# Pré-requis Synology : Panneau de configuration → Dossier partagé → chaque
-# dossier → Permissions NFS → ajouter une règle pour l'IP de l'Optiplex,
-# Squash = « Pas de mapping » (ou map vers un utilisateur pouvant écrire dans
-# captures), Sécurité = sys (AUTH_SYS) — voir la note Kerberos en bas.
+# Montés par le driver `local` (mount NFS côté noyau hôte). On monte la RACINE
+# du partage exporté (NFS Synology n'exporte que la racine du dossier partagé,
+# pas les sous-dossiers) ; le `subpath` côté service ne révèle que l'arbo utile.
+# Renseigner NAS_IP dans l'UI Portainer ; exports/subpaths ont des défauts
+# surchargeables (NAS_LIBRARY_EXPORT / NAS_INCOMING_EXPORT / *_SUBPATH).
+#   - nas          : partage `Data`     (/volume1/Data)     → subpath Media/Photos/Photography (RO)
+#   - nas_incoming : partage `Computing`(/volume4/Computing)→ subpath captures (RW)
+# Pré-requis Synology : Panneau de configuration → Dossier partagé → Data ET
+# Computing → Permissions NFS → règle pour l'IP de l'Optiplex, Sécurité = sys
+# (AUTH_SYS), Squash = « Pas de mapping » (ou map vers un utilisateur pouvant
+# écrire dans captures). `subpath` exige Docker Engine ≥ 26 (sinon, voir la note
+# de repli en bas). Note Kerberos : voir bas de fichier.
 volumes:
   nas:
     driver: local
@@ -240,14 +265,14 @@ volumes:
       type: nfs
       # ro + soft : un hoquet NAS ne fige pas le scanner (résilience par-fichier).
       o: "addr=${NAS_IP},nfsvers=4.1,ro,soft,timeo=30,retrans=2"
-      device: ":${NAS_LIBRARY_EXPORT:-/volume1/Data/Media/Photos/Photography}"
+      device: ":${NAS_LIBRARY_EXPORT:-/volume1/Data}"
   nas_incoming:
     driver: local
     driver_opts:
       type: nfs
       # rw + hard : on ne veut JAMAIS perdre silencieusement une écriture d'import.
       o: "addr=${NAS_IP},nfsvers=4.1,rw,hard,timeo=600,retrans=2"
-      device: ":${NAS_INCOMING_EXPORT:-/volume4/Computing/captures}"
+      device: ":${NAS_INCOMING_EXPORT:-/volume4/Computing}"
 
 networks:
   # Réseau privé interne aux services Winnow.
@@ -264,6 +289,14 @@ networks:
 # immuable `sha-xxxxxxx` au lieu de `main`.
 # Build local : pour tester sans GHCR, remplace `image:` par `build: .` dans les
 # trois services (et déploie alors depuis une copie locale du dépôt).
+#
+# --- Repli si Docker Engine < 26 (pas de `subpath`) ------------------------
+# Si le déploiement refuse l'option `subpath`, monte la racine du partage et
+# pointe l'app sur la sous-arbo via l'env (ajouter dans x-winnow-env / Portainer
+# INCOMING_DIR=/nas-incoming/captures), puis dans app+worker remplace les blocs
+# `type: volume … subpath:` par les formes courtes :
+#     - nas:/nas:ro                 # /nas = tout le partage Data (RO) → scanner /nas/Media/Photos/Photography
+#     - nas_incoming:/nas-incoming  # INCOMING_DIR doit viser .../captures
 #
 # --- NFS Kerberos (optionnel, déconseillé en LAN de confiance) -------------
 # Le NAS expose aussi du NFS Kerberos. Sur un réseau privé, AUTH_SYS + règle IP
