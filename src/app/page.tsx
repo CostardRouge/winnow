@@ -112,6 +112,9 @@ export default function Dashboard() {
         <Link href="/gallery" className="btn">
           Gallery
         </Link>
+        <Link href="/failures" className="btn">
+          Failures
+        </Link>
         <Link href="/import" className="btn">
           + Import
         </Link>

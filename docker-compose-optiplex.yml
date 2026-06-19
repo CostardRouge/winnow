@@ -48,6 +48,13 @@ x-winnow-env: &winnow-env
   PROXY_SIZE: "${PROXY_SIZE:-2048}"
   THUMB_QUALITY: "${THUMB_QUALITY:-70}"
   PROXY_QUALITY: "${PROXY_QUALITY:-80}"
+  # Dérivés vidéo (ffmpeg). hwaccel=none → encodage logiciel libx264 (marche
+  # partout). Passer VIDEO_HWACCEL=vaapi UNE FOIS /dev/dri partagé au worker et
+  # vérifié (`docker exec winnow_worker vainfo`). Repli logiciel auto si échec.
+  VIDEO_HWACCEL: ${VIDEO_HWACCEL:-none}
+  VIDEO_VAAPI_DEVICE: ${VIDEO_VAAPI_DEVICE:-/dev/dri/renderD128}
+  VIDEO_PROXY_HEIGHT: "${VIDEO_PROXY_HEIGHT:-720}"
+  VIDEO_PROXY_CRF: "${VIDEO_PROXY_CRF:-24}"
   # S3 / MinIO — utilisé seulement si STORAGE_DRIVER=s3.
   S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
@@ -162,6 +169,11 @@ services:
     environment: *winnow-env
     init: true
     restart: unless-stopped
+    # Partage l'iGPU Intel pour l'encodage vidéo matériel (VAAPI). Le worker
+    # tourne en root → accès aux device nodes sans group_add. Si l'hôte n'a pas
+    # de /dev/dri (pas d'iGPU), RETIRER ce bloc et garder VIDEO_HWACCEL=none.
+    devices:
+      - /dev/dri:/dev/dri
     networks:
       winnow:
     depends_on:

@@ -6,9 +6,9 @@ import { mkdir } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
-import { config } from "@/lib/config";
 import { one } from "@/lib/db";
 import { enqueueImport } from "@/lib/queue";
+import { uploadStagingDir } from "@/lib/import";
 import { json, badRequest, serverError } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -24,8 +24,10 @@ export async function POST(req: NextRequest) {
     const files = form.getAll("files").filter((f): f is File => f instanceof File);
     if (files.length === 0) return badRequest("Aucun fichier (champ 'files')");
 
+    // Staging caché (.uploads) : importé explicitement ci-dessous par lot ; le
+    // watcher de l'inbox l'ignore (dossier en « . ») → pas de double import.
     const batchDir = path.join(
-      config.import.inboxDir,
+      uploadStagingDir,
       `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     );
     await mkdir(batchDir, { recursive: true });

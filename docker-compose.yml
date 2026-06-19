@@ -93,6 +93,10 @@ services:
     env_file: .env
     init: true
     restart: unless-stopped
+    # Encodage vidéo matériel (VAAPI) : décommenter pour partager l'iGPU, puis
+    # mettre VIDEO_HWACCEL=vaapi dans .env. Sinon ffmpeg encode en logiciel.
+    # devices:
+    #   - /dev/dri:/dev/dri
     depends_on:
       migrate:
         condition: service_completed_successfully

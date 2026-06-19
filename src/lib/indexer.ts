@@ -9,6 +9,7 @@ import { classifyExt, config } from "./config";
 import { partialHash } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
+import { recordScanFailure } from "./failures";
 import type { Root, Session } from "./types";
 
 // Crochets optionnels injectés par le worker : permettent de suspendre/préempter
@@ -248,7 +249,10 @@ export async function indexRoot(
     }
     } catch (err) {
       res.failed++;
-      console.warn(`Indexation impossible de ${absPath}:`, (err as Error).message);
+      const msg = (err as Error).message;
+      console.warn(`Indexation impossible de ${absPath}:`, msg);
+      // Persiste l'échec pour qu'il soit listable/réessayable depuis l'UI.
+      await recordScanFailure(absPath, root.id, msg);
     }
   }
 

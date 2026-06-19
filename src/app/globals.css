@@ -179,6 +179,52 @@ button {
 .control-note {
   margin-top: -4px;
 }
+.stat-link {
+  display: block;
+  color: inherit;
+}
+.stat-link:hover .stat {
+  border-color: var(--reject);
+}
+
+/* --- Page Failures --- */
+.fail-list {
+  display: grid;
+  gap: 8px;
+}
+.fail-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.fail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fail-title {
+  font-size: 13px;
+  word-break: break-all;
+}
+.fail-when {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.fail-path {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.fail-err {
+  font-size: 12px;
+  color: var(--reject);
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* --- Dashboard sessions --- */
 .session-list {
@@ -321,10 +367,30 @@ button {
   justify-content: center;
   overflow: hidden;
 }
-.viewer .stage img {
+.viewer .stage img,
+.viewer .stage video {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* Pastille « vidéo » sur les vignettes */
+.cell .play-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  pointer-events: none;
 }
 .viewer .exif {
   position: absolute;

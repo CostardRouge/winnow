@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises";
 import { q, one } from "./db";
 import { config } from "./config";
 import { extractSourceJpeg } from "./extract";
+import { ffmpegAvailable, makeVideoThumb, makeVideoProxy } from "./video";
 import { getStorage } from "./storage/index";
 import type { Asset } from "./types";
 
@@ -20,12 +21,8 @@ export async function generateDerivative(assetId: number): Promise<void> {
     assetId,
   ]);
   if (!asset) throw new Error(`Asset introuvable : ${assetId}`);
-  if (asset.media_type !== "photo") {
-    // MVP : photos uniquement. La vidéo (FFmpeg) viendra en V3.
-    await q(
-      "UPDATE assets SET derivative_status='skipped', updated_at=now() WHERE id=$1",
-      [assetId],
-    );
+  if (asset.media_type === "video") {
+    await generateVideoDerivative(asset);
     return;
   }
   if (asset.processing_state === "ignored") {
@@ -102,5 +99,56 @@ export async function generateDerivative(assetId: number): Promise<void> {
     throw err;
   } finally {
     if (cleanupDir) await rm(cleanupDir, { recursive: true, force: true });
+  }
+}
+
+// Dérivés vidéo : poster WebP (vignette/grille) + proxie mp4 rejouable.
+async function generateVideoDerivative(asset: Asset): Promise<void> {
+  if (asset.processing_state === "ignored") {
+    await q(
+      "UPDATE assets SET derivative_status='skipped', updated_at=now() WHERE id=$1",
+      [asset.id],
+    );
+    return;
+  }
+  // ffmpeg absent : on marque l'échec (visible dans la liste des erreurs) SANS
+  // jeter, pour éviter une tempête de retries avant que l'image soit reconstruite.
+  if (!(await ffmpegAvailable())) {
+    await q(
+      `UPDATE assets SET derivative_status='error',
+         derivative_error='ffmpeg introuvable — reconstruire l''image worker (voir Dockerfile)',
+         updated_at=now() WHERE id=$1`,
+      [asset.id],
+    );
+    return;
+  }
+
+  await q(
+    "UPDATE assets SET derivative_status='processing', updated_at=now() WHERE id=$1",
+    [asset.id],
+  );
+
+  try {
+    const thumbKey = `thumb/${asset.id}.webp`;
+    const proxyKey = `proxy/${asset.id}.mp4`;
+    const thumb = await makeVideoThumb(asset.abs_path);
+    const proxy = await makeVideoProxy(asset.abs_path);
+    const storage = await getStorage();
+    await storage.put(thumbKey, thumb, "image/webp");
+    await storage.put(proxyKey, proxy, "video/mp4");
+
+    await q(
+      `UPDATE assets SET
+         thumb_key=$2, proxy_key=$3,
+         derivative_status='ready', derivative_error=NULL, updated_at=now()
+       WHERE id=$1`,
+      [asset.id, thumbKey, proxyKey],
+    );
+  } catch (err) {
+    await q(
+      "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
+      [asset.id, (err as Error).message?.slice(0, 500) ?? "erreur inconnue"],
+    );
+    throw err;
   }
 }

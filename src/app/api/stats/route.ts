@@ -6,6 +6,19 @@ import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
 import { json, serverError } from "@/lib/api";
 
+async function failureCounts() {
+  try {
+    const row = await one<{ scan: number; imp: number }>(
+      `SELECT
+         (SELECT count(*) FROM scan_failures WHERE resolved_at IS NULL)        AS scan,
+         (SELECT COALESCE(sum(failed), 0) FROM import_batches WHERE failed > 0) AS imp`,
+    );
+    return { scan: Number(row?.scan ?? 0), import: Number(row?.imp ?? 0) };
+  } catch {
+    return { scan: 0, import: 0 }; // tables absentes avant migration
+  }
+}
+
 // Route adossée à la DB/Redis : jamais pré-rendue/mise en cache au build.
 export const dynamic = "force-dynamic";
 
@@ -43,6 +56,7 @@ export async function GET() {
       /* Redis indisponible : on renvoie quand même les compteurs DB */
     }
     const settings = await getSettings();
+    const fails = await failureCounts();
 
     return json({
       assets: counts ?? {
@@ -60,6 +74,11 @@ export async function GET() {
       settings: {
         scanPerHour: settings.scanPerHour,
         analyzePerHour: settings.analyzePerHour,
+      },
+      failures: {
+        derivative: Number(counts?.errors ?? 0),
+        scan: fails.scan,
+        import: fails.import,
       },
     });
   } catch (err) {

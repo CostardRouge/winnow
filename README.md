@@ -101,6 +101,8 @@ Voir `.env.dist`. Principales :
 | `GET /api/stats` | Compteurs (médias / scan / analysés / en attente) + activité des files + pause + débits |
 | `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Débits horaires scan/analyse (0 = illimité) |
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspend/reprend l'indexation + génération de dérivés |
+| `GET /api/failures` | Tout ce qui a échoué (scan / analyse / import) + messages |
+| `POST /api/failures/retry` `{ kind, ids? }` | Relance les échecs d'une famille |
 | `GET /api/assets` `?<filtres>&cursor` | Galerie globale paginée (filtres cumulatifs) |
 | `GET /api/facets` | Valeurs + comptes pour construire les filtres |
 | `GET /api/sessions` | Liste des sessions + compteurs (prêts/en attente/picks) |
@@ -169,6 +171,29 @@ Le tableau de bord (page d'accueil) expose un **panneau de contrôle** et un
   **devant** les scans/dérivés ordinaires (priorité BullMQ). Un scan ordinaire
   long est **préempté** dès qu'un scan incoming attend, puis ré-enfilé.
 
+## Dérivés vidéo (ffmpeg)
+
+Les vidéos obtiennent des dérivés comme les photos : **poster WebP** (vignette de
+grille) + **proxie mp4 H.264** rejouable/seekable dans la visionneuse (route de
+service avec **requêtes Range**). L'image worker embarque `ffmpeg`.
+
+**Accélération matérielle (optionnelle)** : `VIDEO_HWACCEL=vaapi` encode sur
+l'iGPU Intel (partager `/dev/dri` au conteneur worker — déjà câblé dans
+`docker-compose-optiplex.yml`). L'encodage matériel échoue ? **repli automatique**
+sur libx264 logiciel. Par défaut `none` (logiciel) → fonctionne partout.
+
+## Échecs : liste + relance (page `/failures`)
+
+Tout ce qui a échoué est listé en un seul endroit, avec le **message d'erreur**
+pour débuguer, et un bouton **« réessayer »** par famille :
+
+- **Analyse** (dérivés) : `assets.derivative_status='error'` — *rétroactif*.
+- **Scan** (indexation) : table `scan_failures` (échec par fichier) — dès
+  maintenant ; auparavant seul un compteur existait, rien n'était persisté.
+- **Import** : erreurs par fichier des lots (`import_batches.result`) — *rétroactif*.
+  Les fichiers en échec sont **mis en quarantaine** (`inbox/.failed/`) pour ne
+  plus boucler ; la relance les ré-importe.
+
 ## Périmètre & suites
 
 **Implémenté (MVP)** : indexation incrémentale (mtime+taille), EXIF + hash +
@@ -177,12 +202,13 @@ thumb/proxy en WebP, grille de tri mobile-first, ignore-cascade, export copie
 RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous), **galerie
 virtualisée à filtres cumulatifs** (attributs indexés en base), **pilotage du
 pipeline** (pause/reprise, priorité incoming/inbox, débits scan/analyse réglables,
-compteurs temps réel — voir ci-dessous), **CI** GitHub Actions (typecheck +
-migrations + build).
+compteurs temps réel — voir ci-dessous), **dérivés vidéo** (poster + proxie mp4
+ffmpeg, accélération matérielle VAAPI optionnelle), **liste/relance des échecs**
+(page `/failures`), **CI** GitHub Actions (typecheck + migrations + build).
 
 **V2/V3 (non inclus)** : notes/couleurs/tags avancés, export web + push Immich,
-réconciliation auto des finaux C1, vidéo (proxies FFmpeg), throttling adaptatif,
-agent-sur-NAS, automatisations n8n.
+réconciliation auto des finaux C1, throttling adaptatif, agent-sur-NAS,
+automatisations n8n.
 
 ---
 
@@ -220,6 +246,15 @@ un *import worker* **vérifie** (write-then-verify par hash), **déduplique**
 **Garanties** : intégrité vérifiée (taille + hash de la copie), dédup globale,
 foldering déterministe, suivi par lot dans `import_batches` (importés / doublons
 / échecs). Le tout réutilise l'indexer, les dérivés et la dédup existants.
+
+**Inbox vs incoming** : l'`inbox` (disque local rapide) est un **sas transitoire**
+(vidé après import) ; l'`incoming` (NAS, RW) est l'**archive permanente** rangée.
+Ce ne sont pas des doublons : pendant l'import, les deux copies coexistent le
+temps de la vérification (write-then-verify), puis l'inbox est nettoyée.
+Deux sous-dossiers **cachés** de l'inbox (ignorés du watcher et du walk) :
+`.uploads/` (staging des uploads web, importés par lot — évite le double
+déclenchement watcher + import) et `.failed/` (**quarantaine** des fichiers en
+échec, pour ne plus boucler ; relançables depuis `/failures`).
 
 **Pistes V2/V3** : regroupement par « trou temporel » (gap > N h ⇒ session),
 gabarit de foldering configurable, déclenchement n8n à l'insertion d'une carte,
