@@ -9,6 +9,10 @@ import {
 } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
+import AssetActionMenu, {
+  type AssetMenuAction,
+} from "@/app/gallery/AssetActionMenu";
+import { deleteAssets, exportAssets, tagAssets } from "@/lib/assetActions";
 
 type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
@@ -49,8 +53,17 @@ export default function SessionGrid({
   const [error, setError] = useState<string | null>(null);
   const [verdict, setVerdict] = useState("");
   const [viewer, setViewer] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+
+  // Transient confirmation ("Export queued", "Deleted") — auto-clears.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   const reset = useCallback(() => {
     setAssets([]);
@@ -122,6 +135,60 @@ export default function SessionGrid({
     [],
   );
 
+  // Soft delete (hidden from the library, original untouched). Returns whether
+  // it ran (false if the confirm was dismissed).
+  const removeAssets = useCallback(
+    async (ids: number[]): Promise<boolean> => {
+      if (!ids.length) return false;
+      const msg =
+        ids.length > 1
+          ? `Delete ${ids.length} assets? They’ll be hidden from the library — the originals are untouched.`
+          : "Delete this asset? It’ll be hidden from the library — the original is untouched.";
+      if (!window.confirm(msg)) return false;
+      const idset = new Set(ids);
+      setAssets((prev) => prev.filter((a) => !idset.has(a.id)));
+      await deleteAssets(ids);
+      setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
+      return true;
+    },
+    [],
+  );
+
+  const exportSelection = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    try {
+      const jobId = await exportAssets(ids);
+      setNotice(`Export queued (#${jobId})`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
+  const addTag = useCallback(async (id: number, name: string) => {
+    if (!name.trim()) return;
+    await tagAssets([id], name, true);
+    setNotice(`Tagged “${name.trim()}”`);
+  }, []);
+
+  // Dispatch a context-menu action onto a single asset.
+  const onMenuAction = useCallback(
+    (id: number, action: AssetMenuAction) => {
+      switch (action.kind) {
+        case "verdict":
+          return void rate(id, { verdict: action.verdict });
+        case "star":
+          return void rate(id, { star: action.star });
+        case "tag":
+          return void addTag(id, action.name);
+        case "export":
+          return void exportSelection([id]);
+        case "delete":
+          return void removeAssets([id]);
+      }
+    },
+    [rate, addTag, exportSelection, removeAssets],
+  );
+
   // Keyboard navigation in the viewer (desktop).
   useEffect(() => {
     if (viewer == null) return;
@@ -153,6 +220,7 @@ export default function SessionGrid({
         </Link>
         <h1>Session #{id}</h1>
         <span className="spacer" />
+        {notice && <span className="notice">{notice}</span>}
         <span className="hint">{assets.length} loaded</span>
       </div>
 
@@ -190,6 +258,10 @@ export default function SessionGrid({
                 key={a.id}
                 className={`cell ${a.verdict}`}
                 onClick={() => setViewer(i)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ x: e.clientX, y: e.clientY, id: a.id });
+                }}
               >
                 {a.derivative_status === "ready" ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -238,6 +310,20 @@ export default function SessionGrid({
             setViewer((v) => Math.min((v ?? 0) + 1, assets.length - 1))
           }
           onRate={(patch) => rate(assets[viewer].id, patch)}
+          onExport={() => exportSelection([assets[viewer].id])}
+          onDelete={async () => {
+            if (await removeAssets([assets[viewer].id])) setViewer(null);
+          }}
+        />
+      )}
+
+      {menu && (
+        <AssetActionMenu
+          x={menu.x}
+          y={menu.y}
+          label={assets.find((a) => a.id === menu.id)?.filename}
+          onAction={(action) => onMenuAction(menu.id, action)}
+          onClose={() => setMenu(null)}
         />
       )}
     </>
@@ -252,6 +338,8 @@ function Viewer({
   onPrev,
   onNext,
   onRate,
+  onExport,
+  onDelete,
 }: {
   asset: AssetRow;
   hasPrev: boolean;
@@ -260,6 +348,8 @@ function Viewer({
   onPrev: () => void;
   onNext: () => void;
   onRate: (patch: { verdict?: Verdict; star?: number }) => void;
+  onExport: () => void;
+  onDelete: () => void;
 }) {
   const touch = useRef<{ x: number; y: number } | null>(null);
 
@@ -351,6 +441,12 @@ function Viewer({
           onClick={() => onRate({ verdict: "pick" })}
         >
           ✓ Pick
+        </button>
+        <button className="btn" onClick={onExport}>
+          ⤓ Export
+        </button>
+        <button className="btn btn-reject" onClick={onDelete}>
+          🗑 Delete
         </button>
         <button className="btn" onClick={onNext} disabled={!hasNext}>
           →

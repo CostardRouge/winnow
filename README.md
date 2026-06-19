@@ -113,7 +113,9 @@ See `.env.dist`. Main ones:
 | `GET /api/assets/:id/exports` | Lineage (finals linked to this original) |
 | `PATCH /api/assets/:id/rating` `{ verdict, star, color }` | Cull state |
 | `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Quick bulk culling |
-| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export |
+| `POST /api/assets/delete` `{ ids[], restore? }` | Soft delete / restore (hides from the library, RAW untouched) |
+| `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
+| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
 | `GET /api/export/:id` | Status + result |
 | `POST /api/upload` (multipart `files`) | Upload from the phone → inbox → import |
 | `POST /api/import/offload` `{ path }` | Offload from a mounted card (source kept) |
@@ -129,6 +131,24 @@ front-end grid infinite-scroll-loads the thumbnails as they come.
 
 - **Keyboard**: `P` pick · `X` reject · `U` undo · `1`-`5` stars · `←`/`→` navigate · `Esc` close
 - **Touch**: swipe ↑ = pick, swipe ↓ = reject, swipe ←/→ = navigate
+
+### Image actions (delete · tag · export · pick · reject · rate)
+
+The same set of actions is reachable from three surfaces, all backed by the
+shared endpoints above (`AssetActionMenu` + `lib/assetActions.ts`):
+
+- **Right-click a thumbnail** (gallery + session grids) → context menu with the
+  full set (pick / reject / clear · stars · tag · export · delete).
+- **Detailed viewer** → already has pick / reject / stars / tag; the two missing
+  ones — **export** and **delete** — are added to the control bar.
+- **Bulk selection** (gallery *Select* mode) → pick / reject / stars, add/remove
+  tag, export and delete applied to the whole selection.
+
+**Delete is a soft delete** (guiding principle: the RAWs are touched only once).
+It sets `assets.deleted_at` so the file is hidden from every listing/export but
+the original on the NAS is never modified; it's reversible
+(`POST /api/assets/delete { ids, restore: true }`). **Export** queues a normal
+RAW-copy job scoped to exactly the chosen ids.
 
 ### Global gallery & cumulative filters
 

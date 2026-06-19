@@ -592,6 +592,101 @@
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
+  /* Compact star cluster in the bulk bar (5 buttons read as one control) */
+  .bulk-stars {
+    @apply inline-flex;
+  }
+  .bulk-star {
+    @apply rounded-none px-2;
+    color: var(--color-star);
+  }
+  .bulk-star:first-child {
+    border-top-left-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
+  }
+  .bulk-star:last-child {
+    border-top-right-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
+  }
+  .bulk-star + .bulk-star {
+    border-left: 0;
+  }
+  /* Thin vertical divider between action groups */
+  .ctx-sep-v {
+    @apply mx-1 self-stretch;
+    width: 1px;
+    background: var(--color-border);
+  }
+  /* Transient confirmation toast in a top bar (export queued, deleted…) */
+  .notice {
+    @apply rounded-full px-2.5 py-1 text-xs font-medium;
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent-hover);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  }
+
+  /* ---- Right-click action menu (grid views) ----------------------------- */
+  .ctx-menu {
+    @apply fixed z-[60] flex min-w-[176px] flex-col rounded-[var(--radius-lg)] border p-1;
+    background: var(--color-surface-2);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    animation: ctx-in 0.12s var(--ease-out);
+  }
+  @keyframes ctx-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(-2px);
+    }
+  }
+  .ctx-label {
+    @apply truncate px-2.5 pb-1 pt-1.5 text-[11px];
+    color: var(--color-faint);
+    max-width: 220px;
+  }
+  .ctx-item {
+    @apply flex w-full items-center gap-2.5 rounded-[var(--radius)] border-0 bg-transparent
+      px-2.5 py-1.5 text-left text-[13px] transition duration-100;
+    color: var(--color-text);
+  }
+  .ctx-item:hover {
+    background: var(--color-surface-3);
+  }
+  .ctx-danger {
+    color: var(--color-reject);
+  }
+  .ctx-danger:hover {
+    background: color-mix(in srgb, var(--color-reject) 16%, transparent);
+  }
+  .ctx-ic {
+    @apply inline-flex w-4 justify-center text-[13px];
+    color: var(--color-muted);
+  }
+  .ctx-danger .ctx-ic {
+    color: inherit;
+  }
+  .ctx-sep {
+    @apply my-1 h-px;
+    background: var(--color-border);
+  }
+  .ctx-stars {
+    @apply flex items-center gap-0.5 px-1.5 py-1;
+  }
+  .ctx-star {
+    @apply flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]
+      border-0 bg-transparent text-sm transition duration-100;
+    color: var(--color-star);
+  }
+  .ctx-star:hover {
+    background: var(--color-surface-3);
+  }
+  .ctx-star-off {
+    @apply text-xs;
+    color: var(--color-faint);
+  }
+  .ctx-tag {
+    @apply px-1 py-1;
+  }
 
   /* ---- Navigation tree -------------------------------------------------- */
   .tree-row {

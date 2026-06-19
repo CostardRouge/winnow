@@ -68,6 +68,8 @@ export type Asset = {
   processing_state: ProcessingState;
   thumb_key: string | null;
   proxy_key: string | null;
+  // Soft delete: non-null = hidden from the library (original untouched).
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };

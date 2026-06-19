@@ -26,6 +26,7 @@ export default function VirtualGrid({
   selectMode = false,
   selectedIds,
   onToggleSelect,
+  onContextMenu,
 }: {
   items: GalleryAsset[];
   hasMore: boolean;
@@ -35,6 +36,7 @@ export default function VirtualGrid({
   selectMode?: boolean;
   selectedIds?: Set<number>;
   onToggleSelect?: (id: number) => void;
+  onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -78,6 +80,7 @@ export default function VirtualGrid({
               onClick={() =>
                 selectMode ? onToggleSelect?.(a.id) : onOpen(idx)
               }
+              onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
             >
               {a.derivative_status === "ready" ? (
                 // eslint-disable-next-line @next/next/no-img-element
