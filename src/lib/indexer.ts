@@ -5,11 +5,19 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
-import { classifyExt } from "./config";
+import { classifyExt, config } from "./config";
 import { partialHash } from "./hash";
 import { readMetadata } from "./extract";
-import { enqueueDerivative } from "./queue";
+import { enqueueDerivative, PRIORITY } from "./queue";
 import type { Root, Session } from "./types";
+
+// Crochets optionnels injectés par le worker : permettent de suspendre/préempter
+// le scan (shouldStop) et d'en lisser le débit (throttle, appelé avant chaque
+// lecture lourde de fichier). En CLI/sync, aucun crochet → comportement nominal.
+export type IndexHooks = {
+  shouldStop?: () => Promise<boolean> | boolean;
+  throttle?: () => Promise<void>;
+};
 
 async function* walk(dir: string): AsyncGenerator<string> {
   let entries;
@@ -58,11 +66,20 @@ export type IndexResult = {
   duplicates: number;
   enqueued: number;
   failed: number;
+  // true si le scan a été interrompu (pause ou préemption) avant la fin.
+  stopped: boolean;
 };
 
-export async function indexRoot(rootId: number): Promise<IndexResult> {
+export async function indexRoot(
+  rootId: number,
+  hooks: IndexHooks = {},
+): Promise<IndexResult> {
   const root = await one<Root>("SELECT * FROM roots WHERE id = $1", [rootId]);
   if (!root) throw new Error(`Root introuvable : ${rootId}`);
+
+  // Les dérivés des médias de l'incoming passent devant ceux des autres roots.
+  const derivePriority =
+    root.path === config.import.incomingDir ? PRIORITY.high : PRIORITY.normal;
 
   const res: IndexResult = {
     scanned: 0,
@@ -72,10 +89,19 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
     duplicates: 0,
     enqueued: 0,
     failed: 0,
+    stopped: false,
   };
   const touchedSessions = new Set<number>();
 
   for await (const absPath of walk(root.path)) {
+    // Suspension/préemption : on s'arrête proprement entre deux fichiers.
+    // L'indexation étant incrémentale, une reprise repartira sans retraiter
+    // les fichiers déjà connus.
+    if (hooks.shouldStop && (await hooks.shouldStop())) {
+      res.stopped = true;
+      break;
+    }
+
     const ext = path.extname(absPath);
     const cls = classifyExt(ext);
     if (!cls) continue; // pas un média reconnu
@@ -110,6 +136,10 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
       res.skipped++;
       continue;
     }
+
+    // Lissage du débit de scan : on n'étrangle que les lectures *lourdes*
+    // (fichier nouveau/modifié), pas les fichiers inchangés simplement stat-és.
+    if (hooks.throttle) await hooks.throttle();
 
     const hash = await partialHash(absPath, size);
     const meta = await readMetadata(absPath);
@@ -156,7 +186,7 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
       );
       res.updated++;
       if (willDerive) {
-        await enqueueDerivative(existing.id);
+        await enqueueDerivative(existing.id, { priority: derivePriority });
         res.enqueued++;
       }
       continue;
@@ -213,7 +243,7 @@ export async function indexRoot(rootId: number): Promise<IndexResult> {
     );
     res.inserted++;
     if (willDerive) {
-      await enqueueDerivative(inserted.id);
+      await enqueueDerivative(inserted.id, { priority: derivePriority });
       res.enqueued++;
     }
     } catch (err) {

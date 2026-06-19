@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
+import ControlPanel from "./ControlPanel";
 
 type SessionRow = {
   id: number;
@@ -116,6 +117,7 @@ export default function Dashboard() {
         </Link>
       </div>
       <div className="container">
+        <ControlPanel />
         <div className="filterbar">
           <input
             className="input"

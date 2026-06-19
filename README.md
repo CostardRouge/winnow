@@ -98,6 +98,9 @@ Voir `.env.dist`. Principales :
 | Méthode & route | Rôle |
 |---|---|
 | `POST /api/index/scan` `{ path }` | Enregistre le root et enfile une indexation |
+| `GET /api/stats` | Compteurs (médias / scan / analysés / en attente) + activité des files + pause + débits |
+| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Débits horaires scan/analyse (0 = illimité) |
+| `POST /api/scan/control` `{ action: pause\|resume }` | Suspend/reprend l'indexation + génération de dérivés |
 | `GET /api/assets` `?<filtres>&cursor` | Galerie globale paginée (filtres cumulatifs) |
 | `GET /api/facets` | Valeurs + comptes pour construire les filtres |
 | `GET /api/sessions` | Liste des sessions + compteurs (prêts/en attente/picks) |
@@ -145,14 +148,37 @@ valeurs/comptes disponibles viennent de `GET /api/facets` ; le filtrage est donc
 
 ---
 
+## Pilotage du pipeline (scan / analyse)
+
+Le tableau de bord (page d'accueil) expose un **panneau de contrôle** et un
+**bandeau de chiffres** rafraîchis toutes les 5 s (`GET /api/stats`) :
+
+- **Compteurs** : nombre de **médias** indexés, **scan** (dossiers en file
+  d'indexation), **analysés** (dérivés prêts), **en attente** (à analyser), plus
+  erreurs et picks — pour voir d'un coup d'œil ce qu'il reste à faire.
+- **Pause / reprise** : suspend l'indexation **et** la génération de dérivés
+  (`POST /api/scan/control`). La pause est persistée dans Redis (`queue.pause()`)
+  *et* via un drapeau en base, lu par l'indexer pour s'arrêter **en cours de
+  scan** ; la reprise ré-enfile les roots pour terminer un scan interrompu
+  (incrémental : les fichiers déjà connus sont sautés).
+- **Débits horaires** (sliders) : nombre max de fichiers **scannés** et de dérivés
+  **analysés** par heure (`PATCH /api/settings`, `0 = illimité`). Réparti en
+  goutte-à-goutte via un limiteur Redis partagé — utile pour ménager le HDD plein
+  du NAS sans bloquer l'app.
+- **Priorité incoming / inbox** : les imports (incoming) et l'inbox passent
+  **devant** les scans/dérivés ordinaires (priorité BullMQ). Un scan ordinaire
+  long est **préempté** dès qu'un scan incoming attend, puis ré-enfilé.
+
 ## Périmètre & suites
 
 **Implémenté (MVP)** : indexation incrémentale (mtime+taille), EXIF + hash +
 dédup, extraction de l'aperçu RAW (ARW/DNG…) sans dématriçage, dérivés
 thumb/proxy en WebP, grille de tri mobile-first, ignore-cascade, export copie
 RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous), **galerie
-virtualisée à filtres cumulatifs** (attributs indexés en base), **CI** GitHub
-Actions (typecheck + migrations + build).
+virtualisée à filtres cumulatifs** (attributs indexés en base), **pilotage du
+pipeline** (pause/reprise, priorité incoming/inbox, débits scan/analyse réglables,
+compteurs temps réel — voir ci-dessous), **CI** GitHub Actions (typecheck +
+migrations + build).
 
 **V2/V3 (non inclus)** : notes/couleurs/tags avancés, export web + push Immich,
 réconciliation auto des finaux C1, vidéo (proxies FFmpeg), throttling adaptatif,

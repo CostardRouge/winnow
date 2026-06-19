@@ -7,7 +7,11 @@
 #
 # Pré-requis côté hôte (Ubuntu) :
 #   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
-#   - NAS monté en /mnt/nas (RO) et /mnt/nas/incoming (RW)
+#   - paquet NFS client :  sudo apt-get install -y nfs-common
+#   - NAS Synology : autoriser l'IP de l'Optiplex sur les règles NFS des deux
+#     dossiers partagés `Data` (/volume1/Data, RO) et `Computing`
+#     (/volume4/Computing, RW). Le montage est géré par la stack (volumes
+#     `nas` / `nas_incoming` en bas), pas par fstab.
 #   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
 #   - SSD dédié (optionnel) : pour mettre inbox/derivatives/exports sur un autre
 #     disque (ex. SSD 2 To), définir WINNOW_DATA dans l'UI Portainer (ex.
@@ -17,9 +21,10 @@
 #
 # Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
 # Renseigner dans l'UI « Environment variables » de la stack : DOMAIN_NAME
-# (obligatoire, pour Traefik) et tout réglage à surcharger (POSTGRES_PASSWORD,
-# NAS_MOUNT, *_HOST_PORT, concurrences…). Aucun fichier .env n'est requis :
-# les variables runtime des conteneurs sont inlinées via l'ancre `x-winnow-env`.
+# (obligatoire, Traefik), NAS_IP (obligatoire, NFS) et tout réglage à surcharger
+# (POSTGRES_PASSWORD, WINNOW_DATA, NAS_*_EXPORT, *_HOST_PORT, concurrences…).
+# Aucun fichier .env n'est requis : les variables runtime des conteneurs sont
+# inlinées via l'ancre `x-winnow-env`.
 
 # Variables d'environnement des conteneurs app/worker/migrate. Inlinées ici (et
 # non via `env_file: .env`) pour que Portainer déploie depuis le dépôt sans qu'un
@@ -126,9 +131,20 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
-      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
-      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      # NAS Synology : on monte la racine du partage exporté puis on n'expose au
+      # conteneur que la sous-arbo utile (subpath). /nas = uniquement la
+      # bibliothèque (RO), /nas-incoming = uniquement la zone d'arrivée (RW).
+      - type: volume
+        source: nas
+        target: /nas
+        read_only: true
+        volume:
+          subpath: ${NAS_LIBRARY_SUBPATH:-Media/Photos/Photography}
+      - type: volume
+        source: nas_incoming
+        target: /nas-incoming
+        volume:
+          subpath: ${NAS_INCOMING_SUBPATH:-captures}
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -156,8 +172,17 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
-      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      - type: volume
+        source: nas
+        target: /nas
+        read_only: true
+        volume:
+          subpath: ${NAS_LIBRARY_SUBPATH:-Media/Photos/Photography}
+      - type: volume
+        source: nas_incoming
+        target: /nas-incoming
+        volume:
+          subpath: ${NAS_INCOMING_SUBPATH:-captures}
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -220,6 +245,35 @@ services:
   #   volumes:
   #     - /opt/winnow/inbox:/home/shooter
 
+# --- Volumes NFS du NAS Synology ------------------------------------------
+# Montés par le driver `local` (mount NFS côté noyau hôte). On monte la RACINE
+# du partage exporté (NFS Synology n'exporte que la racine du dossier partagé,
+# pas les sous-dossiers) ; le `subpath` côté service ne révèle que l'arbo utile.
+# Renseigner NAS_IP dans l'UI Portainer ; exports/subpaths ont des défauts
+# surchargeables (NAS_LIBRARY_EXPORT / NAS_INCOMING_EXPORT / *_SUBPATH).
+#   - nas          : partage `Data`     (/volume1/Data)     → subpath Media/Photos/Photography (RO)
+#   - nas_incoming : partage `Computing`(/volume4/Computing)→ subpath captures (RW)
+# Pré-requis Synology : Panneau de configuration → Dossier partagé → Data ET
+# Computing → Permissions NFS → règle pour l'IP de l'Optiplex, Sécurité = sys
+# (AUTH_SYS), Squash = « Pas de mapping » (ou map vers un utilisateur pouvant
+# écrire dans captures). `subpath` exige Docker Engine ≥ 26 (sinon, voir la note
+# de repli en bas). Note Kerberos : voir bas de fichier.
+volumes:
+  nas:
+    driver: local
+    driver_opts:
+      type: nfs
+      # ro + soft : un hoquet NAS ne fige pas le scanner (résilience par-fichier).
+      o: "addr=${NAS_IP},nfsvers=4.1,ro,soft,timeo=30,retrans=2"
+      device: ":${NAS_LIBRARY_EXPORT:-/volume1/Data}"
+  nas_incoming:
+    driver: local
+    driver_opts:
+      type: nfs
+      # rw + hard : on ne veut JAMAIS perdre silencieusement une écriture d'import.
+      o: "addr=${NAS_IP},nfsvers=4.1,rw,hard,timeo=600,retrans=2"
+      device: ":${NAS_INCOMING_EXPORT:-/volume4/Computing}"
+
 networks:
   # Réseau privé interne aux services Winnow.
   winnow:
@@ -235,3 +289,19 @@ networks:
 # immuable `sha-xxxxxxx` au lieu de `main`.
 # Build local : pour tester sans GHCR, remplace `image:` par `build: .` dans les
 # trois services (et déploie alors depuis une copie locale du dépôt).
+#
+# --- Repli si Docker Engine < 26 (pas de `subpath`) ------------------------
+# Si le déploiement refuse l'option `subpath`, monte la racine du partage et
+# pointe l'app sur la sous-arbo via l'env (ajouter dans x-winnow-env / Portainer
+# INCOMING_DIR=/nas-incoming/captures), puis dans app+worker remplace les blocs
+# `type: volume … subpath:` par les formes courtes :
+#     - nas:/nas:ro                 # /nas = tout le partage Data (RO) → scanner /nas/Media/Photos/Photography
+#     - nas_incoming:/nas-incoming  # INCOMING_DIR doit viser .../captures
+#
+# --- NFS Kerberos (optionnel, déconseillé en LAN de confiance) -------------
+# Le NAS expose aussi du NFS Kerberos. Sur un réseau privé, AUTH_SYS + règle IP
+# suffit et reste BIEN plus simple : le montage NFS se fait dans le noyau de
+# l'hôte (driver `local`), donc Kerberos exigerait côté HÔTE rpc.gssd actif, un
+# /etc/krb5.conf pointant le KDC, et un keytab machine joint au domaine — lourd
+# pour zéro gain ici. Si tu y tiens, ajoute `sec=krb5` (ou krb5i/krb5p) dans le
+# `o:` des volumes et provisionne gssd+keytab sur l'Optiplex.

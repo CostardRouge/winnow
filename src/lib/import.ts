@@ -17,7 +17,7 @@ import { q, one } from "./db";
 import { config, classifyExt } from "./config";
 import { partialHash } from "./hash";
 import { readMetadata } from "./extract";
-import { enqueueIndex } from "./queue";
+import { enqueueIndex, PRIORITY } from "./queue";
 import { slug } from "./slug";
 
 export type ImportOrigin = "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -179,7 +179,8 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
        RETURNING id`,
       [config.import.incomingDir],
     );
-    if (root) await enqueueIndex(root.id);
+    // L'incoming (issu d'un import) est prioritaire sur les scans ordinaires.
+    if (root) await enqueueIndex(root.id, { priority: PRIORITY.high });
   }
 
   if (args.batchId) {
