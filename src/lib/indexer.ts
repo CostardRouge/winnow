@@ -6,10 +6,11 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
 import { classifyExt, config } from "./config";
-import { partialHash } from "./hash";
+import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
+import { recordDuplicateHit } from "./duplicates";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -65,6 +66,9 @@ export type IndexResult = {
   updated: number;
   skipped: number;
   duplicates: number;
+  // False partial-hash collisions: distinct files recovered and indexed instead
+  // of being silently dropped (review §4). Subset of `inserted`.
+  recovered: number;
   enqueued: number;
   failed: number;
   // true if the scan was interrupted (pause or preemption) before the end.
@@ -88,6 +92,7 @@ export async function indexRoot(
     updated: 0,
     skipped: 0,
     duplicates: 0,
+    recovered: 0,
     enqueued: 0,
     failed: 0,
     stopped: false,
@@ -193,51 +198,81 @@ export async function indexRoot(
       continue;
     }
 
-    // New file. ON CONFLICT (content_hash) → duplicate from another path.
+    // New file. A non-null content_hash is subject to the unique index, so an
+    // ON CONFLICT means another path already holds this *partial* hash.
     const willDerive = cls.mediaType === "photo" && !ignored;
-    const inserted = await one<{ id: number }>(
-      `INSERT INTO assets (
-         session_id, abs_path, rel_path, filename, ext, media_type, device,
-         file_size, file_mtime, content_hash, captured_at, camera_model, lens,
-         iso, shutter, aperture, focal_length, gps, width, height, duration_s,
-         derivative_status, processing_state
-       ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-         $20,$21,$22,$23
-       )
-       ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
-       RETURNING id`,
-      [
-        session.id,
-        absPath,
-        path.relative(root.path, absPath),
-        path.basename(absPath),
-        ext.toLowerCase(),
-        cls.mediaType,
-        meta.device,
-        size,
-        mtime,
-        hash,
-        capturedAt,
-        meta.camera_model,
-        meta.lens,
-        meta.iso,
-        meta.shutter,
-        meta.aperture,
-        meta.focal_length,
-        meta.gps ? JSON.stringify(meta.gps) : null,
-        meta.width,
-        meta.height,
-        meta.duration_s,
-        willDerive ? "pending" : "skipped",
-        ignored ? "ignored" : "unprocessed",
-      ],
-    );
+    const insertAsset = (hashValue: string | null) =>
+      one<{ id: number }>(
+        `INSERT INTO assets (
+           session_id, abs_path, rel_path, filename, ext, media_type, device,
+           file_size, file_mtime, content_hash, captured_at, camera_model, lens,
+           iso, shutter, aperture, focal_length, gps, width, height, duration_s,
+           derivative_status, processing_state
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+           $20,$21,$22,$23
+         )
+         ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
+         RETURNING id`,
+        [
+          session.id,
+          absPath,
+          path.relative(root.path, absPath),
+          path.basename(absPath),
+          ext.toLowerCase(),
+          cls.mediaType,
+          meta.device,
+          size,
+          mtime,
+          hashValue,
+          capturedAt,
+          meta.camera_model,
+          meta.lens,
+          meta.iso,
+          meta.shutter,
+          meta.aperture,
+          meta.focal_length,
+          meta.gps ? JSON.stringify(meta.gps) : null,
+          meta.width,
+          meta.height,
+          meta.duration_s,
+          willDerive ? "pending" : "skipped",
+          ignored ? "ignored" : "unprocessed",
+        ],
+      );
+
+    let inserted = await insertAsset(hash);
 
     if (!inserted) {
-      res.duplicates++; // same content_hash elsewhere: we don't reprocess
-      continue;
+      // Partial-hash collision. Before silently dropping the file — which for a
+      // photo archive could mean losing a genuine, distinct shot — confirm the
+      // collision by comparing the FULL content against the asset that holds
+      // the hash (cf. review §4; partial hash = size + endpoints, see hash.ts).
+      const match = await one<{ id: number; abs_path: string }>(
+        "SELECT id, abs_path FROM assets WHERE content_hash = $1",
+        [hash],
+      );
+      const same = match ? await sameContent(absPath, match.abs_path) : null;
+      if (same === false) {
+        // FALSE collision: the two files genuinely differ. Index this one with a
+        // NULL content_hash so it escapes the unique index and is never lost.
+        inserted = await insertAsset(null);
+        if (inserted) res.recovered++;
+      }
+      await recordDuplicateHit({
+        absPath,
+        contentHash: hash,
+        existingAssetId: match?.id ?? null,
+        source: "index",
+        verified: same,
+        fileSize: size,
+      });
+      if (!inserted) {
+        res.duplicates++; // confirmed (or unverifiable) duplicate: not reprocessed
+        continue;
+      }
     }
+
     await q(
       "INSERT INTO ratings (asset_id) VALUES ($1) ON CONFLICT DO NOTHING",
       [inserted.id],
