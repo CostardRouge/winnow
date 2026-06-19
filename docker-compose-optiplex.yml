@@ -7,7 +7,10 @@
 #
 # Pré-requis côté hôte (Ubuntu) :
 #   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
-#   - NAS monté en /mnt/nas (RO) et /mnt/nas/incoming (RW)
+#   - paquet NFS client :  sudo apt-get install -y nfs-common
+#   - NAS Synology : autoriser l'IP de l'Optiplex sur les règles NFS des deux
+#     dossiers partagés (bibliothèque RO + captures RW). Le montage est géré par
+#     la stack (volumes `nas` / `nas_incoming` en bas), pas par fstab.
 #   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
 #   - SSD dédié (optionnel) : pour mettre inbox/derivatives/exports sur un autre
 #     disque (ex. SSD 2 To), définir WINNOW_DATA dans l'UI Portainer (ex.
@@ -17,9 +20,10 @@
 #
 # Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
 # Renseigner dans l'UI « Environment variables » de la stack : DOMAIN_NAME
-# (obligatoire, pour Traefik) et tout réglage à surcharger (POSTGRES_PASSWORD,
-# NAS_MOUNT, *_HOST_PORT, concurrences…). Aucun fichier .env n'est requis :
-# les variables runtime des conteneurs sont inlinées via l'ancre `x-winnow-env`.
+# (obligatoire, Traefik), NAS_IP (obligatoire, NFS) et tout réglage à surcharger
+# (POSTGRES_PASSWORD, WINNOW_DATA, NAS_*_EXPORT, *_HOST_PORT, concurrences…).
+# Aucun fichier .env n'est requis : les variables runtime des conteneurs sont
+# inlinées via l'ancre `x-winnow-env`.
 
 # Variables d'environnement des conteneurs app/worker/migrate. Inlinées ici (et
 # non via `env_file: .env`) pour que Portainer déploie depuis le dépôt sans qu'un
@@ -126,9 +130,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
-      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
-      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      # Bibliothèque NAS (RO) + arrivée NAS (RW) — volumes NFS définis plus bas.
+      - nas:/nas:ro
+      - nas_incoming:/nas-incoming
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -156,8 +160,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ${NAS_MOUNT:-/mnt/nas}:/nas:ro
-      - ${NAS_INCOMING:-/mnt/nas/incoming}:/nas-incoming
+      - nas:/nas:ro
+      - nas_incoming:/nas-incoming
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
@@ -220,6 +224,31 @@ services:
   #   volumes:
   #     - /opt/winnow/inbox:/home/shooter
 
+# --- Volumes NFS du NAS Synology ------------------------------------------
+# Montés par le driver `local` (mount NFS côté noyau hôte). Renseigner NAS_IP
+# dans l'UI Portainer ; les chemins d'export ont des défauts surchargeables.
+#   - nas          : bibliothèque existante, LECTURE SEULE (triage/dérivés).
+#   - nas_incoming : zone d'arrivée des imports, LECTURE/ÉCRITURE.
+# Pré-requis Synology : Panneau de configuration → Dossier partagé → chaque
+# dossier → Permissions NFS → ajouter une règle pour l'IP de l'Optiplex,
+# Squash = « Pas de mapping » (ou map vers un utilisateur pouvant écrire dans
+# captures), Sécurité = sys (AUTH_SYS) — voir la note Kerberos en bas.
+volumes:
+  nas:
+    driver: local
+    driver_opts:
+      type: nfs
+      # ro + soft : un hoquet NAS ne fige pas le scanner (résilience par-fichier).
+      o: "addr=${NAS_IP},nfsvers=4.1,ro,soft,timeo=30,retrans=2"
+      device: ":${NAS_LIBRARY_EXPORT:-/volume1/Data/Media/Photos/Photography}"
+  nas_incoming:
+    driver: local
+    driver_opts:
+      type: nfs
+      # rw + hard : on ne veut JAMAIS perdre silencieusement une écriture d'import.
+      o: "addr=${NAS_IP},nfsvers=4.1,rw,hard,timeo=600,retrans=2"
+      device: ":${NAS_INCOMING_EXPORT:-/volume4/Computing/captures}"
+
 networks:
   # Réseau privé interne aux services Winnow.
   winnow:
@@ -235,3 +264,11 @@ networks:
 # immuable `sha-xxxxxxx` au lieu de `main`.
 # Build local : pour tester sans GHCR, remplace `image:` par `build: .` dans les
 # trois services (et déploie alors depuis une copie locale du dépôt).
+#
+# --- NFS Kerberos (optionnel, déconseillé en LAN de confiance) -------------
+# Le NAS expose aussi du NFS Kerberos. Sur un réseau privé, AUTH_SYS + règle IP
+# suffit et reste BIEN plus simple : le montage NFS se fait dans le noyau de
+# l'hôte (driver `local`), donc Kerberos exigerait côté HÔTE rpc.gssd actif, un
+# /etc/krb5.conf pointant le KDC, et un keytab machine joint au domaine — lourd
+# pour zéro gain ici. Si tu y tiens, ajoute `sec=krb5` (ou krb5i/krb5p) dans le
+# `o:` des volumes et provisionne gssd+keytab sur l'Optiplex.
