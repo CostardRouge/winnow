@@ -1,5 +1,5 @@
-// Configuration centrale, lue depuis l'environnement.
-// Tout l'état et le calcul vivent sur l'Optiplex ; le NAS n'est que source RO.
+// Central configuration, read from the environment.
+// All state and computation live on the Optiplex; the NAS is only a read-only source.
 
 function int(name: string, def: number): number {
   const v = process.env[name];
@@ -8,8 +8,8 @@ function int(name: string, def: number): number {
   return Number.isFinite(n) ? n : def;
 }
 
-// Liste de chemins (séparés par virgule ou deux-points) → tableau nettoyé.
-// Permet plusieurs dossiers (p. ex. plusieurs zones finales) dès aujourd'hui.
+// List of paths (separated by comma or colon) → cleaned array.
+// Allows multiple folders (e.g. several final zones) from today.
 function list(name: string, def: string[]): string[] {
   const v = process.env[name];
   if (!v) return def;
@@ -26,9 +26,9 @@ export const config = {
 
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
 
-  // --- Stockage des dérivés -------------------------------------------------
-  // Pilote "disk" (MVP) ou "s3" (MinIO plus tard). L'interface est identique
-  // côté code : on manipule des clés, on lit/écrit des octets, on signe des URL.
+  // --- Derivative storage ---------------------------------------------------
+  // "disk" driver (MVP) or "s3" (MinIO later). The interface is identical
+  // on the code side: we manipulate keys, read/write bytes, sign URLs.
   storage: {
     driver: (process.env.STORAGE_DRIVER ?? "disk") as "disk" | "s3",
     diskPath: process.env.STORAGE_DISK_PATH ?? "/data/derivatives",
@@ -42,30 +42,30 @@ export const config = {
     },
   },
 
-  // Répertoire où l'export "copie RAW pour Capture One" dépose les originaux.
+  // Directory where the "RAW copy for Capture One" export drops the originals.
   exportDir: process.env.EXPORT_DIR ?? "/data/exports",
 
   // --- Ingest / import ------------------------------------------------------
-  // Tous les feeders (upload web, dépôt SMB, FTP appareil, offload de carte)
-  // convergent vers l'inbox ; l'import worker vérifie (hash), déduplique, range
-  // dans l'incoming (archive NAS) selon un gabarit, puis l'indexer prend le relais.
+  // All feeders (web upload, SMB drop, device FTP, card offload)
+  // converge to the inbox; the import worker verifies (hash), deduplicates, files
+  // into the incoming (NAS archive) according to a template, then the indexer takes over.
   import: {
     inboxDir: process.env.INBOX_DIR ?? "/data/inbox",
-    // Destination permanente des originaux importés (zone "incoming" du NAS).
+    // Permanent destination of the imported originals (NAS "incoming" zone).
     incomingDir: process.env.INCOMING_DIR ?? "/nas/incoming",
-    // Dossiers "finaux" du NAS (sortie Immich) : indexés pour la consultation
-    // (miniatures) mais jamais triés/exportés. Liste → multi-dossiers possible.
+    // NAS "final" folders (Immich output): indexed for viewing
+    // (thumbnails) but never culled/exported. List → multi-folder possible.
     finalsDirs: list("FINALS_DIRS", []),
     concurrency: int("IMPORT_CONCURRENCY", 1),
-    // Surveille l'inbox et enfile un import à l'arrivée de fichiers (SMB/FTP).
+    // Watches the inbox and enqueues an import when files arrive (SMB/FTP).
     watchInbox: (process.env.WATCH_INBOX ?? "true") === "true",
   },
 
-  // --- Vidéo (dérivés via ffmpeg) ------------------------------------------
-  // Poster (vignette) + proxie mp4 H.264 rejouable pour le tri. L'accélération
-  // matérielle est OPTIONNELLE : par défaut "none" (logiciel libx264, marche
-  // partout) ; passer VIDEO_HWACCEL=vaapi une fois /dev/dri partagé au conteneur
-  // (repli logiciel automatique si l'encodage matériel échoue).
+  // --- Video (derivatives via ffmpeg) --------------------------------------
+  // Poster (thumbnail) + playable H.264 mp4 proxy for culling. Hardware
+  // acceleration is OPTIONAL: by default "none" (software libx264, works
+  // everywhere); set VIDEO_HWACCEL=vaapi once /dev/dri is shared with the container
+  // (automatic software fallback if hardware encoding fails).
   video: {
     proxyHeight: int("VIDEO_PROXY_HEIGHT", 720),
     proxyCrf: int("VIDEO_PROXY_CRF", 24),
@@ -73,19 +73,19 @@ export const config = {
     vaapiDevice: process.env.VIDEO_VAAPI_DEVICE ?? "/dev/dri/renderD128",
   },
 
-  // --- Concurrence bornée pour ménager le HDD plein du NAS ------------------
+  // --- Bounded concurrency to spare the full HDD of the NAS ----------------
   scanConcurrency: int("SCAN_CONCURRENCY", 1),
   derivativeConcurrency: int("DERIVATIVE_CONCURRENCY", 3),
   exportConcurrency: int("EXPORT_CONCURRENCY", 2),
 
-  // Tailles des dérivés (cf. §4 : thumbnail grille + proxie de tri).
+  // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
   thumbSize: int("THUMB_SIZE", 400),
   proxySize: int("PROXY_SIZE", 2048),
   thumbQuality: int("THUMB_QUALITY", 70),
   proxyQuality: int("PROXY_QUALITY", 80),
 };
 
-// Extensions reconnues. Le tri se fait toujours sur des proxies légers.
+// Recognized extensions. Culling is always done on lightweight proxies.
 export const PHOTO_RAW_EXTS = new Set([
   ".arw", // Sony A7C II
   ".dng", // drone DJI / iPhone ProRAW

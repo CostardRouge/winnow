@@ -1,9 +1,9 @@
-// Dérivés vidéo via ffmpeg (spawn — pas de dépendance npm).
-//   - Poster (vignette) : une image représentative → WebP (comme les photos).
-//   - Proxie : mp4 H.264 léger, rejouable dans le navigateur (faststart).
-// L'accélération matérielle (VAAPI) est OPTIONNELLE et ne couvre que l'ENCODAGE
-// (le décodage/redimensionnement reste logiciel, bien plus robuste) ; en cas
-// d'échec matériel, repli automatique sur libx264 logiciel.
+// Video derivatives via ffmpeg (spawn — no npm dependency).
+//   - Poster (thumbnail): a representative image → WebP (like the photos).
+//   - Proxy: lightweight H.264 mp4, playable in the browser (faststart).
+// Hardware acceleration (VAAPI) is OPTIONAL and covers only ENCODING
+// (decoding/resizing stays in software, much more robust); on
+// hardware failure, automatic fallback to software libx264.
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,7 +21,7 @@ function run(args: string[], timeoutMs: number): Promise<void> {
     });
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      reject(new Error("ffmpeg: délai dépassé"));
+      reject(new Error("ffmpeg: timeout exceeded"));
     }, timeoutMs);
     proc.on("error", (e) => {
       clearTimeout(timer);
@@ -47,14 +47,14 @@ export async function ffmpegAvailable(): Promise<boolean> {
   return _available;
 }
 
-// Filtre de mise à l'échelle : hauteur bornée à H, sans agrandissement, dims
-// paires (requis par yuv420p). Largeur dérivée (-2) pour garder le ratio.
+// Scaling filter: height capped at H, without enlargement, even
+// dimensions (required by yuv420p). Width derived (-2) to keep the ratio.
 function scaleFilter(): string {
   const h = config.video.proxyHeight;
   return `scale=-2:min(${h}\\,trunc(ih/2)*2)`;
 }
 
-// Poster WebP (vignette de grille). On extrait une image représentative.
+// WebP poster (grid thumbnail). We extract a representative image.
 export async function makeVideoThumb(input: string): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-vid-"));
   const poster = path.join(dir, "poster.jpg");
@@ -76,12 +76,12 @@ export async function makeVideoThumb(input: string): Promise<Buffer> {
   }
 }
 
-// Proxie mp4 rejouable. Renvoie les octets transcodés.
+// Playable mp4 proxy. Returns the transcoded bytes.
 export async function makeVideoProxy(input: string): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-vid-"));
   const out = path.join(dir, "proxy.mp4");
   const crf = String(config.video.proxyCrf);
-  const TIMEOUT = 60 * 60_000; // 1 h : un long clip peut être lent en logiciel
+  const TIMEOUT = 60 * 60_000; // 1 h: a long clip can be slow in software
 
   const software = [
     "-y", "-i", input,
@@ -106,7 +106,7 @@ export async function makeVideoProxy(input: string): Promise<Buffer> {
         await run(vaapi, TIMEOUT);
       } catch (e) {
         console.warn(
-          "[video] encodage VAAPI échoué, repli logiciel :",
+          "[video] VAAPI encoding failed, software fallback:",
           (e as Error).message,
         );
         await run(software, TIMEOUT);

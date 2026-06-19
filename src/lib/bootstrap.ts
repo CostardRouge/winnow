@@ -1,9 +1,9 @@
-// Enregistrement idempotent des roots connus, lancé au démarrage du worker.
-//  - l'incoming (kind='source') : garantit l'indexation même sans import récent ;
-//  - chaque dossier final configuré (kind='finals') : indexé pour la consultation
-//    (miniatures), jamais trié — la lecture seule est imposée côté UI.
-// Sans ce bootstrap, un dossier final resterait vide : auparavant les roots
-// 'finals' n'étaient jamais indexés.
+// Idempotent registration of known roots, run at worker startup.
+//  - the incoming (kind='source'): guarantees indexing even without a recent import;
+//  - each configured final folder (kind='finals'): indexed for viewing
+//    (thumbnails), never culled — read-only is enforced on the UI side.
+// Without this bootstrap, a final folder would stay empty: previously the
+// 'finals' roots were never indexed.
 import { stat } from "node:fs/promises";
 import { one } from "./db";
 import { config } from "./config";
@@ -36,14 +36,14 @@ export async function bootstrapRoots(): Promise<void> {
 
   for (const { path, kind } of dirs) {
     if (!(await exists(path))) {
-      console.warn(`[bootstrap] ${kind} introuvable, ignoré : ${path}`);
+      console.warn(`[bootstrap] ${kind} not found, ignored: ${path}`);
       continue;
     }
     try {
       await ensureRoot(path, kind);
-      console.log(`[bootstrap] ${kind} enregistré + indexation enfilée : ${path}`);
+      console.log(`[bootstrap] ${kind} registered + indexing enqueued: ${path}`);
     } catch (err) {
-      console.error(`[bootstrap] échec ${path} :`, err);
+      console.error(`[bootstrap] failure ${path}:`, err);
     }
   }
 }

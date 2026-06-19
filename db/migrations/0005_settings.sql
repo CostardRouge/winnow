@@ -1,5 +1,5 @@
--- Réglages applicatifs (clé/valeur JSONB) : pause du scan + débit horaire.
--- Lus par l'app (UI/API) et par les workers ; 0 = illimité pour les débits.
+-- Application settings (JSONB key/value): scan pause + hourly rate.
+-- Read by the app (UI/API) and by the workers; 0 = unlimited for the rates.
 CREATE TABLE IF NOT EXISTS app_settings (
   key        TEXT PRIMARY KEY,
   value      JSONB NOT NULL,

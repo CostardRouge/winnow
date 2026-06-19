@@ -1,8 +1,8 @@
 "use client";
 
-// Tableau de bord — bandeau de chiffres (médias / scan / analysés / en attente)
-// + contrôle du pipeline : pause/reprise du scan et débits horaires (sliders).
-// S'auto-rafraîchit toutes les 5 s via /api/stats.
+// Dashboard — strip of figures (media / scan / analyzed / pending)
+// + pipeline control: pause/resume of the scan and hourly rates (sliders).
+// Auto-refreshes every 5 s via /api/stats.
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
@@ -33,7 +33,7 @@ type Stats = {
 const RATE_MAX = 3000;
 const RATE_STEP = 50;
 
-// Travail actif dans une file = en cours + en attente (priorisés inclus).
+// Active work in a queue = in progress + pending (prioritized included).
 function active(c: QueueCounts | undefined): number {
   if (!c) return 0;
   return (c.active ?? 0) + (c.waiting ?? 0) + (c.prioritized ?? 0);
@@ -48,7 +48,7 @@ export default function ControlPanel() {
   const [scanRate, setScanRate] = useState(0);
   const [analyzeRate, setAnalyzeRate] = useState(0);
   const [busy, setBusy] = useState(false);
-  // Pendant qu'on glisse un slider, on ne laisse pas le polling écraser sa valeur.
+  // While dragging a slider, we don't let polling overwrite its value.
   const dragging = useRef({ scan: false, analyze: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -59,7 +59,7 @@ export default function ControlPanel() {
       if (!dragging.current.scan) setScanRate(s.settings.scanPerHour);
       if (!dragging.current.analyze) setAnalyzeRate(s.settings.analyzePerHour);
     } catch {
-      /* erreur transitoire : on garde l'affichage courant */
+      /* transient error: keep the current display */
     }
   }, []);
 

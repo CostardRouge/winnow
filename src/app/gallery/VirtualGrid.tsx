@@ -14,7 +14,7 @@ export type GalleryAsset = {
   star: number;
 };
 
-const TARGET = 175; // largeur cible d'une cellule (px)
+const TARGET = 175; // target cell width (px)
 const GAP = 6;
 
 export default function VirtualGrid({

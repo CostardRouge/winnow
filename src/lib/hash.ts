@@ -1,7 +1,7 @@
-// Hash partiel pour déduplication (décision §12.3) et détection de changement.
-// On ne lit PAS tout le fichier (RAW = dizaines de Mo) : on combine la taille
-// et deux fenêtres (début + fin). Suffisant pour dédupliquer des originaux ;
-// collisions improbables et tolérées au MVP.
+// Partial hash for deduplication (decision §12.3) and change detection.
+// We do NOT read the whole file (RAW = tens of MB): we combine the size
+// and two windows (start + end). Sufficient to dedup originals;
+// collisions are improbable and tolerated in the MVP.
 import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
 

@@ -1,5 +1,5 @@
--- Tags libres (activation des tables existantes tags/asset_tags).
+-- Free-form tags (activates the existing tags/asset_tags tables).
 ALTER TABLE tags ADD COLUMN IF NOT EXISTS color TEXT;
--- Lookup inverse (assets d'un tag) : la PK asset_tags(asset_id, tag_id) couvre
--- déjà le sens asset→tags ; on ajoute l'index tag→assets.
+-- Reverse lookup (assets of a tag): the PK asset_tags(asset_id, tag_id) already
+-- covers the asset→tags direction; we add the tag→assets index.
 CREATE INDEX IF NOT EXISTS asset_tags_tag_idx ON asset_tags (tag_id);

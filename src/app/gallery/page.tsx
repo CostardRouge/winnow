@@ -3,9 +3,9 @@
 import Link from "next/link";
 import GalleryShell from "./GalleryShell";
 
-// Galerie « tous dossiers » (sans scope) — accès direct/power-user. La navigation
-// principale passe désormais par les onglets de la page d'accueil ; ce lien n'y
-// figure plus mais la route reste pour l'exploration globale et le deep-link.
+// "All folders" gallery (no scope) — direct/power-user access. Primary navigation
+// now goes through the home page tabs; this link no longer appears there but the
+// route remains for global exploration and deep-linking.
 export default function GalleryPage() {
   return (
     <div className="gallery-layout">

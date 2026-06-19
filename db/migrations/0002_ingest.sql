@@ -1,10 +1,10 @@
--- Ingest / import : l'inbox est un nouveau type de root.
+-- Ingest / import: the inbox is a new kind of root.
 ALTER TABLE roots DROP CONSTRAINT IF EXISTS roots_kind_check;
 ALTER TABLE roots
   ADD CONSTRAINT roots_kind_check
   CHECK (kind IN ('source', 'finals', 'inbox'));
 
--- Provenance des imports (quel lot, quelle origine) — utile pour le suivi.
+-- Import provenance (which batch, which origin) — useful for tracking.
 CREATE TABLE IF NOT EXISTS import_batches (
   id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   source_dir  TEXT NOT NULL,

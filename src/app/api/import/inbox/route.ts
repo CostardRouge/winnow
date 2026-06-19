@@ -1,5 +1,5 @@
-// POST /api/import/inbox → relance manuelle de l'import de l'inbox
-// (dépôts SMB/FTP). La surveillance automatique le fait sinon toute seule.
+// POST /api/import/inbox → manual retry of the inbox import
+// (SMB/FTP drops). Otherwise automatic watching does it on its own.
 import { one } from "@/lib/db";
 import { config } from "@/lib/config";
 import { enqueueImport } from "@/lib/queue";

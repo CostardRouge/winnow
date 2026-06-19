@@ -1,4 +1,4 @@
-// GET /api/assets/:id → détail + EXIF + état de tri.
+// GET /api/assets/:id → detail + EXIF + culling state.
 import { one } from "@/lib/db";
 import { json, notFound, serverError } from "@/lib/api";
 import type { AssetGridRow } from "@/lib/types";
@@ -22,7 +22,7 @@ export async function GET(
        WHERE a.id = $1`,
       [Number.parseInt(id, 10)],
     );
-    if (!asset) return notFound("Asset introuvable");
+    if (!asset) return notFound("Asset not found");
     return json({ asset });
   } catch (err) {
     return serverError(err);

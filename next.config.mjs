@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // sharp + exiftool-vendored + pg embarquent du natif/binaire qu'il ne faut
-  // pas bundler côté serveur : on les garde externes (chargés depuis node_modules).
+  // sharp + exiftool-vendored + pg ship native/binary code that must not be
+  // bundled on the server side: keep them external (loaded from node_modules).
   serverExternalPackages: ["sharp", "exiftool-vendored", "pg"],
-  // Le lint tourne séparément (npm run lint) ; on ne bloque pas le build dessus.
+  // Lint runs separately (npm run lint); don't block the build on it.
   eslint: { ignoreDuringBuilds: true },
 };
 

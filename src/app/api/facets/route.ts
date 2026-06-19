@@ -1,22 +1,22 @@
-// GET /api/facets?kind=incoming|final → valeurs disponibles (+ comptes) pour
-// construire les filtres. Comptes globaux (v1), éventuellement restreints au
-// rôle de dossier (Incoming/Final) ; le filtrage cumulatif s'applique ensuite
-// côté résultats.
+// GET /api/facets?kind=incoming|final -> available values (+ counts) to
+// build the filters. Global counts (v1), optionally restricted to the
+// folder role (Incoming/Final); cumulative filtering then applies on the
+// results side.
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 import { json, serverError } from "@/lib/api";
 
-// Route adossée à la DB : jamais pré-rendue/mise en cache au build (sinon Next
-// exécute la requête au build et fige une réponse vide dans l'image).
+// DB-backed route: never pre-rendered/cached at build time (otherwise Next
+// runs the query at build and freezes an empty response into the image).
 export const dynamic = "force-dynamic";
 
 type ValueCount = { value: string | number; count: number };
 
-// `scope` est un fragment SQL commençant par " AND …" (ou "") qui restreint les
-// assets au rôle demandé ; `params` porte ses paramètres positionnels. Toutes
-// les requêtes aliasent `assets a` pour que la sous-requête de scope (sur
-// `a.session_id`) résolve.
+// `scope` is a SQL fragment starting with " AND ..." (or "") that restricts the
+// assets to the requested role; `params` carries its positional parameters. All
+// the queries alias `assets a` so that the scope subquery (on
+// `a.session_id`) resolves.
 async function facet(
   column: string,
   scope: string,
@@ -36,10 +36,10 @@ async function facet(
     .map((r) => ({ value: r.value as string | number, count: r.count }));
 }
 
-// `allSettled` : une sous-requête en échec (p. ex. table `tags` absente, hoquet
-// DB) renvoie une facette vide au lieu de faire planter tout l'endpoint — la
-// galerie reste utilisable et le front ne reçoit plus un objet d'erreur à la
-// place de la forme attendue.
+// `allSettled`: a failed subquery (e.g. `tags` table absent, DB hiccup)
+// returns an empty facet instead of crashing the whole endpoint -- the
+// gallery stays usable and the front no longer receives an error object in
+// place of the expected shape.
 async function settledArray(p: Promise<ValueCount[]>): Promise<ValueCount[]> {
   const r = await Promise.allSettled([p]);
   if (r[0].status === "fulfilled") return r[0].value;
@@ -49,8 +49,8 @@ async function settledArray(p: Promise<ValueCount[]>): Promise<ValueCount[]> {
 
 export async function GET(req: NextRequest) {
   try {
-    // Seul `kind` (le rôle) nous intéresse ici : les autres dimensions sont des
-    // facettes, pas un scope.
+    // Only `kind` (the role) matters here: the other dimensions are
+    // facets, not a scope.
     const { kind } = filterFromSearchParams(req.nextUrl.searchParams);
     const { conditions, params } = buildFilter(kind ? { kind } : {}, 1);
     const scope = conditions.length ? ` AND ${conditions.join(" AND ")}` : "";

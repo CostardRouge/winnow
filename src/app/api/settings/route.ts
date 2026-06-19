@@ -1,6 +1,6 @@
-// GET  /api/settings              → réglages courants (débits + pause).
-// PATCH /api/settings { scanPerHour?, analyzePerHour? } → met à jour les débits.
-//   (0 = illimité). La pause est gérée par POST /api/scan/control.
+// GET  /api/settings              -> current settings (rates + pause).
+// PATCH /api/settings { scanPerHour?, analyzePerHour? } -> updates the rates.
+//   (0 = unlimited). Pause is handled by POST /api/scan/control.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSettings, setSettings } from "@/lib/settings";
@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success)
-      return badRequest("réglages invalides", parsed.error.issues);
+      return badRequest("invalid settings", parsed.error.issues);
     const updated = await setSettings(parsed.data);
     return json(updated);
   } catch (err) {

@@ -1,4 +1,4 @@
-// Helpers communs aux route handlers.
+// Helpers common to the route handlers.
 import { NextResponse } from "next/server";
 
 export function json(data: unknown, status = 200) {
@@ -9,17 +9,17 @@ export function badRequest(message: string, details?: unknown) {
   return NextResponse.json({ error: message, details }, { status: 400 });
 }
 
-export function notFound(message = "Introuvable") {
+export function notFound(message = "Not found") {
   return NextResponse.json({ error: message }, { status: 404 });
 }
 
 export function serverError(err: unknown) {
   console.error("API error:", err);
-  const message = err instanceof Error ? err.message : "Erreur interne";
+  const message = err instanceof Error ? err.message : "Internal error";
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
-// Cursor de pagination : (captured_at, id) encodé en base64url.
+// Pagination cursor: (captured_at, id) encoded in base64url.
 export function encodeCursor(capturedAt: string, id: number): string {
   return Buffer.from(`${capturedAt}|${id}`).toString("base64url");
 }

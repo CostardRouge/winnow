@@ -1,12 +1,12 @@
-// DELETE /api/exports/:id → supprime un job d'export :
-//   1. (transaction) revert processing_state 'exported' → 'triaged' pour les
-//      assets dont la copie est retirée et qui n'ont pas d'autre export, puis
-//      suppression des lignes `exports` et du `export_jobs` ;
-//   2. (après commit) suppression best-effort des fichiers copiés et du dossier
-//      d'export. Les RAW ayant pu être déplacés dans Capture One, une erreur
-//      fichier n'est jamais bloquante.
-// Ordre voulu : BDD d'abord — on ne supprime jamais de fichiers utilisateur si
-// la transaction échoue.
+// DELETE /api/exports/:id -> deletes an export job:
+//   1. (transaction) revert processing_state 'exported' -> 'triaged' for the
+//      assets whose copy is removed and that have no other export, then
+//      deletion of the `exports` rows and the `export_jobs` row;
+//   2. (after commit) best-effort deletion of the copied files and the export
+//      folder. Since the RAWs may have been moved in Capture One, a file
+//      error is never blocking.
+// Intended order: DB first -- we never delete user files if the transaction
+// fails.
 import { NextRequest } from "next/server";
 import { rm } from "node:fs/promises";
 import path from "node:path";
@@ -22,13 +22,13 @@ export async function DELETE(
   try {
     const { id } = await params;
     const jobId = Number.parseInt(id, 10);
-    if (!Number.isFinite(jobId)) return badRequest("id invalide");
+    if (!Number.isFinite(jobId)) return badRequest("invalid id");
 
     const job = await one<{ id: number; name: string }>(
       "SELECT id, name FROM export_jobs WHERE id = $1",
       [jobId],
     );
-    if (!job) return notFound("Export introuvable");
+    if (!job) return notFound("Export not found");
 
     const rows = await many<{
       source_asset_id: number;
@@ -38,7 +38,7 @@ export async function DELETE(
     ]);
     const assetIds = rows.map((r) => r.source_asset_id);
 
-    // --- 1) BDD en transaction --------------------------------------------
+    // --- 1) DB in a transaction -------------------------------------------
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -65,7 +65,7 @@ export async function DELETE(
       client.release();
     }
 
-    // --- 2) Fichiers (best-effort, après commit) --------------------------
+    // --- 2) Files (best-effort, after commit) -----------------------------
     const fileErrors: string[] = [];
     for (const r of rows) {
       if (!r.output_path) continue;
@@ -75,7 +75,7 @@ export async function DELETE(
         fileErrors.push(`${r.output_path}: ${(e as Error).message}`);
       }
     }
-    // Dossier d'export (déterministe d'après le nom du job) : retiré s'il existe.
+    // Export folder (deterministic from the job name): removed if it exists.
     try {
       await rm(path.join(config.exportDir, sanitize(job.name)), {
         recursive: true,

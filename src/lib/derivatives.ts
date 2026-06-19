@@ -1,5 +1,5 @@
-// Worker dérivés — génère thumbnail (grille) + proxie de tri depuis l'aperçu.
-// Écrit dans le stockage (disque/MinIO), marque l'asset `ready` (cf. §3, §4).
+// Derivatives worker - generates thumbnail (grid) + culling proxy from the preview.
+// Writes to storage (disk/MinIO), marks the asset `ready` (cf. §3, §4).
 import sharp from "sharp";
 import { rm } from "node:fs/promises";
 import { q, one } from "./db";
@@ -9,24 +9,24 @@ import { ffmpegAvailable, makeVideoThumb, makeVideoProxy } from "./video";
 import { getStorage } from "./storage/index";
 import type { Asset } from "./types";
 
-// sharp lit de gros aperçus : on autorise des images très larges.
+// sharp reads large previews: we allow very wide images.
 sharp.cache(false);
 
-// Angle de rotation (degrés horaires) pour les orientations EXIF non-miroir.
-// 2/4/5/7 (miroirs) sont quasi inexistants en photo RAW → ignorés (0°).
+// Rotation angle (clockwise degrees) for non-mirror EXIF orientations.
+// 2/4/5/7 (mirrors) are almost nonexistent in RAW photos -> ignored (0 deg).
 const ORIENTATION_ANGLE: Record<number, number> = { 3: 180, 6: 90, 8: 270 };
 
 export async function generateDerivative(assetId: number): Promise<void> {
   const asset = await one<Asset>("SELECT * FROM assets WHERE id = $1", [
     assetId,
   ]);
-  if (!asset) throw new Error(`Asset introuvable : ${assetId}`);
+  if (!asset) throw new Error(`Asset not found: ${assetId}`);
   if (asset.media_type === "video") {
     await generateVideoDerivative(asset);
     return;
   }
   if (asset.processing_state === "ignored") {
-    // Session marquée ignorée après l'enfilement : on ne génère rien.
+    // Session marked ignored after queueing: we generate nothing.
     await q(
       "UPDATE assets SET derivative_status='skipped', updated_at=now() WHERE id=$1",
       [assetId],
@@ -44,10 +44,10 @@ export async function generateDerivative(assetId: number): Promise<void> {
     const src = await extractSourceJpeg(asset.abs_path, asset.ext);
     cleanupDir = src.cleanupDir;
 
-    // Orientation : si l'image lue par sharp porte son propre tag EXIF (JPEG
-    // direct, ou aperçu RAW qui l'a conservé), `.rotate()` l'applique seul.
-    // Sinon (cas fréquent des aperçus RAW), on applique explicitement l'angle
-    // déduit de l'orientation lue sur le RAW.
+    // Orientation: if the image read by sharp carries its own EXIF tag (direct
+    // JPEG, or RAW preview that preserved it), `.rotate()` applies it on its own.
+    // Otherwise (frequent case for RAW previews), we explicitly apply the angle
+    // derived from the orientation read on the RAW.
     let base = sharp(src.jpegPath, { failOn: "none" });
     const probe = await base.metadata();
     if (probe.orientation && probe.orientation !== 1) {
@@ -94,7 +94,7 @@ export async function generateDerivative(assetId: number): Promise<void> {
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
-      [assetId, (err as Error).message?.slice(0, 500) ?? "erreur inconnue"],
+      [assetId, (err as Error).message?.slice(0, 500) ?? "unknown error"],
     );
     throw err;
   } finally {
@@ -102,7 +102,7 @@ export async function generateDerivative(assetId: number): Promise<void> {
   }
 }
 
-// Dérivés vidéo : poster WebP (vignette/grille) + proxie mp4 rejouable.
+// Video derivatives: WebP poster (thumbnail/grid) + replayable mp4 proxy.
 async function generateVideoDerivative(asset: Asset): Promise<void> {
   if (asset.processing_state === "ignored") {
     await q(
@@ -111,12 +111,12 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
     );
     return;
   }
-  // ffmpeg absent : on marque l'échec (visible dans la liste des erreurs) SANS
-  // jeter, pour éviter une tempête de retries avant que l'image soit reconstruite.
+  // ffmpeg missing: we mark the failure (visible in the error list) WITHOUT
+  // throwing, to avoid a storm of retries before the image is rebuilt.
   if (!(await ffmpegAvailable())) {
     await q(
       `UPDATE assets SET derivative_status='error',
-         derivative_error='ffmpeg introuvable — reconstruire l''image worker (voir Dockerfile)',
+         derivative_error='ffmpeg not found - rebuild the worker image (see Dockerfile)',
          updated_at=now() WHERE id=$1`,
       [asset.id],
     );
@@ -147,7 +147,7 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
-      [asset.id, (err as Error).message?.slice(0, 500) ?? "erreur inconnue"],
+      [asset.id, (err as Error).message?.slice(0, 500) ?? "unknown error"],
     );
     throw err;
   }

@@ -1,4 +1,4 @@
-// POST /api/export { name, target, filter, params } → crée un export_job + enfile.
+// POST /api/export { name, target, filter, params } → creates an export_job + enqueues.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one } from "@/lib/db";
@@ -16,7 +16,7 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("Paramètres invalides", parsed.error.issues);
+    if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { name, target, filter, params } = parsed.data;
 
     const job = await one<{ id: number }>(

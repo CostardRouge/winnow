@@ -1,4 +1,4 @@
-// GET /api/assets/:id/proxy → proxie de tri (vue détail/zoom).
+// GET /api/assets/:id/proxy -> culling proxy (detail/zoom view).
 import { serveDerivative } from "@/lib/serve";
 import { serverError } from "@/lib/api";
 

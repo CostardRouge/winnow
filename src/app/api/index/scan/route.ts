@@ -1,4 +1,4 @@
-// POST /api/index/scan  { path }  → enregistre le root et enfile une indexation.
+// POST /api/index/scan  { path }  → registers the root and enqueues an indexing job.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one } from "@/lib/db";
@@ -10,7 +10,7 @@ const Body = z.object({ path: z.string().min(1) });
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("path requis", parsed.error.issues);
+    if (!parsed.success) return badRequest("path required", parsed.error.issues);
 
     const root = await one<{ id: number; path: string }>(
       `INSERT INTO roots (path, kind, watch) VALUES ($1, 'source', true)

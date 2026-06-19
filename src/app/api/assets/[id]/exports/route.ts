@@ -1,4 +1,4 @@
-// GET /api/assets/:id/exports → lignage (finaux liés à cet original) (§8).
+// GET /api/assets/:id/exports → lineage (finals linked to this original) (§8).
 import { many } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 

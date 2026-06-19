@@ -1,5 +1,5 @@
--- Winnow — schéma initial (cf. specs §5).
--- processing_state est la source de vérité par fichier.
+-- Winnow — initial schema (see specs §5).
+-- processing_state is the per-file source of truth.
 
 CREATE TABLE IF NOT EXISTS roots (
   id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS assets (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Déduplication : un même contenu n'est traité qu'une fois (cf. décision §12.3).
--- Hash partiel (taille + extrémités) ; collisions improbables et tolérées au MVP.
+-- Deduplication: the same content is processed only once (see decision §12.3).
+-- Partial hash (size + endpoints); collisions are unlikely and tolerated in the MVP.
 CREATE UNIQUE INDEX IF NOT EXISTS assets_content_hash_uniq
   ON assets (content_hash) WHERE content_hash IS NOT NULL;
 
@@ -106,11 +106,11 @@ CREATE TABLE IF NOT EXISTS exports (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Index clés (cf. §5).
+-- Key indexes (see §5).
 CREATE INDEX IF NOT EXISTS assets_session_idx        ON assets (session_id);
 CREATE INDEX IF NOT EXISTS assets_derivative_idx     ON assets (derivative_status);
 CREATE INDEX IF NOT EXISTS assets_processing_idx     ON assets (processing_state);
--- Pagination cursor-based : (captured_at, id).
+-- Cursor-based pagination: (captured_at, id).
 CREATE INDEX IF NOT EXISTS assets_captured_cursor_idx ON assets (captured_at, id);
 CREATE INDEX IF NOT EXISTS ratings_verdict_idx        ON ratings (verdict);
 CREATE INDEX IF NOT EXISTS exports_source_idx         ON exports (source_asset_id);

@@ -71,7 +71,7 @@ function Node({
       try {
         setChildren(await fetchChildren(group, myPath, scope));
       } catch {
-        setChildren([]); // évite une boucle de rechargement sur erreur
+        setChildren([]); // avoids a reload loop on error
       }
     }
     setOpen((o) => !o);

@@ -101,7 +101,7 @@ button {
   font-size: 14px;
 }
 
-/* --- Panneau de contrôle (chiffres + pause + débits) --- */
+/* --- Control panel (counters + pause + rates) --- */
 .control {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -282,7 +282,7 @@ button {
   border-color: var(--pick);
 }
 
-/* --- Hub à onglets (page d'accueil) --- */
+/* --- Tabbed hub (home page) --- */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -341,7 +341,7 @@ button {
   padding: 10px 16px 16px;
 }
 
-/* Bande de vignettes d'un export (réutilise les dérivés des assets source). */
+/* Thumbnail strip for an export (reuses the derivatives of the source assets). */
 .thumb-strip {
   display: flex;
   gap: 4px;
@@ -357,7 +357,7 @@ button {
   background: var(--panel-2);
 }
 
-/* --- Grille de tri --- */
+/* --- Culling grid --- */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -429,7 +429,7 @@ button {
   align-items: center;
 }
 
-/* --- Visionneuse plein écran --- */
+/* --- Fullscreen viewer --- */
 .viewer {
   position: fixed;
   inset: 0;
@@ -453,7 +453,7 @@ button {
   object-fit: contain;
 }
 
-/* Pastille « vidéo » sur les vignettes */
+/* "video" badge on thumbnails */
 .cell .play-badge {
   position: absolute;
   top: 50%;
@@ -509,13 +509,13 @@ button {
   font-size: 12px;
 }
 
-/* --- Galerie globale (virtualisée + filtres) --- */
+/* --- Global gallery (virtualized + filters) --- */
 .gallery-layout {
   display: flex;
   flex-direction: column;
   height: 100vh;
 }
-/* Coquille réutilisable : remplit son parent (route plein écran OU onglet). */
+/* Reusable shell: fills its parent (fullscreen route OR tab). */
 .gallery-shell {
   flex: 1;
   min-height: 0;
@@ -606,7 +606,7 @@ button {
   color: #05101f;
 }
 
-/* Barre d'action de sélection (tags en lot) */
+/* Selection action bar (bulk tags) */
 .selectbar {
   display: flex;
   align-items: center;
@@ -640,7 +640,7 @@ button {
   line-height: 1;
 }
 
-/* Arbre de navigation */
+/* Navigation tree */
 .tree-row {
   display: flex;
   align-items: center;

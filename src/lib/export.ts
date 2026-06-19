@@ -1,6 +1,6 @@
-// Export worker (cf. §8). MVP : cible `capture_one` = copie des RAW originaux
-// des picks vers un dossier d'export local. C'est le SEUL endroit où l'on
-// rapatrie de gros fichiers sur le réseau. Enregistre le lignage source→export.
+// Export worker (cf. §8). MVP: target `capture_one` = copies the original RAWs
+// of the picks to a local export folder. This is the ONLY place where we pull
+// large files back over the network. Records the source->export lineage.
 import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one, many } from "./db";
@@ -9,9 +9,9 @@ import { buildFilter, FilterSchema } from "./filter";
 import { partialHash } from "./hash";
 import type { Asset } from "./types";
 
-// Copie atomique + vérifiée : on écrit dans un `.part`, on contrôle taille+hash
-// partiel, puis on renomme (atomique sur le même FS). Un crash en cours ne
-// laisse jamais un fichier partiel sous le nom final.
+// Atomic + verified copy: we write to a `.part`, check size + partial hash,
+// then rename (atomic on the same FS). A crash in progress never leaves a
+// partial file under the final name.
 async function copyVerified(src: string, dest: string): Promise<void> {
   const tmp = `${dest}.part`;
   await rm(tmp, { force: true });
@@ -23,13 +23,13 @@ async function copyVerified(src: string, dest: string): Promise<void> {
   ]);
   if (tmpSt.size !== srcSt.size || tmpHash !== srcHash) {
     await rm(tmp, { force: true });
-    throw new Error("vérification de copie échouée (taille/hash)");
+    throw new Error("copy verification failed (size/hash)");
   }
   await rename(tmp, dest);
 }
 
-// Nom de dossier d'export déterministe à partir du nom de job. Exporté pour que
-// la suppression d'un export retrouve le même dossier (cf. api/exports/[id]).
+// Deterministic export folder name derived from the job name. Exported so that
+// deleting an export finds the same folder again (cf. api/exports/[id]).
 export function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "export";
 }
@@ -42,14 +42,14 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     filter_query: unknown;
     params: Record<string, unknown>;
   }>("SELECT * FROM export_jobs WHERE id = $1", [exportJobId]);
-  if (!job) throw new Error(`export_job introuvable : ${exportJobId}`);
+  if (!job) throw new Error(`export_job not found: ${exportJobId}`);
 
   await q("UPDATE export_jobs SET status='running' WHERE id=$1", [exportJobId]);
 
   try {
     if (job.target !== "capture_one") {
-      // web / immich : prévus en V2.
-      throw new Error(`Cible d'export non encore supportée : ${job.target}`);
+      // web / immich: planned for V2.
+      throw new Error(`Export target not yet supported: ${job.target}`);
     }
 
     const filter = FilterSchema.parse(job.filter_query ?? {});

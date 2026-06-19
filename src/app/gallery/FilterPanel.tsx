@@ -34,7 +34,7 @@ export type Filters = {
   year: number[];
   month: number[];
   day: number[];
-  // Pilotés par l'arbre (drill-down) :
+  // Driven by the tree (drill-down):
   root_id?: number;
   session_id?: number;
   date_from?: string;
@@ -47,7 +47,7 @@ export type Filters = {
   focal_max?: number;
   aperture_min?: number;
   aperture_max?: number;
-  size_min?: number; // Mo (UI) — converti en octets dans la query
+  size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
   has_gps?: boolean;
 };

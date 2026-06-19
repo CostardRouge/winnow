@@ -1,30 +1,30 @@
-// Files Redis (BullMQ). Trois files découplées (cf. §3) :
-//  - index       : scan incrémental d'un root
-//  - derivatives : génération thumbnail + proxie
-//  - export      : jobs d'export (copie RAW pour C1, etc.)
+// Redis queues (BullMQ). Three decoupled queues (cf. §3):
+//  - index       : incremental scan of a root
+//  - derivatives : thumbnail + proxy generation
+//  - export      : export jobs (RAW copy for C1, etc.)
 import { Queue, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
 import { config } from "./config";
 
-// BullMQ embarque sa propre copie d'ioredis ; on partage une instance et on
-// neutralise le conflit de types nominaux par un cast à la frontière.
+// BullMQ bundles its own copy of ioredis; we share one instance and
+// neutralize the nominal type conflict with a cast at the boundary.
 const redis = new IORedis(config.redisUrl, {
   maxRetriesPerRequest: null,
-  // Pas de connexion tant qu'aucune commande n'est émise (évite les tentatives
-  // au build/import quand Redis n'est pas joignable).
+  // No connection until a command is issued (avoids attempts
+  // at build/import time when Redis is unreachable).
   lazyConnect: true,
 });
 export const connection = redis as unknown as ConnectionOptions;
 
-// Client ioredis brut, réutilisé par le limiteur de débit (scripts Lua).
+// Raw ioredis client, reused by the rate limiter (Lua scripts).
 export const redisClient = redis;
 
-// Priorités BullMQ : plus le nombre est petit, plus la priorité est haute
-// (0 = la plus haute). On prend `high` < `normal` pour faire passer l'incoming
-// et l'inbox devant les scans/dérivés ordinaires.
+// BullMQ priorities: the smaller the number, the higher the priority
+// (0 = highest). We use `high` < `normal` to put the incoming
+// and the inbox ahead of ordinary scans/derivatives.
 export const PRIORITY = { high: 1, normal: 10 } as const;
 
-// Sonde de vivacité Redis pour le healthcheck (échec rapide via timeout).
+// Redis liveness probe for the healthcheck (fast failure via timeout).
 export async function pingRedis(timeoutMs = 3000): Promise<boolean> {
   try {
     const ping = redis.ping();
@@ -76,10 +76,10 @@ function build() {
   };
 }
 
-// Instanciation paresseuse : construire un `Queue` BullMQ ouvre aussitôt une
-// connexion Redis (chargement des scripts Lua). On ne veut pas que le simple
-// import de ce module — au build Next, par exemple — tente de joindre Redis.
-// Les files ne sont créées qu'au premier enqueue.
+// Lazy instantiation: building a BullMQ `Queue` immediately opens a
+// Redis connection (loading the Lua scripts). We don't want merely
+// importing this module — at Next build time, for example — to try to reach Redis.
+// The queues are created only on the first enqueue.
 function getQueues() {
   if (!global.__winnowQueues) global.__winnowQueues = build();
   return global.__winnowQueues;
@@ -113,18 +113,18 @@ export async function enqueueDerivative(
   );
 }
 
-// --- Contrôle du pipeline scan/analyse -------------------------------------
+// --- Scan/analyze pipeline control ------------------------------------------
 
-// Pause/reprise globale (persistée dans Redis : workers de tous les process la
-// respectent). On suspend l'indexation ET la génération de dérivés.
+// Global pause/resume (persisted in Redis: workers of all processes
+// respect it). We suspend indexing AND derivative generation.
 export async function setScanPaused(paused: boolean): Promise<void> {
   const { index, derivatives } = getQueues();
   if (paused) await Promise.all([index.pause(), derivatives.pause()]);
   else await Promise.all([index.resume(), derivatives.resume()]);
 }
 
-// Priorité du prochain scan en attente (plus petit = plus prioritaire), ou null
-// si aucun scan n'attend. Sert à la préemption d'un scan long par l'incoming.
+// Priority of the next pending scan (smaller = higher priority), or null
+// if no scan is waiting. Used to preempt a long scan with the incoming.
 export async function nextWaitingIndexPriority(): Promise<number | null> {
   const jobs = await getQueues().index.getPrioritized(0, 0);
   const p = jobs[0]?.priority;

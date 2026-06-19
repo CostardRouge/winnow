@@ -1,10 +1,10 @@
-// Réglages applicatifs persistés (table app_settings) : pause du scan + débits
-// horaires. Source de vérité partagée par l'API (UI) et les workers.
-//   - scanPaused      : suspend l'indexation ET la génération de dérivés.
-//   - scanPerHour     : nb max de fichiers *lus* (hash+EXIF) par heure (0 = illimité).
-//   - analyzePerHour  : nb max de dérivés générés par heure (0 = illimité).
-// Un petit cache (TTL) évite de marteler Postgres : les workers appellent
-// getSettings() très souvent (par fichier / par job).
+// Persisted application settings (app_settings table): scan pause + hourly
+// rates. Source of truth shared by the API (UI) and the workers.
+//   - scanPaused      : suspends indexing AND derivative generation.
+//   - scanPerHour     : max number of files *read* (hash+EXIF) per hour (0 = unlimited).
+//   - analyzePerHour  : max number of derivatives generated per hour (0 = unlimited).
+// A small cache (TTL) avoids hammering Postgres: the workers call
+// getSettings() very often (per file / per job).
 import { many, q } from "./db";
 
 export type AppSettings = {
@@ -37,8 +37,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.analyzePerHour = Math.max(0, Number(r.value) || 0);
     }
   } catch {
-    // Table absente (avant migration) ou Postgres indisponible : on retombe
-    // sur les valeurs par défaut plutôt que de faire échouer le worker.
+    // Table absent (before migration) or Postgres unavailable: we fall back
+    // on the default values rather than failing the worker.
   }
   cache = { value, at: Date.now() };
   return value;
@@ -63,6 +63,6 @@ export async function setSettings(
       [key, value],
     );
   }
-  cache = null; // invalide le cache : la prochaine lecture relit la DB
+  cache = null; // invalidate the cache: the next read re-reads the DB
   return getSettings(true);
 }

@@ -1,5 +1,5 @@
-// GET /api/assets ?<filtres cumulatifs>&cursor → galerie globale paginée.
-// Keyset sur (captured_at, id) DESC (plus récents d'abord). Jamais d'OFFSET.
+// GET /api/assets ?<cumulative filters>&cursor → paginated global gallery.
+// Keyset on (captured_at, id) DESC (most recent first). Never OFFSET.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     try {
       filter = filterFromSearchParams(sp);
     } catch (e) {
-      return badRequest("Filtre invalide", (e as Error).message);
+      return badRequest("Invalid filter", (e as Error).message);
     }
 
     const { conditions, params } = buildFilter(filter, 1);
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     const cursorStr = sp.get("cursor");
     if (cursorStr) {
       const cur = decodeCursor(cursorStr);
-      if (!cur) return badRequest("Cursor invalide");
+      if (!cur) return badRequest("Invalid cursor");
       conditions.push(`(a.captured_at, a.id) < ($${idx++}, $${idx++})`);
       params.push(cur.capturedAt, cur.id);
     }

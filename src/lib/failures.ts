@@ -1,10 +1,10 @@
-// Journalisation des échecs de SCAN (indexation par fichier). Upsert par chemin :
-// un fichier qui échoue à répétition met à jour sa ligne (compteur attempts) et
-// rouvre l'échec (resolved_at = NULL). resolveScanFailure() marque réglé.
+// Logging of SCAN failures (per-file indexing). Upsert by path:
+// a file that fails repeatedly updates its row (attempts counter) and
+// reopens the failure (resolved_at = NULL). resolveScanFailure() marks it resolved.
 //
-// Les autres familles d'échecs sont déjà persistées ailleurs et lues telles
-// quelles par /api/failures : dérivés → assets.derivative_status='error', import
-// → import_batches.result. On ne duplique donc que ce qui manquait.
+// The other failure families are already persisted elsewhere and read as-is
+// by /api/failures: derivatives -> assets.derivative_status='error', import
+// -> import_batches.result. So we only duplicate what was missing.
 import { q } from "./db";
 
 export async function recordScanFailure(
@@ -25,7 +25,7 @@ export async function recordScanFailure(
       [absPath, rootId, error.slice(0, 1000)],
     );
   } catch (err) {
-    // Ne jamais faire échouer un scan à cause de la journalisation elle-même.
+    // Never let a scan fail because of the logging itself.
     console.warn("recordScanFailure:", (err as Error).message);
   }
 }
