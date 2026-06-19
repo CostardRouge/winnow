@@ -24,17 +24,38 @@ export type Metadata = {
 
 function toIso(v: unknown): string | null {
   if (!v) return null;
-  if (typeof v === "string") return v;
-  // ExifDateTime / ExifDate from exiftool-vendored
+  // ExifDateTime / ExifDate from exiftool-vendored expose toISOString(). When the
+  // tag holds an unparseable value (e.g. a device with no real-time clock writes
+  // the placeholder "0000:00:00 00:00:00"), the library hands back the raw string
+  // instead, so we normalize/validate every candidate below.
   const anyV = v as { toISOString?: () => string; toString?: () => string };
   if (typeof anyV.toISOString === "function") {
     try {
-      return anyV.toISOString();
+      const iso = normalizeTimestamp(anyV.toISOString());
+      if (iso) return iso;
     } catch {
-      /* missing tz */
+      /* missing tz → fall back to the raw string form */
     }
   }
-  return anyV.toString ? anyV.toString() : null;
+  return normalizeTimestamp(typeof v === "string" ? v : anyV.toString?.());
+}
+
+// Coerce an EXIF/ISO date candidate into a Postgres-acceptable timestamp, or
+// null when it isn't a real instant. EXIF stores dates as "YYYY:MM:DD HH:MM:SS";
+// Postgres rejects the colon date separators, and devices without a clock emit
+// an all-zero placeholder that must never reach a TIMESTAMPTZ column.
+function normalizeTimestamp(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+  // Reject zero/placeholder dates (year 0000, month 00 or day 00) up front.
+  const m = s.match(/^(\d{4})[:-](\d{2})[:-](\d{2})/);
+  if (m && (m[1] === "0000" || m[2] === "00" || m[3] === "00")) return null;
+  // Rewrite EXIF colon date separators to ISO hyphens; already-ISO strings (with
+  // hyphens, "T", or a zone offset) are left untouched.
+  const iso = s.replace(/^(\d{4}):(\d{2}):(\d{2})([ T])/, "$1-$2-$3$4");
+  // Final guard: drop anything that isn't a parseable instant.
+  return Number.isFinite(Date.parse(iso)) ? iso : null;
 }
 
 function num(v: unknown): number | null {
