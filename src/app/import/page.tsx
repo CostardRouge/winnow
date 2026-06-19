@@ -117,7 +117,7 @@ export default function ImportPage() {
             ref={fileInput}
             type="file"
             multiple
-            accept="image/*,video/*,.arw,.dng,.heic"
+            accept="image/*,video/*,.arw,.dng,.heic,.heif,.hif"
             onChange={(e) => e.target.files && uploadFiles(e.target.files)}
             className="input"
             style={{ display: "block", width: "100%", padding: 12 }}
