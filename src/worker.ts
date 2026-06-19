@@ -1,5 +1,5 @@
-// Point d'entrée des workers BullMQ (cf. §3).
-// Concurrence bornée pour ménager le HDD plein du NAS et l'Optiplex.
+// Entry point for the BullMQ workers (cf. §3).
+// Bounded concurrency to spare the NAS's full HDD and the Optiplex.
 import { Worker } from "bullmq";
 import { config } from "./lib/config";
 import {
@@ -25,9 +25,9 @@ import { getSettings } from "./lib/settings";
 import { reserveSlot, sleep } from "./lib/rate";
 import { one } from "./lib/db";
 
-console.log("Winnow workers — démarrage");
-console.log(`  stockage : ${config.storage.driver}`);
-console.log(`  concurrence dérivés : ${config.derivativeConcurrency}`);
+console.log("Winnow workers — starting up");
+console.log(`  storage : ${config.storage.driver}`);
+console.log(`  derivative concurrency : ${config.derivativeConcurrency}`);
 
 const indexWorker = new Worker(
   QUEUES.index,
@@ -36,9 +36,9 @@ const indexWorker = new Worker(
     const myPriority = job.opts.priority ?? PRIORITY.normal;
     console.log(`[index] root ${rootId}…`);
 
-    // Préemption : un scan ordinaire cède la place dès qu'un scan plus
-    // prioritaire (incoming/inbox) attend. Le résultat est mis en cache 2 s
-    // pour borner les appels Redis sur les gros arbres.
+    // Preemption: an ordinary scan yields as soon as a higher-priority
+    // scan (incoming/inbox) is waiting. The result is cached for 2 s
+    // to bound Redis calls on large trees.
     let preempt = { at: 0, value: false };
     const higherWaiting = async () => {
       const now = Date.now();
@@ -57,8 +57,8 @@ const indexWorker = new Worker(
       throttle: async () => {
         const { scanPerHour } = await getSettings();
         if (scanPerHour <= 0) return;
-        // Goutte-à-goutte : on attend le prochain créneau, en re-vérifiant
-        // périodiquement la pause/préemption pour rester réactif.
+        // Drip-feed: wait for the next slot, periodically re-checking
+        // the pause/preemption state to stay responsive.
         let wait = await reserveSlot("scan", scanPerHour);
         while (wait > 0) {
           await sleep(Math.min(wait, 3000));
@@ -67,10 +67,10 @@ const indexWorker = new Worker(
         }
       },
     });
-    console.log(`[index] terminé`, res);
+    console.log(`[index] done`, res);
 
-    // Interruption par préemption (pas par pause) : on ré-enfile le root pour
-    // reprendre l'indexation incrémentale une fois le prioritaire écoulé.
+    // Interrupted by preemption (not by pause): re-enqueue the root to
+    // resume incremental indexing once the higher-priority work is drained.
     if (res.stopped && !(await getSettings()).scanPaused) {
       await enqueueIndex(rootId, { priority: myPriority });
     }
@@ -82,9 +82,9 @@ const indexWorker = new Worker(
 const derivativeWorker: Worker = new Worker(
   QUEUES.derivatives,
   async (job) => {
-    // Lissage du débit d'analyse (dérivés). Au-delà du quota, on rate-limite
-    // tout le worker jusqu'au prochain créneau et on remet le job en file
-    // (sans le compter en échec) : les dérivés prioritaires repartiront en tête.
+    // Smoothing of the analysis rate (derivatives). Above quota, we rate-limit
+    // the whole worker until the next slot and put the job back in the queue
+    // (without counting it as a failure): priority derivatives will go back to the front.
     const { analyzePerHour } = await getSettings();
     if (analyzePerHour > 0) {
       const wait = await reserveSlot("analyze", analyzePerHour);
@@ -114,7 +114,7 @@ const importWorker = new Worker(
     const data = job.data as ImportJob;
     console.log(`[import] ${data.origin} ← ${data.sourceDir}`);
     const res = await runImport(data);
-    console.log(`[import] terminé`, res);
+    console.log(`[import] done`, res);
     return res;
   },
   { connection, concurrency: config.import.concurrency },
@@ -127,16 +127,16 @@ for (const [name, w] of [
   ["import", importWorker],
 ] as const) {
   w.on("failed", (job, err) =>
-    console.error(`[${name}] échec job ${job?.id}:`, err.message),
+    console.error(`[${name}] job ${job?.id} failed:`, err.message),
   );
 }
 
-// Enregistre + (ré)indexe les roots connus (incoming + dossiers finaux
-// configurés) dès le démarrage, sans bloquer la boucle des workers.
+// Register + (re)index the known roots (incoming + configured final
+// folders) at startup, without blocking the workers' loop.
 void bootstrapRoots();
 
-// Surveillance de l'inbox : dépôts SMB / FTP → import automatique. On crée un
-// batch pour que ces imports passifs soient visibles/suivis comme les autres.
+// Inbox watching: SMB / FTP drops → automatic import. We create a
+// batch so these passive imports are visible/tracked like the others.
 const stopWatcher = config.import.watchInbox
   ? startInboxWatcher(config.import.inboxDir, async (sourceDir) => {
       const batch = await one<{ id: number }>(
@@ -153,7 +153,7 @@ const stopWatcher = config.import.watchInbox
   : null;
 
 async function shutdown() {
-  console.log("Arrêt des workers…");
+  console.log("Stopping the workers…");
   if (stopWatcher) await stopWatcher();
   await Promise.allSettled([
     indexWorker.close(),

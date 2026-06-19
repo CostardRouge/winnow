@@ -34,7 +34,7 @@ export default function ImportPage() {
           }
         }
       } catch {
-        // Tolère quelques hoquets réseau, puis abandonne le polling.
+        // Tolerate a few network hiccups, then give up the polling.
         if (++errors >= 5) {
           clearInterval(t);
           setMsg("Lost contact with the import job. Refresh to check status.");

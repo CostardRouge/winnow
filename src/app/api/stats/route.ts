@@ -1,6 +1,6 @@
-// GET /api/stats → vue d'ensemble : compteurs médias (total/analysés/en attente),
-// activité des files (scan/analyse/import), état de pause et débits réglés.
-// Source unique pour le bandeau de chiffres + le panneau de contrôle du tableau de bord.
+// GET /api/stats -> overview: media counters (total/analyzed/pending),
+// queue activity (scan/analyze/import), pause state and configured rates.
+// Single source for the numbers banner + the dashboard control panel.
 import { one } from "@/lib/db";
 import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
@@ -15,11 +15,11 @@ async function failureCounts() {
     );
     return { scan: Number(row?.scan ?? 0), import: Number(row?.imp ?? 0) };
   } catch {
-    return { scan: 0, import: 0 }; // tables absentes avant migration
+    return { scan: 0, import: 0 }; // tables absent before migration
   }
 }
 
-// Route adossée à la DB/Redis : jamais pré-rendue/mise en cache au build.
+// DB/Redis-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -47,13 +47,13 @@ export async function GET() {
        LEFT JOIN ratings r ON r.asset_id = a.id`,
     );
 
-    // Files BullMQ + réglages : tolérants à une panne Redis (valeurs nulles plutôt
-    // qu'une 500 qui masquerait les compteurs médias).
+    // BullMQ queues + settings: tolerant of a Redis outage (null values rather
+    // than a 500 that would hide the media counters).
     let queues = null;
     try {
       queues = await getQueueStats();
     } catch {
-      /* Redis indisponible : on renvoie quand même les compteurs DB */
+      /* Redis unavailable: we still return the DB counters */
     }
     const settings = await getSettings();
     const fails = await failureCounts();

@@ -1,8 +1,8 @@
-// GET /api/failures → tout ce qui a échoué, en un seul endroit, pour lister et
-// débuguer. Trois familles, lues à leur source de vérité respective :
-//   - derivative : assets.derivative_status='error' (+ derivative_error)   [rétroactif]
-//   - scan       : table scan_failures (échecs d'indexation par fichier)   [dès maintenant]
-//   - import     : import_batches.result.errors des lots en échec          [rétroactif]
+// GET /api/failures -> everything that failed, in one place, to list and
+// debug. Three families, each read from its own source of truth:
+//   - derivative : assets.derivative_status='error' (+ derivative_error)   [retroactive]
+//   - scan       : scan_failures table (per-file indexing failures)        [from now on]
+//   - import     : import_batches.result.errors of failed batches          [retroactive]
 import { many, one } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 
@@ -50,7 +50,7 @@ export async function GET() {
         ),
       ]);
 
-    // Aplatit les erreurs par fichier des lots d'import en échec.
+    // Flattens the per-file errors of the failed import batches.
     const importItems: Array<{
       batch_id: number;
       origin: string | null;

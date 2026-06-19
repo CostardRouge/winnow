@@ -1,7 +1,7 @@
-// Sert un dérivé (thumb/proxy) à partir de sa clé de stockage.
-// Disque → on renvoie les octets (avec gestion des requêtes Range, indispensable
-// pour la lecture/seek des proxies vidéo). S3/MinIO → redirection vers une URL
-// signée (le navigateur fait alors le Range directement contre S3).
+// Serves a derivative (thumb/proxy) from its storage key.
+// Disk → we return the bytes (with Range request handling, indispensable
+// for playback/seek of video proxies). S3/MinIO → redirect to a signed
+// URL (the browser then does the Range directly against S3).
 import { NextResponse } from "next/server";
 import { one } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
@@ -25,7 +25,7 @@ export async function serveDerivative(
     [assetId],
   );
   if (!row?.key) {
-    return NextResponse.json({ error: "Dérivé non disponible" }, { status: 404 });
+    return NextResponse.json({ error: "Derivative not available" }, { status: 404 });
   }
 
   const storage = await getStorage();
@@ -34,7 +34,7 @@ export async function serveDerivative(
 
   const bytes = await storage.get(row.key);
   if (!bytes) {
-    return NextResponse.json({ error: "Dérivé introuvable" }, { status: 404 });
+    return NextResponse.json({ error: "Derivative not found" }, { status: 404 });
   }
 
   const type = contentType(row.key);
@@ -45,7 +45,7 @@ export async function serveDerivative(
     "Cache-Control": "public, max-age=31536000, immutable",
   };
 
-  // Requête partielle (lecteur vidéo) : on répond 206 avec la tranche demandée.
+  // Partial request (video player): we respond 206 with the requested slice.
   const range = req.headers.get("range");
   const m = range && /^bytes=(\d*)-(\d*)$/.exec(range);
   if (m) {

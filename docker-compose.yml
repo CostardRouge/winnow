@@ -1,11 +1,11 @@
-# Winnow — déploiement Optiplex.
-#   NAS = source (sessions existantes en lecture seule) + zone "incoming" (RW).
-#   Tout l'état (Postgres, Redis, dérivés, exports, inbox) vit sur l'Optiplex.
+# Winnow — Optiplex deployment.
+#   NAS = source (existing sessions read-only) + "incoming" zone (RW).
+#   All state (Postgres, Redis, derivatives, exports, inbox) lives on the Optiplex.
 #
-# Premier démarrage :
-#   cp .env.dist .env   &&   éditer NAS_MOUNT / NAS_INCOMING
+# First start:
+#   cp .env.dist .env   &&   edit NAS_MOUNT / NAS_INCOMING
 #   docker compose up -d --build
-# (le service `migrate` applique le schéma avant que app/worker ne démarrent)
+# (the `migrate` service applies the schema before app/worker start)
 
 services:
   postgres:
@@ -39,7 +39,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # MinIO optionnel : décommente et passe STORAGE_DRIVER=s3 dans .env pour basculer.
+  # Optional MinIO: uncomment and set STORAGE_DRIVER=s3 in .env to switch.
   # minio:
   #   image: minio/minio
   #   restart: unless-stopped
@@ -53,7 +53,7 @@ services:
   #     - "9000:9000"
   #     - "9001:9001"
 
-  # One-shot : applique les migrations puis sort. app/worker l'attendent.
+  # One-shot: applies the migrations then exits. app/worker wait for it.
   migrate:
     build: .
     command: ["npm", "run", "migrate"]
@@ -80,10 +80,10 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Sessions déjà rangées : lecture seule. Incoming (imports) : lecture/écriture.
+      # Already-filed sessions: read-only. Incoming (imports): read/write.
       - ${NAS_MOUNT:-./nas}:/nas:ro
       - ${NAS_INCOMING:-./nas-incoming}:/nas-incoming
-      # Dossier "final" du NAS (sortie Immich) : indexé pour consultation, RO.
+      # "Final" folder of the NAS (Immich output): indexed for browsing, RO.
       - ${NAS_FINAL:-./nas-final}:/nas-final:ro
       - inbox:/data/inbox
       - derivatives:/data/derivatives
@@ -95,8 +95,8 @@ services:
     env_file: .env
     init: true
     restart: unless-stopped
-    # Encodage vidéo matériel (VAAPI) : décommenter pour partager l'iGPU, puis
-    # mettre VIDEO_HWACCEL=vaapi dans .env. Sinon ffmpeg encode en logiciel.
+    # Hardware video encoding (VAAPI): uncomment to share the iGPU, then
+    # set VIDEO_HWACCEL=vaapi in .env. Otherwise ffmpeg encodes in software.
     # devices:
     #   - /dev/dri:/dev/dri
     depends_on:
@@ -114,8 +114,8 @@ services:
       - derivatives:/data/derivatives
       - exports:/data/exports
 
-  # --- Feeders d'ingest optionnels (écrivent dans l'inbox) ------------------
-  # Partage SMB : déposer cartes/fichiers depuis n'importe quel poste du LAN.
+  # --- Optional ingest feeders (write into the inbox) -----------------------
+  # SMB share: drop cards/files from any machine on the LAN.
   # samba:
   #   image: dperson/samba
   #   restart: unless-stopped
@@ -124,7 +124,7 @@ services:
   #   volumes:
   #     - inbox:/inbox
   #
-  # FTP : cible pour le transfert FTP du Sony A7C II (écrit dans l'inbox).
+  # FTP: target for the Sony A7C II's FTP transfer (writes into the inbox).
   # ftp:
   #   image: garethflowers/ftp-server
   #   restart: unless-stopped

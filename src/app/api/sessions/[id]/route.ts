@@ -1,7 +1,7 @@
-// PATCH /api/sessions/:id { ignored?, completed? } → met à jour le dossier.
-//  - ignored : marque traité ; cascade processing_state=ignored et stoppe les
-//    dérivés (§5). Inverse : remet en `unprocessed` et ré-enfile les manquants.
-//  - completed : simple drapeau visuel (badge), aucune cascade ni traitement.
+// PATCH /api/sessions/:id { ignored?, completed? } -> updates the folder.
+//  - ignored : marks as processed; cascades processing_state=ignored and stops
+//    derivatives (§5). Inverse: resets to `unprocessed` and re-enqueues the missing ones.
+//  - completed : simple visual flag (badge), no cascade or processing.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
@@ -15,7 +15,7 @@ const Body = z
     completed: z.boolean().optional(),
   })
   .refine((b) => b.ignored !== undefined || b.completed !== undefined, {
-    message: "ignored ou completed requis",
+    message: "ignored or completed required",
   });
 
 export async function PATCH(
@@ -26,18 +26,18 @@ export async function PATCH(
     const { id } = await params;
     const sessionId = Number.parseInt(id, 10);
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("ignored ou completed requis");
+    if (!parsed.success) return badRequest("ignored or completed required");
     const { ignored, completed } = parsed.data;
 
     let session: Session | null = null;
 
-    // Drapeau "terminé" : pur flip, sans toucher aux assets.
+    // "completed" flag: pure flip, without touching the assets.
     if (completed !== undefined) {
       session = await one<Session>(
         "UPDATE sessions SET completed = $2 WHERE id = $1 RETURNING *",
         [sessionId, completed],
       );
-      if (!session) return notFound("Session introuvable");
+      if (!session) return notFound("Session not found");
     }
 
     if (ignored === undefined) {
@@ -48,10 +48,10 @@ export async function PATCH(
       "UPDATE sessions SET ignored = $2 WHERE id = $1 RETURNING *",
       [sessionId, ignored],
     );
-    if (!session) return notFound("Session introuvable");
+    if (!session) return notFound("Session not found");
 
     if (ignored) {
-      // Cascade : tout passe en ignored ; on coupe les dérivés en attente.
+      // Cascade: everything goes to ignored; we cut off the pending derivatives.
       await q(
         `UPDATE assets
            SET processing_state = 'ignored',
@@ -63,8 +63,8 @@ export async function PATCH(
         [sessionId],
       );
     } else {
-      // Réactivation : on repasse en unprocessed et on régénère les dérivés
-      // manquants des photos.
+      // Reactivation: we switch back to unprocessed and regenerate the missing
+      // photo derivatives.
       await q(
         `UPDATE assets
            SET processing_state = 'unprocessed', updated_at = now()

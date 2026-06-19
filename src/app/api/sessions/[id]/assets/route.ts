@@ -1,5 +1,5 @@
-// GET /api/sessions/:id/assets ?cursor&filter… → grille paginée (cursor-based).
-// Jamais d'OFFSET : keyset sur (captured_at, id). La grille front est virtualisée.
+// GET /api/sessions/:id/assets ?cursor&filter... → paginated grid (cursor-based).
+// Never OFFSET: keyset on (captured_at, id). The front-end grid is virtualized.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
@@ -27,7 +27,7 @@ export async function GET(
     try {
       filter = { ...filterFromSearchParams(sp), session_id: sessionId };
     } catch (e) {
-      return badRequest("Filtre invalide", (e as Error).message);
+      return badRequest("Invalid filter", (e as Error).message);
     }
     const { conditions, params: fParams } = buildFilter(filter, 1);
 
@@ -35,7 +35,7 @@ export async function GET(
     const cursorStr = sp.get("cursor");
     if (cursorStr) {
       const cur = decodeCursor(cursorStr);
-      if (!cur) return badRequest("Cursor invalide");
+      if (!cur) return badRequest("Invalid cursor");
       conditions.push(`(a.captured_at, a.id) > ($${idx++}, $${idx++})`);
       fParams.push(cur.capturedAt, cur.id);
     }

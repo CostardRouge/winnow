@@ -1,7 +1,7 @@
 "use client";
 
-// Liste centralisée de ce qui a échoué (scan / analyse / import), avec le
-// message d'erreur pour débuguer, et un bouton « réessayer » par famille.
+// Centralized list of what has failed (scan / analyze / import), with the
+// error message for debugging, and a "retry" button per family.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";

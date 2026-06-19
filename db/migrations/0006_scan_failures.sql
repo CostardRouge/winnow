@@ -1,9 +1,9 @@
--- Journal des échecs de scan (indexation). Les échecs de dérivés vivent déjà sur
--- assets (derivative_status='error' + derivative_error) et les échecs d'import
--- dans import_batches.result ; seuls les échecs d'indexation par fichier
--- n'étaient nulle part persistés. On les enregistre ici pour pouvoir les LISTER
--- et les RÉESSAYER depuis l'UI. Clé = chemin absolu (upsert : un fichier qui
--- échoue à répétition met à jour la même ligne au lieu d'en accumuler).
+-- Scan (indexing) failure log. Derivative failures already live on assets
+-- (derivative_status='error' + derivative_error) and import failures in
+-- import_batches.result; only per-file indexing failures were persisted
+-- nowhere. We record them here so they can be LISTED and RETRIED from the UI.
+-- Key = absolute path (upsert: a file that fails repeatedly updates the same row
+-- instead of accumulating).
 CREATE TABLE IF NOT EXISTS scan_failures (
   abs_path    TEXT PRIMARY KEY,
   root_id     BIGINT REFERENCES roots(id) ON DELETE CASCADE,

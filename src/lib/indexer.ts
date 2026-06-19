@@ -1,7 +1,7 @@
-// Indexer — scan incrémental d'un root NAS (cf. §3).
-// Lecture UNE SEULE FOIS par fichier : métadonnées + hash partiel.
-// N'enfile des dérivés QUE pour les assets photo sans dérivé et hors sessions
-// ignorées.
+// Indexer — incremental scan of a NAS root (cf. §3).
+// Reads each file ONCE ONLY: metadata + partial hash.
+// Enqueues derivatives ONLY for photo assets without a derivative and outside
+// ignored sessions.
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
@@ -12,9 +12,9 @@ import { enqueueDerivative, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import type { Root, Session } from "./types";
 
-// Crochets optionnels injectés par le worker : permettent de suspendre/préempter
-// le scan (shouldStop) et d'en lisser le débit (throttle, appelé avant chaque
-// lecture lourde de fichier). En CLI/sync, aucun crochet → comportement nominal.
+// Optional hooks injected by the worker: allow suspending/preempting
+// the scan (shouldStop) and smoothing its rate (throttle, called before each
+// heavy file read). In CLI/sync, no hooks → nominal behavior.
 export type IndexHooks = {
   shouldStop?: () => Promise<boolean> | boolean;
   throttle?: () => Promise<void>;
@@ -25,11 +25,11 @@ async function* walk(dir: string): AsyncGenerator<string> {
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
-    console.warn(`Lecture impossible de ${dir}:`, (err as Error).message);
+    console.warn(`Unable to read ${dir}:`, (err as Error).message);
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue; // .DS_Store, dossiers cachés
+    if (entry.name.startsWith(".")) continue; // .DS_Store, hidden folders
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       yield* walk(full);
@@ -67,7 +67,7 @@ export type IndexResult = {
   duplicates: number;
   enqueued: number;
   failed: number;
-  // true si le scan a été interrompu (pause ou préemption) avant la fin.
+  // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
 
@@ -76,9 +76,9 @@ export async function indexRoot(
   hooks: IndexHooks = {},
 ): Promise<IndexResult> {
   const root = await one<Root>("SELECT * FROM roots WHERE id = $1", [rootId]);
-  if (!root) throw new Error(`Root introuvable : ${rootId}`);
+  if (!root) throw new Error(`Root not found: ${rootId}`);
 
-  // Les dérivés des médias de l'incoming passent devant ceux des autres roots.
+  // Derivatives of incoming media go ahead of those of other roots.
   const derivePriority =
     root.path === config.import.incomingDir ? PRIORITY.high : PRIORITY.normal;
 
@@ -95,9 +95,9 @@ export async function indexRoot(
   const touchedSessions = new Set<number>();
 
   for await (const absPath of walk(root.path)) {
-    // Suspension/préemption : on s'arrête proprement entre deux fichiers.
-    // L'indexation étant incrémentale, une reprise repartira sans retraiter
-    // les fichiers déjà connus.
+    // Suspension/preemption: we stop cleanly between two files.
+    // Since indexing is incremental, a resume will restart without reprocessing
+    // files already known.
     if (hooks.shouldStop && (await hooks.shouldStop())) {
       res.stopped = true;
       break;
@@ -105,11 +105,11 @@ export async function indexRoot(
 
     const ext = path.extname(absPath);
     const cls = classifyExt(ext);
-    if (!cls) continue; // pas un média reconnu
+    if (!cls) continue; // not a recognized media
     res.scanned++;
 
-    // Isolation par fichier : un fichier illisible/corrompu (stat, hash, méta)
-    // ne doit pas faire échouer tout le job d'indexation.
+    // Per-file isolation: an unreadable/corrupt file (stat, hash, metadata)
+    // must not fail the entire indexing job.
     try {
     const st = await stat(absPath);
     const size = st.size;
@@ -127,7 +127,7 @@ export async function indexRoot(
       absPath,
     ]);
 
-    // Scan incrémental : inchangé (taille + mtime) → on saute.
+    // Incremental scan: unchanged (size + mtime) → we skip.
     if (
       existing &&
       Number(existing.file_size) === size &&
@@ -138,17 +138,17 @@ export async function indexRoot(
       continue;
     }
 
-    // Lissage du débit de scan : on n'étrangle que les lectures *lourdes*
-    // (fichier nouveau/modifié), pas les fichiers inchangés simplement stat-és.
+    // Smoothing the scan rate: we throttle only the *heavy* reads
+    // (new/modified file), not unchanged files that are merely stat-ed.
     if (hooks.throttle) await hooks.throttle();
 
     const hash = await partialHash(absPath, size);
     const meta = await readMetadata(absPath);
-    const capturedAt = meta.captured_at ?? mtime; // toujours peuplé → index utile
+    const capturedAt = meta.captured_at ?? mtime; // always populated → useful index
     const ignored = session.ignored;
 
     if (existing) {
-      // Fichier modifié : on met à jour et on relance le dérivé si photo.
+      // Modified file: we update and re-enqueue the derivative if photo.
       const willDerive = cls.mediaType === "photo" && !ignored;
       await q(
         `UPDATE assets SET
@@ -193,7 +193,7 @@ export async function indexRoot(
       continue;
     }
 
-    // Nouveau fichier. ON CONFLICT (content_hash) → doublon d'un autre chemin.
+    // New file. ON CONFLICT (content_hash) → duplicate from another path.
     const willDerive = cls.mediaType === "photo" && !ignored;
     const inserted = await one<{ id: number }>(
       `INSERT INTO assets (
@@ -235,7 +235,7 @@ export async function indexRoot(
     );
 
     if (!inserted) {
-      res.duplicates++; // même content_hash ailleurs : on ne retraite pas
+      res.duplicates++; // same content_hash elsewhere: we don't reprocess
       continue;
     }
     await q(
@@ -250,13 +250,13 @@ export async function indexRoot(
     } catch (err) {
       res.failed++;
       const msg = (err as Error).message;
-      console.warn(`Indexation impossible de ${absPath}:`, msg);
-      // Persiste l'échec pour qu'il soit listable/réessayable depuis l'UI.
+      console.warn(`Unable to index ${absPath}:`, msg);
+      // Persist the failure so it can be listed/retried from the UI.
       await recordScanFailure(absPath, root.id, msg);
     }
   }
 
-  // Recalcul des compteurs/plages de capture par session touchée.
+  // Recompute counters/capture ranges per touched session.
   for (const sid of touchedSessions) {
     await q(
       `UPDATE sessions s SET

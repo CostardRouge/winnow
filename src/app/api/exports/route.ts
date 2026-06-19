@@ -1,10 +1,10 @@
-// GET /api/exports → jobs d'export + nombre de fichiers + échantillon d'assets
-// source (pour les miniatures, servies via /api/assets/:id/thumb puisque chaque
-// export pointe sur un asset qui conserve ses dérivés).
+// GET /api/exports -> export jobs + file count + sample of source assets
+// (for the thumbnails, served via /api/assets/:id/thumb since each export
+// points to an asset that keeps its derivatives).
 import { many } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 
-// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+// DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET() {

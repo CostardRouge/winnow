@@ -88,7 +88,7 @@ export default function SessionGrid({
     [id, verdict],
   );
 
-  // (Re)chargement initial à chaque changement de filtre.
+  // Initial (re)load on every filter change.
   useEffect(() => {
     reset();
     fetchPage(null);
@@ -122,7 +122,7 @@ export default function SessionGrid({
     [],
   );
 
-  // Navigation clavier dans la visionneuse (desktop).
+  // Keyboard navigation in the viewer (desktop).
   useEffect(() => {
     if (viewer == null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -275,11 +275,11 @@ function Viewer({
     touch.current = null;
     const TH = 60;
     if (Math.abs(dx) > Math.abs(dy)) {
-      // Horizontal : navigation.
+      // Horizontal: navigation.
       if (dx > TH && hasPrev) onPrev();
       else if (dx < -TH && hasNext) onNext();
     } else {
-      // Vertical : tri (swipe haut = pick, bas = rejet).
+      // Vertical: culling (swipe up = pick, down = reject).
       if (dy < -TH) onRate({ verdict: "pick" });
       else if (dy > TH) onRate({ verdict: "reject" });
     }

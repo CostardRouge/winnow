@@ -1,7 +1,7 @@
--- Attributs filtrables matérialisés + indexés (galerie à filtres cumulatifs).
--- Les composantes calendaires d'un timestamptz ne sont pas IMMUTABLE (donc ni
--- colonne générée ni index fonctionnel direct) : on matérialise via un trigger
--- et on indexe des colonnes simples.
+-- Materialized + indexed filterable attributes (cumulative-filter gallery).
+-- The calendar components of a timestamptz are not IMMUTABLE (so neither a
+-- generated column nor a direct functional index): we materialize via a trigger
+-- and index plain columns.
 
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS capture_date  DATE;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS capture_year  INTEGER;
@@ -30,7 +30,7 @@ CREATE TRIGGER assets_capture_parts
   BEFORE INSERT OR UPDATE OF captured_at ON assets
   FOR EACH ROW EXECUTE FUNCTION winnow_set_capture_parts();
 
--- Backfill des lignes existantes (UTC, cohérent avec le foldering d'import).
+-- Backfill existing rows (UTC, consistent with the import foldering).
 UPDATE assets SET
   capture_date  = (captured_at AT TIME ZONE 'UTC')::date,
   capture_year  = EXTRACT(YEAR  FROM (captured_at AT TIME ZONE 'UTC'))::int,
@@ -38,7 +38,7 @@ UPDATE assets SET
   capture_day   = EXTRACT(DAY   FROM (captured_at AT TIME ZONE 'UTC'))::int
 WHERE captured_at IS NOT NULL;
 
--- Index des dimensions de filtrage (catégorielles + plages).
+-- Indexes for the filter dimensions (categorical + ranges).
 CREATE INDEX IF NOT EXISTS assets_capture_date_idx  ON assets (capture_date);
 CREATE INDEX IF NOT EXISTS assets_capture_year_idx   ON assets (capture_year);
 CREATE INDEX IF NOT EXISTS assets_capture_month_idx  ON assets (capture_month);

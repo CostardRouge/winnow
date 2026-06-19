@@ -1,10 +1,10 @@
-// Types des lignes Postgres (miroir du schéma §5).
+// Types of the Postgres rows (mirror of the §5 schema).
 
 export type Root = {
   id: number;
   path: string;
-  // 'inbox' est interne (zone de dépôt consommée par l'import) ; 'source' et
-  // 'finals' portent le rôle Incoming/Final (cf. lib/roles.ts).
+  // 'inbox' is internal (drop zone consumed by the import); 'source' and
+  // 'finals' carry the Incoming/Final role (cf. lib/roles.ts).
   kind: "source" | "finals" | "inbox";
   watch: boolean;
   added_at: string;
@@ -21,7 +21,7 @@ export type Session = {
   asset_count: number;
   indexed_at: string | null;
   ignored: boolean;
-  // Drapeau visuel "terminé" (onglet Incoming). N'affecte pas le traitement.
+  // Visual "done" flag (Incoming tab). Does not affect processing.
   completed: boolean;
 };
 
@@ -86,7 +86,7 @@ export type Tag = {
   color: string | null;
 };
 
-// Ligne renvoyée par la grille de tri (asset + verdict joint + tags).
+// Row returned by the cull grid (asset + joined verdict + tags).
 export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;

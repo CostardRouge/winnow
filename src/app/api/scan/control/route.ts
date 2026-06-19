@@ -1,8 +1,8 @@
 // POST /api/scan/control { action: "pause" | "resume" }
-//   pause  : suspend indexation + génération de dérivés (persisté dans Redis +
-//            drapeau DB lu par l'indexer pour s'arrêter en cours de scan).
-//   resume : relance les files et ré-enfile les roots source pour terminer tout
-//            scan interrompu (incrémental → les fichiers déjà connus sont sautés).
+//   pause  : suspend indexing + derivative generation (persisted in Redis +
+//            DB flag read by the indexer to stop mid-scan).
+//   resume : restart the queues and re-enqueue the source roots to finish any
+//            interrupted scan (incremental -> already-known files are skipped).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many } from "@/lib/db";
@@ -19,15 +19,15 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success)
-      return badRequest("action requise (pause|resume)", parsed.error.issues);
+      return badRequest("action required (pause|resume)", parsed.error.issues);
     const paused = parsed.data.action === "pause";
 
-    // Drapeau DB (pour l'arrêt en cours de scan) + pause Redis (nouveaux jobs).
+    // DB flag (for stopping mid-scan) + Redis pause (new jobs).
     await setSettings({ scanPaused: paused });
     await setScanPaused(paused);
 
     if (!paused) {
-      // Reprise : ré-enfile les roots indexables, incoming en priorité.
+      // Resume: re-enqueue the indexable roots, incoming first.
       const roots = await many<{ id: number; path: string }>(
         "SELECT id, path FROM roots WHERE kind IN ('source','inbox')",
       );

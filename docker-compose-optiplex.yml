@@ -1,36 +1,36 @@
-# Winnow — déploiement Optiplex via Portainer (Traefik + réseau edge externe).
+# Winnow — Optiplex deployment via Portainer (Traefik + external edge network).
 #
-# Calqué sur la stack motion-pipeline : Traefik en frontal (réseau `edge`
-# externe), services internes sur un réseau privé, volumes en host-path sous
-# /opt/winnow, labels Watchtower. L'image est publiée sur GHCR par la CI
-# (.github/workflows/docker-build.yml) ; Watchtower la re-pull au tag `main`.
+# Modeled on the motion-pipeline stack: Traefik as frontend (external `edge`
+# network), internal services on a private network, host-path volumes under
+# /opt/winnow, Watchtower labels. The image is published to GHCR by CI
+# (.github/workflows/docker-build.yml); Watchtower re-pulls it on the `main` tag.
 #
-# Pré-requis côté hôte (Ubuntu) :
-#   - réseau Docker `edge` déjà créé et attaché à Traefik :  docker network create edge
-#   - paquet NFS client :  sudo apt-get install -y nfs-common
-#   - NAS Synology : autoriser l'IP de l'Optiplex sur les règles NFS des deux
-#     dossiers partagés `Data` (/volume1/Data, RO) et `Computing`
-#     (/volume4/Computing, RW). Le montage est géré par la stack (volumes
-#     `nas` / `nas_incoming` en bas), pas par fstab.
-#   - répertoires d'état :  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
-#   - SSD dédié (optionnel) : pour mettre inbox/derivatives/exports sur un autre
-#     disque (ex. SSD 2 To), définir WINNOW_DATA dans l'UI Portainer (ex.
-#     WINNOW_DATA=/mnt/2tb/winnow) et créer le dossier :
+# Host-side prerequisites (Ubuntu):
+#   - Docker network `edge` already created and attached to Traefik:  docker network create edge
+#   - NFS client package:  sudo apt-get install -y nfs-common
+#   - Synology NAS: allow the Optiplex IP in the NFS rules of both shared
+#     folders `Data` (/volume1/Data, RO) and `Computing`
+#     (/volume4/Computing, RW). The mount is handled by the stack (volumes
+#     `nas` / `nas_incoming` below), not by fstab.
+#   - state directories:  sudo mkdir -p /opt/winnow/{pgdata,redisdata,inbox,derivatives,exports}
+#   - dedicated SSD (optional): to put inbox/derivatives/exports on another
+#     disk (e.g. 2 TB SSD), set WINNOW_DATA in the Portainer UI (e.g.
+#     WINNOW_DATA=/mnt/2tb/winnow) and create the folder:
 #       sudo mkdir -p /mnt/2tb/winnow/{inbox,derivatives,exports}
-#     (pgdata/redisdata restent sous /opt/winnow ; les déplacer = même principe.)
+#     (pgdata/redisdata stay under /opt/winnow; moving them = same principle.)
 #
-# Déploiement Portainer : Stacks → Add stack → Repository → ce fichier.
-# Renseigner dans l'UI « Environment variables » de la stack : DOMAIN_NAME
-# (obligatoire, Traefik), NAS_IP (obligatoire, NFS) et tout réglage à surcharger
-# (POSTGRES_PASSWORD, WINNOW_DATA, NAS_*_EXPORT, *_HOST_PORT, concurrences…).
-# Aucun fichier .env n'est requis : les variables runtime des conteneurs sont
-# inlinées via l'ancre `x-winnow-env`.
+# Portainer deployment: Stacks → Add stack → Repository → this file.
+# In the stack's "Environment variables" UI, provide: DOMAIN_NAME
+# (required, Traefik), NAS_IP (required, NFS) and any setting to override
+# (POSTGRES_PASSWORD, WINNOW_DATA, NAS_*_EXPORT, *_HOST_PORT, concurrencies…).
+# No .env file is required: the containers' runtime variables are inlined via
+# the `x-winnow-env` anchor.
 
-# Variables d'environnement des conteneurs app/worker/migrate. Inlinées ici (et
-# non via `env_file: .env`) pour que Portainer déploie depuis le dépôt sans qu'un
-# fichier .env existe sur l'hôte. Les valeurs de topologie (noms de services,
-# chemins de volumes) sont figées ; secrets et réglages surchargeables passent
-# par l'UI Portainer (interpolation ${VAR:-défaut}).
+# Environment variables for the app/worker/migrate containers. Inlined here (and
+# not via `env_file: .env`) so Portainer deploys from the repo without a .env
+# file existing on the host. Topology values (service names, volume paths) are
+# fixed; secrets and overridable settings go through the Portainer UI
+# (${VAR:-default} interpolation).
 x-winnow-env: &winnow-env
   DATABASE_URL: postgres://winnow:${POSTGRES_PASSWORD:-winnow}@postgres:5432/winnow
   REDIS_URL: redis://redis:6379
@@ -48,14 +48,14 @@ x-winnow-env: &winnow-env
   PROXY_SIZE: "${PROXY_SIZE:-2048}"
   THUMB_QUALITY: "${THUMB_QUALITY:-70}"
   PROXY_QUALITY: "${PROXY_QUALITY:-80}"
-  # Dérivés vidéo (ffmpeg). hwaccel=none → encodage logiciel libx264 (marche
-  # partout). Passer VIDEO_HWACCEL=vaapi UNE FOIS /dev/dri partagé au worker et
-  # vérifié (`docker exec winnow_worker vainfo`). Repli logiciel auto si échec.
+  # Video derivatives (ffmpeg). hwaccel=none → software libx264 encoding (works
+  # everywhere). Set VIDEO_HWACCEL=vaapi ONCE /dev/dri is shared with the worker
+  # and verified (`docker exec winnow_worker vainfo`). Auto software fallback on failure.
   VIDEO_HWACCEL: ${VIDEO_HWACCEL:-none}
   VIDEO_VAAPI_DEVICE: ${VIDEO_VAAPI_DEVICE:-/dev/dri/renderD128}
   VIDEO_PROXY_HEIGHT: "${VIDEO_PROXY_HEIGHT:-720}"
   VIDEO_PROXY_CRF: "${VIDEO_PROXY_CRF:-24}"
-  # S3 / MinIO — utilisé seulement si STORAGE_DRIVER=s3.
+  # S3 / MinIO — used only if STORAGE_DRIVER=s3.
   S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_BUCKET: ${S3_BUCKET:-winnow}
@@ -76,10 +76,10 @@ services:
       - /opt/winnow/pgdata:/var/lib/postgresql/data
     networks:
       winnow:
-    # Publication hôte optionnelle (accès externe / debug). Le port CONTENEUR
-    # reste 5432 ; seul le port HÔTE est décalé pour ne pas heurter une autre
-    # stack (motion-pipeline). app/worker passent par le réseau interne, non
-    # affectés. Mettre POSTGRES_HOST_PORT="" pour ne rien publier.
+    # Optional host publication (external access / debug). The CONTAINER port
+    # stays 5432; only the HOST port is offset so it doesn't clash with another
+    # stack (motion-pipeline). app/worker go through the internal network,
+    # unaffected. Set POSTGRES_HOST_PORT="" to publish nothing.
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
@@ -97,7 +97,7 @@ services:
       - /opt/winnow/redisdata:/data
     networks:
       winnow:
-    # Idem postgres : port hôte décalé (6380), conteneur reste 6379.
+    # Same as postgres: host port offset (6380), container stays 6379.
     ports:
       - "${REDIS_HOST_PORT:-6380}:6379"
     healthcheck:
@@ -106,7 +106,7 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-shot : applique les migrations puis sort. app/worker l'attendent.
+  # One-shot: applies the migrations then exits. app/worker wait for it.
   migrate:
     image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_migrate
@@ -138,9 +138,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # NAS Synology : on monte la racine du partage exporté puis on n'expose au
-      # conteneur que la sous-arbo utile (subpath). /nas = uniquement la
-      # bibliothèque (RO), /nas-incoming = uniquement la zone d'arrivée (RW).
+      # Synology NAS: mount the root of the exported share, then expose to the
+      # container only the useful subtree (subpath). /nas = library only
+      # (RO), /nas-incoming = landing zone only (RW).
       - type: volume
         source: nas
         target: /nas
@@ -169,9 +169,9 @@ services:
     environment: *winnow-env
     init: true
     restart: unless-stopped
-    # Partage l'iGPU Intel pour l'encodage vidéo matériel (VAAPI). Le worker
-    # tourne en root → accès aux device nodes sans group_add. Si l'hôte n'a pas
-    # de /dev/dri (pas d'iGPU), RETIRER ce bloc et garder VIDEO_HWACCEL=none.
+    # Shares the Intel iGPU for hardware video encoding (VAAPI). The worker
+    # runs as root → access to device nodes without group_add. If the host has
+    # no /dev/dri (no iGPU), REMOVE this block and keep VIDEO_HWACCEL=none.
     devices:
       - /dev/dri:/dev/dri
     networks:
@@ -201,10 +201,10 @@ services:
     labels:
       - com.centurylinklabs.watchtower.enable=true
 
-  # --- Stockage S3 optionnel (MinIO) ----------------------------------------
-  # Décommente + passe STORAGE_DRIVER=s3 dans .env pour basculer disque → S3.
-  # Ports HÔTE décalés (9100/9101) pour cohabiter avec une autre stack MinIO
-  # (motion-pipeline = 9000/9001) ; ports CONTENEUR restent 9000/9001.
+  # --- Optional S3 storage (MinIO) ------------------------------------------
+  # Uncomment + set STORAGE_DRIVER=s3 in .env to switch disk → S3.
+  # HOST ports offset (9100/9101) to coexist with another MinIO stack
+  # (motion-pipeline = 9000/9001); CONTAINER ports stay 9000/9001.
   # minio:
   #   image: minio/minio
   #   container_name: winnow_minio
@@ -230,8 +230,8 @@ services:
   #     - traefik.http.routers.winnow-minio-console.service=winnow-minio-console
   #     - traefik.http.services.winnow-minio-console.loadbalancer.server.port=9001
 
-  # --- Feeders d'ingest optionnels (écrivent dans l'inbox) ------------------
-  # Partage SMB : déposer cartes/fichiers depuis n'importe quel poste du LAN.
+  # --- Optional ingest feeders (write into the inbox) -----------------------
+  # SMB share: drop cards/files from any machine on the LAN.
   # samba:
   #   image: dperson/samba
   #   container_name: winnow_samba
@@ -243,7 +243,7 @@ services:
   #   volumes:
   #     - /opt/winnow/inbox:/inbox
   #
-  # FTP : cible pour le transfert FTP du Sony A7C II (écrit dans l'inbox).
+  # FTP: target for the Sony A7C II's FTP transfer (writes into the inbox).
   # ftp:
   #   image: garethflowers/ftp-server
   #   container_name: winnow_ftp
@@ -257,63 +257,63 @@ services:
   #   volumes:
   #     - /opt/winnow/inbox:/home/shooter
 
-# --- Volumes NFS du NAS Synology ------------------------------------------
-# Montés par le driver `local` (mount NFS côté noyau hôte). On monte la RACINE
-# du partage exporté (NFS Synology n'exporte que la racine du dossier partagé,
-# pas les sous-dossiers) ; le `subpath` côté service ne révèle que l'arbo utile.
-# Renseigner NAS_IP dans l'UI Portainer ; exports/subpaths ont des défauts
-# surchargeables (NAS_LIBRARY_EXPORT / NAS_INCOMING_EXPORT / *_SUBPATH).
-#   - nas          : partage `Data`     (/volume1/Data)     → subpath Media/Photos/Photography (RO)
-#   - nas_incoming : partage `Computing`(/volume4/Computing)→ subpath captures (RW)
-# Pré-requis Synology : Panneau de configuration → Dossier partagé → Data ET
-# Computing → Permissions NFS → règle pour l'IP de l'Optiplex, Sécurité = sys
-# (AUTH_SYS), Squash = « Pas de mapping » (ou map vers un utilisateur pouvant
-# écrire dans captures). `subpath` exige Docker Engine ≥ 26 (sinon, voir la note
-# de repli en bas). Note Kerberos : voir bas de fichier.
+# --- Synology NAS NFS volumes ---------------------------------------------
+# Mounted by the `local` driver (NFS mount on the host kernel side). We mount the
+# ROOT of the exported share (Synology NFS only exports the root of the shared
+# folder, not subfolders); the `subpath` on the service side only reveals the
+# useful tree. Provide NAS_IP in the Portainer UI; exports/subpaths have
+# overridable defaults (NAS_LIBRARY_EXPORT / NAS_INCOMING_EXPORT / *_SUBPATH).
+#   - nas          : share `Data`     (/volume1/Data)     → subpath Media/Photos/Photography (RO)
+#   - nas_incoming : share `Computing`(/volume4/Computing)→ subpath captures (RW)
+# Synology prerequisites: Control Panel → Shared Folder → Data AND
+# Computing → NFS Permissions → rule for the Optiplex IP, Security = sys
+# (AUTH_SYS), Squash = "No mapping" (or map to a user that can write
+# into captures). `subpath` requires Docker Engine ≥ 26 (otherwise, see the
+# fallback note at the bottom). Kerberos note: see bottom of file.
 volumes:
   nas:
     driver: local
     driver_opts:
       type: nfs
-      # ro + soft : un hoquet NAS ne fige pas le scanner (résilience par-fichier).
+      # ro + soft: a NAS hiccup doesn't freeze the scanner (per-file resilience).
       o: "addr=${NAS_IP},nfsvers=4.1,ro,soft,timeo=30,retrans=2"
       device: ":${NAS_LIBRARY_EXPORT:-/volume1/Data}"
   nas_incoming:
     driver: local
     driver_opts:
       type: nfs
-      # rw + hard : on ne veut JAMAIS perdre silencieusement une écriture d'import.
+      # rw + hard: we NEVER want to silently lose an import write.
       o: "addr=${NAS_IP},nfsvers=4.1,rw,hard,timeo=600,retrans=2"
       device: ":${NAS_INCOMING_EXPORT:-/volume4/Computing}"
 
 networks:
-  # Réseau privé interne aux services Winnow.
+  # Private network internal to the Winnow services.
   winnow:
-  # Réseau partagé avec Traefik (créé hors stack : `docker network create edge`).
+  # Network shared with Traefik (created outside the stack: `docker network create edge`).
   edge:
     external: true
 
-# --- Image GHCR + Watchtower ----------------------------------------------
-# app/worker/migrate tournent sur ghcr.io/costardrouge/winnow:main, publiée à
-# chaque push sur `main` (.github/workflows/docker-build.yml). Watchtower, via le
-# label com.centurylinklabs.watchtower.enable=true, re-pull l'image quand le tag
-# `main` bouge et redéploie. Pour figer une version (rollback), épingle un tag
-# immuable `sha-xxxxxxx` au lieu de `main`.
-# Build local : pour tester sans GHCR, remplace `image:` par `build: .` dans les
-# trois services (et déploie alors depuis une copie locale du dépôt).
+# --- GHCR image + Watchtower ----------------------------------------------
+# app/worker/migrate run on ghcr.io/costardrouge/winnow:main, published on
+# every push to `main` (.github/workflows/docker-build.yml). Watchtower, via the
+# com.centurylinklabs.watchtower.enable=true label, re-pulls the image when the
+# `main` tag moves and redeploys. To pin a version (rollback), pin an immutable
+# `sha-xxxxxxx` tag instead of `main`.
+# Local build: to test without GHCR, replace `image:` with `build: .` in the
+# three services (and then deploy from a local copy of the repo).
 #
-# --- Repli si Docker Engine < 26 (pas de `subpath`) ------------------------
-# Si le déploiement refuse l'option `subpath`, monte la racine du partage et
-# pointe l'app sur la sous-arbo via l'env (ajouter dans x-winnow-env / Portainer
-# INCOMING_DIR=/nas-incoming/captures), puis dans app+worker remplace les blocs
-# `type: volume … subpath:` par les formes courtes :
-#     - nas:/nas:ro                 # /nas = tout le partage Data (RO) → scanner /nas/Media/Photos/Photography
-#     - nas_incoming:/nas-incoming  # INCOMING_DIR doit viser .../captures
+# --- Fallback if Docker Engine < 26 (no `subpath`) ------------------------
+# If the deployment rejects the `subpath` option, mount the root of the share and
+# point the app to the subtree via the env (add in x-winnow-env / Portainer
+# INCOMING_DIR=/nas-incoming/captures), then in app+worker replace the
+# `type: volume … subpath:` blocks with the short forms:
+#     - nas:/nas:ro                 # /nas = the whole Data share (RO) → scan /nas/Media/Photos/Photography
+#     - nas_incoming:/nas-incoming  # INCOMING_DIR must point to .../captures
 #
-# --- NFS Kerberos (optionnel, déconseillé en LAN de confiance) -------------
-# Le NAS expose aussi du NFS Kerberos. Sur un réseau privé, AUTH_SYS + règle IP
-# suffit et reste BIEN plus simple : le montage NFS se fait dans le noyau de
-# l'hôte (driver `local`), donc Kerberos exigerait côté HÔTE rpc.gssd actif, un
-# /etc/krb5.conf pointant le KDC, et un keytab machine joint au domaine — lourd
-# pour zéro gain ici. Si tu y tiens, ajoute `sec=krb5` (ou krb5i/krb5p) dans le
-# `o:` des volumes et provisionne gssd+keytab sur l'Optiplex.
+# --- Kerberos NFS (optional, not recommended on a trusted LAN) -------------
+# The NAS also exposes Kerberos NFS. On a private network, AUTH_SYS + an IP rule
+# is enough and stays MUCH simpler: the NFS mount happens in the host kernel
+# (`local` driver), so Kerberos would require active rpc.gssd on the HOST, a
+# /etc/krb5.conf pointing to the KDC, and a machine keytab joined to the domain — heavy
+# for zero gain here. If you insist, add `sec=krb5` (or krb5i/krb5p) in the
+# volumes' `o:` and provision gssd+keytab on the Optiplex.

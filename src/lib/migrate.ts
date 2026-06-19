@@ -1,5 +1,5 @@
-// Applique les migrations SQL de db/migrations dans l'ordre lexicographique.
-// Idempotent : chaque fichier appliqué est enregistré dans schema_migrations.
+// Applies the SQL migrations from db/migrations in lexicographic order.
+// Idempotent: each applied file is recorded in schema_migrations.
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -27,11 +27,11 @@ export async function migrate(): Promise<void> {
         [file],
       );
       if (done.rowCount) {
-        console.log(`= ${file} (déjà appliquée)`);
+        console.log(`= ${file} (already applied)`);
         continue;
       }
       const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
-      console.log(`▶ application de ${file}…`);
+      console.log(`▶ applying ${file}...`);
       await client.query("BEGIN");
       try {
         await client.query(sql);
@@ -51,16 +51,16 @@ export async function migrate(): Promise<void> {
   }
 }
 
-// Exécution directe : `npm run migrate`
+// Direct execution: `npm run migrate`
 if (import.meta.url === `file://${process.argv[1]}`) {
   migrate()
     .then(() => {
-      console.log("Migrations terminées.");
+      console.log("Migrations complete.");
       return pool.end();
     })
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Échec des migrations :", err);
+      console.error("Migrations failed:", err);
       process.exit(1);
     });
 }

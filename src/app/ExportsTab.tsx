@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { SkeletonCards, EmptyState, Icons } from "./ui";
 
-// Onglet Exports : visualiser les exports réalisés (vignettes réutilisées depuis
-// les dérivés des assets source) et les supprimer une fois inutiles (efface les
-// copies RAW du dossier d'export et repasse les assets en 'triaged').
+// Exports tab: view the exports that were made (thumbnails reused from
+// the source assets' derivatives) and delete them once no longer needed (erases the
+// RAW copies from the export folder and reverts the assets to 'triaged').
 
 type ExportJob = {
   id: number;

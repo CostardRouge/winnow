@@ -1,12 +1,12 @@
-// GET /api/sessions?kind=incoming|final → sessions + compteurs (dérivés
-// prêts/en attente, picks) + le kind du root parent. Le paramètre `kind`
-// optionnel restreint au rôle (Incoming = source/inbox, Final = finals).
+// GET /api/sessions?kind=incoming|final -> sessions + counters (ready/pending
+// derivatives, picks) + the parent root's kind. The optional `kind` parameter
+// restricts to the role (Incoming = source/inbox, Final = finals).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { json, serverError } from "@/lib/api";
 import { kindsForRole } from "@/lib/roles";
 
-// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+// DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {

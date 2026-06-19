@@ -1,5 +1,5 @@
-// POST /api/upload  (multipart, champ "files") → upload web depuis le téléphone.
-// On écrit dans un sous-dossier de l'inbox puis on enfile l'import.
+// POST /api/upload  (multipart, "files" field) -> web upload from the phone.
+// We write into an inbox subfolder then enqueue the import.
 import { NextRequest } from "next/server";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const files = form.getAll("files").filter((f): f is File => f instanceof File);
-    if (files.length === 0) return badRequest("Aucun fichier (champ 'files')");
+    if (files.length === 0) return badRequest("No file ('files' field)");
 
-    // Staging caché (.uploads) : importé explicitement ci-dessous par lot ; le
-    // watcher de l'inbox l'ignore (dossier en « . ») → pas de double import.
+    // Hidden staging (.uploads): imported explicitly below as a batch; the
+    // inbox watcher ignores it (dot-folder) -> no double import.
     const batchDir = path.join(
       uploadStagingDir,
       `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

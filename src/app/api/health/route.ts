@@ -1,5 +1,5 @@
-// GET /api/health → sonde de vivacité (utilisée par le healthcheck Docker).
-// Vérifie que l'app répond, que Postgres est joignable et que Redis répond.
+// GET /api/health → liveness probe (used by the Docker healthcheck).
+// Checks that the app responds, that Postgres is reachable and that Redis responds.
 import { q } from "@/lib/db";
 import { pingRedis } from "@/lib/queue";
 import { json } from "@/lib/api";

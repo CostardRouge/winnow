@@ -1,5 +1,5 @@
-// PATCH /api/assets/:id/rating { verdict?, star?, color } → état de tri.
-// Passe aussi l'asset en processing_state='triaged' (sauf si déjà exporté).
+// PATCH /api/assets/:id/rating { verdict?, star?, color } → culling state.
+// Also moves the asset to processing_state='triaged' (unless already exported).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one, q } from "@/lib/db";
@@ -20,7 +20,7 @@ export async function PATCH(
     const { id } = await params;
     const assetId = Number.parseInt(id, 10);
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("Paramètres invalides", parsed.error.issues);
+    if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { verdict, star, color } = parsed.data;
 
     const rating = await one<Rating>(

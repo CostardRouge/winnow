@@ -7,10 +7,10 @@ import IncomingTab from "./IncomingTab";
 import ExportsTab from "./ExportsTab";
 import GalleryShell from "./gallery/GalleryShell";
 
-// Page d'accueil = hub à onglets, reflétant le workflow :
-//   Incoming → à trier (sources NAS)   · Final → finalisé, consultation seule
-//   Exports  → copies RAW pour Capture One (visualiser/supprimer)
-// Le panneau de contrôle (pipeline) reste persistant au-dessus des onglets.
+// Home page = tabbed hub, reflecting the workflow:
+//   Incoming → to cull (NAS sources)   · Final → finalized, read-only view
+//   Exports  → RAW copies for Capture One (view/delete)
+// The control panel (pipeline) stays persistent above the tabs.
 
 type Tab = "incoming" | "final" | "exports";
 

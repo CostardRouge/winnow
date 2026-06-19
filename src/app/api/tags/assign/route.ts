@@ -1,6 +1,6 @@
 // POST /api/tags/assign { ids[], add?: string[], remove?: string[] }
-// Action de masse (et unitaire via ids:[id]). Crée les tags manquants par nom,
-// ajoute/retire les liaisons asset_tags. N'altère pas processing_state.
+// Bulk action (and single via ids:[id]). Creates missing tags by name,
+// adds/removes asset_tags links. Does not alter processing_state.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { q } from "@/lib/db";
@@ -15,20 +15,20 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("Paramètres invalides", parsed.error.issues);
+    if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { ids, add, remove } = parsed.data;
     if (!add?.length && !remove?.length)
-      return badRequest("add ou remove requis");
+      return badRequest("add or remove required");
 
     if (add?.length) {
-      // Crée les tags manquants…
+      // Create the missing tags...
       await q(
         `INSERT INTO tags (name)
          SELECT DISTINCT trim(x) FROM unnest($1::text[]) AS x
          ON CONFLICT (name) DO NOTHING`,
         [add],
       );
-      // …puis les liaisons (produit ids × tags).
+      // ...then the links (product of ids x tags).
       await q(
         `INSERT INTO asset_tags (asset_id, tag_id)
          SELECT a.id, t.id

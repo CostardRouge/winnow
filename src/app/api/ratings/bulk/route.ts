@@ -1,4 +1,4 @@
-// POST /api/ratings/bulk { ids[], verdict?, star? } → tri rapide en lot.
+// POST /api/ratings/bulk { ids[], verdict?, star? } → quick bulk culling.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { q } from "@/lib/db";
@@ -13,10 +13,10 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("Paramètres invalides", parsed.error.issues);
+    if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { ids, verdict, star } = parsed.data;
     if (verdict == null && star == null)
-      return badRequest("verdict ou star requis");
+      return badRequest("verdict or star required");
 
     await q(
       `INSERT INTO ratings (asset_id, verdict, star, reviewed_at)

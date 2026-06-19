@@ -1,7 +1,7 @@
-// Surveillance de l'inbox. Les dépôts SMB/FTP et les uploads tombent dans
-// l'inbox ; on attend que chaque fichier soit *complètement écrit*
-// (awaitWriteFinish — crucial pour des RAW/vidéos transférés sur le réseau),
-// puis on enfile un import unique pour tout le dossier (débounce).
+// Inbox watching. SMB/FTP drops and uploads land in the inbox; we wait for each
+// file to be *fully written* (awaitWriteFinish - crucial for RAWs/videos
+// transferred over the network), then we queue a single import for the whole
+// folder (debounce).
 import chokidar, { type FSWatcher } from "chokidar";
 import { mkdirSync } from "node:fs";
 
@@ -12,7 +12,7 @@ export function startInboxWatcher(
   try {
     mkdirSync(inboxDir, { recursive: true });
   } catch {
-    /* déjà présent */
+    /* already present */
   }
 
   let timer: NodeJS.Timeout | null = null;
@@ -21,7 +21,7 @@ export function startInboxWatcher(
     timer = setTimeout(() => {
       timer = null;
       onBatch(inboxDir).catch((err) =>
-        console.error("[watcher] import échoué:", (err as Error).message),
+        console.error("[watcher] import failed:", (err as Error).message),
       );
     }, 3000);
   };
@@ -29,11 +29,11 @@ export function startInboxWatcher(
   const watcher: FSWatcher = chokidar.watch(inboxDir, {
     ignoreInitial: false,
     awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 300 },
-    ignored: /(^|[/\\])\../, // fichiers/dirs cachés
+    ignored: /(^|[/\\])\../, // hidden files/dirs
   });
 
   watcher.on("add", schedule);
-  console.log(`[watcher] inbox surveillée : ${inboxDir}`);
+  console.log(`[watcher] inbox watched: ${inboxDir}`);
 
   return async () => {
     if (timer) clearTimeout(timer);
