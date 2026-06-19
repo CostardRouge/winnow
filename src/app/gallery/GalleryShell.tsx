@@ -9,6 +9,7 @@ import FilterPanel, {
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
 import { fetchJson } from "@/lib/fetchJson";
+import { EmptyState, Icons } from "../ui";
 
 // Coquille de galerie réutilisable, paramétrée par un `scope` (rôle de dossier) :
 //   - scope absent      → toute la bibliothèque (route /gallery, power-user) ;
@@ -337,7 +338,11 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
             </div>
           )}
           {items.length === 0 && !loading && !error ? (
-            <div className="empty">No assets match these filters.</div>
+            <EmptyState
+              icon={Icons.photos}
+              title="No assets match these filters"
+              hint="Loosen or clear a filter in the panel to see more of the library."
+            />
           ) : (
             <VirtualGrid
               items={items}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import GalleryShell from "./gallery/GalleryShell";
+import { SkeletonCards, EmptyState, Icons } from "./ui";
 
 // Onglet Incoming : tout ce qui est à trier (dossiers source/inbox du NAS).
 //  - vue "Sessions" : file de travail (compteurs + actions : ignorer, marquer
@@ -166,11 +167,13 @@ export default function IncomingTab() {
             </div>
           )}
           {loading ? (
-            <div className="spinner">Loading…</div>
+            <SkeletonCards rows={5} />
           ) : sessions.length === 0 ? (
-            <div className="empty">
-              No incoming sessions yet. Enter a NAS path above to start a scan.
-            </div>
+            <EmptyState
+              icon={Icons.inbox}
+              title="No incoming sessions yet"
+              hint="Enter a NAS folder path above and start a scan to populate the triage queue."
+            />
           ) : (
             <div className="session-list">
               {sessions.map((s) => (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { SkeletonCards, EmptyState, Icons } from "./ui";
 
 // Onglet Exports : visualiser les exports réalisés (vignettes réutilisées depuis
 // les dérivés des assets source) et les supprimer une fois inutiles (efface les
@@ -89,9 +90,13 @@ export default function ExportsTab() {
         </div>
       )}
       {loading ? (
-        <div className="spinner">Loading…</div>
+        <SkeletonCards rows={3} />
       ) : jobs.length === 0 ? (
-        <div className="empty">No exports yet. Pick some photos and export them → C1.</div>
+        <EmptyState
+          icon={Icons.export}
+          title="No exports yet"
+          hint="Pick photos in the gallery, then export them as a RAW copy for Capture One."
+        />
       ) : (
         <div className="session-list">
           {jobs.map((job) => (
