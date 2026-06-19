@@ -1,6 +1,6 @@
-// Helper CLI : enregistre un root (s'il n'existe pas) et lance une indexation.
-// Usage : npm run scan -- /chemin/vers/dossier/NAS [--sync]
-//   --sync : indexe directement dans ce process (sans passer par Redis/worker)
+// CLI helper: registers a root (if it doesn't exist) and starts an indexing run.
+// Usage: npm run scan -- /path/to/NAS/folder [--sync]
+//   --sync: indexes directly in this process (without going through Redis/worker)
 import { one } from "../lib/db";
 import { pool } from "../lib/db";
 import { enqueueIndex } from "../lib/queue";
@@ -13,7 +13,7 @@ async function main() {
   const sync = args.includes("--sync");
   const target = args.find((a) => !a.startsWith("--"));
   if (!target) {
-    console.error("Usage : npm run scan -- /chemin/dossier [--sync]");
+    console.error("Usage: npm run scan -- /path/to/folder [--sync]");
     process.exit(1);
   }
   const abs = path.resolve(target);
@@ -26,14 +26,14 @@ async function main() {
   );
 
   if (sync) {
-    console.log(`Indexation synchrone de ${abs}…`);
+    console.log(`Synchronous indexing of ${abs}…`);
     const res = await indexRoot(root!.id);
     console.log(res);
     await closeExiftool();
   } else {
     await enqueueIndex(root!.id);
-    console.log(`Indexation enfilée pour le root ${root!.id} (${abs}).`);
-    console.log("Lance `npm run worker` pour la traiter.");
+    console.log(`Indexing queued for root ${root!.id} (${abs}).`);
+    console.log("Run `npm run worker` to process it.");
   }
   await pool.end();
   process.exit(0);

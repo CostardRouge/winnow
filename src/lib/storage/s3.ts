@@ -1,5 +1,5 @@
-// Backend S3 / MinIO. Activé via STORAGE_DRIVER=s3.
-// Même interface que le disque : on bascule sans changer le code applicatif.
+// S3 / MinIO backend. Enabled via STORAGE_DRIVER=s3.
+// Same interface as disk: we switch without changing the application code.
 import {
   S3Client,
   PutObjectCommand,

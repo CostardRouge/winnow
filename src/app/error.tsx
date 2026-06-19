@@ -1,7 +1,7 @@
 "use client";
 
-// Error boundary segment-level : une exception de rendu dans une page n'efface
-// plus toute l'app — on affiche un fallback récupérable.
+// Segment-level error boundary: a render exception in a page no longer
+// wipes out the whole app — we show a recoverable fallback.
 import { useEffect } from "react";
 
 export default function Error({

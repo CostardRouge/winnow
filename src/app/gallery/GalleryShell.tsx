@@ -10,12 +10,12 @@ import FilterPanel, {
 import Tree, { type PathSeg } from "./Tree";
 import { fetchJson } from "@/lib/fetchJson";
 
-// Coquille de galerie réutilisable, paramétrée par un `scope` (rôle de dossier) :
-//   - scope absent      → toute la bibliothèque (route /gallery, power-user) ;
-//   - scope="incoming"  → tri complet (rating, tags, sélection) ;
-//   - scope="final"     → consultation seule (readOnly) : ni rating, ni export.
-// `kind` (= scope) est injecté dans chaque appel (assets/facets/tree) MAIS n'est
-// pas stocké dans Filters : « Reset » ne doit jamais effacer la portée d'onglet.
+// Reusable gallery shell, parameterized by a `scope` (folder role):
+//   - no scope          → the whole library (route /gallery, power-user);
+//   - scope="incoming"  → full culling (rating, tags, selection);
+//   - scope="final"     → read-only (readOnly): no rating, no export.
+// `kind` (= scope) is injected into every call (assets/facets/tree) BUT is not
+// stored in Filters: "Reset" must never clear the tab scope.
 
 type Scope = "incoming" | "final";
 
@@ -63,8 +63,8 @@ function toQuery(f: Filters, scope?: Scope, cursor?: string | null): string {
   return sp.toString();
 }
 
-// Applique le chemin d'un nœud d'arbre comme scope (réinitialise les dimensions
-// d'arbre, conserve les autres filtres : verdict, tags, type…).
+// Applies a tree node's path as scope (resets the tree dimensions, keeps the
+// other filters: verdict, tags, type...).
 function applyScope(prev: Filters, path: PathSeg[]): Filters {
   const base: Filters = {
     ...prev,
@@ -83,7 +83,7 @@ function applyScope(prev: Filters, path: PathSeg[]): Filters {
 }
 
 export default function GalleryShell({ scope }: { scope?: Scope }) {
-  // Final = consultation seule : on masque tri/sélection/export.
+  // Final = read-only: hide culling/selection/export.
   const readOnly = scope === "final";
 
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -197,7 +197,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
     });
   }, []);
 
-  // Navigation clavier dans la visionneuse.
+  // Keyboard navigation in the viewer.
   useEffect(() => {
     if (viewer == null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -207,7 +207,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
       if (e.key === "Escape") return setViewer(null);
       if (e.key === "ArrowRight") return setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1));
       if (e.key === "ArrowLeft") return setViewer((v) => Math.max((v ?? 0) - 1, 0));
-      if (readOnly) return; // pas de notation en consultation seule
+      if (readOnly) return; // no rating in read-only mode
       if (e.key.toLowerCase() === "p") return void rate(a.id, { verdict: "pick" });
       if (e.key.toLowerCase() === "x") return void rate(a.id, { verdict: "reject" });
       if (e.key.toLowerCase() === "u") return void rate(a.id, { verdict: "unrated" });

@@ -1,14 +1,14 @@
-// Construction de filtres SQL partagée entre la galerie, la grille de session
-// et les exports. Toutes les requêtes joignent `assets a` LEFT JOIN `ratings r`.
+// SQL filter construction shared between the gallery, the session grid
+// and the exports. Every query joins `assets a` LEFT JOIN `ratings r`.
 //
-// Filtres CUMULATIFS (combinés en AND). Les dimensions catégorielles acceptent
-// plusieurs valeurs (CSV → IN/ANY) ; les dimensions numériques/temporelles
-// acceptent des bornes min/max. Tout repose sur des colonnes indexées (cf.
-// migration 0003) — aucun calcul à la volée.
+// CUMULATIVE filters (combined with AND). Categorical dimensions accept
+// multiple values (CSV -> IN/ANY); numeric/temporal dimensions
+// accept min/max bounds. Everything relies on indexed columns (cf.
+// migration 0003) - no on-the-fly computation.
 import { z } from "zod";
 import { kindsForRole } from "./roles";
 
-// "a,b,c" | ["a","b"] | "a"  →  ["a","b","c"]  (vide → undefined)
+// "a,b,c" | ["a","b"] | "a"  ->  ["a","b","c"]  (empty -> undefined)
 const csv = z
   .union([z.string(), z.array(z.string())])
   .optional()
@@ -33,50 +33,50 @@ const intList = z
 
 export const FilterSchema = z
   .object({
-    // Portée
+    // Scope
     session_id: z.coerce.number().int().optional(),
     root_id: z.coerce.number().int().optional(),
-    // Portée par rôle de dossier (Incoming/Final) — mappée en kinds Postgres.
+    // Scope by folder role (Incoming/Final) - mapped to Postgres kinds.
     kind: z.enum(["incoming", "final"]).optional(),
     processing_state: z
       .enum(["ignored", "unprocessed", "triaged", "exported"])
       .optional(),
 
-    // Tri
+    // Culling
     verdict: z.enum(["pick", "reject", "unrated"]).optional(),
     star_min: z.coerce.number().int().min(0).max(5).optional(),
 
     // Type / format
     media_type: csv, // photo | video (multi)
-    ext: csv, // .arw, .jpg… (multi)
+    ext: csv, // .arw, .jpg... (multi)
 
-    // Appareil / EXIF (multi)
+    // Device / EXIF (multi)
     device: csv,
     camera_model: csv,
     lens: csv,
 
-    // Calendrier (multi-valeurs) + plage de dates
+    // Calendar (multi-value) + date range
     year: intList,
     month: intList, // 1-12
     day: intList, // 1-31
     date_from: z.string().optional(), // YYYY-MM-DD
     date_to: z.string().optional(),
 
-    // Plages numériques
+    // Numeric ranges
     iso_min: z.coerce.number().optional(),
     iso_max: z.coerce.number().optional(),
     aperture_min: z.coerce.number().optional(),
     aperture_max: z.coerce.number().optional(),
     focal_min: z.coerce.number().optional(),
     focal_max: z.coerce.number().optional(),
-    size_min: z.coerce.number().optional(), // octets
+    size_min: z.coerce.number().optional(), // bytes
     size_max: z.coerce.number().optional(),
 
-    // Tags (libres) : inclusion ANY / exclusion ANY
+    // Tags (free-form): ANY inclusion / ANY exclusion
     tags: csv,
     not_tags: csv,
 
-    // Divers
+    // Misc
     has_gps: z.coerce.boolean().optional(),
   })
   .strip();
@@ -116,8 +116,8 @@ export function buildFilter(
     params.push(filter.root_id);
   }
   if (filter.kind != null) {
-    // Scope par rôle via sessions→roots (sous-requête, comme root_id : pas de
-    // JOIN supplémentaire à propager aux appelants).
+    // Scope by role via sessions->roots (subquery, like root_id: no
+    // additional JOIN to propagate to callers).
     conditions.push(
       `a.session_id IN (
          SELECT s.id FROM sessions s JOIN roots rt ON rt.id = s.root_id
@@ -181,7 +181,7 @@ export function buildFilter(
   return { conditions, params };
 }
 
-// Parse les filtres depuis les query params d'une URL (toutes dimensions).
+// Parses the filters from a URL's query params (all dimensions).
 export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
   const keys = [
     "session_id",

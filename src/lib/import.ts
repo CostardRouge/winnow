@@ -1,8 +1,8 @@
-// Import worker — feeder commun à toutes les sources (upload web, dépôt SMB,
-// FTP appareil, offload de carte). Contrat : des octets arrivent dans un
-// `sourceDir` ; on les VÉRIFIE (hash), on DÉDUPLIQUE (content_hash partagé avec
-// les assets), on RANGE dans l'incoming (archive NAS) selon un gabarit
-// déterministe, puis on laisse l'indexer faire son travail habituel.
+// Import worker — common feeder for all sources (web upload, SMB drop,
+// device FTP, card offload). Contract: bytes arrive in a
+// `sourceDir`; we VERIFY them (hash), DEDUPLICATE them (content_hash shared with
+// the assets), FILE them into the incoming (NAS archive) according to a
+// deterministic template, then let the indexer do its usual work.
 import {
   readdir,
   stat,
@@ -21,12 +21,12 @@ import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
 import { slug } from "./slug";
 
-// Sous-dossiers CACHÉS de l'inbox (préfixe « . ») — donc ignorés à la fois par
-// le watcher et par le walk d'import de l'inbox entière :
-//   .uploads : staging des uploads web (importés explicitement, par lot) → évite
-//              le double déclenchement watcher + import de lot sur les mêmes octets.
-//   .failed  : quarantaine des fichiers en échec → ne sont plus re-tentés en
-//              boucle à chaque dépôt ; réessayables manuellement.
+// HIDDEN subfolders of the inbox (prefix ". ") — therefore ignored both by
+// the watcher and by the import walk of the entire inbox:
+//   .uploads : staging area for web uploads (imported explicitly, by batch) → avoids
+//              the double trigger of watcher + batch import on the same bytes.
+//   .failed  : quarantine for failed files → no longer retried in a
+//              loop on every drop; manually retryable.
 export const uploadStagingDir = path.join(config.import.inboxDir, ".uploads");
 export const quarantineDir = path.join(config.import.inboxDir, ".failed");
 
@@ -35,7 +35,7 @@ export type ImportOrigin = "web_upload" | "card_offload" | "inbox" | "ftp";
 export type ImportArgs = {
   sourceDir: string;
   origin: ImportOrigin;
-  removeAfter: boolean; // true pour inbox/upload, false pour une carte
+  removeAfter: boolean; // true for inbox/upload, false for a card
   batchId?: number;
 };
 
@@ -70,9 +70,9 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-// Gabarit déterministe : {incoming}/{device}/{YYYY}/{YYYY-MM-DD}/{fichier}.
-// Le regroupement par jour/appareil crée des "sessions" naturelles que l'indexer
-// reprend telles quelles.
+// Deterministic template: {incoming}/{device}/{YYYY}/{YYYY-MM-DD}/{file}.
+// Grouping by day/device creates natural "sessions" that the indexer
+// picks up as-is.
 function planDestination(
   device: string | null,
   capturedAtIso: string | null,
@@ -92,7 +92,7 @@ function planDestination(
   );
 }
 
-// Évite d'écraser un fichier différent portant le même nom : on suffixe.
+// Avoids overwriting a different file with the same name: we add a suffix.
 async function uniqueDest(dest: string): Promise<string> {
   if (!(await exists(dest))) return dest;
   const ext = path.extname(dest);
@@ -120,13 +120,13 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
 
   for await (const src of walk(args.sourceDir)) {
     const ext = path.extname(src);
-    if (!classifyExt(ext)) continue; // pas un média reconnu : on laisse en place
+    if (!classifyExt(ext)) continue; // not a recognized media: we leave it in place
 
     try {
       const st = await stat(src);
       const hash = await partialHash(src, st.size);
 
-      // Déduplication : même content_hash déjà connu → on ne recopie rien.
+      // Deduplication: same content_hash already known → we copy nothing.
       const dup = await one<{ id: number }>(
         "SELECT id FROM assets WHERE content_hash = $1",
         [hash],
@@ -144,7 +144,7 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
         path.basename(src),
       );
 
-      // Si la destination existe déjà avec le même contenu, c'est déjà importé.
+      // If the destination already exists with the same content, it is already imported.
       if (await exists(planned)) {
         const existSt = await stat(planned);
         const existHash = await partialHash(planned, existSt.size);
@@ -158,9 +158,9 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
 
       await mkdir(path.dirname(dest), { recursive: true });
 
-      // Copie atomique : écriture dans un `.part`, vérification (taille + hash
-      // partiel), puis rename — un crash en cours ne laisse jamais de fichier
-      // partiel sous le nom final (qui serait ensuite indexé comme valide).
+      // Atomic copy: write into a `.part`, verify (size + partial
+      // hash), then rename — a crash in progress never leaves a partial
+      // file under the final name (which would then be indexed as valid).
       const tmp = `${dest}.part`;
       await rm(tmp, { force: true });
       await copyFile(src, tmp);
@@ -168,7 +168,7 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       const destHash = await partialHash(tmp, destSt.size);
       if (destSt.size !== st.size || destHash !== hash) {
         await rm(tmp, { force: true });
-        throw new Error("vérification de copie échouée (taille/hash)");
+        throw new Error("copy verification failed (size/hash)");
       }
       await rename(tmp, dest);
 
@@ -177,9 +177,9 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
     } catch (err) {
       res.failed++;
       res.errors.push({ file: src, error: (err as Error).message });
-      // Quarantaine : on sort le fichier de l'inbox pour ne pas le re-tenter en
-      // boucle à chaque dépôt. (Pas pour une carte : removeAfter=false la laisse
-      // intacte ; ni pour un fichier déjà en quarantaine, qu'on laisse en place.)
+      // Quarantine: we move the file out of the inbox so as not to retry it in
+      // a loop on every drop. (Not for a card: removeAfter=false leaves it
+      // intact; nor for a file already quarantined, which we leave in place.)
       if (args.removeAfter && !src.startsWith(quarantineDir)) {
         try {
           await mkdir(quarantineDir, { recursive: true });
@@ -191,20 +191,20 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
             await rm(src, { force: true });
           });
         } catch {
-          /* dernier recours : on laisse le fichier (sera re-tenté) */
+          /* last resort: we leave the file (will be retried) */
         }
       }
     }
   }
 
-  // Staging d'upload vidé après import : on retire le dossier de lot (rmdir
-  // n'efface que s'il est vide — les éventuels échecs sont déjà en quarantaine).
+  // Upload staging area emptied after import: we remove the batch folder (rmdir
+  // only deletes if it is empty — any failures are already in quarantine).
   if (args.removeAfter && args.sourceDir.startsWith(uploadStagingDir)) {
     await rmdir(args.sourceDir).catch(() => {});
   }
 
-  // L'incoming est un root "source" : on l'enregistre et on enfile l'indexation
-  // (incrémentale : seuls les nouveaux fichiers seront traités).
+  // The incoming is a "source" root: we register it and enqueue indexing
+  // (incremental: only new files will be processed).
   if (res.imported > 0) {
     const root = await one<{ id: number }>(
       `INSERT INTO roots (path, kind, watch) VALUES ($1, 'source', true)
@@ -212,7 +212,7 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
        RETURNING id`,
       [config.import.incomingDir],
     );
-    // L'incoming (issu d'un import) est prioritaire sur les scans ordinaires.
+    // The incoming (from an import) takes priority over ordinary scans.
     if (root) await enqueueIndex(root.id, { priority: PRIORITY.high });
   }
 

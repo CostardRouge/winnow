@@ -2,7 +2,7 @@
   "name": "winnow",
   "version": "0.1.0",
   "private": true,
-  "description": "Outil de gestion média (ingest / tri / export) — indexe, trie et exporte les RAW/vidéos du NAS sans jamais toucher les originaux plus d'une fois.",
+  "description": "Media management tool (ingest / cull / export) — indexes, culls and exports the NAS RAW/videos without ever touching the originals more than once.",
   "type": "module",
   "scripts": {
     "dev": "next dev",

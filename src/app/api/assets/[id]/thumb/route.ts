@@ -1,4 +1,4 @@
-// GET /api/assets/:id/thumb → vignette (grille).
+// GET /api/assets/:id/thumb → thumbnail (grid).
 import { serveDerivative } from "@/lib/serve";
 import { serverError } from "@/lib/api";
 

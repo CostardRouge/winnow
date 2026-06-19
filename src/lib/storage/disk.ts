@@ -1,15 +1,15 @@
-// Backend disque (MVP). Les clés sont mappées sur des chemins de fichiers sous
-// STORAGE_DISK_PATH. Pas d'URL signée : la route API sert les octets.
+// Disk backend (MVP). Keys are mapped to file paths under
+// STORAGE_DISK_PATH. No signed URL: the API route serves the bytes.
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config";
 import type { Storage } from "./index";
 
 function safeJoin(base: string, key: string): string {
-  // Empêche toute remontée hors du répertoire de base via la clé.
+  // Prevents any traversal outside the base directory via the key.
   const target = path.resolve(base, key);
   if (target !== base && !target.startsWith(base + path.sep)) {
-    throw new Error(`Clé de stockage invalide : ${key}`);
+    throw new Error(`Invalid storage key: ${key}`);
   }
   return target;
 }
@@ -37,6 +37,6 @@ export class DiskStorage implements Storage {
   }
 
   async signedUrl(): Promise<string | null> {
-    return null; // servi par /api/assets/:id/(thumb|proxy)
+    return null; // served by /api/assets/:id/(thumb|proxy)
   }
 }

@@ -1,5 +1,5 @@
--- "Marquer complet" : drapeau visuel sur une session incoming. N'altère ni le
--- traitement, ni la file, ni la classification ; sert uniquement à afficher un
--- badge "terminé" dans l'onglet Incoming (décision produit : simple drapeau).
+-- "Mark complete": visual flag on an incoming session. Alters neither the
+-- processing, nor the queue, nor the classification; only used to show a
+-- "done" badge in the Incoming tab (product decision: a simple flag).
 ALTER TABLE sessions
   ADD COLUMN IF NOT EXISTS completed BOOLEAN NOT NULL DEFAULT false;

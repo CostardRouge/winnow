@@ -1,5 +1,5 @@
-// Lecture EXIF + extraction de l'aperçu embarqué (cf. §4 — LE point critique).
-// On NE décode JAMAIS le capteur RAW : on extrait l'aperçu JPEG embarqué.
+// EXIF reading + extraction of the embedded preview (cf. §4 - THE critical point).
+// We NEVER decode the RAW sensor: we extract the embedded JPEG preview.
 import { exiftool, type Tags } from "exiftool-vendored";
 import { tmpdir } from "node:os";
 import { mkdtemp, rm, stat } from "node:fs/promises";
@@ -24,13 +24,13 @@ export type Metadata = {
 function toIso(v: unknown): string | null {
   if (!v) return null;
   if (typeof v === "string") return v;
-  // ExifDateTime / ExifDate de exiftool-vendored
+  // ExifDateTime / ExifDate from exiftool-vendored
   const anyV = v as { toISOString?: () => string; toString?: () => string };
   if (typeof anyV.toISOString === "function") {
     try {
       return anyV.toISOString();
     } catch {
-      /* tz manquante */
+      /* missing tz */
     }
   }
   return anyV.toString ? anyV.toString() : null;
@@ -79,16 +79,16 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
 }
 
 /**
- * Retourne le chemin d'un JPEG exploitable par sharp pour générer les dérivés,
- * un éventuel répertoire temporaire à nettoyer, et l'orientation EXIF (1-8) de
- * l'original.
+ * Returns the path of a JPEG usable by sharp to generate the derivatives,
+ * a possible temporary directory to clean up, and the EXIF orientation (1-8) of
+ * the original.
  *
- *  - Formats lisibles directement (JPEG/PNG/TIFF/WebP/HEIC) : on renvoie
- *    l'original (sharp s'en charge, `orientation` non nécessaire).
- *  - RAW : on extrait l'aperçu JPEG embarqué (JpgFromRaw, sinon PreviewImage,
- *    sinon ThumbnailImage) — extraction quasi instantanée, zéro dématriçage.
- *    Cet aperçu ne porte souvent PAS le tag Orientation : on renvoie donc
- *    l'orientation lue sur le RAW pour que le worker la réapplique.
+ *  - Directly readable formats (JPEG/PNG/TIFF/WebP/HEIC): we return
+ *    the original (sharp handles it, `orientation` not needed).
+ *  - RAW: we extract the embedded JPEG preview (JpgFromRaw, otherwise PreviewImage,
+ *    otherwise ThumbnailImage) - near-instant extraction, zero demosaicing.
+ *    This preview often does NOT carry the Orientation tag: so we return
+ *    the orientation read on the RAW so the worker can reapply it.
  */
 export async function extractSourceJpeg(
   absPath: string,
@@ -100,14 +100,14 @@ export async function extractSourceJpeg(
 }> {
   const e = ext.toLowerCase();
 
-  // HEIC/HEIF : sharp peut décoder si libvips a libheif ; sinon on tombe sur
-  // l'extraction d'aperçu plus bas. On tente d'abord l'original pour les
-  // formats matriciels classiques.
+  // HEIC/HEIF: sharp can decode if libvips has libheif; otherwise we fall back
+  // to the preview extraction below. We first try the original for the
+  // classic raster formats.
   if (PHOTO_DIRECT_EXTS.has(e) && e !== ".heic" && e !== ".heif") {
     return { jpegPath: absPath, cleanupDir: null };
   }
 
-  // L'aperçu RAW perd généralement le tag Orientation : on le lit sur le RAW.
+  // The RAW preview usually loses the Orientation tag: we read it on the RAW.
   const orientation = await readOrientation(absPath);
 
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
@@ -125,20 +125,20 @@ export async function extractSourceJpeg(
       const s = await stat(dest);
       if (s.size > 0) return { jpegPath: dest, cleanupDir: dir, orientation };
     } catch {
-      /* essai suivant */
+      /* next attempt */
     }
   }
 
-  // Dernier recours pour HEIC : laisser sharp tenter l'original.
+  // Last resort for HEIC: let sharp try the original.
   await rm(dir, { recursive: true, force: true });
   if (e === ".heic" || e === ".heif") {
     return { jpegPath: absPath, cleanupDir: null };
   }
-  throw new Error(`Aucun aperçu extractible depuis ${absPath}`);
+  throw new Error(`No extractable preview from ${absPath}`);
 }
 
-// Orientation EXIF numérique (1-8) de l'original. `-n` désactive la conversion
-// "humaine" d'exiftool pour obtenir l'entier brut.
+// Numeric EXIF orientation (1-8) of the original. `-n` disables exiftool's
+// "human" conversion to obtain the raw integer.
 async function readOrientation(absPath: string): Promise<number | undefined> {
   try {
     const tags = await exiftool.read(absPath, ["-n"]);

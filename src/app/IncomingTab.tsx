@@ -5,11 +5,11 @@ import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import GalleryShell from "./gallery/GalleryShell";
 
-// Onglet Incoming : tout ce qui est à trier (dossiers source/inbox du NAS).
-//  - vue "Sessions" : file de travail (compteurs + actions : ignorer, marquer
-//    terminé, exporter les picks vers C1) + barre d'indexation d'un chemin ;
-//  - vue "Browse"   : exploration galerie scoppée à l'incoming (par dossier,
-//    appareil, date), pour parcourir transversalement.
+// Incoming tab: everything to cull (source/inbox folders on the NAS).
+//  - "Sessions" view: work queue (counters + actions: ignore, mark
+//    done, export picks to C1) + indexing bar for a path;
+//  - "Browse"   view: gallery exploration scoped to the incoming (by folder,
+//    device, date), to browse across.
 
 type SessionRow = {
   id: number;
@@ -61,7 +61,7 @@ export default function IncomingTab() {
   useEffect(() => {
     if (view !== "sessions") return;
     load();
-    const t = setInterval(load, 5000); // suit l'avancement des dérivés
+    const t = setInterval(load, 5000); // follows the derivatives' progress
     return () => clearInterval(t);
   }, [load, view]);
 

@@ -1,8 +1,8 @@
-// GET /api/tree?group=date|folder|device&<sélection>&<filtres> → enfants + comptes.
-// L'arbre ne fait que piloter les filtres galerie : chaque nœud porte sa clé/valeur
-// que le client applique à l'objet Filters pour rescoper la grille.
+// GET /api/tree?group=date|folder|device&<selection>&<filters> → children + counts.
+// The tree only drives the gallery filters: each node carries its key/value
+// that the client applies to the Filters object to rescope the grid.
 //
-// Niveau suivant déduit de la sélection présente :
+// Next level inferred from the current selection:
 //   date   : year ▸ month ▸ day
 //   device : device ▸ year ▸ month ▸ day
 //   folder : root ▸ session
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       return all.length ? `WHERE ${all.join(" AND ")}` : "";
     };
 
-    // Regroupement simple sur une colonne de `assets a`.
+    // Simple grouping on a column of `assets a`.
     const groupCol = async (
       col: string,
       key: string,

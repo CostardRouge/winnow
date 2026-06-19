@@ -1,10 +1,10 @@
-// POST /api/failures/retry { kind, ids? } → relance les éléments échoués.
-//   kind="derivative" : remet les assets en 'pending' et ré-enfile la génération
-//                       (ids = asset ids ; sinon tous les dérivés en erreur).
-//   kind="scan"       : ré-indexe les roots (incoming prioritaire) et marque les
-//                       échecs de scan comme réglés (réouverts s'ils re-échouent).
-//   kind="import"     : ré-importe la quarantaine (.failed) — succès = sort de
-//                       quarantaine ; échec = y reste.
+// POST /api/failures/retry { kind, ids? } -> retries the failed items.
+//   kind="derivative" : resets the assets to 'pending' and re-enqueues generation
+//                       (ids = asset ids; otherwise all derivatives in error).
+//   kind="scan"       : re-indexes the roots (incoming prioritized) and marks the
+//                       scan failures as resolved (reopened if they fail again).
+//   kind="import"     : re-imports the quarantine (.failed) -- success = leaves
+//                       quarantine; failure = stays there.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
@@ -28,7 +28,7 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("kind requis", parsed.error.issues);
+    if (!parsed.success) return badRequest("kind required", parsed.error.issues);
     const { kind, ids } = parsed.data;
 
     if (kind === "derivative") {
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (kind === "scan") {
-      // Résolution optimiste : si un fichier re-échoue, recordScanFailure rouvre.
+      // Optimistic resolution: if a file fails again, recordScanFailure reopens it.
       await q(
         "UPDATE scan_failures SET resolved_at = now() WHERE resolved_at IS NULL",
       );
@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
       return json({ kind, retried: roots.length });
     }
 
-    // import : ré-importe la quarantaine (batch tracké pour que d'éventuels
-    // ré-échecs restent visibles dans la liste).
+    // import: re-imports the quarantine (batch tracked so that any further
+    // failures stay visible in the list).
     const batch = await one<{ id: number }>(
       "INSERT INTO import_batches (source_dir, origin) VALUES ($1, 'inbox') RETURNING id",
       [quarantineDir],

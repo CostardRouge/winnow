@@ -1,5 +1,5 @@
-// POST /api/import/offload { path } → offload d'une carte montée sur l'Optiplex.
-// On NE supprime PAS la source (la carte reste intacte).
+// POST /api/import/offload { path } → offload of a card mounted on the Optiplex.
+// We do NOT delete the source (the card stays intact).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one } from "@/lib/db";
@@ -11,7 +11,7 @@ const Body = z.object({ path: z.string().min(1) });
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("path requis");
+    if (!parsed.success) return badRequest("path required");
 
     const batch = await one<{ id: number }>(
       `INSERT INTO import_batches (source_dir, origin) VALUES ($1, 'card_offload')

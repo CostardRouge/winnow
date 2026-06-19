@@ -1,22 +1,22 @@
-// Abstraction de stockage des dérivés.
+// Derivatives storage abstraction.
 //
-// Décision §12.1 : cache disque pour le MVP, MAIS derrière une interface de type
-// S3 pour pouvoir brancher MinIO plus tard sans toucher au reste du code.
-// Le code manipule toujours des "clés" (thumb_key / proxy_key) ; il ne connaît
-// jamais le système de fichiers sous-jacent.
+// Decision §12.1: disk cache for the MVP, BUT behind an S3-like interface so we
+// can plug in MinIO later without touching the rest of the code.
+// The code always manipulates "keys" (thumb_key / proxy_key); it never knows
+// the underlying file system.
 
 import { config } from "../config";
 
 export interface Storage {
-  /** Écrit des octets sous une clé. */
+  /** Writes bytes under a key. */
   put(key: string, body: Buffer, contentType: string): Promise<void>;
-  /** Lit les octets d'une clé (null si absente). */
+  /** Reads a key's bytes (null if absent). */
   get(key: string): Promise<Buffer | null>;
-  /** Supprime une clé (sans erreur si absente). */
+  /** Deletes a key (no error if absent). */
   del(key: string): Promise<void>;
   /**
-   * URL d'accès direct, signée si le backend le permet (MinIO/S3).
-   * Pour le disque, renvoie null : l'app sert les octets via une route API.
+   * Direct-access URL, signed if the backend allows it (MinIO/S3).
+   * For disk, returns null: the app serves the bytes via an API route.
    */
   signedUrl(key: string, expiresInSeconds?: number): Promise<string | null>;
 }

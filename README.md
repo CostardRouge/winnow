@@ -1,261 +1,261 @@
-# 🪶 Winnow — outil de gestion média (ingest / tri / export)
+# 🪶 Winnow — media management tool (ingest / cull / export)
 
-Application web responsive pour **indexer, trier et exporter** les photos/vidéos
-brutes du NAS, multi-appareils (Sony A7C II, drone DJI, iPhone, Ray-Ban Meta).
+Responsive web app to **index, cull and export** the raw photos/videos from the
+NAS, across multiple devices (Sony A7C II, DJI drone, iPhone, Ray-Ban Meta).
 
-> **Principe directeur** : le filesystem et les RAW ne sont touchés qu'**une seule
-> fois** (indexation + génération des dérivés). Tout le reste — navigation, tri,
-> requêtes — passe par Postgres et un cache de dérivés. Le tri se fait toujours
-> sur des proxies légers, **jamais sur les RAW**.
+> **Guiding principle**: the filesystem and the RAWs are touched only **once**
+> (indexing + derivative generation). Everything else — browsing, culling,
+> queries — goes through Postgres and a derivative cache. Culling always happens
+> on lightweight proxies, **never on the RAWs**.
 
-Ce dépôt implémente le **MVP** (cf. §11 des specs) : indexer + extraction de
-l'aperçu RAW + base + marquage « dossier ignoré » + grille de tri (pick/reject/
-étoiles) + export « copie RAW pour Capture One ». Photos uniquement.
+This repository implements the **MVP** (see §11 of the specs): index + RAW
+preview extraction + database + "ignored folder" marking + culling grid (pick/
+reject/stars) + "RAW copy for Capture One" export. Photos only.
 
 ---
 
 ## Architecture
 
-Composants découplés, communiquant via Postgres + une file Redis (BullMQ) :
+Decoupled components, communicating through Postgres + a Redis queue (BullMQ):
 
 ```
-NAS (HDD, RAW/vidéo, RO)  ──►  Indexer  ──►  Postgres (sessions, assets, ratings)
+NAS (HDD, RAW/video, RO)  ──►  Indexer  ──►  Postgres (sessions, assets, ratings)
                                   │
-                                  └─enqueue──►  Workers dérivés ──► Stockage (disk/MinIO)
+                                  └─enqueue──►  Derivative workers ──► Storage (disk/MinIO)
                                                    (exiftool + sharp)   thumbs + proxies
-Next.js (UI tri + API) ◄── Postgres + Stockage
-   └─► Export worker ──► copie RAW pour Capture One  (+ lignage source→export)
+Next.js (cull UI + API) ◄── Postgres + Storage
+   └─► Export worker ──► RAW copy for Capture One  (+ source→export lineage)
 ```
 
-Tout (Postgres, Redis, dérivés, exports, inbox) vit sur l'**Optiplex**. Les
-sessions déjà rangées du NAS sont montées en **lecture seule** ; seule la zone
-`incoming` (arrivée des imports) est montée en **lecture/écriture**.
+Everything (Postgres, Redis, derivatives, exports, inbox) lives on the
+**Optiplex**. The NAS sessions that are already filed are mounted **read-only**;
+only the `incoming` zone (where imports land) is mounted **read/write**.
 
-### Authentification / accès
+### Authentication / access
 
-L'auth est gérée **en amont** (pas de login applicatif) : **Traefik** (basic-auth)
-+ **Cloudflare Tunnel** exposent l'app derrière un domaine. Winnow tourne donc
-sur le réseau interne et fait confiance au reverse-proxy ; ne pas publier les
-ports `3000`/`5432`/`6379` directement sur Internet — seul Traefik route vers
-l'app. (Pour un accès mobile hors-LAN, l'upload passe par le tunnel.)
+Auth is handled **upstream** (no application login): **Traefik** (basic-auth)
++ **Cloudflare Tunnel** expose the app behind a domain. Winnow therefore runs on
+the internal network and trusts the reverse proxy; do not publish ports
+`3000`/`5432`/`6379` directly on the Internet — only Traefik routes to the app.
+(For off-LAN mobile access, uploads go through the tunnel.)
 
-### Décisions §12 retenues
+### §12 decisions adopted
 
-| # | Décision | Choix |
+| # | Decision | Choice |
 |---|----------|-------|
-| 1 | Dérivés : MinIO ou disque | **Cache disque**, derrière une interface de type S3 (`src/lib/storage`) → bascule vers **MinIO** via `STORAGE_DRIVER=s3` sans toucher au code. |
-| 2 | Montage vs agent NAS | **Montage RO** pour le MVP (tranché par les specs). |
-| 3 | Déduplication par hash | **Oui dès le MVP** : `content_hash` partiel (taille + extrémités) + index unique. |
-| 4 | Clé de liaison finaux C1 → source | Reportée à la V2 (réconciliation), endpoint `POST /reconcile` réservé. |
+| 1 | Derivatives: MinIO or disk | **Disk cache**, behind an S3-style interface (`src/lib/storage`) → switch to **MinIO** via `STORAGE_DRIVER=s3` without touching the code. |
+| 2 | Mount vs NAS agent | **RO mount** for the MVP (decided by the specs). |
+| 3 | Hash-based deduplication | **Yes from the MVP**: partial `content_hash` (size + endpoints) + unique index. |
+| 4 | Linking key for C1 finals → source | Deferred to V2 (reconciliation), `POST /reconcile` endpoint reserved. |
 
 ---
 
-## Démarrage
+## Getting started
 
-### Avec Docker Compose (recommandé)
+### With Docker Compose (recommended)
 
 ```bash
 cp .env.dist .env
-# Éditer NAS_MOUNT (sessions RO) et NAS_INCOMING (imports RW), ajuster les chemins.
+# Edit NAS_MOUNT (RO sessions) and NAS_INCOMING (RW imports), adjust the paths.
 docker compose up -d --build
-# `migrate` applique le schéma, puis app (http://localhost:3000) + worker démarrent.
+# `migrate` applies the schema, then app (http://localhost:3000) + worker start.
 ```
 
-Puis, depuis l'UI, saisir un chemin de dossier du NAS (tel que vu **dans le
-conteneur**, p. ex. `/nas/2026/…`) et cliquer **Indexer**.
+Then, from the UI, enter a NAS folder path (as seen **inside the container**,
+e.g. `/nas/2026/…`) and click **Index**.
 
-### En local (dev)
+### Locally (dev)
 
-Nécessite un Postgres et un Redis joignables, plus `perl` (pour exiftool) et
-les libs de `sharp` (fournies par les binaires prébuild).
+Requires a reachable Postgres and Redis, plus `perl` (for exiftool) and the
+`sharp` libs (provided by the prebuilt binaries).
 
 ```bash
 npm install
-cp .env.dist .env   # adapter DATABASE_URL / REDIS_URL (localhost)
+cp .env.dist .env   # adapt DATABASE_URL / REDIS_URL (localhost)
 npm run migrate
-npm run dev            # UI + API sur http://localhost:3000
-npm run worker         # dans un autre terminal : workers BullMQ
-# Indexer un dossier en direct (sans Redis) :
-npm run scan -- /chemin/vers/dossier --sync
+npm run dev            # UI + API on http://localhost:3000
+npm run worker         # in another terminal: BullMQ workers
+# Index a folder directly (without Redis):
+npm run scan -- /path/to/folder --sync
 ```
 
 ---
 
-## Variables d'environnement
+## Environment variables
 
-Voir `.env.dist`. Principales :
+See `.env.dist`. Main ones:
 
 - `DATABASE_URL`, `REDIS_URL`
-- `STORAGE_DRIVER=disk|s3`, `STORAGE_DISK_PATH`, et les `S3_*` pour MinIO
-- `EXPORT_DIR` : dossier où l'export « copie RAW » dépose les originaux
-- `*_CONCURRENCY` : concurrence bornée pour ménager le HDD plein du NAS
-- `THUMB_SIZE` / `PROXY_SIZE` / qualités
+- `STORAGE_DRIVER=disk|s3`, `STORAGE_DISK_PATH`, and the `S3_*` for MinIO
+- `EXPORT_DIR`: folder where the "RAW copy" export drops the originals
+- `*_CONCURRENCY`: bounded concurrency to spare the NAS's full HDD
+- `THUMB_SIZE` / `PROXY_SIZE` / qualities
 
 ---
 
 ## API
 
-| Méthode & route | Rôle |
+| Method & route | Role |
 |---|---|
-| `POST /api/index/scan` `{ path }` | Enregistre le root et enfile une indexation |
-| `GET /api/stats` | Compteurs (médias / scan / analysés / en attente) + activité des files + pause + débits |
-| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Débits horaires scan/analyse (0 = illimité) |
-| `POST /api/scan/control` `{ action: pause\|resume }` | Suspend/reprend l'indexation + génération de dérivés |
-| `GET /api/failures` | Tout ce qui a échoué (scan / analyse / import) + messages |
-| `POST /api/failures/retry` `{ kind, ids? }` | Relance les échecs d'une famille |
-| `GET /api/assets` `?<filtres>&cursor` | Galerie globale paginée (filtres cumulatifs) |
-| `GET /api/facets` | Valeurs + comptes pour construire les filtres |
-| `GET /api/sessions` | Liste des sessions + compteurs (prêts/en attente/picks) |
-| `PATCH /api/sessions/:id` `{ ignored }` | Marque le dossier traité (cascade, stoppe les dérivés) |
-| `GET /api/sessions/:id/assets?cursor&verdict&…` | Grille paginée (cursor-based) |
-| `GET /api/assets/:id` | Détail + EXIF |
-| `GET /api/assets/:id/thumb` \| `/proxy` | Sert le dérivé (octets, ou redirection signée en S3) |
-| `GET /api/assets/:id/exports` | Lignage (finaux liés à cet original) |
-| `PATCH /api/assets/:id/rating` `{ verdict, star, color }` | État de tri |
-| `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Tri rapide en lot |
-| `POST /api/export` `{ name, target, filter }` | Crée + enfile un export |
-| `GET /api/export/:id` | Statut + résultat |
-| `POST /api/upload` (multipart `files`) | Upload depuis le téléphone → inbox → import |
-| `POST /api/import/offload` `{ path }` | Offload d'une carte montée (source conservée) |
-| `POST /api/import/inbox` | Relance manuelle de l'import de l'inbox |
-| `GET /api/import/:id` | Statut d'un lot d'import |
-| `GET /api/roots` · `POST /api/roots` | Dossiers enregistrés (sources + finaux) |
-| `POST /api/reconcile` | Réconciliation finaux→sources (**V2**, 501) |
+| `POST /api/index/scan` `{ path }` | Registers the root and enqueues an indexing run |
+| `GET /api/stats` | Counters (media / scan / analyzed / pending) + queue activity + pause + rates |
+| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Hourly scan/analyze rates (0 = unlimited) |
+| `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
+| `GET /api/failures` | Everything that failed (scan / analyze / import) + messages |
+| `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
+| `GET /api/assets` `?<filters>&cursor` | Paginated global gallery (cumulative filters) |
+| `GET /api/facets` | Values + counts to build the filters |
+| `GET /api/sessions` | List of sessions + counters (ready/pending/picks) |
+| `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
+| `GET /api/sessions/:id/assets?cursor&verdict&…` | Paginated grid (cursor-based) |
+| `GET /api/assets/:id` | Detail + EXIF |
+| `GET /api/assets/:id/thumb` \| `/proxy` | Serves the derivative (bytes, or signed redirect on S3) |
+| `GET /api/assets/:id/exports` | Lineage (finals linked to this original) |
+| `PATCH /api/assets/:id/rating` `{ verdict, star, color }` | Cull state |
+| `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Quick bulk culling |
+| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export |
+| `GET /api/export/:id` | Status + result |
+| `POST /api/upload` (multipart `files`) | Upload from the phone → inbox → import |
+| `POST /api/import/offload` `{ path }` | Offload from a mounted card (source kept) |
+| `POST /api/import/inbox` | Manual re-trigger of the inbox import |
+| `GET /api/import/:id` | Status of an import batch |
+| `GET /api/roots` · `POST /api/roots` | Registered folders (sources + finals) |
+| `POST /api/reconcile` | Finals→sources reconciliation (**V2**, 501) |
 
-Pagination **cursor-based** sur `(captured_at, id)` — jamais d'`OFFSET`. La
-grille front charge en infinite-scroll les vignettes au fil de l'eau.
+**Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
+front-end grid infinite-scroll-loads the thumbnails as they come.
 
-### Raccourcis de tri (visionneuse)
+### Culling shortcuts (viewer)
 
-- **Clavier** : `P` pick · `X` rejet · `U` annuler · `1`-`5` étoiles · `←`/`→` naviguer · `Échap` fermer
-- **Tactile** : swipe ↑ = pick, swipe ↓ = rejet, swipe ←/→ = naviguer
+- **Keyboard**: `P` pick · `X` reject · `U` undo · `1`-`5` stars · `←`/`→` navigate · `Esc` close
+- **Touch**: swipe ↑ = pick, swipe ↓ = reject, swipe ←/→ = navigate
 
-### Galerie globale & filtres cumulatifs
+### Global gallery & cumulative filters
 
-Page **Gallery** : grille **virtualisée** (react-window — seules les lignes
-visibles sont dans le DOM, tient les 30k+) sur **tous** les assets, avec un
-panneau de filtres **cumulatifs** (combinés en AND) :
+**Gallery** page: **virtualized** grid (react-window — only the visible rows are
+in the DOM, handles 30k+) over **all** the assets, with a **cumulative** filter
+panel (combined with AND):
 
-- **Calendrier** : année / mois / jour (multi-sélection) + plage de dates
-- **Appareil / EXIF** : device, modèle d'appareil, objectif (multi) ; plages ISO,
-  focale, ouverture
-- **Type / format** : photo·vidéo, extension (multi)
-- **Taille** (plage Mo), **GPS** présent, **verdict**, **note min**
+- **Calendar**: year / month / day (multi-select) + date range
+- **Device / EXIF**: device, camera model, lens (multi); ISO, focal length,
+  aperture ranges
+- **Type / format**: photo·video, extension (multi)
+- **Size** (MB range), **GPS** present, **verdict**, **min rating**
 
-Ces dimensions sont **matérialisées et indexées en base** (migration 0003 :
-`capture_year/month/day/date` peuplées par trigger + index sur device, ext,
-media_type, file_size, camera_model, lens, iso, focal_length, aperture). Les
-valeurs/comptes disponibles viennent de `GET /api/facets` ; le filtrage est donc
-100 % SQL indexé, sans calcul à la volée.
-
----
-
-## Pilotage du pipeline (scan / analyse)
-
-Le tableau de bord (page d'accueil) expose un **panneau de contrôle** et un
-**bandeau de chiffres** rafraîchis toutes les 5 s (`GET /api/stats`) :
-
-- **Compteurs** : nombre de **médias** indexés, **scan** (dossiers en file
-  d'indexation), **analysés** (dérivés prêts), **en attente** (à analyser), plus
-  erreurs et picks — pour voir d'un coup d'œil ce qu'il reste à faire.
-- **Pause / reprise** : suspend l'indexation **et** la génération de dérivés
-  (`POST /api/scan/control`). La pause est persistée dans Redis (`queue.pause()`)
-  *et* via un drapeau en base, lu par l'indexer pour s'arrêter **en cours de
-  scan** ; la reprise ré-enfile les roots pour terminer un scan interrompu
-  (incrémental : les fichiers déjà connus sont sautés).
-- **Débits horaires** (sliders) : nombre max de fichiers **scannés** et de dérivés
-  **analysés** par heure (`PATCH /api/settings`, `0 = illimité`). Réparti en
-  goutte-à-goutte via un limiteur Redis partagé — utile pour ménager le HDD plein
-  du NAS sans bloquer l'app.
-- **Priorité incoming / inbox** : les imports (incoming) et l'inbox passent
-  **devant** les scans/dérivés ordinaires (priorité BullMQ). Un scan ordinaire
-  long est **préempté** dès qu'un scan incoming attend, puis ré-enfilé.
-
-## Dérivés vidéo (ffmpeg)
-
-Les vidéos obtiennent des dérivés comme les photos : **poster WebP** (vignette de
-grille) + **proxie mp4 H.264** rejouable/seekable dans la visionneuse (route de
-service avec **requêtes Range**). L'image worker embarque `ffmpeg`.
-
-**Accélération matérielle (optionnelle)** : `VIDEO_HWACCEL=vaapi` encode sur
-l'iGPU Intel (partager `/dev/dri` au conteneur worker — déjà câblé dans
-`docker-compose-optiplex.yml`). L'encodage matériel échoue ? **repli automatique**
-sur libx264 logiciel. Par défaut `none` (logiciel) → fonctionne partout.
-
-## Échecs : liste + relance (page `/failures`)
-
-Tout ce qui a échoué est listé en un seul endroit, avec le **message d'erreur**
-pour débuguer, et un bouton **« réessayer »** par famille :
-
-- **Analyse** (dérivés) : `assets.derivative_status='error'` — *rétroactif*.
-- **Scan** (indexation) : table `scan_failures` (échec par fichier) — dès
-  maintenant ; auparavant seul un compteur existait, rien n'était persisté.
-- **Import** : erreurs par fichier des lots (`import_batches.result`) — *rétroactif*.
-  Les fichiers en échec sont **mis en quarantaine** (`inbox/.failed/`) pour ne
-  plus boucler ; la relance les ré-importe.
-
-## Périmètre & suites
-
-**Implémenté (MVP)** : indexation incrémentale (mtime+taille), EXIF + hash +
-dédup, extraction de l'aperçu RAW (ARW/DNG…) sans dématriçage, dérivés
-thumb/proxy en WebP, grille de tri mobile-first, ignore-cascade, export copie
-RAW + lignage `exports`, **ingest multi-feeders** (voir ci-dessous), **galerie
-virtualisée à filtres cumulatifs** (attributs indexés en base), **pilotage du
-pipeline** (pause/reprise, priorité incoming/inbox, débits scan/analyse réglables,
-compteurs temps réel — voir ci-dessous), **dérivés vidéo** (poster + proxie mp4
-ffmpeg, accélération matérielle VAAPI optionnelle), **liste/relance des échecs**
-(page `/failures`), **CI** GitHub Actions (typecheck + migrations + build).
-
-**V2/V3 (non inclus)** : notes/couleurs/tags avancés, export web + push Immich,
-réconciliation auto des finaux C1, throttling adaptatif, agent-sur-NAS,
-automatisations n8n.
+These dimensions are **materialized and indexed in the database** (migration
+0003: `capture_year/month/day/date` populated by trigger + indexes on device,
+ext, media_type, file_size, camera_model, lens, iso, focal_length, aperture).
+The available values/counts come from `GET /api/facets`; filtering is therefore
+100% indexed SQL, with no on-the-fly computation.
 
 ---
 
-## Ingest / import (implémenté)
+## Pipeline control (scan / analyze)
 
-Les specs supposent les fichiers **déjà rangés sur le NAS**. Winnow ajoute en
-amont un étage d'import : **tous les feeders convergent vers une `inbox`**, puis
-un *import worker* **vérifie** (write-then-verify par hash), **déduplique**
-(même `content_hash` que l'indexer → réinsérer une carte ne duplique rien),
-**range** dans l'`incoming` (archive NAS) selon le gabarit
-`{device}/{YYYY}/{YYYY-MM-DD}/`, puis enfile l'indexation habituelle.
+The dashboard (home page) exposes a **control panel** and a **stats bar**
+refreshed every 5 s (`GET /api/stats`):
+
+- **Counters**: number of indexed **media**, **scan** (folders in the indexing
+  queue), **analyzed** (derivatives ready), **pending** (to analyze), plus
+  errors and picks — to see at a glance what's left to do.
+- **Pause / resume**: suspends indexing **and** derivative generation
+  (`POST /api/scan/control`). The pause is persisted in Redis (`queue.pause()`)
+  *and* via a database flag, read by the indexer to stop **mid-scan**; resuming
+  re-enqueues the roots to finish an interrupted scan (incremental: already-known
+  files are skipped).
+- **Hourly rates** (sliders): max number of files **scanned** and derivatives
+  **analyzed** per hour (`PATCH /api/settings`, `0 = unlimited`). Spread out
+  drip-by-drip via a shared Redis limiter — useful to spare the NAS's full HDD
+  without blocking the app.
+- **Incoming / inbox priority**: imports (incoming) and the inbox go **ahead** of
+  ordinary scans/derivatives (BullMQ priority). A long ordinary scan is
+  **preempted** as soon as an incoming scan is waiting, then re-enqueued.
+
+## Video derivatives (ffmpeg)
+
+Videos get derivatives like photos: **WebP poster** (grid thumbnail) + **H.264
+mp4 proxy** that's playable/seekable in the viewer (service route with **Range
+requests**). The worker image bundles `ffmpeg`.
+
+**Hardware acceleration (optional)**: `VIDEO_HWACCEL=vaapi` encodes on the Intel
+iGPU (share `/dev/dri` with the worker container — already wired in
+`docker-compose-optiplex.yml`). Hardware encoding fails? **automatic fallback**
+to software libx264. Defaults to `none` (software) → works everywhere.
+
+## Failures: list + retry (page `/failures`)
+
+Everything that failed is listed in one place, with the **error message** to
+debug, and a **"retry"** button per family:
+
+- **Analyze** (derivatives): `assets.derivative_status='error'` — *retroactive*.
+- **Scan** (indexing): `scan_failures` table (per-file failure) — from now on;
+  previously only a counter existed, nothing was persisted.
+- **Import**: per-file errors of the batches (`import_batches.result`) — *retroactive*.
+  Failed files are **quarantined** (`inbox/.failed/`) so they stop looping;
+  retrying re-imports them.
+
+## Scope & next steps
+
+**Implemented (MVP)**: incremental indexing (mtime+size), EXIF + hash + dedup,
+RAW preview extraction (ARW/DNG…) without demosaicing, thumb/proxy derivatives
+in WebP, mobile-first culling grid, ignore-cascade, RAW-copy export + `exports`
+lineage, **multi-feeder ingest** (see below), **virtualized gallery with
+cumulative filters** (DB-indexed attributes), **pipeline control** (pause/resume,
+incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
+below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
+acceleration), **failure list/retry** (page `/failures`), GitHub Actions **CI**
+(typecheck + migrations + build).
+
+**V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
+automatic C1 finals reconciliation, adaptive throttling, agent-on-NAS, n8n
+automations.
+
+---
+
+## Ingest / import (implemented)
+
+The specs assume files are **already filed on the NAS**. Winnow adds an import
+stage upstream: **all feeders converge to an `inbox`**, then an *import worker*
+**verifies** (write-then-verify by hash), **deduplicates** (same `content_hash`
+as the indexer → re-inserting a card duplicates nothing), **files** into
+`incoming` (NAS archive) following the `{device}/{YYYY}/{YYYY-MM-DD}/` template,
+then enqueues the usual indexing.
 
 ```
  iPhone / Ray-Ban ─┐
- SD card (Sony/DJI)─┼─►  INBOX  ──►  Import worker  ──►  INCOMING (NAS, RW)  ──► index → dérivés
- caméra Wi-Fi/FTP ──┘     (watch)    verify+dedup+file     {device}/{date}/
+ SD card (Sony/DJI)─┼─►  INBOX  ──►  Import worker  ──►  INCOMING (NAS, RW)  ──► index → derivatives
+ Wi-Fi/FTP camera ──┘     (watch)    verify+dedup+file     {device}/{date}/
 ```
 
-**Trois feeders, tous branchés sur l'inbox :**
+**Three feeders, all wired to the inbox:**
 
-1. **Upload web (téléphone)** — page **Import** dans l'UI : sélecteur de
-   fichiers natif, les médias sont streamés vers `POST /api/upload`, déposés dans
-   l'inbox, puis importés. Aucune app tierce, fonctionne depuis le téléphone sur
-   le LAN. (HEIC/JPEG/vidéo gérés.)
+1. **Web upload (phone)** — **Import** page in the UI: native file picker, the
+   media are streamed to `POST /api/upload`, dropped in the inbox, then imported.
+   No third-party app, works from the phone on the LAN. (HEIC/JPEG/video
+   supported.)
 
-2. **Offload de carte montée sur l'Optiplex** — `POST /api/import/offload
-   { path }` (ou le champ dédié de la page Import). La carte est **laissée
-   intacte** (`removeAfter=false`).
+2. **Offload of a card mounted on the Optiplex** — `POST /api/import/offload
+   { path }` (or the dedicated field on the Import page). The card is **left
+   intact** (`removeAfter=false`).
 
-3. **Dépôt SMB / FTP** — un partage Samba et/ou un endpoint FTP (services
-   optionnels dans `docker-compose.yml`) écrivent dans l'inbox ; un **watcher**
-   (chokidar, `awaitWriteFinish` pour ne pas importer un transfert en cours)
-   enfile l'import automatiquement. Idéal pour le transfert FTP du Sony A7C II.
+3. **SMB / FTP drop** — a Samba share and/or an FTP endpoint (optional services
+   in `docker-compose.yml`) write into the inbox; a **watcher** (chokidar,
+   `awaitWriteFinish` so a transfer in progress isn't imported) enqueues the
+   import automatically. Ideal for the Sony A7C II's FTP transfer.
 
-**Garanties** : intégrité vérifiée (taille + hash de la copie), dédup globale,
-foldering déterministe, suivi par lot dans `import_batches` (importés / doublons
-/ échecs). Le tout réutilise l'indexer, les dérivés et la dédup existants.
+**Guarantees**: verified integrity (size + hash of the copy), global dedup,
+deterministic foldering, per-batch tracking in `import_batches` (imported /
+duplicates / failures). It all reuses the existing indexer, derivatives and dedup.
 
-**Inbox vs incoming** : l'`inbox` (disque local rapide) est un **sas transitoire**
-(vidé après import) ; l'`incoming` (NAS, RW) est l'**archive permanente** rangée.
-Ce ne sont pas des doublons : pendant l'import, les deux copies coexistent le
-temps de la vérification (write-then-verify), puis l'inbox est nettoyée.
-Deux sous-dossiers **cachés** de l'inbox (ignorés du watcher et du walk) :
-`.uploads/` (staging des uploads web, importés par lot — évite le double
-déclenchement watcher + import) et `.failed/` (**quarantaine** des fichiers en
-échec, pour ne plus boucler ; relançables depuis `/failures`).
+**Inbox vs incoming**: the `inbox` (fast local disk) is a **transient staging
+area** (emptied after import); `incoming` (NAS, RW) is the **permanent filed
+archive**. They are not duplicates: during import, both copies coexist for the
+duration of the verification (write-then-verify), then the inbox is cleaned. Two
+**hidden** subfolders of the inbox (ignored by the watcher and the walk):
+`.uploads/` (staging for web uploads, imported as a batch — avoids the double
+trigger watcher + import) and `.failed/` (**quarantine** for failed files, so
+they stop looping; retriable from `/failures`).
 
-**Pistes V2/V3** : regroupement par « trou temporel » (gap > N h ⇒ session),
-gabarit de foldering configurable, déclenchement n8n à l'insertion d'une carte,
-hash complet (plutôt que partiel) en option pour l'intégrité forte.
+**V2/V3 ideas**: grouping by "time gap" (gap > N h ⇒ session), configurable
+foldering template, n8n trigger on card insertion, full hash (instead of partial)
+as an option for strong integrity.

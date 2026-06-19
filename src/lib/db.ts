@@ -1,11 +1,11 @@
 import pg from "pg";
 import { config } from "./config";
 
-// Pool Postgres partagé par l'app Next.js et les workers.
-// La navigation/tri est 100 % Postgres + stockage dérivés : aucun walk FS.
+// Postgres pool shared by the Next.js app and the workers.
+// Navigation/culling is 100% Postgres + derivatives storage: no FS walk.
 
-// `captured_at` arrive en timestamptz : on veut des chaînes ISO, pas des Date
-// locales, pour une pagination cursor stable.
+// `captured_at` comes in as timestamptz: we want ISO strings, not local Date
+// objects, for stable cursor pagination.
 pg.types.setTypeParser(1184, (v) => v); // timestamptz
 pg.types.setTypeParser(1114, (v) => v); // timestamp
 pg.types.setTypeParser(20, (v) => Number.parseInt(v, 10)); // int8 -> number
@@ -20,11 +20,11 @@ export const pool: pg.Pool =
   new pg.Pool({
     connectionString: config.databaseUrl,
     max: 10,
-    // Timeouts : empêchent qu'une requête pendante ou un Postgres injoignable
-    // épuise le pool et fige toutes les routes.
-    connectionTimeoutMillis: 5000, // échec rapide si le serveur ne répond pas
-    idleTimeoutMillis: 30000, // libère les connexions oisives
-    statement_timeout: 30000, // tue une requête trop longue côté serveur
+    // Timeouts: prevent a pending query or an unreachable Postgres from
+    // exhausting the pool and freezing all the routes.
+    connectionTimeoutMillis: 5000, // fail fast if the server does not respond
+    idleTimeoutMillis: 30000, // releases idle connections
+    statement_timeout: 30000, // kills an overly long query on the server side
   });
 
 if (process.env.NODE_ENV !== "production") {

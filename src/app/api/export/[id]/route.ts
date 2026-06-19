@@ -1,4 +1,4 @@
-// GET /api/export/:id → statut + résultat d'un export_job.
+// GET /api/export/:id → status + result of an export_job.
 import { one } from "@/lib/db";
 import { json, notFound, serverError } from "@/lib/api";
 
@@ -12,7 +12,7 @@ export async function GET(
       "SELECT * FROM export_jobs WHERE id = $1",
       [Number.parseInt(id, 10)],
     );
-    if (!job) return notFound("Export introuvable");
+    if (!job) return notFound("Export not found");
     return json({ job });
   } catch (err) {
     return serverError(err);

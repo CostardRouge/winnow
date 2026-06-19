@@ -1,11 +1,11 @@
-// GET  /api/tags            → liste des tags + compte d'usage
-// POST /api/tags { name, color? } → crée (ou renvoie) un tag
+// GET  /api/tags            → list of tags + usage count
+// POST /api/tags { name, color? } → creates (or returns) a tag
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one } from "@/lib/db";
 import { json, badRequest, serverError } from "@/lib/api";
 
-// Route adossée à la DB : jamais pré-rendue/mise en cache au build.
+// DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -31,7 +31,7 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("name requis", parsed.error.issues);
+    if (!parsed.success) return badRequest("name required", parsed.error.issues);
     const { name, color } = parsed.data;
     const tag = await one(
       `INSERT INTO tags (name, color) VALUES ($1, $2)

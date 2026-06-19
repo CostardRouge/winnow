@@ -1,7 +1,7 @@
 "use client";
 
-// Filet racine : capture les erreurs survenant dans le layout lui-même.
-// Doit rendre ses propres <html>/<body> (il remplace le layout racine).
+// Root safety net: catches errors occurring in the layout itself.
+// Must render its own <html>/<body> (it replaces the root layout).
 import { useEffect } from "react";
 
 export default function GlobalError({
