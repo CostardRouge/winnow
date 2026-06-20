@@ -14,12 +14,37 @@ const LIMIT = 200;
 // Guarded so a missing table (pre-migration) never breaks the other families.
 async function duplicateHits() {
   try {
-    const [items, counts] = await Promise.all([
-      many(
-        `SELECT abs_path, content_hash, existing_asset_id, source, verified,
-                hits, updated_at
-           FROM duplicate_hits
-          ORDER BY updated_at DESC
+    const [rows, counts] = await Promise.all([
+      many<{
+        abs_path: string;
+        content_hash: string;
+        existing_asset_id: number | null;
+        source: string;
+        verified: boolean | null;
+        hits: number;
+        file_size: number | null;
+        updated_at: string;
+        existing_filename: string | null;
+        existing_abs_path: string | null;
+        existing_media_type: string | null;
+        existing_has_thumb: boolean | null;
+        existing_deleted: boolean | null;
+      }>(
+        // LEFT JOIN the kept asset so the UI can show its thumbnail (the copies
+        // are identical, so its thumbnail stands in for the duplicate) and lay
+        // out a kept-vs-duplicate comparison. All DB-local — no NAS I/O here
+        // (the list polls every few seconds), only the explicit download/delete
+        // actions ever touch the originals.
+        `SELECT d.abs_path, d.content_hash, d.existing_asset_id, d.source,
+                d.verified, d.hits, d.file_size, d.updated_at,
+                a.filename               AS existing_filename,
+                a.abs_path               AS existing_abs_path,
+                a.media_type             AS existing_media_type,
+                (a.thumb_key IS NOT NULL) AS existing_has_thumb,
+                (a.deleted_at IS NOT NULL) AS existing_deleted
+           FROM duplicate_hits d
+           LEFT JOIN assets a ON a.id = d.existing_asset_id
+          ORDER BY d.updated_at DESC
           LIMIT ${LIMIT}`,
       ),
       one<{ n: number; false_collisions: number }>(
@@ -28,6 +53,26 @@ async function duplicateHits() {
            FROM duplicate_hits`,
       ),
     ]);
+    const items = rows.map((r) => ({
+      abs_path: r.abs_path,
+      content_hash: r.content_hash,
+      existing_asset_id: r.existing_asset_id,
+      source: r.source,
+      verified: r.verified,
+      hits: r.hits,
+      file_size: r.file_size,
+      updated_at: r.updated_at,
+      existing: r.existing_asset_id
+        ? {
+            id: r.existing_asset_id,
+            filename: r.existing_filename,
+            abs_path: r.existing_abs_path,
+            media_type: r.existing_media_type,
+            has_thumb: !!r.existing_has_thumb,
+            deleted: !!r.existing_deleted,
+          }
+        : null,
+    }));
     return {
       count: Number(counts?.n ?? 0),
       falseCollisions: Number(counts?.false_collisions ?? 0),

@@ -1413,6 +1413,66 @@
     color: var(--color-reject);
   }
 
+  /* ---- Deduplication: expandable kept-vs-duplicate rows ----------------- */
+  .dup-row {
+    @apply overflow-hidden rounded-[var(--radius-lg)] border;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .dup-row.selected {
+    border-color: var(--color-accent);
+    background: var(--color-accent-wash);
+  }
+  .dup-head {
+    @apply flex cursor-pointer items-center gap-3 p-3;
+  }
+  .dup-main {
+    @apply min-w-0 flex-1;
+  }
+  .dup-path {
+    @apply break-all text-[13px] font-medium;
+  }
+  .dup-sub {
+    @apply mt-0.5 break-words text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dup-actions {
+    @apply flex shrink-0 flex-wrap items-center gap-1.5;
+  }
+  .dup-chevron {
+    @apply inline-flex items-center;
+    color: var(--color-faint);
+    transition: transform 0.16s var(--ease-out);
+  }
+  .dup-body {
+    @apply grid gap-3 border-t p-3 sm:grid-cols-2;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+  .dup-cmp {
+    @apply flex gap-3 rounded-[var(--radius)] border p-2.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .dup-cmp-label {
+    @apply mb-1 text-[11px] font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  .dup-cmp-name {
+    @apply break-all text-[12px] font-medium;
+  }
+  .dup-cmp-path {
+    @apply mt-0.5 break-all text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dup-confirm-list {
+    @apply mt-3 grid max-h-48 gap-1 overflow-y-auto rounded-[var(--radius)] border p-2;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+
   /* ---- Pipeline sub-route tabs ------------------------------------------ */
   .pipeline-tabs {
     @apply flex items-center gap-1.5 overflow-x-auto px-5 pb-2 pt-1;
