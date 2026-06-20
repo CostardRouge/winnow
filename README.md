@@ -61,8 +61,9 @@ docker compose up -d --build
 # `migrate` applies the schema, then app (http://localhost:3000) + worker start.
 ```
 
-Then, from the UI, enter a NAS folder path (as seen **inside the container**,
-e.g. `/nas/2026/…`) and click **Index**.
+Then, from the **Volumes** page, **+ Add folder** — enter a NAS path (as seen
+**inside the container**, e.g. `/nas/2026/…`) and pick its **type**
+(Incoming / Final / Export). See [Volumes](#volumes-directories-attached-to-the-project).
 
 ### Locally (dev)
 
@@ -126,7 +127,8 @@ See `.env.dist`. Main ones:
 | `POST /api/import/offload` `{ path }` | Offload from a mounted card (source kept) |
 | `POST /api/import/inbox` | Manual re-trigger of the inbox import |
 | `GET /api/import/:id` | Status of an import batch |
-| `GET /api/roots` · `POST /api/roots` | Registered folders (sources + finals) |
+| `GET /api/roots` · `POST /api/roots` `{ path, type }` | Registered volumes (+ session/asset counts); `type` ∈ incoming·final·export, path-guarded |
+| `PATCH /api/roots/:id` `{ type?, watch?, reindex? }` · `DELETE /api/roots/:id` | Re-type / re-index / remove a volume (remove cascades to its index, files untouched) |
 | `POST /api/reconcile` | Finals→sources reconciliation (**V2**, 501) |
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
@@ -200,6 +202,32 @@ every other filter and scopes the grid, the selection, and exports — the picks
 that drop into Capture One are exactly the media from that area.
 
 ---
+
+## Volumes (directories attached to the project)
+
+The dedicated **Volumes** page (`/volumes`, in the rail) is the registry of every
+directory Winnow indexes or tracks — a **table** with one row per folder, its
+**type**, the **session/media counts**, and per-row actions (**re-index**,
+**remove**). It replaces the old free-text "index this path" field on the
+Library tab (which made it far too easy to scan `/` — a recursive walk has no
+depth limit or boundary, so that pulled in the whole filesystem, finals
+included).
+
+- **Type** decides how a folder is interpreted (maps to `roots.kind`):
+  **Incoming** (`source`, cullable), **Final** (`finals`, view-only), **Export**
+  (`export`, *listed for visibility only — never walked*). Editable inline.
+- **Add folder** opens a modal: a path **+ a type selector**, with guards that
+  reject `/` and system dirs and refuse a path that **overlaps** an existing
+  volume (parent/child ⇒ double indexing). The same guards back
+  `POST /api/index/scan` and `POST /api/roots`.
+- **Origin** badge (`env` / `manual`): the four env vars
+  (`INCOMING_DIR` / `FINALS_DIRS` / `EXPORT_DIR`) **seed** volumes at worker
+  bootstrap and suggest the type per directory; the table is the editable source
+  of truth on top. `FINALS_DIRS` is already a list, so several final folders are
+  supported today — the table simply makes them visible.
+- **Remove** deletes the volume + its sessions/assets/ratings from the DB
+  (`ON DELETE CASCADE`); the originals on the NAS are never modified (Winnow only
+  reads). An env-seeded volume reappears on the next worker bootstrap.
 
 ## Pipeline control (scan / analyze)
 

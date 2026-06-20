@@ -1409,3 +1409,168 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* =========================================================================
+   Volumes — registry table + add-volume modal + type selector
+   ========================================================================= */
+@layer components {
+  /* Select, styled to match .input */
+  .select {
+    @apply rounded-[var(--radius)] border px-2.5 py-1.5 text-sm transition duration-150;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+    cursor: pointer;
+  }
+  .select:hover {
+    border-color: var(--color-muted);
+  }
+  .select:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  .select:disabled {
+    @apply pointer-events-none opacity-45;
+  }
+
+  .btn-danger {
+    color: var(--color-reject);
+    border-color: color-mix(in srgb, var(--color-reject) 40%, var(--color-border));
+  }
+  .btn-danger:hover {
+    background: color-mix(in srgb, var(--color-reject) 10%, var(--color-surface));
+    border-color: var(--color-reject);
+    color: var(--color-reject);
+  }
+
+  /* ---- Volumes table ---------------------------------------------------- */
+  .vol-table-wrap {
+    @apply overflow-x-auto rounded-[var(--radius-lg)] border;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .vol-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .vol-table th,
+  .vol-table td {
+    @apply px-3.5 py-3 text-left align-middle;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .vol-table thead th {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+    background: var(--color-surface-2);
+  }
+  .vol-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .vol-table tbody tr:hover {
+    background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+  }
+  .vol-table .num {
+    @apply text-right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .vol-table tr.is-busy {
+    @apply pointer-events-none opacity-50;
+  }
+  .vol-path {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    word-break: break-all;
+    color: var(--color-text);
+  }
+  .vol-tags {
+    @apply mt-1 flex flex-wrap gap-1.5;
+  }
+  .vol-actions {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  /* Type badges */
+  .tag {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+  }
+  .tag-incoming {
+    color: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    background: var(--color-accent-wash);
+  }
+  .tag-final {
+    color: var(--color-pick);
+    border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
+  }
+  .tag-export {
+    color: color-mix(in srgb, var(--color-star) 80%, #000);
+    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
+  }
+
+  /* ---- Modal ------------------------------------------------------------ */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background: color-mix(in srgb, var(--color-frame) 55%, transparent);
+    backdrop-filter: blur(3px);
+  }
+  .modal {
+    @apply w-full max-w-md rounded-[var(--radius-xl)] border p-5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-pop);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+  .modal-title {
+    @apply m-0 mb-1 text-lg font-semibold;
+  }
+  .modal-label {
+    @apply mb-1.5 mt-3.5 block text-xs font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  .modal-warn {
+    @apply mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm;
+    color: var(--color-reject);
+    border-color: color-mix(in srgb, var(--color-reject) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-reject) 7%, var(--color-surface));
+  }
+  .modal-actions {
+    @apply mt-5 flex justify-end gap-2;
+  }
+
+  /* Type selector (radio cards) */
+  .type-choices {
+    @apply grid gap-2;
+  }
+  .type-choice {
+    @apply flex cursor-pointer flex-col rounded-[var(--radius)] border px-3 py-2.5;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    transition: border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+  }
+  .type-choice:hover {
+    border-color: var(--color-muted);
+  }
+  .type-choice.active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-wash);
+  }
+  .type-choice input {
+    @apply sr-only;
+  }
+  .type-choice-label {
+    @apply text-sm font-semibold;
+    color: var(--color-text);
+  }
+  .type-choice-hint {
+    @apply mt-0.5 text-xs;
+    color: var(--color-muted);
+  }
+}

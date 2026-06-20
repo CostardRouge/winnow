@@ -8,6 +8,8 @@ import { stat } from "node:fs/promises";
 import { many, one } from "./db";
 import { config } from "./config";
 import { enqueueDerivative, enqueueIndex } from "./queue";
+import { isWalkable } from "./volumes";
+import type { Root } from "./types";
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -18,21 +20,25 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-async function ensureRoot(path: string, kind: "source" | "finals"): Promise<void> {
+async function ensureRoot(path: string, kind: Root["kind"]): Promise<void> {
   const root = await one<{ id: number }>(
     `INSERT INTO roots (path, kind, watch) VALUES ($1, $2, true)
      ON CONFLICT (path) DO UPDATE SET kind = EXCLUDED.kind
      RETURNING id`,
     [path, kind],
   );
-  if (root) await enqueueIndex(root.id);
+  // Only walkable volumes (source/finals) are indexed; the export volume is
+  // registered for visibility in the Volumes table but never scanned.
+  if (root && isWalkable(kind)) await enqueueIndex(root.id);
 }
 
 export async function bootstrapRoots(): Promise<void> {
   const { incomingDir, finalsDirs } = config.import;
-  const dirs: Array<{ path: string; kind: "source" | "finals" }> = [];
+  const dirs: Array<{ path: string; kind: Root["kind"] }> = [];
   if (incomingDir) dirs.push({ path: incomingDir, kind: "source" });
   for (const d of finalsDirs) dirs.push({ path: d, kind: "finals" });
+  // The export folder is surfaced as a volume too (visibility), not indexed.
+  if (config.exportDir) dirs.push({ path: config.exportDir, kind: "export" });
 
   for (const { path, kind } of dirs) {
     if (!(await exists(path))) {
