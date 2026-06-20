@@ -96,6 +96,9 @@ function toQuery(
   if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
+  // Session-grid status toggles (ignored/completed are hidden by default).
+  if (f.show_ignored) sp.set("show_ignored", "true");
+  if (f.show_completed) sp.set("show_completed", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
   if (cursor) sp.set("cursor", cursor);
   return sp.toString();
@@ -468,7 +471,12 @@ export default function GalleryShell({
             </button>
           </div>
         ) : (
-          <FilterPanel facets={facets} filters={filters} set={setFilters} />
+          <FilterPanel
+            facets={facets}
+            filters={filters}
+            set={setFilters}
+            showSessionStatus={view === "sessions"}
+          />
         )
       ) : (
         <Tree

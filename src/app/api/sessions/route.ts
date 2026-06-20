@@ -5,8 +5,13 @@
 // shared gallery filters (folder/date/device/tags/...) are honoured too: a
 // session is kept when it has at least one matching asset (EXISTS), so the
 // Filters/Browse panel narrows the session list just like the grid. With no
-// filter beyond the role, every session of that role shows (including empty
-// ones). `sort_dir` flips the captured-date ordering (newest vs oldest first).
+// filter beyond the role, every active session of that role shows (including
+// empty ones). `sort_dir` flips the captured-date ordering (newest vs oldest
+// first).
+//
+// Session STATUS (ignored / completed) is a session-level flag, not an asset
+// filter: both are HIDDEN by default. `show_ignored=true` / `show_completed=true`
+// opt those sessions back into the list (additively).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { json, serverError, badRequest } from "@/lib/api";
@@ -28,6 +33,16 @@ export async function GET(req: NextRequest) {
       params.push(kindsForRole(role));
       clauses.push(`rt.kind = ANY($${params.length})`);
     }
+
+    // Session status: ignored and completed sessions drop out of the list
+    // unless explicitly opted back in. Each toggle relaxes its own exclusion,
+    // so the two are independent (and additive when both are on).
+    const showIgnored = sp.get("show_ignored") === "true";
+    const showCompleted = sp.get("show_completed") === "true";
+    params.push(showIgnored);
+    clauses.push(`(s.ignored = false OR $${params.length})`);
+    params.push(showCompleted);
+    clauses.push(`(s.completed = false OR $${params.length})`);
 
     // Asset-level filters: the role is handled above (rt.kind), so drop `kind`
     // here and keep a session when at least one of its assets matches the rest.

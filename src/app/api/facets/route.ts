@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
+import { kindsForRole } from "@/lib/roles";
 import { json, serverError } from "@/lib/api";
 
 // DB-backed route: never pre-rendered/cached at build time (otherwise Next
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
       exts,
       mediaTypes,
       tags,
+      sessionStatus,
     ] = await Promise.all([
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a WHERE true${scope}`,
@@ -108,6 +110,17 @@ export async function GET(req: NextRequest) {
           params,
         ),
       ),
+      // Session-status facet: counts feed the Sessions grid's hide-by-default
+      // toggles. Session-level (not asset-level), so scoped on roots, by role.
+      one<{ active: number; ignored: number; completed: number }>(
+        `SELECT
+           count(*) FILTER (WHERE NOT s.ignored AND NOT s.completed)::int AS active,
+           count(*) FILTER (WHERE s.ignored)::int                        AS ignored,
+           count(*) FILTER (WHERE s.completed)::int                      AS completed
+         FROM sessions s JOIN roots rt ON rt.id = s.root_id
+         ${kind ? "WHERE rt.kind = ANY($1)" : ""}`,
+        kind ? [kindsForRole(kind)] : [],
+      ).catch(() => null),
     ]);
 
     return json({
@@ -122,6 +135,7 @@ export async function GET(req: NextRequest) {
       extensions: exts,
       media_types: mediaTypes,
       tags,
+      session_status: sessionStatus ?? { active: 0, ignored: 0, completed: 0 },
     });
   } catch (err) {
     return serverError(err);

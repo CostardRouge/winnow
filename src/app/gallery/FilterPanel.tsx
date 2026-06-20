@@ -21,6 +21,8 @@ export type Facets = {
   extensions: VC[];
   media_types: VC[];
   tags: VC[];
+  // Session-level counts for the Sessions grid's status toggles.
+  session_status?: { active: number; ignored: number; completed: number };
 };
 type VC = { value: string | number; count: number };
 
@@ -50,6 +52,9 @@ export type Filters = {
   size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
   has_gps?: boolean;
+  // Session grid only: ignored / completed sessions are hidden until opted in.
+  show_ignored?: boolean;
+  show_completed?: boolean;
   // Map zone: [west, south, east, north]. Set by the map view, applied as a
   // cumulative filter to the grid and to bulk actions.
   bbox?: [number, number, number, number];
@@ -157,16 +162,47 @@ export default function FilterPanel({
   facets,
   filters,
   set,
+  showSessionStatus = false,
 }: {
   facets: Facets | null;
   filters: Filters;
   set: (f: Filters) => void;
+  /** Show the Sessions-only status toggles (ignored / completed). */
+  showSessionStatus?: boolean;
 }) {
   if (!facets) return <div className="spinner">Loading filters…</div>;
   const u = (patch: Partial<Filters>) => set({ ...filters, ...patch });
+  const status = facets.session_status;
 
   return (
     <div className="filter-panel">
+      {showSessionStatus && status && (
+        <div className="facet">
+          <div className="facet-title">Session status</div>
+          <div className="chips">
+            <button
+              className={`chip${filters.show_ignored ? " active" : ""}`}
+              onClick={() =>
+                u({ show_ignored: filters.show_ignored ? undefined : true })
+              }
+            >
+              Ignored<span className="chip-count">{status.ignored}</span>
+            </button>
+            <button
+              className={`chip${filters.show_completed ? " active" : ""}`}
+              onClick={() =>
+                u({ show_completed: filters.show_completed ? undefined : true })
+              }
+            >
+              Completed<span className="chip-count">{status.completed}</span>
+            </button>
+          </div>
+          <div className="hint" style={{ marginTop: 4 }}>
+            Ignored and completed sessions are hidden until selected.
+          </div>
+        </div>
+      )}
+
       <div className="facet">
         <div className="facet-title">Verdict</div>
         <div className="chips">
