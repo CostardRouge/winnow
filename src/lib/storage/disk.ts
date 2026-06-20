@@ -1,6 +1,8 @@
 // Disk backend (MVP). Keys are mapped to file paths under
 // STORAGE_DISK_PATH. No signed URL: the API route serves the bytes.
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, writeFile, rm, stat as fsStat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import path from "node:path";
 import { config } from "../config";
 import type { Storage } from "./index";
@@ -30,6 +32,36 @@ export class DiskStorage implements Storage {
       if (err?.code === "ENOENT") return null;
       throw err;
     }
+  }
+
+  async stat(key: string): Promise<{ size: number } | null> {
+    try {
+      const s = await fsStat(safeJoin(this.base, key));
+      return { size: s.size };
+    } catch (err: any) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
+    }
+  }
+
+  async getRange(
+    key: string,
+    start: number,
+    end: number,
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    const target = safeJoin(this.base, key);
+    // Confirm the key exists up-front so a missing file is a clean null (404),
+    // not a stream that errors out mid-response.
+    try {
+      await fsStat(target);
+    } catch (err: any) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
+    }
+    // `end` is inclusive for createReadStream, matching HTTP Range semantics.
+    // Only the [start, end] window is read off disk — never the whole file.
+    const node = createReadStream(target, { start, end });
+    return Readable.toWeb(node) as ReadableStream<Uint8Array>;
   }
 
   async del(key: string): Promise<void> {

@@ -32,13 +32,17 @@ export async function serveDerivative(
   const signed = await storage.signedUrl(row.key);
   if (signed) return NextResponse.redirect(signed);
 
-  const bytes = await storage.get(row.key);
-  if (!bytes) {
+  // Disk backend: stream the requested byte window straight off disk. We only
+  // need the file size here (stat), never the whole file in RAM — a seeking
+  // video player can fire many Range requests without each one reloading the
+  // entire mp4.
+  const info = await storage.stat(row.key);
+  if (!info) {
     return NextResponse.json({ error: "Derivative not found" }, { status: 404 });
   }
 
   const type = contentType(row.key);
-  const total = bytes.length;
+  const total = info.size;
   const base: Record<string, string> = {
     "Content-Type": type,
     "Accept-Ranges": "bytes",
@@ -59,18 +63,32 @@ export async function serveDerivative(
         headers: { "Content-Range": `bytes */${total}` },
       });
     }
-    const chunk = bytes.subarray(start, end + 1);
-    return new NextResponse(chunk as unknown as BodyInit, {
+    const stream = await storage.getRange(row.key, start, end);
+    if (!stream) {
+      return NextResponse.json({ error: "Derivative not found" }, { status: 404 });
+    }
+    return new NextResponse(stream as unknown as BodyInit, {
       status: 206,
       headers: {
         ...base,
         "Content-Range": `bytes ${start}-${end}/${total}`,
-        "Content-Length": String(chunk.length),
+        "Content-Length": String(end - start + 1),
       },
     });
   }
 
-  return new NextResponse(bytes as unknown as BodyInit, {
+  // Full request: still streamed, never buffered. Guard the empty file so we
+  // don't ask for an inverted [0, -1] range.
+  if (total === 0) {
+    return new NextResponse(null, {
+      headers: { ...base, "Content-Length": "0" },
+    });
+  }
+  const stream = await storage.getRange(row.key, 0, total - 1);
+  if (!stream) {
+    return NextResponse.json({ error: "Derivative not found" }, { status: 404 });
+  }
+  return new NextResponse(stream as unknown as BodyInit, {
     headers: { ...base, "Content-Length": String(total) },
   });
 }
