@@ -111,6 +111,7 @@ See `.env.dist`. Main ones:
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/sessions` | List of sessions + counters (ready/pending/picks) |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
+| `DELETE /api/sessions/:id` `?files=true` | Deletes the session (cascade: assets/ratings/picks) + its derivative cache. `files=true` also removes the originals from disk (incoming only, confined to the session folder) — to clear an orphaned import |
 | `GET /api/sessions/:id/assets?cursor&verdict&…` | Paginated grid (cursor-based) |
 | `GET /api/assets/:id` | Detail + EXIF |
 | `GET /api/assets/:id/thumb` \| `/proxy` | Serves the derivative (bytes, or signed redirect on S3) |

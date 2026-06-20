@@ -1,13 +1,23 @@
-// PATCH /api/sessions/:id { ignored?, completed? } -> updates the folder.
+// PATCH  /api/sessions/:id { ignored?, completed? } -> updates the folder.
 //  - ignored : marks as processed; cascades processing_state=ignored and stops
 //    derivatives (§5). Inverse: resets to `unprocessed` and re-enqueues the missing ones.
 //  - completed : simple visual flag (badge), no cascade or processing.
+// DELETE /api/sessions/:id[?files=true] -> removes the session entirely.
+//  - always: drops the DB row (cascade: assets/ratings/tags/exports) + the
+//    derivative cache (thumb/proxy) — neither of which is an original.
+//  - files=true: ALSO deletes the original files from disk (irreversible). Only
+//    allowed for the cullable Incoming zone (source/inbox); the Final archive and
+//    Export volumes are view-only and never touched. Every removal is confined to
+//    the session folder. Lets you clear an orphaned import that was never cleaned.
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { rm, rmdir } from "node:fs/promises";
+import path from "node:path";
 import { many, one, q } from "@/lib/db";
 import { enqueueDerivative } from "@/lib/queue";
+import { getStorage } from "@/lib/storage/index";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
-import type { Session } from "@/lib/types";
+import type { Root, Session } from "@/lib/types";
 
 const Body = z
   .object({
@@ -83,6 +93,113 @@ export async function PATCH(
     }
 
     return json({ session });
+  } catch (err) {
+    return serverError(err);
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const sessionId = Number.parseInt(id, 10);
+    if (!Number.isFinite(sessionId)) return badRequest("Invalid id");
+
+    // `?files=true` also wipes the originals from disk (irreversible); otherwise
+    // only the DB records + the derivative cache (both ours) are cleared.
+    const deleteFiles = req.nextUrl.searchParams.get("files") === "true";
+
+    // Capture the session, its root kind (which gates the filesystem delete) and
+    // the full asset list (paths + derivative keys) BEFORE the cascade drops them.
+    const session = await one<Session & { root_kind: Root["kind"] }>(
+      `SELECT s.*, rt.kind AS root_kind
+         FROM sessions s
+         JOIN roots rt ON rt.id = s.root_id
+        WHERE s.id = $1`,
+      [sessionId],
+    );
+    if (!session) return notFound("Session not found");
+
+    const assets = await many<{
+      abs_path: string;
+      thumb_key: string | null;
+      proxy_key: string | null;
+    }>(
+      "SELECT abs_path, thumb_key, proxy_key FROM assets WHERE session_id = $1",
+      [sessionId],
+    );
+
+    let filesDeleted = 0;
+    let folderRemoved = false;
+    const fileErrors: string[] = [];
+
+    if (deleteFiles) {
+      // Guard: only the cullable Incoming zone (source/inbox) may lose its
+      // originals. The Final archive (Immich output) and Export volumes are
+      // view-only — refuse rather than ever touch them.
+      if (session.root_kind !== "source" && session.root_kind !== "inbox") {
+        return badRequest(
+          "Filesystem deletion is only allowed for incoming sessions",
+        );
+      }
+      // Confine every removal to the session folder: resolve each path and make
+      // sure it sits under source_path before unlinking, so a stray abs_path can
+      // never delete anything outside the session.
+      const base = path.resolve(session.source_path);
+      for (const a of assets) {
+        const target = path.resolve(a.abs_path);
+        if (target !== base && !target.startsWith(base + path.sep)) {
+          fileErrors.push(`skipped (outside session folder): ${a.abs_path}`);
+          continue;
+        }
+        try {
+          await rm(target, { force: true });
+          filesDeleted++;
+        } catch (err) {
+          fileErrors.push(`${a.abs_path}: ${(err as Error).message}`);
+        }
+      }
+      // Drop the now-empty session folder. Non-recursive: rmdir only succeeds on
+      // an empty directory, so it can never wipe a populated tree.
+      try {
+        await rmdir(base);
+        folderRemoved = true;
+      } catch {
+        /* not empty / not removable: leave the folder in place */
+      }
+    }
+
+    // Clear the derivative cache (thumb + proxy) in every case — these are ours,
+    // never the originals, so they are always safe to drop.
+    const storage = await getStorage();
+    let derivativesDeleted = 0;
+    for (const a of assets) {
+      for (const key of [a.thumb_key, a.proxy_key]) {
+        if (!key) continue;
+        try {
+          await storage.del(key);
+          derivativesDeleted++;
+        } catch {
+          /* best-effort cache cleanup */
+        }
+      }
+    }
+
+    // Finally drop the row — ON DELETE CASCADE clears assets/ratings/tags/exports.
+    await q("DELETE FROM sessions WHERE id = $1", [sessionId]);
+
+    return json({
+      deleted: {
+        session_id: sessionId,
+        assets: assets.length,
+        files_deleted: filesDeleted,
+        folder_removed: folderRemoved,
+        derivatives_deleted: derivativesDeleted,
+        file_errors: fileErrors,
+      },
+    });
   } catch (err) {
     return serverError(err);
   }
