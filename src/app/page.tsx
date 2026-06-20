@@ -6,6 +6,7 @@ import StatsStrip from "./StatsStrip";
 import IncomingTab from "./IncomingTab";
 import ExportsTab from "./ExportsTab";
 import GalleryShell from "./gallery/GalleryShell";
+import { Icons } from "./ui";
 
 // Home page = tabbed hub, reflecting the workflow:
 //   Incoming → to cull (NAS sources)   · Final → finalized, read-only view
@@ -28,10 +29,13 @@ export default function Dashboard() {
     <div className="app-shell">
       <div className="topbar">
         <h1>Library</h1>
-        <span className="hint">media triage — NAS</span>
+        <span className="hint max-sm:hidden">media triage — NAS</span>
         <span className="spacer" />
+        <Link href="/volumes" className="btn">
+          {Icons.folderPlus} Add folder
+        </Link>
         <Link href="/import" className="btn btn-primary">
-          + Import
+          {Icons.upload} Import
         </Link>
       </div>
 

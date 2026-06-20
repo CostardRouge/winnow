@@ -231,12 +231,7 @@ export default function IncomingTab() {
       ) : (
         <div className="sessions-pane">
           <div className="filterbar">
-            <Link href="/volumes" className="btn">
-              + Add folders to index
-            </Link>
-            <span className="hint" style={{ flex: 1, minWidth: 120 }}>
-              managed in Volumes
-            </span>
+            <span className="spacer" />
             <div className="layout-toggle" role="group" aria-label="Session layout">
               <button
                 className={`layout-btn${layout === "list" ? " active" : ""}`}
@@ -274,7 +269,7 @@ export default function IncomingTab() {
               hint="Add a NAS folder in Volumes and start a scan to populate the triage queue."
             >
               <Link href="/volumes" className="btn btn-primary">
-                + Add folders to index
+                {Icons.folderPlus} Add folder
               </Link>
             </EmptyState>
           ) : layout === "card" ? (

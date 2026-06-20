@@ -111,7 +111,7 @@ export default function VolumesPanel() {
           four env vars (incoming / finals / export) seed the defaults.
         </p>
         <button className="btn btn-primary" onClick={() => setAdding(true)}>
-          + Add folder
+          {Icons.folderPlus} Add folder
         </button>
       </div>
 
@@ -133,7 +133,7 @@ export default function VolumesPanel() {
           hint="Add a NAS folder to index, or configure INCOMING_DIR / FINALS_DIRS / EXPORT_DIR in the environment."
         >
           <button className="btn btn-primary" onClick={() => setAdding(true)}>
-            + Add folder
+            {Icons.folderPlus} Add folder
           </button>
         </EmptyState>
       ) : (
