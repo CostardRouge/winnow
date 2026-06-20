@@ -59,10 +59,18 @@ export async function makeVideoThumb(input: string): Promise<Buffer> {
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-vid-"));
   const poster = path.join(dir, "poster.jpg");
   try {
-    await run(
-      ["-y", "-i", input, "-vf", "thumbnail=n=50", "-frames:v", "1", "-an", poster],
-      120_000,
-    );
+    try {
+      // `thumbnail` scores 50 frames and keeps the most representative one.
+      await run(
+        ["-y", "-i", input, "-vf", "thumbnail=n=50", "-frames:v", "1", "-an", poster],
+        120_000,
+      );
+    } catch {
+      // Some containers/codecs choke on the thumbnail filter, and very short
+      // clips have too few frames: fall back to grabbing the first frame so a
+      // video still gets a poster instead of erroring out.
+      await run(["-y", "-i", input, "-frames:v", "1", "-an", poster], 120_000);
+    }
     return await sharp(poster)
       .rotate()
       .resize(config.thumbSize, config.thumbSize, {

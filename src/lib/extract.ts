@@ -1,11 +1,11 @@
 // EXIF reading + extraction of the embedded preview (cf. §4 - THE critical point).
 // We NEVER decode the RAW sensor: we extract the embedded JPEG preview.
 import { exiftool, type Tags } from "exiftool-vendored";
-import heicConvert from "heic-convert";
+import sharp from "sharp";
 import { tmpdir } from "node:os";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
+import { config, HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
 
 export type Metadata = {
   captured_at: string | null;
@@ -108,9 +108,9 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
  *  - Directly readable formats (JPEG/PNG/TIFF/WebP/AVIF): we return
  *    the original (sharp handles it, `orientation` not needed).
  *  - HEIF/HEVC stills (.heic/.heif/.hif): sharp's prebuilt libvips ships the
- *    AVIF decoder but NOT the HEVC one, and these files rarely embed an
- *    extractable JPEG preview, so we decode them via libheif (heic-convert) to a
- *    temporary JPEG.
+ *    AVIF decoder but NOT the HEVC one. We prefer the embedded JPEG preview when
+ *    the file carries a full-size one (Sony .hif), and otherwise decode the real
+ *    pixels with libheif (heic-convert, lazy-loaded + serialized) to a temp JPEG.
  *  - RAW: we extract the embedded JPEG preview (JpgFromRaw, otherwise PreviewImage,
  *    otherwise ThumbnailImage) - near-instant extraction, zero demosaicing.
  *    This preview often does NOT carry the Orientation tag: so we return
@@ -131,29 +131,30 @@ export async function extractSourceJpeg(
     return { jpegPath: absPath, cleanupDir: null };
   }
 
-  // HEIF/HEVC stills: decode via libheif to a temporary JPEG. libheif applies
-  // the irot/imir transforms but NOT the EXIF Orientation, so we carry the
-  // latter over and let the worker re-apply it (same as for RAW previews).
+  // HEIF/HEVC stills. Two-tier strategy, both isolated from the rest of the
+  // worker. libheif and the preview path both drop the EXIF Orientation, so we
+  // carry it over and let the worker re-apply it (same as RAW previews).
   if (HEIC_EXTS.has(e)) {
     const orientation = await readOrientation(absPath);
     const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
-    const dest = path.join(dir, "decoded.jpg");
     try {
-      const input = await readFile(absPath);
-      // heic-convert (via heic-decode) sniffs the HEIF brand with
-      // `String.fromCharCode(...buf.slice(8, 12))`, which needs an *iterable*
-      // byte container. A raw ArrayBuffer is NOT iterable, so handing one over
-      // throws "Spread syntax requires ...iterable[Symbol.iterator] to be a
-      // function" before any decoding happens. The Buffer from readFile is
-      // already a correct (offset/length-aware) view, so we pass it straight
-      // through. The published @types claim `ArrayBufferLike`, which is wrong
-      // for the runtime — hence the cast.
-      const jpeg = await heicConvert({
-        buffer: input as unknown as ArrayBufferLike,
-        format: "JPEG",
-      });
-      await writeFile(dest, Buffer.from(jpeg));
-      return { jpegPath: dest, cleanupDir: dir, orientation };
+      // 1) A full-size embedded preview is ideal: instant, no pixel decode at
+      //    all (Sony .hif and most camera HEIFs ship one).
+      const preview = await extractEmbeddedPreview(absPath, dir);
+      if (preview && (await longestEdge(preview)) >= config.proxySize) {
+        return { jpegPath: preview, cleanupDir: dir, orientation };
+      }
+      // 2) Otherwise decode the real pixels with libheif…
+      try {
+        const dest = path.join(dir, "decoded.jpg");
+        await writeFile(dest, await decodeHeicToJpeg(absPath));
+        return { jpegPath: dest, cleanupDir: dir, orientation };
+      } catch (decodeErr) {
+        // …and if even that fails, a smaller embedded preview still beats no
+        // thumbnail at all.
+        if (preview) return { jpegPath: preview, cleanupDir: dir, orientation };
+        throw decodeErr;
+      }
     } catch (err) {
       await rm(dir, { recursive: true, force: true });
       throw new Error(
@@ -162,30 +163,85 @@ export async function extractSourceJpeg(
     }
   }
 
-  // The RAW preview usually loses the Orientation tag: we read it on the RAW.
+  // RAW: the embedded preview usually loses the Orientation tag, so we read it
+  // on the RAW and let the worker re-apply it.
   const orientation = await readOrientation(absPath);
-
   const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
-  const dest = path.join(dir, "preview.jpg");
+  const preview = await extractEmbeddedPreview(absPath, dir);
+  if (preview) return { jpegPath: preview, cleanupDir: dir, orientation };
 
+  await rm(dir, { recursive: true, force: true });
+  throw new Error(`No extractable preview from ${absPath}`);
+}
+
+// Extract the largest embedded JPEG preview an asset carries (RAW JpgFromRaw,
+// otherwise PreviewImage, otherwise ThumbnailImage) into `dir`. Returns the
+// written path, or null when the file embeds no usable preview. Near-instant:
+// exiftool copies the already-encoded JPEG bytes out — it never demosaics or
+// re-decodes the image.
+async function extractEmbeddedPreview(
+  absPath: string,
+  dir: string,
+): Promise<string | null> {
+  const dest = path.join(dir, "preview.jpg");
   const attempts: Array<() => Promise<void>> = [
     () => exiftool.extractJpgFromRaw(absPath, dest),
     () => exiftool.extractPreview(absPath, dest),
     () => exiftool.extractThumbnail(absPath, dest),
   ];
-
   for (const attempt of attempts) {
     try {
       await attempt();
       const s = await stat(dest);
-      if (s.size > 0) return { jpegPath: dest, cleanupDir: dir, orientation };
+      if (s.size > 0) return dest;
     } catch {
-      /* next attempt */
+      /* try the next tag */
     }
   }
+  return null;
+}
 
-  await rm(dir, { recursive: true, force: true });
-  throw new Error(`No extractable preview from ${absPath}`);
+// Longest edge (px) of a JPEG on disk, or 0 when it can't be read. Used to
+// decide whether an embedded HEIF preview is big enough to skip the full decode.
+async function longestEdge(jpegPath: string): Promise<number> {
+  try {
+    const { width = 0, height = 0 } = await sharp(jpegPath).metadata();
+    return Math.max(width ?? 0, height ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+// Full libheif decode of a HEIF/HEVC still to JPEG bytes. The decoder is:
+//   - lazy-loaded: heic-convert pulls in a libheif WASM bundle. Importing it at
+//     module top-level would mean any load hiccup takes down extract.ts — and
+//     with it derivatives.ts and the whole worker (no photo, RAW OR video
+//     thumbnails). Loaded on demand, a failure stays a per-asset error.
+//   - serialized: a 33–61 MP HEIF decodes to a full width*height*4 RGBA bitmap
+//     and is re-encoded by a pure-JS JPEG encoder, so several at once can
+//     exhaust memory and OOM-kill the worker. We cap it to one in-flight decode
+//     regardless of DERIVATIVE_CONCURRENCY; the cheap preview path is never gated.
+let heicGate: Promise<unknown> = Promise.resolve();
+function decodeHeicToJpeg(absPath: string): Promise<Buffer> {
+  const run = heicGate.then(async () => {
+    const { default: heicConvert } = await import("heic-convert");
+    const input = await readFile(absPath);
+    // heic-decode sniffs the brand with `String.fromCharCode(...buf.slice(8,12))`
+    // (needs an iterable byte view) and libheif wants a Uint8Array: the Node
+    // Buffer from readFile satisfies both. The published @types claim
+    // ArrayBufferLike, which is wrong for the runtime — hence the cast.
+    const jpeg = await heicConvert({
+      buffer: input as unknown as ArrayBufferLike,
+      format: "JPEG",
+    });
+    return Buffer.from(jpeg);
+  });
+  // Keep the gate chained even when a decode throws, without leaking rejections.
+  heicGate = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 // Numeric EXIF orientation (1-8) of the original. `-n` disables exiftool's
