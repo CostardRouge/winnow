@@ -206,6 +206,16 @@ export const Icons = {
       <path d="m4 17 5-5 4 4 3-3 4 4" />
     </svg>
   ),
+  pipeline: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h10" />
+      <path d="M20 7h-3" />
+      <circle cx="15.5" cy="7" r="1.8" />
+      <path d="M20 17H10" />
+      <path d="M4 17h3" />
+      <circle cx="8.5" cy="17" r="1.8" />
+    </svg>
+  ),
   viewList: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 6h13M8 12h13M8 18h13" />
