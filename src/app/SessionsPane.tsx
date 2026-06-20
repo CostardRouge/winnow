@@ -110,6 +110,9 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Session pending a delete confirmation (opens the modal); transient toast.
+  const [confirming, setConfirming] = useState<SessionRow | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -132,6 +135,13 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Auto-clear the transient confirmation toast.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   async function toggleIgnore(s: SessionRow) {
     await fetch(`/api/sessions/${s.id}`, {
@@ -190,12 +200,45 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
         >
           Export picks → C1
         </button>
+        <button
+          className="btn btn-danger"
+          onClick={() => setConfirming(s)}
+          title="Remove this session (optionally delete its files from disk)"
+        >
+          Delete
+        </button>
       </div>
     );
   }
 
+  async function deleteSession(s: SessionRow, withFiles: boolean) {
+    const r = await fetch(
+      `/api/sessions/${s.id}${withFiles ? "?files=true" : ""}`,
+      { method: "DELETE" },
+    );
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error ?? "Couldn’t delete this session.");
+    setSessions((prev) => prev.filter((x) => x.id !== s.id));
+    const d = data.deleted ?? {};
+    setNotice(
+      withFiles
+        ? `Deleted “${s.name}” · ${d.files_deleted ?? 0} file(s) removed from disk`
+        : `Deleted “${s.name}” from the database`,
+    );
+    if (d.file_errors?.length) {
+      setNotice(
+        `Deleted “${s.name}”, but ${d.file_errors.length} file(s) couldn’t be removed.`,
+      );
+    }
+  }
+
   return (
     <div className="sessions-pane">
+      {notice && (
+        <div style={{ marginBottom: 12 }}>
+          <span className="notice">{notice}</span>
+        </div>
+      )}
       {error && (
         <div className="error-box">
           <span>Couldn’t refresh sessions: {error}</span>
@@ -259,6 +302,112 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
           ))}
         </div>
       )}
+
+      {confirming && (
+        <DeleteSessionModal
+          session={confirming}
+          onClose={() => setConfirming(null)}
+          onConfirm={async (withFiles) => {
+            await deleteSession(confirming, withFiles);
+            setConfirming(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Confirmation modal for deleting a session. A checkbox opts into the
+// irreversible filesystem delete (off by default, since the DB-only delete is
+// recoverable by re-scanning the folder, whereas wiping the originals is not).
+function DeleteSessionModal({
+  session,
+  onClose,
+  onConfirm,
+}: {
+  session: SessionRow;
+  onClose: () => void;
+  onConfirm: (withFiles: boolean) => Promise<void>;
+}) {
+  const [withFiles, setWithFiles] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(withFiles);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete session"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal-title">Delete “{session.name}”?</h2>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Removes the session, its {session.asset_count} indexed media and their
+          ratings{session.pick_count > 0 ? ` (incl. ${session.pick_count} pick(s))` : ""}{" "}
+          from the database, plus their cached thumbnails/proxies. You can re-add
+          the folder later to re-index it.
+        </p>
+
+        <label
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            marginTop: 14,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={withFiles}
+            onChange={(e) => setWithFiles(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <strong>Also delete the original files from disk</strong>
+            <span className="hint" style={{ display: "block" }}>
+              Permanently removes the {session.asset_count} file(s) and the empty
+              folder from the filesystem. This is irreversible — leave unchecked
+              to keep the originals.
+            </span>
+          </span>
+        </label>
+
+        {withFiles && (
+          <p className="modal-warn">
+            The {session.asset_count} original file(s) will be permanently
+            deleted from disk and cannot be recovered.
+          </p>
+        )}
+        {error && <p className="modal-warn">{error}</p>}
+
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn btn-danger" onClick={submit} disabled={busy}>
+            {busy
+              ? "Deleting…"
+              : withFiles
+                ? `Delete session + ${session.asset_count} file(s)`
+                : "Delete session"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
