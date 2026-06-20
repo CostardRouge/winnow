@@ -12,6 +12,7 @@
 // shortcuts through `onKeyDown`. Media URLs default to the asset derivatives but
 // can be overridden (e.g. an export item keyed by its source asset).
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 
 export type ViewerItem = AssetMetaInput & {
@@ -74,7 +75,11 @@ export default function MediaViewer<T extends ViewerItem>({
   // assumed displayable; otherwise we only show it once the derivative is ready.
   const ready = item.derivative_status ? item.derivative_status === "ready" : true;
 
-  return (
+  // Render through a portal on <body>: the overlay is position:fixed, so any
+  // ancestor with a transform (e.g. a card's hover lift) would otherwise become
+  // its containing block and shrink/flicker it. The portal keeps it viewport-
+  // anchored everywhere it's reused.
+  const overlay = (
     <div className="viewer">
       <button className="close" onClick={onClose} aria-label="Close viewer">
         ×
@@ -129,4 +134,7 @@ export default function MediaViewer<T extends ViewerItem>({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return overlay;
+  return createPortal(overlay, document.body);
 }

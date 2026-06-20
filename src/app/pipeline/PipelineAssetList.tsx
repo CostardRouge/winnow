@@ -19,7 +19,7 @@ import {
 import type { AssetGridRow } from "@/lib/types";
 import { EmptyState, Icons } from "../ui";
 import MediaViewer from "../MediaViewer";
-import ActionMenu, { type MenuItem } from "./ActionMenu";
+import ActionMenu, { type MenuItem } from "../ActionMenu";
 
 export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
 
