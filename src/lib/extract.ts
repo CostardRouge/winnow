@@ -140,11 +140,16 @@ export async function extractSourceJpeg(
     const dest = path.join(dir, "decoded.jpg");
     try {
       const input = await readFile(absPath);
+      // heic-convert (via heic-decode) sniffs the HEIF brand with
+      // `String.fromCharCode(...buf.slice(8, 12))`, which needs an *iterable*
+      // byte container. A raw ArrayBuffer is NOT iterable, so handing one over
+      // throws "Spread syntax requires ...iterable[Symbol.iterator] to be a
+      // function" before any decoding happens. The Buffer from readFile is
+      // already a correct (offset/length-aware) view, so we pass it straight
+      // through. The published @types claim `ArrayBufferLike`, which is wrong
+      // for the runtime — hence the cast.
       const jpeg = await heicConvert({
-        buffer: input.buffer.slice(
-          input.byteOffset,
-          input.byteOffset + input.byteLength,
-        ),
+        buffer: input as unknown as ArrayBufferLike,
         format: "JPEG",
       });
       await writeFile(dest, Buffer.from(jpeg));
