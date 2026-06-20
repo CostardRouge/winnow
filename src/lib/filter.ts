@@ -19,6 +19,21 @@ const csv = z
     return out.length ? out : undefined;
   });
 
+// Bounding box "west,south,east,north" (four floats) -> {w,s,e,n}. Anything
+// malformed (wrong arity, non-finite) collapses to undefined (no geo filter).
+const bbox = z
+  .union([z.string(), z.array(z.union([z.string(), z.number()]))])
+  .optional()
+  .transform((v) => {
+    if (v == null) return undefined;
+    const arr = Array.isArray(v) ? v : v.split(",");
+    const nums = arr.map((s) => Number(String(s).trim()));
+    if (nums.length !== 4 || nums.some((n) => !Number.isFinite(n)))
+      return undefined;
+    const [w, s, e, n] = nums;
+    return { w, s, e, n };
+  });
+
 // Like intList, but also tolerates a JSON array of numbers (export jobs persist
 // `filter.ids` as numbers, not strings).
 const intList = z
@@ -82,6 +97,8 @@ export const FilterSchema = z
 
     // Misc
     has_gps: z.coerce.boolean().optional(),
+    // Map zone: bounding box "w,s,e,n" (filters on the materialized gps_lat/lon).
+    bbox,
   })
   .strip();
 
@@ -188,6 +205,28 @@ export function buildFilter(
 
   if (filter.has_gps) conditions.push(`a.gps IS NOT NULL`);
 
+  if (filter.bbox) {
+    const { w, s, e, n } = filter.bbox;
+    // Always require a geotag; then a latitude band + a longitude band on the
+    // materialized columns (indexed). South/north tolerated in any order.
+    conditions.push(`a.gps_lat IS NOT NULL`);
+    conditions.push(`a.gps_lat >= $${i++}`);
+    params.push(Math.min(s, n));
+    conditions.push(`a.gps_lat <= $${i++}`);
+    params.push(Math.max(s, n));
+    if (w <= e) {
+      conditions.push(`a.gps_lon >= $${i++}`);
+      params.push(w);
+      conditions.push(`a.gps_lon <= $${i++}`);
+      params.push(e);
+    } else {
+      // Box straddling the antimeridian (west > east): longitude wraps.
+      conditions.push(`(a.gps_lon >= $${i} OR a.gps_lon <= $${i + 1})`);
+      params.push(w, e);
+      i += 2;
+    }
+  }
+
   return { conditions, params };
 }
 
@@ -222,6 +261,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "size_min",
     "size_max",
     "has_gps",
+    "bbox",
   ] as const;
   const raw: Record<string, string> = {};
   for (const k of keys) {

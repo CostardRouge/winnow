@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import VirtualGrid, { type GalleryAsset } from "./VirtualGrid";
+import type { Bbox, GeoPoint } from "./MapView";
 import FilterPanel, {
   EMPTY_FILTERS,
   type Filters,
@@ -46,9 +48,20 @@ type Row = GalleryAsset & {
   rel_path?: string | null;
 };
 
+// Leaflet touches `window` on import, so the map is client-only (no SSR).
+const MapView = dynamic(() => import("./MapView"), {
+  ssr: false,
+  loading: () => <div className="map-loading">Loading map…</div>,
+});
+
 const MB = 1024 * 1024;
 
-function toQuery(f: Filters, scope?: Scope, cursor?: string | null): string {
+function toQuery(
+  f: Filters,
+  scope?: Scope,
+  cursor?: string | null,
+  opts?: { skipBbox?: boolean },
+): string {
   const sp = new URLSearchParams();
   const arr = (k: string, a: (string | number)[]) =>
     a.length && sp.set(k, a.join(","));
@@ -76,6 +89,7 @@ function toQuery(f: Filters, scope?: Scope, cursor?: string | null): string {
   if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
+  if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
   if (cursor) sp.set("cursor", cursor);
   return sp.toString();
 }
@@ -110,6 +124,10 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
+  const [view, setView] = useState<"grid" | "map">("grid");
+  const [geoPoints, setGeoPoints] = useState<GeoPoint[]>([]);
+  const [geoTruncated, setGeoTruncated] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [aside, setAside] = useState<"filters" | "browse">("filters");
   const [treeKey, setTreeKey] = useState("");
@@ -173,6 +191,33 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, scope]);
+
+  // Map points: the full geotagged distribution for the current filters
+  // (the zone/bbox is chosen ON the map, so it's excluded from this query).
+  const geoQuery = toQuery(filters, scope, null, { skipBbox: true });
+  useEffect(() => {
+    if (view !== "map") return;
+    let cancelled = false;
+    setGeoLoading(true);
+    fetchJson<{ points?: GeoPoint[]; truncated?: boolean }>(
+      `/api/assets/geo?${geoQuery}`,
+    )
+      .then((d) => {
+        if (cancelled) return;
+        setGeoPoints(d.points ?? []);
+        setGeoTruncated(Boolean(d.truncated));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGeoPoints([]);
+          setGeoTruncated(false);
+        }
+      })
+      .finally(() => !cancelled && setGeoLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [view, geoQuery]);
 
   const rate = useCallback(
     async (assetId: number, patch: { verdict?: Row["verdict"]; star?: number }) => {
@@ -289,6 +334,38 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
     }
   }, []);
 
+  // --- Map zone (bbox) actions ---------------------------------------------
+  // The map hands back the ids inside the drawn/visible zone; pick & reject
+  // reuse the bulk rating path, export reuses the selection export.
+  const pickArea = useCallback(
+    (ids: number[]) => {
+      if (!ids.length) return;
+      void rateMany(ids, { verdict: "pick" });
+      setNotice(`${ids.length} picked`);
+    },
+    [rateMany],
+  );
+  const rejectArea = useCallback(
+    (ids: number[]) => {
+      if (!ids.length) return;
+      void rateMany(ids, { verdict: "reject" });
+      setNotice(`${ids.length} rejected`);
+    },
+    [rateMany],
+  );
+  // Apply the zone as a bbox filter and drop back to the grid to review it.
+  const showAreaInGrid = useCallback((bbox: Bbox) => {
+    setFilters((prev) => ({ ...prev, bbox: [bbox.w, bbox.s, bbox.e, bbox.n] }));
+    setView("grid");
+  }, []);
+  const clearBbox = useCallback(() => {
+    setFilters((prev) => {
+      if (!prev.bbox) return prev;
+      const { bbox: _drop, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
   // Dispatch a context-menu action onto a single asset.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
@@ -338,7 +415,28 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
         <button className="btn gallery-filter-toggle" onClick={() => setPanelOpen((o) => !o)}>
           Panel
         </button>
-        {!readOnly && (
+        <div className="view-toggle" role="group" aria-label="View">
+          <button
+            className={`view-btn${view === "grid" ? " active" : ""}`}
+            onClick={() => setView("grid")}
+            aria-pressed={view === "grid"}
+          >
+            Grid
+          </button>
+          <button
+            className={`view-btn${view === "map" ? " active" : ""}`}
+            onClick={() => setView("map")}
+            aria-pressed={view === "map"}
+          >
+            Map
+          </button>
+        </div>
+        {filters.bbox && (
+          <button className="chip active" onClick={clearBbox} title="Clear the map zone filter">
+            Zone ✕
+          </button>
+        )}
+        {!readOnly && view === "grid" && (
           <button
             className={`btn${selectMode ? " btn-primary" : ""}`}
             onClick={() => {
@@ -357,7 +455,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
         </span>
       </div>
 
-      {!readOnly && selectMode && (
+      {!readOnly && selectMode && view === "grid" && (
         <div className="selectbar">
           <span className="hint">{selected.size} selected</span>
           <button
@@ -493,39 +591,54 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
         </aside>
 
         <main className="gallery-main">
-          {error && (
-            <div className="error-box">
-              <span>Couldn’t load assets: {error}</span>
-              <button className="btn" onClick={() => fetchPage(null)}>
-                Retry
-              </button>
-            </div>
-          )}
-          {items.length === 0 && !loading && !error ? (
-            <EmptyState
-              icon={Icons.photos}
-              title="No assets match these filters"
-              hint="Loosen or clear a filter in the panel to see more of the library."
+          {view === "map" ? (
+            <MapView
+              points={geoPoints}
+              truncated={geoTruncated}
+              loading={geoLoading}
+              readOnly={readOnly}
+              onPickArea={pickArea}
+              onRejectArea={rejectArea}
+              onExportArea={exportSelection}
+              onShowInGrid={(bbox) => showAreaInGrid(bbox)}
             />
           ) : (
-            <VirtualGrid
-              items={items}
-              hasMore={hasMore}
-              loading={loading}
-              loadMore={() => fetchPage(cursor)}
-              onOpen={setViewer}
-              selectMode={!readOnly && selectMode}
-              selectedIds={selected}
-              onToggleSelect={toggleSelect}
-              onContextMenu={
-                readOnly
-                  ? undefined
-                  : (e, asset) => {
-                      e.preventDefault();
-                      setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
-                    }
-              }
-            />
+            <>
+              {error && (
+                <div className="error-box">
+                  <span>Couldn’t load assets: {error}</span>
+                  <button className="btn" onClick={() => fetchPage(null)}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {items.length === 0 && !loading && !error ? (
+                <EmptyState
+                  icon={Icons.photos}
+                  title="No assets match these filters"
+                  hint="Loosen or clear a filter in the panel to see more of the library."
+                />
+              ) : (
+                <VirtualGrid
+                  items={items}
+                  hasMore={hasMore}
+                  loading={loading}
+                  loadMore={() => fetchPage(cursor)}
+                  onOpen={setViewer}
+                  selectMode={!readOnly && selectMode}
+                  selectedIds={selected}
+                  onToggleSelect={toggleSelect}
+                  onContextMenu={
+                    readOnly
+                      ? undefined
+                      : (e, asset) => {
+                          e.preventDefault();
+                          setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
+                        }
+                  }
+                />
+              )}
+            </>
           )}
         </main>
       </div>
@@ -565,7 +678,17 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
               )}
             </div>
           </div>
-          <div className="stage">
+          <div
+            className="stage"
+            onContextMenu={
+              readOnly
+                ? undefined
+                : (e) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, id: a.id });
+                  }
+            }
+          >
             {a.derivative_status === "ready" ? (
               a.media_type === "video" ? (
                 <video

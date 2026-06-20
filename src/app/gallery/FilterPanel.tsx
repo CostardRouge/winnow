@@ -50,6 +50,9 @@ export type Filters = {
   size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
   has_gps?: boolean;
+  // Map zone: [west, south, east, north]. Set by the map view, applied as a
+  // cumulative filter to the grid and to bulk actions.
+  bbox?: [number, number, number, number];
 };
 
 export const EMPTY_FILTERS: Filters = {
