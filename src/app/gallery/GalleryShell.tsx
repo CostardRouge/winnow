@@ -565,7 +565,17 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
               )}
             </div>
           </div>
-          <div className="stage">
+          <div
+            className="stage"
+            onContextMenu={
+              readOnly
+                ? undefined
+                : (e) => {
+                    e.preventDefault();
+                    setMenu({ x: e.clientX, y: e.clientY, id: a.id });
+                  }
+            }
+          >
             {a.derivative_status === "ready" ? (
               a.media_type === "video" ? (
                 <video
