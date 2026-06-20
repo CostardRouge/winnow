@@ -102,8 +102,10 @@ See `.env.dist`. Main ones:
 | `GET /api/stats` | Counters (media / scan / analyzed / pending) + queue activity + pause + rates |
 | `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Hourly scan/analyze rates (0 = unlimited) |
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
-| `GET /api/failures` | Everything that failed (scan / analyze / import) + messages |
+| `GET /api/failures` | Everything that failed (scan / analyze / import) + the deduplication audit (each duplicate joined to its kept asset for thumbnail/compare) |
 | `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
+| `GET /api/failures/duplicates/file` `?path=` | Streams a recorded duplicate's raw file (whitelisted to `duplicate_hits`) so an unindexed extra copy can be inspected locally |
+| `POST /api/failures/duplicates/delete` `{ paths[] }` | Hard-deletes extra copies recorded in `duplicate_hits` (whitelisted · never an indexed asset · confined to the browsable area) and clears their audit rows |
 | `GET /api/pipeline/queue` `?name=scan\|analyze` | Live jobs of the scan/analyze queue, enriched with the root/asset they point at |
 | `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
 | `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status`; `sort=recent` orders by last update) |
@@ -302,6 +304,18 @@ debug, and a **"retry"** button per family:
 - **Import**: per-file errors of the batches (`import_batches.result`) — *retroactive*.
   Failed files are **quarantined** (`inbox/.failed/`) so they stop looping;
   retrying re-imports them.
+- **Deduplication** (audit + triage): every `duplicate_hits` row is an extra copy
+  found on disk that was *not* indexed. Each row shows the kept original beside it
+  (its thumbnail stands in for the identical copy), and is **expandable** to
+  compare the two. Hands-on actions: **filter by path** (e.g. `trash` to isolate
+  Capture One's trash folder), **download** the raw duplicate to verify it
+  yourself, and **delete** the extra copies — one at a time or the whole filtered
+  selection — always behind a confirmation. Deletion is *hard* (these files were
+  never indexed, so there is no soft-delete row to flip) but guarded three ways:
+  it only ever touches a path recorded in `duplicate_hits`, never a live indexed
+  asset (a kept original or a recovered false collision), and only within the
+  browsable area. False collisions are listed for audit but never offered for
+  deletion (distinct content that was kept).
 
 ## Scope & next steps
 

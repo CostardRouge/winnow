@@ -44,6 +44,16 @@ function within(target: string, root: string): boolean {
   return target === root || target.startsWith(root + "/");
 }
 
+// Logical containment check: is `target` inside one of the browse roots? Used as
+// defense-in-depth before a destructive filesystem action (e.g. deleting a
+// recorded duplicate), so a stray path can never reach outside the area Winnow
+// is allowed to touch. Purely logical (no realpath/stat) so it still answers for
+// a file that has already been removed — letting callers clean up its stale row.
+export function isWithinBrowseRoots(target: string): boolean {
+  const resolved = normalizeRootPath(target);
+  return browseRoots().some((r) => within(resolved, r));
+}
+
 export async function listDir(input?: string): Promise<FsListing> {
   const roots = browseRoots();
 
