@@ -11,6 +11,7 @@ export type AssetMenuAction =
   | { kind: "star"; star: number }
   | { kind: "tag"; name: string }
   | { kind: "export" }
+  | { kind: "regenerate" }
   | { kind: "delete" };
 
 export default function AssetActionMenu({
@@ -131,6 +132,10 @@ export default function AssetActionMenu({
 
       <button className="ctx-item" onClick={() => fire({ kind: "export" })}>
         <span className="ctx-ic">⤓</span> Export
+      </button>
+
+      <button className="ctx-item" onClick={() => fire({ kind: "regenerate" })}>
+        <span className="ctx-ic">↻</span> Regenerate derivatives
       </button>
 
       <div className="ctx-sep" />
