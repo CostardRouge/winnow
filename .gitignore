@@ -16,3 +16,5 @@ data/
 
 # Artefact Redis (tests locaux)
 dump.rdb
+/nas-final
+/nas-incoming
