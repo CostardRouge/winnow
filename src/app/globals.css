@@ -525,9 +525,6 @@
     transform: rotate(180deg);
   }
 
-  .subtabs {
-    @apply flex gap-1.5 px-5 pb-1.5 pt-3;
-  }
   .sessions-pane {
     @apply min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3;
   }
@@ -660,8 +657,10 @@
   }
 
   /* ---- Sessions: list / card layout toggle ----------------------------- */
+  /* Rides the section toolbar (the active view's "modifier"), next to the
+     Grid/Map/Sessions segmented control. */
   .layout-toggle {
-    @apply ml-auto inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
+    @apply inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
     background: var(--color-surface-2);
     border-color: var(--color-border);
   }
