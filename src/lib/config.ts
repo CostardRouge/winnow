@@ -83,6 +83,15 @@ export const config = {
   proxySize: int("PROXY_SIZE", 2048),
   thumbQuality: int("THUMB_QUALITY", 70),
   proxyQuality: int("PROXY_QUALITY", 80),
+
+  // --- Observability --------------------------------------------------------
+  // The worker exposes Prometheus metrics on its own HTTP port (the app serves
+  // the same registry at /api/metrics). Structured logs are configured directly
+  // from the environment by src/lib/log.ts (LOG_LEVEL / LOG_FORMAT).
+  metrics: {
+    enabled: (process.env.METRICS_ENABLED ?? "true") === "true",
+    port: int("METRICS_PORT", 9091),
+  },
 };
 
 // Recognized extensions. Culling is always done on lightweight proxies.

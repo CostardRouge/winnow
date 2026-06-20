@@ -4,7 +4,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { pool } from "./db";
+import { createLogger } from "./log";
 
+const log = createLogger("migrate");
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../db/migrations");
 
@@ -27,11 +29,11 @@ export async function migrate(): Promise<void> {
         [file],
       );
       if (done.rowCount) {
-        console.log(`= ${file} (already applied)`);
+        log.debug("already applied", { file });
         continue;
       }
       const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
-      console.log(`▶ applying ${file}...`);
+      log.info("applying migration", { file });
       await client.query("BEGIN");
       try {
         await client.query(sql);
@@ -40,7 +42,7 @@ export async function migrate(): Promise<void> {
           [file],
         );
         await client.query("COMMIT");
-        console.log(`✔ ${file}`);
+        log.info("migration applied", { file });
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;
@@ -55,12 +57,12 @@ export async function migrate(): Promise<void> {
 if (import.meta.url === `file://${process.argv[1]}`) {
   migrate()
     .then(() => {
-      console.log("Migrations complete.");
+      log.info("migrations complete");
       return pool.end();
     })
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error("Migrations failed:", err);
+      log.error("migrations failed", { err });
       process.exit(1);
     });
 }

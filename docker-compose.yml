@@ -95,6 +95,11 @@ services:
     env_file: .env
     init: true
     restart: unless-stopped
+    # Prometheus metrics (scan throughput, queue depth, failure rate) are served
+    # on METRICS_PORT (9091) at /metrics. A Prometheus on the same Docker network
+    # scrapes worker:9091 directly; uncomment to also publish it on the host.
+    # ports:
+    #   - "9091:9091"
     # Hardware video encoding (VAAPI): uncomment to share the iGPU, then
     # set VIDEO_HWACCEL=vaapi in .env. Otherwise ffmpeg encodes in software.
     # devices:

@@ -8,6 +8,9 @@ import { stat } from "node:fs/promises";
 import { many, one } from "./db";
 import { config } from "./config";
 import { enqueueDerivative, enqueueIndex } from "./queue";
+import { createLogger } from "./log";
+
+const log = createLogger("bootstrap");
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -36,14 +39,14 @@ export async function bootstrapRoots(): Promise<void> {
 
   for (const { path, kind } of dirs) {
     if (!(await exists(path))) {
-      console.warn(`[bootstrap] ${kind} not found, ignored: ${path}`);
+      log.warn("root not found, ignored", { kind, path });
       continue;
     }
     try {
       await ensureRoot(path, kind);
-      console.log(`[bootstrap] ${kind} registered + indexing enqueued: ${path}`);
+      log.info("root registered + indexing enqueued", { kind, path });
     } catch (err) {
-      console.error(`[bootstrap] failure ${path}:`, err);
+      log.error("root registration failed", { path, err });
     }
   }
 
@@ -69,10 +72,10 @@ async function backfillVideoDerivatives(): Promise<void> {
     );
     if (orphans.length === 0) return;
     for (const a of orphans) await enqueueDerivative(a.id);
-    console.log(
-      `[bootstrap] re-enqueued ${orphans.length} video derivative(s) (backfill)`,
-    );
+    log.info("re-enqueued video derivatives (backfill)", {
+      count: orphans.length,
+    });
   } catch (err) {
-    console.error("[bootstrap] video derivative backfill failed:", err);
+    log.error("video derivative backfill failed", { err });
   }
 }

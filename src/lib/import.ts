@@ -20,6 +20,7 @@ import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
 import { recordDuplicateHit } from "./duplicates";
+import { metrics } from "./metrics";
 import { slug } from "./slug";
 
 // HIDDEN subfolders of the inbox (prefix ". ") — therefore ignored both by
@@ -272,6 +273,10 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       ],
     );
   }
+
+  metrics.importFiles.inc({ result: "imported" }, res.imported);
+  metrics.importFiles.inc({ result: "duplicate" }, res.duplicates);
+  metrics.importFiles.inc({ result: "failed" }, res.failed);
 
   return res;
 }

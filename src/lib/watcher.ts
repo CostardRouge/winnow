@@ -4,6 +4,9 @@
 // folder (debounce).
 import chokidar, { type FSWatcher } from "chokidar";
 import { mkdirSync } from "node:fs";
+import { createLogger } from "./log";
+
+const log = createLogger("watcher");
 
 export function startInboxWatcher(
   inboxDir: string,
@@ -21,7 +24,7 @@ export function startInboxWatcher(
     timer = setTimeout(() => {
       timer = null;
       onBatch(inboxDir).catch((err) =>
-        console.error("[watcher] import failed:", (err as Error).message),
+        log.error("inbox import failed", { err }),
       );
     }, 3000);
   };
@@ -33,7 +36,7 @@ export function startInboxWatcher(
   });
 
   watcher.on("add", schedule);
-  console.log(`[watcher] inbox watched: ${inboxDir}`);
+  log.info("inbox watched", { inboxDir });
 
   return async () => {
     if (timer) clearTimeout(timer);

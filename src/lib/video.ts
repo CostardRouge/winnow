@@ -10,6 +10,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { config } from "./config";
+import { createLogger } from "./log";
+
+const log = createLogger("video");
 
 function run(args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -105,10 +108,7 @@ export async function makeVideoProxy(input: string): Promise<Buffer> {
       try {
         await run(vaapi, TIMEOUT);
       } catch (e) {
-        console.warn(
-          "[video] VAAPI encoding failed, software fallback:",
-          (e as Error).message,
-        );
+        log.warn("VAAPI encoding failed, falling back to software", { err: e });
         await run(software, TIMEOUT);
       }
     } else {

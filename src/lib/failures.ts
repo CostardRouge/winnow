@@ -6,6 +6,9 @@
 // by /api/failures: derivatives -> assets.derivative_status='error', import
 // -> import_batches.result. So we only duplicate what was missing.
 import { q } from "./db";
+import { createLogger } from "./log";
+
+const log = createLogger("failures");
 
 export async function recordScanFailure(
   absPath: string,
@@ -26,7 +29,7 @@ export async function recordScanFailure(
     );
   } catch (err) {
     // Never let a scan fail because of the logging itself.
-    console.warn("recordScanFailure:", (err as Error).message);
+    log.warn("recordScanFailure failed", { err });
   }
 }
 

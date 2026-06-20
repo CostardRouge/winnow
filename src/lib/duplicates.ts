@@ -7,6 +7,9 @@
 // Upsert by abs_path (like scan_failures): a path re-seen on each incremental
 // scan updates its row + a hits counter instead of accumulating.
 import { q } from "./db";
+import { createLogger } from "./log";
+
+const log = createLogger("dedup");
 
 export type DuplicateSource = "index" | "import";
 
@@ -43,6 +46,6 @@ export async function recordDuplicateHit(args: {
     );
   } catch (err) {
     // Never let auditing break a scan/import.
-    console.warn("recordDuplicateHit:", (err as Error).message);
+    log.warn("recordDuplicateHit failed", { err });
   }
 }
