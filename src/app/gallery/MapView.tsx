@@ -105,6 +105,10 @@ export default function MapView({
       worldCopyJump: true,
       zoomControl: true,
     }).setView([20, 0], 2);
+    // The toolbar (Select/Draw) sits top-left and the zone action bar bottom-
+    // centre, so park the zoom buttons top-right — the only corner that stays
+    // clear, including on mobile where the bottom bar gets wide.
+    map.zoomControl.setPosition("topright");
     L.tileLayer(TILE_URL, {
       attribution: TILE_ATTRIBUTION,
       maxZoom: 19,
