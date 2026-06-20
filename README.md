@@ -80,6 +80,32 @@ npm run worker         # in another terminal: BullMQ workers
 npm run scan -- /path/to/folder --sync
 ```
 
+### With Docker, fully local (dev, hot reload)
+
+To run the whole stack on your machine **without pointing at the remote NAS**,
+use the `docker-compose.dev.yml` override. It bind-mounts the source (live
+edits, no rebuild), runs `next dev` / `tsx watch`, and maps the three "NAS"
+mounts to **local folders** (`./nas`, `./nas-incoming`, `./nas-final`) whatever
+`NAS_*` says in `.env`. Postgres, Redis and all other state stay in local Docker
+volumes — nothing remote is involved.
+
+```bash
+cp .env.dist .env   # keep DATABASE_URL / REDIS_URL as-is (compose service names)
+# First run builds the image (system deps + npm ci); afterwards code changes
+# hot-reload and only package.json changes need another --build.
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Drop a few sample RAW/JPEG/MP4 into `./nas`, then in the UI (http://localhost:3000)
+go to **Volumes → + Add folder** and enter the path **as seen inside the
+container** (e.g. `/nas/2026/…`). `./nas`, `./nas-incoming`, `./nas-final` and
+`./data` are git-ignored (Docker auto-creates them on first `up`).
+
+> The standalone (non-dev) `docker compose up` reads `NAS_MOUNT` / `NAS_INCOMING`
+> / `NAS_FINAL` from `.env`. To point *that* at local dirs instead of the NAS,
+> set those three variables to local paths (or remove them to fall back to the
+> `./nas*` defaults baked into `docker-compose.yml`).
+
 ---
 
 ## Environment variables
