@@ -2,7 +2,7 @@
 //  - index       : incremental scan of a root
 //  - derivatives : thumbnail + proxy generation
 //  - export      : export jobs (RAW copy for C1, etc.)
-import { Queue, type ConnectionOptions } from "bullmq";
+import { Queue, type ConnectionOptions, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { config } from "./config";
 
@@ -92,14 +92,97 @@ const defaultJobOpts = {
   backoff: { type: "exponential" as const, delay: 5000 },
 };
 
+// "Pending" = queued but not yet running. We coalesce scans against these
+// states only; an *active* scan is deliberately excluded so a request that
+// arrives mid-scan still queues exactly one follow-up pass (the running walk may
+// already have passed a directory where new files just landed).
+const PENDING_INDEX_STATES = ["waiting", "prioritized", "delayed"] as const;
+
+// The pending scan already queued for this root, if any. Cap the scan: with
+// coalescing in place the pending set stays tiny, and this bounds the lookup if
+// a legacy backlog hasn't drained yet.
+async function findPendingIndexJob(rootId: number): Promise<Job | null> {
+  const jobs = await getQueues().index.getJobs([...PENDING_INDEX_STATES], 0, 999);
+  for (const job of jobs) {
+    if (job && Number((job.data as IndexJob)?.rootId) === rootId) return job;
+  }
+  return null;
+}
+
+// Enqueue an incremental scan of a root, coalescing on the root id. Indexing is
+// incremental + idempotent, so N queued passes of the same folder are pure
+// wasted I/O on the NAS — we keep at most one pending scan per root. A more
+// urgent request (e.g. an import) promotes the queued job's priority instead of
+// stacking a duplicate. Returns the pending job (existing or freshly added).
 export async function enqueueIndex(
   rootId: number,
   opts: { priority?: number } = {},
-) {
-  return getQueues().index.add("scan", { rootId } satisfies IndexJob, {
+): Promise<Job> {
+  const priority = opts.priority ?? PRIORITY.normal;
+  const queue = getQueues().index;
+
+  const pending = await findPendingIndexJob(rootId);
+  if (pending) {
+    const current =
+      typeof pending.opts.priority === "number"
+        ? pending.opts.priority
+        : PRIORITY.normal;
+    // Smaller number = higher priority. Best-effort promotion: the job may start
+    // between the lookup and here, in which case changePriority throws and we
+    // ignore it (the now-active scan already covers this request).
+    if (priority < current) {
+      try {
+        await pending.changePriority({ priority });
+      } catch {
+        /* job already started */
+      }
+    }
+    return pending;
+  }
+
+  return queue.add("scan", { rootId } satisfies IndexJob, {
     ...defaultJobOpts,
-    priority: opts.priority ?? PRIORITY.normal,
+    priority,
   });
+}
+
+// One-shot reconciliation (run at worker startup): collapse any pre-existing
+// duplicate scans so each root keeps a single pending job. Keeps the most urgent
+// (highest priority, oldest on ties) and drops the rest. Self-healing — once
+// enqueueIndex coalesces every caller, this finds nothing left to do. Returns
+// the number of duplicate jobs removed.
+export async function coalescePendingIndexJobs(): Promise<number> {
+  const jobs = await getQueues().index.getJobs([...PENDING_INDEX_STATES], 0, 4999);
+  const byRoot = new Map<number, Job[]>();
+  for (const job of jobs) {
+    if (!job) continue;
+    const rootId = Number((job.data as IndexJob)?.rootId);
+    if (!Number.isFinite(rootId)) continue;
+    let group = byRoot.get(rootId);
+    if (!group) {
+      group = [];
+      byRoot.set(rootId, group);
+    }
+    group.push(job);
+  }
+
+  let removed = 0;
+  for (const group of byRoot.values()) {
+    if (group.length <= 1) continue;
+    const prio = (j: Job) =>
+      typeof j.opts.priority === "number" ? j.opts.priority : PRIORITY.normal;
+    // Highest priority first (smaller wins), then oldest first.
+    group.sort((a, b) => prio(a) - prio(b) || (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    for (const dup of group.slice(1)) {
+      try {
+        await dup.remove();
+        removed++;
+      } catch {
+        /* became active between listing and removal: leave it */
+      }
+    }
+  }
+  return removed;
 }
 
 export async function enqueueDerivative(
