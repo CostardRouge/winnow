@@ -5,9 +5,9 @@
 // Without this bootstrap, a final folder would stay empty: previously the
 // 'finals' roots were never indexed.
 import { stat } from "node:fs/promises";
-import { one } from "./db";
+import { many, one } from "./db";
 import { config } from "./config";
-import { enqueueIndex } from "./queue";
+import { enqueueDerivative, enqueueIndex } from "./queue";
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -45,5 +45,34 @@ export async function bootstrapRoots(): Promise<void> {
     } catch (err) {
       console.error(`[bootstrap] failure ${path}:`, err);
     }
+  }
+
+  await backfillVideoDerivatives();
+}
+
+// Retroactive fix: videos used to be indexed with derivative_status='skipped'
+// (only photos were enqueued), so the ffmpeg poster/proxy was never built. The
+// incremental scan never revisits them (unchanged mtime+size), so we re-enqueue
+// the orphans once here. Idempotent: after this pass they leave 'skipped', so a
+// later startup matches nothing. Ignored sessions and soft-deleted assets stay
+// untouched (a derivative there would be wasted work).
+async function backfillVideoDerivatives(): Promise<void> {
+  try {
+    const orphans = await many<{ id: number }>(
+      `UPDATE assets
+         SET derivative_status = 'pending', updated_at = now()
+       WHERE media_type = 'video'
+         AND derivative_status = 'skipped'
+         AND processing_state <> 'ignored'
+         AND deleted_at IS NULL
+       RETURNING id`,
+    );
+    if (orphans.length === 0) return;
+    for (const a of orphans) await enqueueDerivative(a.id);
+    console.log(
+      `[bootstrap] re-enqueued ${orphans.length} video derivative(s) (backfill)`,
+    );
+  } catch (err) {
+    console.error("[bootstrap] video derivative backfill failed:", err);
   }
 }

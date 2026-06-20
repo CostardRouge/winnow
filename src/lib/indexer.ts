@@ -1,7 +1,7 @@
 // Indexer — incremental scan of a NAS root (cf. §3).
 // Reads each file ONCE ONLY: metadata + partial hash.
-// Enqueues derivatives ONLY for photo assets without a derivative and outside
-// ignored sessions.
+// Enqueues derivatives for every recognized asset (photo → sharp, video →
+// ffmpeg poster + mp4 proxy) that lives outside an ignored session.
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
@@ -153,8 +153,9 @@ export async function indexRoot(
     const ignored = session.ignored;
 
     if (existing) {
-      // Modified file: we update and re-enqueue the derivative if photo.
-      const willDerive = cls.mediaType === "photo" && !ignored;
+      // Modified file: we update and re-enqueue the derivative (photo or
+      // video) unless the session is ignored.
+      const willDerive = !ignored;
       await q(
         `UPDATE assets SET
            rel_path=$2, filename=$3, ext=$4, media_type=$5, device=$6,
@@ -200,7 +201,9 @@ export async function indexRoot(
 
     // New file. A non-null content_hash is subject to the unique index, so an
     // ON CONFLICT means another path already holds this *partial* hash.
-    const willDerive = cls.mediaType === "photo" && !ignored;
+    // Derivatives are generated for both photos and videos (the worker picks
+    // the right pipeline from media_type); only ignored sessions are skipped.
+    const willDerive = !ignored;
     const insertAsset = (hashValue: string | null) =>
       one<{ id: number }>(
         `INSERT INTO assets (

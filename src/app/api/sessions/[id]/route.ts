@@ -64,7 +64,7 @@ export async function PATCH(
       );
     } else {
       // Reactivation: we switch back to unprocessed and regenerate the missing
-      // photo derivatives.
+      // derivatives (photos and videos alike).
       await q(
         `UPDATE assets
            SET processing_state = 'unprocessed', updated_at = now()
@@ -75,7 +75,6 @@ export async function PATCH(
         `UPDATE assets
            SET derivative_status = 'pending', updated_at = now()
          WHERE session_id = $1
-           AND media_type = 'photo'
            AND derivative_status IN ('skipped','error')
          RETURNING id`,
         [sessionId],
