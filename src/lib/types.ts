@@ -4,8 +4,9 @@ export type Root = {
   id: number;
   path: string;
   // 'inbox' is internal (drop zone consumed by the import); 'source' and
-  // 'finals' carry the Incoming/Final role (cf. lib/roles.ts).
-  kind: "source" | "finals" | "inbox";
+  // 'finals' carry the Incoming/Final role (cf. lib/roles.ts); 'export' is a
+  // volume tracked for visibility but never walked (cf. lib/volumes.ts).
+  kind: "source" | "finals" | "inbox" | "export";
   watch: boolean;
   added_at: string;
 };

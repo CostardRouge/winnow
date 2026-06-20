@@ -216,6 +216,15 @@ export const Icons = {
       <circle cx="8.5" cy="17" r="1.8" />
     </svg>
   ),
+  // Stacked drives — the Volumes section (registered directories/mounts).
+  volumes: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="6" rx="1.8" />
+      <rect x="3" y="14" width="18" height="6" rx="1.8" />
+      <path d="M7 7h.01" />
+      <path d="M7 17h.01" />
+    </svg>
+  ),
   viewList: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 6h13M8 12h13M8 18h13" />

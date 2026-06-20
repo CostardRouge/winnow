@@ -116,8 +116,6 @@ export default function IncomingTab() {
   const [layout, setLayout] = useState<Layout>("list");
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scanPath, setScanPath] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Restore / persist the layout choice (client-only to avoid SSR mismatch).
@@ -149,22 +147,6 @@ export default function IncomingTab() {
     const t = setInterval(load, 5000); // follows the derivatives' progress
     return () => clearInterval(t);
   }, [load, view]);
-
-  async function startScan() {
-    if (!scanPath.trim()) return;
-    setBusy(true);
-    try {
-      await fetch("/api/index/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: scanPath.trim() }),
-      });
-      setScanPath("");
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function toggleIgnore(s: SessionRow) {
     await fetch(`/api/sessions/${s.id}`, {
@@ -249,17 +231,12 @@ export default function IncomingTab() {
       ) : (
         <div className="sessions-pane">
           <div className="filterbar">
-            <input
-              className="input"
-              style={{ flex: 1, minWidth: 220 }}
-              placeholder="/path/to/NAS/folder to index"
-              value={scanPath}
-              onChange={(e) => setScanPath(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && startScan()}
-            />
-            <button className="btn btn-primary" onClick={startScan} disabled={busy}>
-              {busy ? "…" : "Index"}
-            </button>
+            <Link href="/volumes" className="btn">
+              + Add folders to index
+            </Link>
+            <span className="hint" style={{ flex: 1, minWidth: 120 }}>
+              managed in Volumes
+            </span>
             <div className="layout-toggle" role="group" aria-label="Session layout">
               <button
                 className={`layout-btn${layout === "list" ? " active" : ""}`}
@@ -294,8 +271,12 @@ export default function IncomingTab() {
             <EmptyState
               icon={Icons.inbox}
               title="No incoming sessions yet"
-              hint="Enter a NAS folder path above and start a scan to populate the triage queue."
-            />
+              hint="Add a NAS folder in Volumes and start a scan to populate the triage queue."
+            >
+              <Link href="/volumes" className="btn btn-primary">
+                + Add folders to index
+              </Link>
+            </EmptyState>
           ) : layout === "card" ? (
             <div className="session-list as-cards">
               {sessions.map((s) => (
