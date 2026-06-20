@@ -288,4 +288,12 @@ export const Icons = {
       <path d="m5 12 7-7 7 7" />
     </svg>
   ),
+  // Download (arrow into a tray) — export cards + the viewer's per-file action.
+  download: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 4v10" />
+      <path d="m7.5 9.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 19h14" />
+    </svg>
+  ),
 };
