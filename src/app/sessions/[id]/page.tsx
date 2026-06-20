@@ -7,11 +7,16 @@ import {
   useState,
   use as usePromise,
 } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
 import AssetMeta from "@/app/gallery/AssetMeta";
+import ViewerActions from "@/app/ViewerActions";
+import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
+import { Icons } from "@/app/ui";
 import {
   deleteAssets,
   exportAssets,
@@ -45,6 +50,29 @@ type AssetRow = {
   star: number;
 };
 
+// Session metadata + status breakdown (GET /api/sessions/:id). Postgres returns
+// the COUNT(*) columns as strings, so the header coerces them with Number().
+type SessionInfo = {
+  id: number;
+  name: string;
+  source_path: string;
+  device_hint: string | null;
+  captured_at_min: string | null;
+  captured_at_max: string | null;
+  asset_count: number;
+  ignored: boolean;
+  completed: boolean;
+  root_kind: "source" | "finals" | "inbox" | "export";
+  root_path: string;
+  ready_count: number | string;
+  pending_count: number | string;
+  error_count: number | string;
+  live_count: number | string;
+  pick_count: number | string;
+  reject_count: number | string;
+  unrated_count: number | string;
+};
+
 const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
   { key: "", label: "All" },
   { key: "unrated", label: "Unrated" },
@@ -52,12 +80,28 @@ const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
   { key: "reject", label: "Rejects" },
 ];
 
+function fmtDate(s: string | null): string {
+  if (!s) return "—";
+  try {
+    return new Date(s).toLocaleDateString("en-GB");
+  } catch {
+    return s;
+  }
+}
+
+// "incoming" sessions (source/inbox) are cullable; finals are view-only.
+function roleLabel(kind: SessionInfo["root_kind"]): string {
+  return kind === "finals" ? "final" : kind === "export" ? "export" : "incoming";
+}
+
 export default function SessionGrid({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = usePromise(params);
+  const router = useRouter();
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -67,6 +111,7 @@ export default function SessionGrid({
   const [viewer, setViewer] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -76,6 +121,23 @@ export default function SessionGrid({
     const t = setTimeout(() => setNotice(null), 3500);
     return () => clearTimeout(t);
   }, [notice]);
+
+  // Session header info: load once, then refresh after session-level actions or
+  // as the verdict counts drift while culling.
+  const loadSession = useCallback(async () => {
+    try {
+      const data = await fetchJson<{ session: SessionInfo }>(
+        `/api/sessions/${id}`,
+      );
+      setSession(data.session);
+    } catch {
+      /* header is best-effort; the grid still works without it */
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
 
   const reset = useCallback(() => {
     setAssets([]);
@@ -143,8 +205,10 @@ export default function SessionGrid({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
+      // Keep the header's verdict counts in step with the grid.
+      void loadSession();
     },
-    [],
+    [loadSession],
   );
 
   // Soft delete (hidden from the library, original untouched). Returns whether
@@ -161,9 +225,10 @@ export default function SessionGrid({
       setAssets((prev) => prev.filter((a) => !idset.has(a.id)));
       await deleteAssets(ids);
       setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
+      void loadSession();
       return true;
     },
-    [],
+    [loadSession],
   );
 
   const exportSelection = useCallback(async (ids: number[]) => {
@@ -200,6 +265,71 @@ export default function SessionGrid({
     setNotice(`Tagged “${name.trim()}”`);
   }, []);
 
+  // --- Session-level actions (mirror the sessions list) --------------------
+  const toggleComplete = useCallback(async () => {
+    if (!session) return;
+    await fetch(`/api/sessions/${session.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completed: !session.completed }),
+    });
+    setNotice(session.completed ? "Marked active" : "Marked complete");
+    void loadSession();
+  }, [session, loadSession]);
+
+  const toggleIgnore = useCallback(async () => {
+    if (!session) return;
+    await fetch(`/api/sessions/${session.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ignored: !session.ignored }),
+    });
+    setNotice(session.ignored ? "Reactivated" : "Ignored");
+    void loadSession();
+  }, [session, loadSession]);
+
+  const exportPicks = useCallback(async () => {
+    if (!session) return;
+    const name = prompt(
+      "Export name (RAW copy of picks to the C1 export folder):",
+      `${session.name}-picks`,
+    );
+    if (!name) return;
+    try {
+      const r = await fetch("/api/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          target: "capture_one",
+          filter: { session_id: session.id, verdict: "pick" },
+        }),
+      });
+      const data = await r.json();
+      setNotice(
+        data.export_job_id
+          ? `Export #${data.export_job_id} queued`
+          : `Error: ${data.error ?? "unknown"}`,
+      );
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, [session]);
+
+  const deleteSession = useCallback(
+    async (withFiles: boolean) => {
+      if (!session) return;
+      const r = await fetch(
+        `/api/sessions/${session.id}${withFiles ? "?files=true" : ""}`,
+        { method: "DELETE" },
+      );
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error ?? "Couldn’t delete this session.");
+      router.push("/");
+    },
+    [session, router],
+  );
+
   // Dispatch a context-menu action onto a single asset.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
@@ -225,6 +355,8 @@ export default function SessionGrid({
   useEffect(() => {
     if (viewer == null) return;
     const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       const a = assets[viewer];
       if (!a) return;
       if (e.key === "Escape") return setViewer(null);
@@ -247,13 +379,26 @@ export default function SessionGrid({
   return (
     <>
       <div className="topbar">
-        <h1>Session #{id}</h1>
+        <Link href="/" className="btn btn-icon" aria-label="Back to library">
+          {Icons.back}
+        </Link>
+        <h1>{session?.name ?? `Session #${id}`}</h1>
         <span className="spacer" />
         {notice && <span className="notice">{notice}</span>}
         <span className="hint">{assets.length} loaded</span>
       </div>
 
       <div className="container">
+        {session && (
+          <SessionHeader
+            s={session}
+            onComplete={toggleComplete}
+            onIgnore={toggleIgnore}
+            onExportPicks={exportPicks}
+            onDelete={() => setConfirming(true)}
+          />
+        )}
+
         <div className="filterbar">
           {VERDICT_FILTERS.map((f) => (
             <button
@@ -339,6 +484,7 @@ export default function SessionGrid({
             setViewer((v) => Math.min((v ?? 0) + 1, assets.length - 1))
           }
           onRate={(patch) => rate(assets[viewer].id, patch)}
+          onTag={(name) => addTag(assets[viewer].id, name)}
           onExport={() => exportSelection([assets[viewer].id])}
           onRegenerate={() => regenerate([assets[viewer].id])}
           onDelete={async () => {
@@ -356,7 +502,122 @@ export default function SessionGrid({
           onClose={() => setMenu(null)}
         />
       )}
+
+      {confirming && session && (
+        <DeleteSessionModal
+          session={{
+            name: session.name,
+            asset_count: session.asset_count,
+            pick_count: Number(session.pick_count),
+          }}
+          onClose={() => setConfirming(false)}
+          onConfirm={async (withFiles) => {
+            await deleteSession(withFiles);
+            setConfirming(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// Detail header: where the session lives, where it stands (status breakdown +
+// triage progress) and the session-level actions found everywhere else.
+function SessionHeader({
+  s,
+  onComplete,
+  onIgnore,
+  onExportPicks,
+  onDelete,
+}: {
+  s: SessionInfo;
+  onComplete: () => void;
+  onIgnore: () => void;
+  onExportPicks: () => void;
+  onDelete: () => void;
+}) {
+  const total = Number(s.live_count) || 0;
+  const ready = Number(s.ready_count) || 0;
+  const pending = Number(s.pending_count) || 0;
+  const errors = Number(s.error_count) || 0;
+  const picks = Number(s.pick_count) || 0;
+  const rejects = Number(s.reject_count) || 0;
+  const unrated = Number(s.unrated_count) || 0;
+  const triaged = picks + rejects;
+  const pct = total ? Math.round((triaged / total) * 100) : 0;
+  const cullable = s.root_kind === "source" || s.root_kind === "inbox";
+
+  return (
+    <section className={`session-detail${s.ignored ? " ignored" : ""}`}>
+      <div className="session-detail-top">
+        <div className="session-detail-info">
+          <div className="session-detail-loc" title={s.source_path}>
+            {Icons.folder}
+            <span className="session-detail-path">{s.source_path}</span>
+            <span className="chip session-detail-kind">{roleLabel(s.root_kind)}</span>
+            {s.completed && <span className="pill done">✓ done</span>}
+            {s.ignored && <span className="pill">ignored</span>}
+          </div>
+          <div className="session-detail-meta">
+            {(s.device_hint ?? "device ?") + " · "}
+            {fmtDate(s.captured_at_min)} → {fmtDate(s.captured_at_max)}
+            {" · "}
+            {s.asset_count} files
+          </div>
+        </div>
+
+        <div className="session-actions">
+          <button className="btn" onClick={onComplete}>
+            {s.completed ? "Unmark complete" : "Mark complete"}
+          </button>
+          <button className="btn" onClick={onIgnore}>
+            {s.ignored ? "Reactivate" : "Ignore"}
+          </button>
+          <button className="btn" onClick={onExportPicks} disabled={picks === 0}>
+            ⤓ Export picks → C1
+          </button>
+          <button
+            className="btn btn-danger"
+            onClick={onDelete}
+            title={
+              cullable
+                ? "Remove this session (optionally delete its files)"
+                : "Remove this session from the database"
+            }
+          >
+            🗑 Delete
+          </button>
+        </div>
+      </div>
+
+      <div className="session-detail-stats">
+        <div className="session-stat-group" aria-label="Derivatives">
+          <span className="pill total">{total} media</span>
+          <span className="pill ready">{ready} ready</span>
+          {pending > 0 && <span className="pill pending">{pending} pending</span>}
+          {errors > 0 && <span className="pill error">{errors} errors</span>}
+        </div>
+        <div className="session-stat-group" aria-label="Triage">
+          <span className="pill picks">{picks} picks</span>
+          <span className="pill rejects">{rejects} rejects</span>
+          <span className="pill unrated">{unrated} unrated</span>
+        </div>
+      </div>
+
+      <div className="session-progress" title={`${triaged} of ${total} triaged`}>
+        <div className="session-progress-track">
+          <span
+            className="session-progress-fill is-pick"
+            style={{ width: `${total ? (picks / total) * 100 : 0}%` }}
+          />
+          <span
+            className="session-progress-fill is-reject"
+            style={{ width: `${total ? (rejects / total) * 100 : 0}%` }}
+          />
+        </div>
+        <span className="session-progress-label">{pct}% triaged</span>
+      </div>
+    </section>
   );
 }
 
@@ -368,6 +629,7 @@ function Viewer({
   onPrev,
   onNext,
   onRate,
+  onTag,
   onExport,
   onRegenerate,
   onDelete,
@@ -379,6 +641,7 @@ function Viewer({
   onPrev: () => void;
   onNext: () => void;
   onRate: (patch: { verdict?: Verdict; star?: number }) => void;
+  onTag: (name: string) => void;
   onExport: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
@@ -441,45 +704,20 @@ function Viewer({
         )}
       </div>
       <div className="controls">
-        <button className="btn" onClick={onPrev} disabled={!hasPrev}>
+        <button className="btn btn-icon" onClick={onPrev} disabled={!hasPrev} aria-label="Previous">
           ←
         </button>
-        <button
-          className={`btn ${asset.verdict === "reject" ? "btn-reject" : ""}`}
-          onClick={() => onRate({ verdict: "reject" })}
-        >
-          ✕ Reject
-        </button>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            className="btn"
-            style={{ color: asset.star >= n ? "var(--star)" : undefined }}
-            onClick={() => onRate({ star: n })}
-          >
-            ★
-          </button>
-        ))}
-        <button
-          className={`btn ${asset.verdict === "pick" ? "btn-pick" : ""}`}
-          onClick={() => onRate({ verdict: "pick" })}
-        >
-          ✓ Pick
-        </button>
-        <button className="btn" onClick={onExport}>
-          ⤓ Export
-        </button>
-        <button
-          className="btn"
-          title="Rebuild thumbnail + proxy"
-          onClick={onRegenerate}
-        >
-          ↻ Regenerate
-        </button>
-        <button className="btn btn-reject" onClick={onDelete}>
-          🗑 Delete
-        </button>
-        <button className="btn" onClick={onNext} disabled={!hasNext}>
+        <ViewerActions
+          verdict={asset.verdict}
+          star={asset.star}
+          onVerdict={(verdict) => onRate({ verdict })}
+          onStar={(star) => onRate({ star })}
+          onTag={onTag}
+          onExport={onExport}
+          onRegenerate={onRegenerate}
+          onDelete={onDelete}
+        />
+        <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} aria-label="Next">
           →
         </button>
       </div>

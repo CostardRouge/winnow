@@ -1,3 +1,6 @@
+// GET    /api/sessions/:id -> one session + its root (kind/path) + the full
+//    status breakdown (ready/pending/error derivatives, pick/reject/unrated
+//    verdicts). Feeds the session detail page header.
 // PATCH  /api/sessions/:id { ignored?, completed? } -> updates the folder.
 //  - ignored : marks as processed; cascades processing_state=ignored and stops
 //    derivatives (§5). Inverse: resets to `unprocessed` and re-enqueues the missing ones.
@@ -18,6 +21,61 @@ import { enqueueDerivative } from "@/lib/queue";
 import { getStorage } from "@/lib/storage/index";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
 import type { Root, Session } from "@/lib/types";
+
+// DB-backed route: never pre-rendered/cached at build time.
+export const dynamic = "force-dynamic";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const sessionId = Number.parseInt(id, 10);
+    if (!Number.isFinite(sessionId)) return badRequest("Invalid id");
+
+    // One session enriched with its root (kind drives which actions are legal,
+    // path shows where it lives) and the same counters the list view computes,
+    // plus the verdict breakdown the detail header surfaces. Counts exclude
+    // soft-deleted assets so they match the grid.
+    const session = await one(
+      `SELECT
+         s.*,
+         rt.kind AS root_kind,
+         rt.path AS root_path,
+         COALESCE(d.ready, 0)    AS ready_count,
+         COALESCE(d.pending, 0)  AS pending_count,
+         COALESCE(d.error, 0)    AS error_count,
+         COALESCE(d.live, 0)     AS live_count,
+         COALESCE(d.picks, 0)    AS pick_count,
+         COALESCE(d.rejects, 0)  AS reject_count,
+         COALESCE(d.unrated, 0)  AS unrated_count
+       FROM sessions s
+       JOIN roots rt ON rt.id = s.root_id
+       LEFT JOIN (
+         SELECT
+           a.session_id,
+           count(*)                                                                  AS live,
+           count(*) FILTER (WHERE a.derivative_status = 'ready')                      AS ready,
+           count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))    AS pending,
+           count(*) FILTER (WHERE a.derivative_status = 'error')                      AS error,
+           count(*) FILTER (WHERE r.verdict = 'pick')                                 AS picks,
+           count(*) FILTER (WHERE r.verdict = 'reject')                               AS rejects,
+           count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')         AS unrated
+         FROM assets a
+         LEFT JOIN ratings r ON r.asset_id = a.id
+         WHERE a.deleted_at IS NULL
+         GROUP BY a.session_id
+       ) d ON d.session_id = s.id
+       WHERE s.id = $1`,
+      [sessionId],
+    );
+    if (!session) return notFound("Session not found");
+    return json({ session });
+  } catch (err) {
+    return serverError(err);
+  }
+}
 
 const Body = z
   .object({

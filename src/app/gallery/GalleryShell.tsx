@@ -13,6 +13,7 @@ import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
 import MediaViewer from "../MediaViewer";
+import ViewerActions from "../ViewerActions";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -718,82 +719,41 @@ export default function GalleryShell({
                   setMenu({ x: e.clientX, y: e.clientY, id: it.id });
                 }
           }
-          renderInfo={(it) => (
-            <div className="viewer-tags">
-              {(it.tags ?? []).map((t) => (
-                <span key={t} className="chip active">
-                  {t}
-                  {!readOnly && (
-                    <button
-                      className="chip-x"
-                      onClick={() => assignTags([it.id], t, false)}
-                    >
-                      ×
-                    </button>
-                  )}
-                </span>
-              ))}
-              {!readOnly && (
-                <input
-                  className="input"
-                  placeholder="+ tag"
-                  style={{ width: 90, padding: "2px 8px" }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      assignTags([it.id], (e.target as HTMLInputElement).value, true);
-                      (e.target as HTMLInputElement).value = "";
-                    }
-                  }}
-                />
-              )}
-            </div>
-          )}
+          renderInfo={(it) =>
+            (it.tags ?? []).length || !readOnly ? (
+              <div className="viewer-tags">
+                {(it.tags ?? []).map((t) => (
+                  <span key={t} className="chip active">
+                    {t}
+                    {!readOnly && (
+                      <button
+                        className="chip-x"
+                        onClick={() => assignTags([it.id], t, false)}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : null
+          }
           renderActions={
             readOnly
               ? undefined
               : (it) => (
-                  <>
-                    <button
-                      className={`btn ${it.verdict === "reject" ? "btn-reject" : ""}`}
-                      onClick={() => rate(it.id, { verdict: "reject" })}
-                    >
-                      ✕ Reject
-                    </button>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button
-                        key={n}
-                        className="btn"
-                        style={{ color: it.star >= n ? "var(--star)" : undefined }}
-                        onClick={() => rate(it.id, { star: n })}
-                      >
-                        ★
-                      </button>
-                    ))}
-                    <button
-                      className={`btn ${it.verdict === "pick" ? "btn-pick" : ""}`}
-                      onClick={() => rate(it.id, { verdict: "pick" })}
-                    >
-                      ✓ Pick
-                    </button>
-                    <button className="btn" onClick={() => exportSelection([it.id])}>
-                      ⤓ Export
-                    </button>
-                    <button
-                      className="btn"
-                      title="Rebuild thumbnail + proxy"
-                      onClick={() => regenerateSelection([it.id])}
-                    >
-                      ↻ Regenerate
-                    </button>
-                    <button
-                      className="btn btn-reject"
-                      onClick={async () => {
-                        if (await removeAssets([it.id])) setViewer(null);
-                      }}
-                    >
-                      🗑 Delete
-                    </button>
-                  </>
+                  <ViewerActions
+                    verdict={it.verdict}
+                    star={it.star}
+                    onVerdict={(verdict) => rate(it.id, { verdict })}
+                    onStar={(star) => rate(it.id, { star })}
+                    onTag={(name) => assignTags([it.id], name, true)}
+                    onExport={() => exportSelection([it.id])}
+                    onRegenerate={() => regenerateSelection([it.id])}
+                    onDelete={async () => {
+                      if (await removeAssets([it.id])) setViewer(null);
+                    }}
+                  />
                 )
           }
         />
