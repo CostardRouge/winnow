@@ -45,6 +45,16 @@ export const config = {
   // Directory where the "RAW copy for Capture One" export drops the originals.
   exportDir: process.env.EXPORT_DIR ?? "/data/exports",
 
+  // --- Folder picker (Volumes "Add folder") --------------------------------
+  // Base directories the server-side folder picker is allowed to browse. The
+  // configured volume dirs (incoming/finals/export) are always added on top, so
+  // this is really "where else can I browse" — defaults to the NAS mount.
+  // Containment to these roots is what stops the picker from ever exposing the
+  // OS (/etc, /usr, …) or letting "/" be registered by hand.
+  browse: {
+    roots: list("BROWSE_ROOTS", ["/nas"]),
+  },
+
   // --- Ingest / import ------------------------------------------------------
   // All feeders (web upload, SMB drop, device FTP, card offload)
   // converge to the inbox; the import worker verifies (hash), deduplicates, files

@@ -233,6 +233,107 @@ export default function VolumesPanel() {
   );
 }
 
+type FsEntry = { name: string; path: string };
+type FsListing = {
+  path: string;
+  parent: string | null;
+  roots: string[];
+  entries: FsEntry[];
+};
+
+// Server-side folder picker: browse the NAS (confined to the configured roots,
+// cf. GET /api/fs) instead of typing a path. Navigating into a folder also
+// selects it — the folder you're looking at is the one that gets registered.
+function FolderPicker({
+  value,
+  onNavigate,
+  existing,
+}: {
+  value: string;
+  onNavigate: (p: string) => void;
+  existing: { path: string }[];
+}) {
+  const [data, setData] = useState<FsListing | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    const sp = new URLSearchParams();
+    if (value) sp.set("path", value);
+    fetchJson<FsListing>(`/api/fs?${sp.toString()}`)
+      .then((d) => {
+        if (active) setData(d);
+      })
+      .catch((e) => {
+        if (active) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
+  const existingSet = useMemo(
+    () => new Set(existing.map((r) => r.path)),
+    [existing],
+  );
+
+  const atRoot = value === "";
+  const upTarget = data?.parent ?? "";
+
+  return (
+    <div className="picker">
+      <div className="picker-bar">
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={atRoot || loading}
+          onClick={() => onNavigate(upTarget)}
+          title="Up one level"
+        >
+          {Icons.back} Up
+        </button>
+        <span className="picker-cwd" title={value || "Locations"}>
+          {value || "Locations"}
+        </span>
+      </div>
+
+      {error ? (
+        <div className="picker-msg picker-err">{error}</div>
+      ) : loading && !data ? (
+        <div className="picker-msg">Loading…</div>
+      ) : data && data.entries.length === 0 ? (
+        <div className="picker-msg">No subfolders here — select it below.</div>
+      ) : (
+        <ul className={`picker-list${loading ? " is-loading" : ""}`} aria-busy={loading}>
+          {data?.entries.map((e) => (
+            <li key={e.path}>
+              <button
+                type="button"
+                className="picker-row"
+                onClick={() => onNavigate(e.path)}
+                title={e.path}
+              >
+                <span className="picker-ic">{Icons.folder}</span>
+                <span className="picker-name">{atRoot ? e.path : e.name}</span>
+                {existingSet.has(e.path) && (
+                  <span className="tag tag-origin">added</span>
+                )}
+                <span className="picker-chev">{Icons.chevronRight}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // Modal: a path + a type selector ("how to interpret this directory"), with the
 // same guards the server enforces pre-checked client-side for instant feedback.
 function AddVolumeModal({
@@ -244,6 +345,7 @@ function AddVolumeModal({
   onClose: () => void;
   onAdded: () => void | Promise<void>;
 }) {
+  const [mode, setMode] = useState<"browse" | "manual">("browse");
   const [path, setPath] = useState("");
   const [type, setType] = useState<VolumeType>("incoming");
   const [busy, setBusy] = useState(false);
@@ -292,26 +394,66 @@ function AddVolumeModal({
       >
         <h2 className="modal-title">Add a folder to index</h2>
         <p className="hint" style={{ marginTop: 0 }}>
-          Enter the path as seen inside the container (e.g. <code>/nas/2026/…</code>),
-          then choose how Winnow should treat it.
+          Browse the NAS and pick a folder, then choose how Winnow should treat it.
         </p>
 
-        <label className="modal-label" htmlFor="vol-path">
-          Folder path
-        </label>
-        <input
-          id="vol-path"
-          className="input"
-          style={{ width: "100%" }}
-          placeholder="/nas/2026/voyage"
-          value={path}
-          autoFocus
-          onChange={(e) => {
-            setPath(e.target.value);
-            setError(null);
-          }}
-          onKeyDown={(e) => e.key === "Enter" && !blocked && submit()}
-        />
+        <div className="subtabs" style={{ marginTop: 4 }}>
+          <button
+            type="button"
+            className={`chip${mode === "browse" ? " active" : ""}`}
+            onClick={() => setMode("browse")}
+          >
+            Browse
+          </button>
+          <button
+            type="button"
+            className={`chip${mode === "manual" ? " active" : ""}`}
+            onClick={() => setMode("manual")}
+          >
+            Enter path
+          </button>
+        </div>
+
+        {mode === "browse" ? (
+          <>
+            <FolderPicker
+              value={path}
+              existing={existing}
+              onNavigate={(p) => {
+                setPath(p);
+                setError(null);
+              }}
+            />
+            <div className="picker-selected">
+              {path ? (
+                <>
+                  Selected: <code>{path}</code>
+                </>
+              ) : (
+                <span className="hint">No folder selected yet.</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="modal-label" htmlFor="vol-path">
+              Folder path
+            </label>
+            <input
+              id="vol-path"
+              className="input"
+              style={{ width: "100%" }}
+              placeholder="/nas/2026/voyage"
+              value={path}
+              autoFocus
+              onChange={(e) => {
+                setPath(e.target.value);
+                setError(null);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && !blocked && submit()}
+            />
+          </>
+        )}
 
         <label className="modal-label">Type</label>
         <div className="type-choices">
