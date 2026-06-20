@@ -435,40 +435,55 @@ export default function GalleryShell({
   // The shared, filter-driven body for the built-in Grid/Map views.
   const renderGalleryBody = (mode: "grid" | "map") => (
     <div className="gallery-body">
+      {/* Mobile: tap the content area (outside the panel) to dismiss it. */}
+      {panelOpen && (
+        <div
+          className="gallery-aside-backdrop"
+          onClick={() => setPanelOpen(false)}
+          aria-hidden
+        />
+      )}
       <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
-        <div className="chips" style={{ marginBottom: 10 }}>
+        <div className="aside-head">
+          <div className="view-toggle" role="group" aria-label="Panel section">
+            <button
+              className={`view-btn${aside === "filters" ? " active" : ""}`}
+              onClick={() => setAside("filters")}
+              aria-pressed={aside === "filters"}
+            >
+              Filters
+            </button>
+            <button
+              className={`view-btn${aside === "browse" ? " active" : ""}`}
+              onClick={() => setAside("browse")}
+              aria-pressed={aside === "browse"}
+            >
+              Browse
+            </button>
+          </div>
           <button
-            className={`chip${aside === "filters" ? " active" : ""}`}
-            onClick={() => setAside("filters")}
+            className="chip aside-reset"
+            onClick={() => {
+              setFilters(EMPTY_FILTERS);
+              setTreeKey("");
+            }}
+            title="Reset all filters"
           >
-            Filters
-          </button>
-          <button
-            className={`chip${aside === "browse" ? " active" : ""}`}
-            onClick={() => setAside("browse")}
-          >
-            Browse
+            {Icons.reset} Reset
           </button>
         </div>
 
         {aside === "filters" ? (
-          <>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <button className="btn" onClick={() => setFilters(EMPTY_FILTERS)}>
-                Reset
+          facetsError ? (
+            <div className="error-box">
+              <span>Couldn’t load filters: {facetsError}</span>
+              <button className="btn" onClick={loadFacets}>
+                Retry
               </button>
             </div>
-            {facetsError ? (
-              <div className="error-box">
-                <span>Couldn’t load filters: {facetsError}</span>
-                <button className="btn" onClick={loadFacets}>
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <FilterPanel facets={facets} filters={filters} set={setFilters} />
-            )}
-          </>
+          ) : (
+            <FilterPanel facets={facets} filters={filters} set={setFilters} />
+          )
         ) : (
           <Tree
             activeKey={treeKey}
@@ -572,8 +587,9 @@ export default function GalleryShell({
           <button
             className="btn gallery-filter-toggle"
             onClick={() => setPanelOpen((o) => !o)}
+            aria-label="Toggle filters panel"
           >
-            Panel
+            {Icons.panelLeft} Panel
           </button>
         )}
         {galleryActive && filters.bbox && (

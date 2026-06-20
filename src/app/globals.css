@@ -878,17 +878,28 @@
     @apply py-0;
   }
   .gallery-body {
-    @apply flex min-h-0 flex-1;
+    @apply relative flex min-h-0 flex-1;
   }
   .gallery-aside {
     @apply w-[280px] flex-shrink-0 overflow-y-auto p-4;
     border-right: 1px solid var(--color-border);
     background: var(--color-surface);
   }
+  /* Panel header: section toggle on the left, Reset on the right, one row. */
+  .aside-head {
+    @apply mb-2.5 flex items-center justify-between gap-2;
+  }
+  .aside-reset svg {
+    @apply -ml-0.5;
+  }
   .gallery-main {
     @apply flex min-w-0 flex-1 flex-col p-1.5;
   }
   .gallery-filter-toggle {
+    @apply hidden;
+  }
+  /* Click-catcher behind the mobile filter panel (hidden on desktop). */
+  .gallery-aside-backdrop {
     @apply hidden;
   }
 
@@ -1418,20 +1429,37 @@
   .gallery-filter-toggle {
     display: inline-flex;
   }
+  /* The panel slides in over the content, confined to its parent (the gallery
+     body): it starts below the controls and stops above the bottom rail, so it
+     never covers the nav bars. No drop shadow — the right border separates it. */
   .gallery-aside {
-    position: fixed;
+    position: absolute;
     z-index: 30;
-    top: 56px;
-    bottom: 66px;
+    top: 0;
+    bottom: 0;
     left: 0;
     width: 85vw;
     max-width: 320px;
     transform: translateX(-100%);
     transition: transform 0.24s var(--ease-out);
-    box-shadow: var(--shadow-pop);
   }
   .gallery-aside.open {
     transform: translateX(0);
+  }
+  .gallery-aside-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    background: color-mix(in srgb, var(--color-frame) 14%, transparent);
+  }
+  /* Top-right collides with the (wrapping) toolbar on narrow screens; drop the
+     zoom to the bottom-left corner instead. */
+  .map-zoom {
+    top: auto;
+    right: auto;
+    bottom: 0.5rem;
+    left: 0.5rem;
   }
 }
 
