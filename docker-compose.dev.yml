@@ -1,0 +1,56 @@
+# Winnow — local development override (hot reload, local folders, no NAS).
+#
+# Layers ON TOP of docker-compose.yml. Postgres / Redis / migrate keep their
+# base definition; here we only change app + worker so that:
+#   - the source tree is bind-mounted (live edits, no rebuild),
+#   - `next dev` / `tsx watch` reload on change,
+#   - the three "NAS" mounts point at LOCAL folders (./nas, ./nas-incoming,
+#     ./nas-final) regardless of what NAS_* says in .env.
+#
+# Usage:
+#   cp .env.dist .env            # leave DATABASE_URL/REDIS_URL as-is (services)
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   # first run needs --build (system deps + npm ci); afterwards code changes
+#   # hot-reload, only package.json changes require another --build.
+#
+# Drop a few sample RAW/JPEG/MP4 into ./nas, then in the UI:
+#   Volumes -> + Add folder -> /nas/...  (path as seen INSIDE the container).
+# (./nas, ./nas-incoming, ./nas-final and ./data are git-ignored; Docker
+#  auto-creates them on first `up` if missing.)
+
+# Bind-mounted source + image-provided node_modules/.next (anonymous volumes
+# shadow the host copies so native builds from the image are used), plus the
+# local "NAS" folders. Shared by app / worker / migrate.
+x-dev-volumes: &dev-volumes
+  - .:/app
+  - /app/node_modules
+  - /app/.next
+  - ./nas:/nas:ro
+  - ./nas-incoming:/nas-incoming
+  - ./nas-final:/nas-final:ro
+  - inbox:/data/inbox
+  - derivatives:/data/derivatives
+  - exports:/data/exports
+
+services:
+  # Apply the host migrations (and any new ./db/migrations) without a rebuild.
+  migrate:
+    volumes: *dev-volumes
+
+  app:
+    # `next dev` instead of the baked production build. -H 0.0.0.0 so the
+    # mapped 3000:3000 port is reachable from the host.
+    command: ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
+    environment:
+      NODE_ENV: development
+    # Don't restart-loop on a crash while editing.
+    restart: "no"
+    volumes: *dev-volumes
+
+  worker:
+    # tsx watch re-runs the BullMQ worker whenever a source file changes.
+    command: ["npx", "tsx", "watch", "src/worker.ts"]
+    environment:
+      NODE_ENV: development
+    restart: "no"
+    volumes: *dev-volumes
