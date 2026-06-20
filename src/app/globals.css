@@ -1832,3 +1832,26 @@
     @apply inline-flex items-center gap-1;
   }
 }
+
+/* ---- Dropdown menu: labelled trigger + two-line items ------------------ */
+@layer components {
+  .menu-caret {
+    @apply inline-flex;
+    margin-left: 1px;
+    opacity: 0.7;
+  }
+  .ctx-item-text {
+    @apply flex min-w-0 flex-col leading-tight;
+  }
+  .ctx-item-hint {
+    @apply text-[11px];
+    color: var(--color-faint);
+  }
+  .ctx-danger .ctx-item-hint {
+    color: color-mix(in srgb, var(--color-reject) 70%, var(--color-muted));
+  }
+  /* Transient "Saved N files / Downloading…" note in the export card header. */
+  .export-dl-msg {
+    @apply max-w-[200px] truncate;
+  }
+}
