@@ -103,7 +103,9 @@ export default function MapView({
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
       worldCopyJump: true,
-      zoomControl: true,
+      // Default zoom control is replaced by our own overlay (see `.map-zoom`),
+      // styled like the toolbar buttons and parked in the clear top-right corner.
+      zoomControl: false,
     }).setView([20, 0], 2);
     L.tileLayer(TILE_URL, {
       attribution: TILE_ATTRIBUTION,
@@ -222,6 +224,26 @@ export default function MapView({
             ? "Loading…"
             : `${points.length}${truncated ? "+" : ""} geotagged`}
         </span>
+      </div>
+
+      {/* Zoom: a segmented +/- pair styled like the toolbar buttons. */}
+      <div className="map-zoom" role="group" aria-label="Zoom">
+        <button
+          className="btn"
+          onClick={() => mapRef.current?.zoomOut()}
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <button
+          className="btn"
+          onClick={() => mapRef.current?.zoomIn()}
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          +
+        </button>
       </div>
 
       {area && (

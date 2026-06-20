@@ -12,6 +12,7 @@ import FilterPanel, {
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import AssetMeta from "./AssetMeta";
+import { ViewSegments, type SectionView } from "./ViewSwitch";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -27,6 +28,11 @@ import { EmptyState, Icons } from "../ui";
 //   - scope="final"     → read-only (readOnly): no rating, no export.
 // `kind` (= scope) is injected into every call (assets/facets/tree) BUT is not
 // stored in Filters: "Reset" must never clear the tab scope.
+//
+// The section's views (Grid, Map, plus any `extraViews` such as Sessions) live
+// in a single segmented control; the active view contributes its own toolbar
+// modifier. Built-in Grid/Map are `usesGalleryData` views — the filter-driven
+// dataset is fetched lazily, only while one of them is active.
 
 type Scope = "incoming" | "final";
 
@@ -113,7 +119,17 @@ function applyScope(prev: Filters, path: PathSeg[]): Filters {
   return base;
 }
 
-export default function GalleryShell({ scope }: { scope?: Scope }) {
+export default function GalleryShell({
+  scope,
+  extraViews,
+  defaultView,
+}: {
+  scope?: Scope;
+  /** Extra section views (e.g. Sessions) shown before the built-in Grid/Map. */
+  extraViews?: SectionView[];
+  /** Id of the view selected on mount (defaults to "grid"). */
+  defaultView?: string;
+}) {
   // Final = read-only: hide culling/selection/export.
   const readOnly = scope === "final";
 
@@ -124,7 +140,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
-  const [view, setView] = useState<"grid" | "map">("grid");
+  const [view, setView] = useState<string>(defaultView ?? "grid");
   const [geoPoints, setGeoPoints] = useState<GeoPoint[]>([]);
   const [geoTruncated, setGeoTruncated] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
@@ -140,6 +156,10 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const filterKey = JSON.stringify(filters);
+
+  // Built-in views backed by the filter-driven dataset. Anything else (an
+  // injected view such as Sessions) renders without touching the gallery feed.
+  const galleryActive = view === "grid" || view === "map";
 
   // Transient confirmation ("Export queued", "3 deleted") — auto-clears.
   useEffect(() => {
@@ -157,7 +177,9 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
         setFacetsError(e.message);
       });
   }, [scope]);
-  useEffect(() => loadFacets(), [loadFacets]);
+  useEffect(() => {
+    if (galleryActive) loadFacets();
+  }, [loadFacets, galleryActive]);
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
@@ -185,12 +207,13 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
   );
 
   useEffect(() => {
+    if (!galleryActive) return;
     setItems([]);
     setCursor(null);
     setHasMore(true);
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, scope]);
+  }, [filterKey, scope, galleryActive]);
 
   // Map points: the full geotagged distribution for the current filters
   // (the zone/bbox is chosen ON the map, so it's excluded from this query).
@@ -409,50 +432,163 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
 
   const a = viewer != null ? items[viewer] : null;
 
+  // The shared, filter-driven body for the built-in Grid/Map views.
+  const renderGalleryBody = (mode: "grid" | "map") => (
+    <div className="gallery-body">
+      <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
+        <div className="chips" style={{ marginBottom: 10 }}>
+          <button
+            className={`chip${aside === "filters" ? " active" : ""}`}
+            onClick={() => setAside("filters")}
+          >
+            Filters
+          </button>
+          <button
+            className={`chip${aside === "browse" ? " active" : ""}`}
+            onClick={() => setAside("browse")}
+          >
+            Browse
+          </button>
+        </div>
+
+        {aside === "filters" ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="btn" onClick={() => setFilters(EMPTY_FILTERS)}>
+                Reset
+              </button>
+            </div>
+            {facetsError ? (
+              <div className="error-box">
+                <span>Couldn’t load filters: {facetsError}</span>
+                <button className="btn" onClick={loadFacets}>
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <FilterPanel facets={facets} filters={filters} set={setFilters} />
+            )}
+          </>
+        ) : (
+          <Tree
+            activeKey={treeKey}
+            scope={scope}
+            onScope={(path) => {
+              setTreeKey(path.map((s) => `${s.key}:${s.value}`).join("/"));
+              setFilters((prev) => applyScope(prev, path));
+            }}
+          />
+        )}
+      </aside>
+
+      <main className="gallery-main">
+        {mode === "map" ? (
+          <MapView
+            points={geoPoints}
+            truncated={geoTruncated}
+            loading={geoLoading}
+            readOnly={readOnly}
+            onPickArea={pickArea}
+            onRejectArea={rejectArea}
+            onExportArea={exportSelection}
+            onShowInGrid={(bbox) => showAreaInGrid(bbox)}
+          />
+        ) : (
+          <>
+            {error && (
+              <div className="error-box">
+                <span>Couldn’t load assets: {error}</span>
+                <button className="btn" onClick={() => fetchPage(null)}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {items.length === 0 && !loading && !error ? (
+              <EmptyState
+                icon={Icons.photos}
+                title="No assets match these filters"
+                hint="Loosen or clear a filter in the panel to see more of the library."
+              />
+            ) : (
+              <VirtualGrid
+                items={items}
+                hasMore={hasMore}
+                loading={loading}
+                loadMore={() => fetchPage(cursor)}
+                onOpen={setViewer}
+                selectMode={!readOnly && selectMode}
+                selectedIds={selected}
+                onToggleSelect={toggleSelect}
+                onContextMenu={
+                  readOnly
+                    ? undefined
+                    : (e, asset) => {
+                        e.preventDefault();
+                        setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
+                      }
+                }
+              />
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+
+  // Built-in views. Grid carries the Select toggle as its modifier; Map none.
+  // Any `extraViews` (e.g. Sessions) ride before them in the segmented control.
+  const gridView: SectionView = {
+    id: "grid",
+    label: "Grid",
+    usesGalleryData: true,
+    controls: readOnly ? undefined : (
+      <button
+        className={`btn${selectMode ? " btn-primary" : ""}`}
+        onClick={() => {
+          setSelectMode((m) => !m);
+          setSelected(new Set());
+        }}
+      >
+        {selectMode ? "Done" : "Select"}
+      </button>
+    ),
+    render: () => renderGalleryBody("grid"),
+  };
+  const mapView: SectionView = {
+    id: "map",
+    label: "Map",
+    usesGalleryData: true,
+    render: () => renderGalleryBody("map"),
+  };
+  const views: SectionView[] = [...(extraViews ?? []), gridView, mapView];
+  const current = views.find((v) => v.id === view) ?? views[0];
+
   return (
     <div className="gallery-shell">
       <div className="gallery-controls">
-        <button className="btn gallery-filter-toggle" onClick={() => setPanelOpen((o) => !o)}>
-          Panel
-        </button>
-        <div className="view-toggle" role="group" aria-label="View">
+        <ViewSegments views={views} active={current.id} onSelect={setView} />
+        {current.controls}
+        {galleryActive && (
           <button
-            className={`view-btn${view === "grid" ? " active" : ""}`}
-            onClick={() => setView("grid")}
-            aria-pressed={view === "grid"}
+            className="btn gallery-filter-toggle"
+            onClick={() => setPanelOpen((o) => !o)}
           >
-            Grid
+            Panel
           </button>
-          <button
-            className={`view-btn${view === "map" ? " active" : ""}`}
-            onClick={() => setView("map")}
-            aria-pressed={view === "map"}
-          >
-            Map
-          </button>
-        </div>
-        {filters.bbox && (
+        )}
+        {galleryActive && filters.bbox && (
           <button className="chip active" onClick={clearBbox} title="Clear the map zone filter">
             Zone ✕
           </button>
         )}
-        {!readOnly && view === "grid" && (
-          <button
-            className={`btn${selectMode ? " btn-primary" : ""}`}
-            onClick={() => {
-              setSelectMode((m) => !m);
-              setSelected(new Set());
-            }}
-          >
-            {selectMode ? "Done" : "Select"}
-          </button>
-        )}
         <span className="spacer" />
         {notice && <span className="notice">{notice}</span>}
-        <span className="hint">
-          {items.length}{hasMore ? "+" : ""} shown
-          {facets ? ` · ${facets.total} total` : ""}
-        </span>
+        {galleryActive && (
+          <span className="hint">
+            {items.length}{hasMore ? "+" : ""} shown
+            {facets ? ` · ${facets.total} total` : ""}
+          </span>
+        )}
       </div>
 
       {!readOnly && selectMode && view === "grid" && (
@@ -543,105 +679,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
         </div>
       )}
 
-      <div className="gallery-body">
-        <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
-          <div className="chips" style={{ marginBottom: 10 }}>
-            <button
-              className={`chip${aside === "filters" ? " active" : ""}`}
-              onClick={() => setAside("filters")}
-            >
-              Filters
-            </button>
-            <button
-              className={`chip${aside === "browse" ? " active" : ""}`}
-              onClick={() => setAside("browse")}
-            >
-              Browse
-            </button>
-          </div>
-
-          {aside === "filters" ? (
-            <>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                <button className="btn" onClick={() => setFilters(EMPTY_FILTERS)}>
-                  Reset
-                </button>
-              </div>
-              {facetsError ? (
-                <div className="error-box">
-                  <span>Couldn’t load filters: {facetsError}</span>
-                  <button className="btn" onClick={loadFacets}>
-                    Retry
-                  </button>
-                </div>
-              ) : (
-                <FilterPanel facets={facets} filters={filters} set={setFilters} />
-              )}
-            </>
-          ) : (
-            <Tree
-              activeKey={treeKey}
-              scope={scope}
-              onScope={(path) => {
-                setTreeKey(path.map((s) => `${s.key}:${s.value}`).join("/"));
-                setFilters((prev) => applyScope(prev, path));
-              }}
-            />
-          )}
-        </aside>
-
-        <main className="gallery-main">
-          {view === "map" ? (
-            <MapView
-              points={geoPoints}
-              truncated={geoTruncated}
-              loading={geoLoading}
-              readOnly={readOnly}
-              onPickArea={pickArea}
-              onRejectArea={rejectArea}
-              onExportArea={exportSelection}
-              onShowInGrid={(bbox) => showAreaInGrid(bbox)}
-            />
-          ) : (
-            <>
-              {error && (
-                <div className="error-box">
-                  <span>Couldn’t load assets: {error}</span>
-                  <button className="btn" onClick={() => fetchPage(null)}>
-                    Retry
-                  </button>
-                </div>
-              )}
-              {items.length === 0 && !loading && !error ? (
-                <EmptyState
-                  icon={Icons.photos}
-                  title="No assets match these filters"
-                  hint="Loosen or clear a filter in the panel to see more of the library."
-                />
-              ) : (
-                <VirtualGrid
-                  items={items}
-                  hasMore={hasMore}
-                  loading={loading}
-                  loadMore={() => fetchPage(cursor)}
-                  onOpen={setViewer}
-                  selectMode={!readOnly && selectMode}
-                  selectedIds={selected}
-                  onToggleSelect={toggleSelect}
-                  onContextMenu={
-                    readOnly
-                      ? undefined
-                      : (e, asset) => {
-                          e.preventDefault();
-                          setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
-                        }
-                  }
-                />
-              )}
-            </>
-          )}
-        </main>
-      </div>
+      {current.render()}
 
       {a && (
         <div className="viewer">
