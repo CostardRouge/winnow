@@ -13,6 +13,8 @@ coverage/
 *.tsbuildinfo
 nas/
 data/
+# Local Postgres dumps written by the backup sidecar / scripts/pg-backup.sh
+backups/
 
 # Artefact Redis (tests locaux)
 dump.rdb
