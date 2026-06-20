@@ -301,8 +301,10 @@ debug, and a **"retry"** button per family:
 
 **Implemented (MVP)**: incremental indexing (mtime+size), EXIF + hash + dedup,
 RAW preview extraction (ARW/DNG…) without demosaicing, **HEIF/HEVC decode**
-(`.heic`/`.heif`/`.hif` — iPhone & Sony A7C II/Canon — via libheif, since sharp's
-prebuilt libvips only ships the AVIF decoder), thumb/proxy derivatives
+(`.heic`/`.heif`/`.hif` — iPhone & Sony A7C II/Canon — embedded preview first,
+otherwise libheif, since sharp's prebuilt libvips only ships the AVIF decoder;
+the decoder is lazy-loaded and serialized so it can never crash the worker),
+thumb/proxy derivatives
 in WebP, mobile-first culling grid, ignore-cascade, RAW-copy export + `exports`
 lineage, **multi-feeder ingest** (see below), **virtualized gallery with
 cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media,

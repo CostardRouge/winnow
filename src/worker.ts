@@ -29,6 +29,18 @@ console.log("Winnow workers — starting up");
 console.log(`  storage : ${config.storage.driver}`);
 console.log(`  derivative concurrency : ${config.derivativeConcurrency}`);
 
+// Last-resort process guards. A single malformed media file — a corrupt HEIF
+// that faults inside libheif's WASM, an unexpected async throw from a decode
+// library — must NEVER take the whole worker down: otherwise photo, RAW AND
+// video derivatives all stop at once. BullMQ already records per-job failures;
+// here we only log and keep the worker running.
+process.on("unhandledRejection", (reason) => {
+  console.error("[worker] unhandledRejection (kept alive):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[worker] uncaughtException (kept alive):", err);
+});
+
 const indexWorker = new Worker(
   QUEUES.index,
   async (job) => {
