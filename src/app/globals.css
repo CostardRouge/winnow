@@ -1273,9 +1273,17 @@
     border-color: var(--color-border);
   }
   .pl-thumb {
-    @apply flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] border;
+    @apply flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] border p-0;
     background: var(--color-surface-2);
     border-color: var(--color-border);
+    transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+  }
+  button.pl-thumb:not(:disabled) {
+    cursor: pointer;
+  }
+  button.pl-thumb:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card);
   }
   .pl-thumb img {
     @apply h-full w-full object-cover;
@@ -1312,6 +1320,35 @@
   }
   .pl-more {
     @apply flex justify-center py-3;
+  }
+
+  /* ---- Pipeline asset card (Media / Pending / Analyzed) ----------------- */
+  /* Stacked so the full path is always readable: name + status on line 1, the
+     untruncated path on line 2, then thumbnail · details · actions. */
+  .pl-card {
+    @apply flex flex-col gap-2 rounded-[var(--radius-lg)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    transition: border-color 0.2s var(--ease-out);
+  }
+  .pl-card:hover {
+    border-color: var(--color-border-strong);
+  }
+  .pl-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .pl-body {
+    @apply flex flex-wrap items-center gap-3;
+  }
+  /* Details sit between the thumbnail and the actions, taking the slack so the
+     actions stay right-aligned (and wrap below on narrow/mobile widths). */
+  .pl-card .pl-meta {
+    @apply mt-0 min-w-0 flex-1;
+  }
+  /* Overflow-menu trigger: subtle pressed state while open. */
+  .btn-icon.is-open {
+    background: var(--color-surface-2);
+    color: var(--color-text);
   }
 
   /* ---- States ----------------------------------------------------------- */

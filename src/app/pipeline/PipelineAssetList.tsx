@@ -2,9 +2,13 @@
 
 // Reusable, paginated asset list for the Pipeline triage pages (Media / Analyzed
 // / Pending). It polls /api/assets with a caller-supplied query (e.g.
-// derivative_status=ready) and renders one row per asset — thumbnail, name, path,
-// status — with a configurable set of row actions. Mutations update the list
-// optimistically so the page reflects the action without a full reload.
+// derivative_status=ready) and renders one card per asset. Each card stacks:
+//   1. the filename + status pill,
+//   2. the full absolute path (never truncated — debugging needs the real path),
+//   3. the thumbnail, a line of details, and the actions.
+// "View" opens the shared MediaViewer; "Download" pulls the original file (handy
+// for items with no derivative yet); the rest (regenerate / skip / delete) live
+// in a compact overflow menu. Mutations update the list optimistically.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import {
@@ -14,18 +18,24 @@ import {
 } from "@/lib/assetActions";
 import type { AssetGridRow } from "@/lib/types";
 import { EmptyState, Icons } from "../ui";
+import MediaViewer from "../MediaViewer";
+import ActionMenu, { type MenuItem } from "./ActionMenu";
 
-export type RowAction = "view" | "regenerate" | "skip" | "delete";
+export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
+
+type Mutation = Exclude<RowAction, "view" | "download">;
 
 type Page = { assets: AssetGridRow[]; next_cursor: string | null };
 
-// Each mutating action: how it's labelled, whether it needs a confirm, and
-// whether a success removes the row from *this* list (true when the action moves
-// the asset out of the page's filter, e.g. delete everywhere, skip on Pending).
+// Each mutating action: how it's labelled, its menu glyph, whether it needs a
+// confirm, and whether a success removes the row from *this* list (true when the
+// action moves the asset out of the page's filter, e.g. delete everywhere, skip
+// on Pending).
 const MUTATIONS: Record<
-  Exclude<RowAction, "view">,
+  Mutation,
   {
     label: string;
+    glyph: string;
     danger?: boolean;
     confirm?: string;
     removes: boolean;
@@ -34,13 +44,15 @@ const MUTATIONS: Record<
   }
 > = {
   regenerate: {
-    label: "↻ Regenerate",
+    label: "Regenerate",
+    glyph: "↻",
     removes: false,
     run: (id) => regenerateAssets([id]),
     done: "Re-queued derivative generation.",
   },
   skip: {
     label: "Skip",
+    glyph: "⊘",
     confirm:
       "Skip this item? It will be taken out of the analyze pipeline until you regenerate it. (The original file is untouched.)",
     removes: true,
@@ -48,7 +60,8 @@ const MUTATIONS: Record<
     done: "Skipped — removed from the pipeline.",
   },
   delete: {
-    label: "🗑 Delete",
+    label: "Delete",
+    glyph: "🗑",
     danger: true,
     confirm:
       "Delete this item from the library? It is hidden from every view, but the original file on disk is never touched (reversible).",
@@ -80,6 +93,7 @@ export default function PipelineAssetList({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
+  const [viewer, setViewer] = useState<number | null>(null);
   // Once the user pages past the first batch we stop auto-refreshing so polling
   // never yanks the list back to the top mid-scroll.
   const expanded = useRef(false);
@@ -87,6 +101,9 @@ export default function PipelineAssetList({
   // the loaded pages) every time an action starts/finishes.
   const busyRef = useRef<number | null>(null);
   busyRef.current = busy;
+  // Pause polling while the viewer is open so item indices don't shift under it.
+  const viewerRef = useRef<number | null>(null);
+  viewerRef.current = viewer;
 
   const loadFirst = useCallback(async () => {
     try {
@@ -122,29 +139,43 @@ export default function PipelineAssetList({
   useEffect(() => {
     loadFirst();
     const t = setInterval(() => {
-      if (!expanded.current && busyRef.current == null) loadFirst();
+      if (!expanded.current && busyRef.current == null && viewerRef.current == null) {
+        loadFirst();
+      }
     }, pollMs);
     return () => clearInterval(t);
   }, [loadFirst, pollMs]);
 
+  // Returns whether the action actually ran (false if the confirm was dismissed).
   const run = useCallback(
-    async (id: number, action: Exclude<RowAction, "view">) => {
+    async (id: number, action: Mutation): Promise<boolean> => {
       const m = MUTATIONS[action];
-      if (busy != null) return;
-      if (m.confirm && !window.confirm(m.confirm)) return;
+      if (busy != null) return false;
+      if (m.confirm && !window.confirm(m.confirm)) return false;
       setBusy(id);
       setMsg("");
       try {
         await m.run(id);
         setMsg(m.done);
         if (m.removes) setItems((prev) => prev.filter((it) => it.id !== id));
+        return true;
       } catch (e) {
         setMsg(`Error: ${(e as Error).message}`);
+        return false;
       } finally {
         setBusy(null);
       }
     },
     [busy],
+  );
+
+  // From the viewer: run a mutation and, if it removes the asset, close the viewer.
+  const runFromViewer = useCallback(
+    async (id: number, action: Mutation) => {
+      const ran = await run(id, action);
+      if (ran && MUTATIONS[action].removes) setViewer(null);
+    },
+    [run],
   );
 
   return (
@@ -174,7 +205,7 @@ export default function PipelineAssetList({
       ) : (
         <>
           <div className="pl-list">
-            {items.map((it) => (
+            {items.map((it, idx) => (
               <AssetRow
                 key={it.id}
                 asset={it}
@@ -182,6 +213,7 @@ export default function PipelineAssetList({
                 busy={busy === it.id}
                 disabled={busy != null}
                 onRun={run}
+                onView={() => setViewer(idx)}
               />
             ))}
           </div>
@@ -198,6 +230,34 @@ export default function PipelineAssetList({
           )}
         </>
       )}
+
+      {viewer != null && items[viewer] && (
+        <MediaViewer
+          items={items}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          renderActions={(it) => (
+            <>
+              <a className="btn" href={`/api/assets/${it.id}/download`} download>
+                {Icons.download} Download
+              </a>
+              {(["regenerate", "skip", "delete"] as const)
+                .filter((k) => actions.includes(k))
+                .map((k) => (
+                  <button
+                    key={k}
+                    className={`btn${MUTATIONS[k].danger ? " btn-reject" : ""}`}
+                    disabled={busy != null}
+                    onClick={() => runFromViewer(it.id, k)}
+                  >
+                    {MUTATIONS[k].glyph} {MUTATIONS[k].label}
+                  </button>
+                ))}
+            </>
+          )}
+        />
+      )}
     </section>
   );
 }
@@ -208,81 +268,88 @@ function AssetRow({
   busy,
   disabled,
   onRun,
+  onView,
 }: {
   asset: AssetGridRow;
   actions: RowAction[];
   busy: boolean;
   disabled: boolean;
-  onRun: (id: number, action: Exclude<RowAction, "view">) => void;
+  onRun: (id: number, action: Mutation) => void;
+  onView: () => void;
 }) {
-  const ready = asset.derivative_status === "ready";
-  const proxyHref = `/api/assets/${asset.id}/proxy`;
-  return (
-    <div className="pl-row">
-      {asset.thumb_key ? (
-        <a
-          href={proxyHref}
-          target="_blank"
-          rel="noreferrer"
-          className="pl-thumb"
-          title="Open full preview"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/api/assets/${asset.id}/thumb`} alt={asset.filename} loading="lazy" />
-        </a>
-      ) : (
-        <div className="pl-thumb pl-thumb-empty" aria-hidden>
-          {asset.media_type === "video" ? "▶" : "▢"}
-        </div>
-      )}
+  const canView = actions.includes("view");
+  const hasThumb = Boolean(asset.thumb_key);
 
-      <div className="pl-main">
-        <div className="pl-name">
-          {asset.filename}
-          <StatusPill status={asset.derivative_status} />
-        </div>
-        <div className="pl-path">{asset.abs_path}</div>
+  const menuItems: MenuItem[] = (["regenerate", "skip", "delete"] as const)
+    .filter((k) => actions.includes(k))
+    .map((k) => ({
+      key: k,
+      label: MUTATIONS[k].label,
+      icon: MUTATIONS[k].glyph,
+      danger: MUTATIONS[k].danger,
+      disabled,
+      onSelect: () => onRun(asset.id, k),
+    }));
+
+  const Thumb = hasThumb ? (
+    <button
+      type="button"
+      className="pl-thumb"
+      onClick={canView ? onView : undefined}
+      disabled={!canView}
+      title={canView ? "Open the viewer" : asset.filename}
+      aria-label={canView ? `View ${asset.filename}` : asset.filename}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={`/api/assets/${asset.id}/thumb`} alt={asset.filename} loading="lazy" />
+    </button>
+  ) : (
+    <div className="pl-thumb pl-thumb-empty" aria-hidden>
+      {asset.media_type === "video" ? "▶" : "▢"}
+    </div>
+  );
+
+  return (
+    <div className="pl-card">
+      <div className="pl-head">
+        <span className="pl-name">{asset.filename}</span>
+        <StatusPill status={asset.derivative_status} />
+      </div>
+
+      <div className="pl-path" title={asset.abs_path}>
+        {asset.abs_path}
+      </div>
+
+      <div className="pl-body">
+        {Thumb}
         <div className="pl-meta">
           {asset.media_type}
           {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
           {" · "}
           {formatWhen(asset.updated_at)}
         </div>
-      </div>
-
-      <div className="pl-actions">
-        {actions.includes("view") &&
-          (ready ? (
+        <div className="pl-actions">
+          {canView && (
+            <button
+              className="btn btn-sm"
+              onClick={onView}
+              title="Open the viewer"
+            >
+              {Icons.view} View
+            </button>
+          )}
+          {actions.includes("download") && (
             <a
               className="btn btn-sm"
-              href={proxyHref}
-              target="_blank"
-              rel="noreferrer"
-              title="Open full preview"
+              href={`/api/assets/${asset.id}/download`}
+              download
+              title="Download the original file"
             >
-              View
+              {Icons.download} Download
             </a>
-          ) : (
-            <span
-              className="btn btn-sm pl-disabled"
-              aria-disabled="true"
-              title="No derivative yet"
-            >
-              View
-            </span>
-          ))}
-        {(["regenerate", "skip", "delete"] as const)
-          .filter((k) => actions.includes(k))
-          .map((k) => (
-            <button
-              key={k}
-              className={`btn btn-sm${MUTATIONS[k].danger ? " btn-reject" : ""}`}
-              onClick={() => onRun(asset.id, k)}
-              disabled={disabled}
-            >
-              {busy ? "…" : MUTATIONS[k].label}
-            </button>
-          ))}
+          )}
+          <ActionMenu items={menuItems} disabled={disabled || busy} label={asset.filename} />
+        </div>
       </div>
     </div>
   );

@@ -6,8 +6,8 @@ export default function PendingPage() {
   return (
     <PipelineAssetList
       query="derivative_status=pending,processing&sort=recent"
-      actions={["regenerate", "skip", "delete"]}
-      hint="Media queued for (or mid-) analysis. Re-queue a stuck item, Skip it so it stops being processed, or remove it."
+      actions={["download", "regenerate", "skip", "delete"]}
+      hint="Media queued for (or mid-) analysis. There's no preview yet — download the original to inspect it, re-queue a stuck item, Skip it so it stops being processed, or remove it."
       emptyTitle="Queue is clear"
       emptyHint="Nothing is waiting for analysis right now. 🎉"
     />
