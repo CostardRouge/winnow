@@ -6,7 +6,6 @@ import ControlPanel from "./ControlPanel";
 import IncomingTab from "./IncomingTab";
 import ExportsTab from "./ExportsTab";
 import GalleryShell from "./gallery/GalleryShell";
-import { Brand } from "./ui";
 
 // Home page = tabbed hub, reflecting the workflow:
 //   Incoming → to cull (NAS sources)   · Final → finalized, read-only view
@@ -27,13 +26,10 @@ export default function Dashboard() {
   return (
     <div className="app-shell">
       <div className="topbar">
-        <Brand />
+        <h1>Library</h1>
         <span className="hint">media triage — NAS</span>
         <span className="spacer" />
-        <Link href="/failures" className="btn">
-          Failures
-        </Link>
-        <Link href="/import" className="btn">
+        <Link href="/import" className="btn btn-primary">
           + Import
         </Link>
       </div>

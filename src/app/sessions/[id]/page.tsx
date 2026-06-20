@@ -7,7 +7,6 @@ import {
   useState,
   use as usePromise,
 } from "react";
-import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
@@ -19,7 +18,6 @@ import {
   regenerateAssets,
   tagAssets,
 } from "@/lib/assetActions";
-import { Icons } from "@/app/ui";
 
 type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
@@ -249,9 +247,6 @@ export default function SessionGrid({
   return (
     <>
       <div className="topbar">
-        <Link href="/" className="btn btn-icon" aria-label="Back">
-          {Icons.back}
-        </Link>
         <h1>Session #{id}</h1>
         <span className="spacer" />
         {notice && <span className="notice">{notice}</span>}

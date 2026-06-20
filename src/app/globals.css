@@ -1,55 +1,63 @@
 @import "tailwindcss";
 
 /* =========================================================================
-   Winnow — "Darkroom" design system
-   Warm graphite surfaces + a single desaturated teal accent. The UI chrome
-   is intentionally neutral so photo/video thumbnails read in true colour.
-   Verdict colours (pick / reject / star) stay semantic but muted.
+   Winnow — "Paper" design system
+   Warm off-white paper surfaces, ink text, a single vermillion accent and an
+   editorial serif for display headings. Numbers are set in mono. UI chrome is
+   quiet so photo/video thumbnails carry the colour. The full-screen viewer is
+   the one deliberately dark "frame" — photos read best on black.
    ========================================================================= */
 
 @theme {
-  /* Surfaces — warm-tinted dark, layered for elevation */
-  --color-bg: #100f0d;
-  --color-surface: #1a1815;
-  --color-surface-2: #211e1a;
-  --color-surface-3: #2b2721; /* hover / pressed wells */
-  --color-border: #2e2a24;
-  --color-border-strong: #3b362e;
+  /* Surfaces — warm paper, layered for elevation */
+  --color-bg: #f4f0e7; /* paper */
+  --color-surface: #fbf8f1; /* raised cards */
+  --color-surface-2: #efe9dd; /* recessed wells */
+  --color-surface-3: #e7ded0; /* hover / pressed wells */
+  --color-border: #e2dac9; /* hairlines */
+  --color-border-strong: #d2c8b3;
 
   /* Ink */
-  --color-text: #ece8e1;
-  --color-muted: #9a948a;
-  --color-faint: #6c665d;
+  --color-text: #1b1813;
+  --color-muted: #7c7464;
+  --color-faint: #a99f8d;
 
-  /* Single accent — desaturated teal */
-  --color-accent: #3aa99a;
-  --color-accent-hover: #49c1b1;
-  --color-accent-fg: #04140f;
+  /* Single accent — vermillion */
+  --color-accent: #d9442a;
+  --color-accent-hover: #b2331e; /* darkens on light surfaces */
+  --color-accent-fg: #ffffff;
+  --color-accent-wash: #f6e6df;
 
-  /* Verdict semantics */
-  --color-pick: #4f9d6b;
-  --color-pick-fg: #04190c;
-  --color-reject: #c75056;
-  --color-reject-fg: #1f0506;
-  --color-star: #e0b341;
+  /* Verdict semantics — saturated to read on paper */
+  --color-pick: #3f7d52;
+  --color-pick-fg: #ffffff;
+  --color-reject: #b23a3a;
+  --color-reject-fg: #ffffff;
+  --color-star: #c2870f;
 
-  /* Radii */
-  --radius-sm: 6px;
-  --radius: 9px;
-  --radius-lg: 13px;
-  --radius-xl: 18px;
+  /* The dark viewer frame */
+  --color-frame: #100f0d;
 
-  /* Tinted shadows — carry a touch of warm black, never pure #000 */
-  --shadow-card: 0 1px 2px rgba(8, 6, 4, 0.5), 0 6px 20px -8px rgba(8, 6, 4, 0.6);
-  --shadow-pop: 0 8px 30px -6px rgba(8, 6, 4, 0.7);
+  /* Radii — soft, paper-like */
+  --radius-sm: 8px;
+  --radius: 11px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;
+
+  /* Shadows — neutral, soft, never harsh */
+  --shadow-card: 0 1px 2px rgba(27, 24, 19, 0.05),
+    0 10px 30px -14px rgba(27, 24, 19, 0.18);
+  --shadow-pop: 0 16px 48px -12px rgba(27, 24, 19, 0.28);
 
   /* Motion */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Fonts (wired to Geist via next/font in layout.tsx) */
-  --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI",
+  /* Fonts (wired via next/font in layout.tsx) */
+  --font-sans: var(--font-space-grotesk), system-ui, -apple-system, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-serif: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo,
+    monospace;
 }
 
 /* ---- Base ---------------------------------------------------------------- */
@@ -69,7 +77,6 @@
     overscroll-behavior: none;
     scroll-behavior: smooth;
   }
-  /* Tabular figures everywhere — this is a numbers-heavy tool */
   body {
     font-variant-numeric: tabular-nums;
   }
@@ -77,51 +84,35 @@
     color: var(--color-accent);
     text-decoration: none;
   }
+  a:hover {
+    color: var(--color-accent-hover);
+  }
   button {
     font: inherit;
     cursor: pointer;
   }
+  /* Editorial display: serif headings, set light and large */
   h1,
-  h2,
-  h3 {
-    letter-spacing: -0.015em;
+  h2 {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.1;
     text-wrap: balance;
   }
-  /* One consistent focus ring for keyboard users across the app */
+  h3 {
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-radius: 4px;
   }
   ::selection {
-    background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
   }
-  /* Ambient darkroom depth: one faint warm glow up top + a hair of teal in the
-     far corner. Fixed + non-interactive so it never repaints on scroll and never
-     competes with the photos sitting above it. */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(
-        120% 60% at 50% -10%,
-        color-mix(in srgb, var(--color-surface-2) 80%, transparent) 0%,
-        transparent 55%
-      ),
-      radial-gradient(
-        90% 70% at 100% 0%,
-        color-mix(in srgb, var(--color-accent) 6%, transparent) 0%,
-        transparent 45%
-      );
-  }
-  body > * {
-    position: relative;
-    z-index: 1;
-  }
-  /* Scrollbars tuned to the dark surfaces */
+  /* Scrollbars tuned to the paper surfaces */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border-strong) transparent;
@@ -137,27 +128,74 @@
     background-clip: padding-box;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: var(--color-faint);
+    background: var(--color-muted);
     background-clip: padding-box;
   }
 }
 
-/* ---- Layout shells ------------------------------------------------------- */
+/* ---- App shell: persistent rail + scrolling main ------------------------- */
 @layer components {
+  .root {
+    @apply flex;
+    height: 100dvh;
+  }
+  .root-main {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto;
+    height: 100dvh;
+  }
+  .rail {
+    @apply z-30 flex flex-shrink-0 flex-col items-center gap-1;
+    width: 76px;
+    height: 100dvh;
+    padding: 14px 8px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+  }
+  .rail-brand {
+    @apply flex items-center justify-center;
+    height: 44px;
+    margin-bottom: 6px;
+  }
+  .rail-nav {
+    @apply flex w-full flex-col gap-1;
+  }
+  .rail-link {
+    @apply flex flex-col items-center justify-center gap-1.5 rounded-[var(--radius)]
+      px-1 py-2.5 transition duration-150;
+    color: var(--color-muted);
+    transition-timing-function: var(--ease-out);
+  }
+  .rail-link:hover {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+  }
+  .rail-link.active {
+    color: var(--color-accent);
+    background: var(--color-accent-wash);
+  }
+  .rail-ic {
+    @apply flex items-center justify-center;
+  }
+  .rail-ic svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+  }
+  .rail-label {
+    @apply text-[10px] font-semibold;
+    letter-spacing: 0.01em;
+  }
+
+  /* ---- Page header bar -------------------------------------------------- */
   .topbar {
-    @apply sticky top-0 z-20 flex items-center gap-3 px-4 py-3;
-    background: linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--color-bg) 90%, transparent),
-      color-mix(in srgb, var(--color-bg) 72%, transparent)
-    );
-    backdrop-filter: blur(14px) saturate(1.4);
+    @apply sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5;
+    background: color-mix(in srgb, var(--color-bg) 80%, transparent);
+    backdrop-filter: blur(12px) saturate(1.2);
     border-bottom: 1px solid var(--color-border);
-    /* hairline highlight on the underside of the bar reads as a polished edge */
-    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-text) 4%, transparent);
   }
   .topbar h1 {
-    @apply m-0 text-base font-semibold tracking-tight;
+    @apply m-0;
+    font-size: 1.6rem;
   }
 
   /* ---- Brand lockup ----------------------------------------------------- */
@@ -165,68 +203,60 @@
     @apply inline-flex select-none items-center gap-2;
   }
   .brand-mark {
-    @apply inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius)];
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius)];
+    color: var(--color-accent-fg);
+    background: var(--color-accent);
+    box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--color-accent) 60%, transparent);
   }
   .brand-word {
-    @apply text-base font-semibold tracking-tight;
+    @apply text-2xl;
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
     color: var(--color-text);
   }
   .spacer {
     @apply flex-1;
   }
   .container {
-    @apply mx-auto w-full p-4;
+    @apply mx-auto w-full p-5;
     max-width: 1440px;
   }
   .app-shell {
     @apply flex flex-col overflow-hidden;
-    height: 100dvh;
+    height: 100%;
   }
   .shell-head {
-    @apply px-4 pt-4;
+    @apply px-5 pt-5;
   }
   .shell-head .control {
-    @apply mb-3;
+    @apply mb-4;
   }
 
   /* ---- Buttons ---------------------------------------------------------- */
   .btn {
     @apply inline-flex select-none items-center justify-center gap-1.5
-      rounded-[var(--radius)] border px-3 py-2 text-sm font-medium
+      rounded-[var(--radius)] border px-3.5 py-2 text-sm font-medium
       transition duration-150;
-    background: linear-gradient(
-      to bottom,
-      var(--color-surface-3),
-      var(--color-surface-2)
-    );
-    border-color: var(--color-border);
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
     color: var(--color-text);
-    /* 1px inner highlight on top = light catching a raised surface */
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    box-shadow: 0 1px 1.5px rgba(27, 24, 19, 0.04);
     transition-timing-function: var(--ease-out);
   }
   .btn:hover {
-    background: linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--color-surface-3) 70%, var(--color-border-strong)),
-      var(--color-surface-3)
-    );
-    border-color: var(--color-border-strong);
+    background: var(--color-surface-2);
+    border-color: var(--color-muted);
     transform: translateY(-1px);
   }
   .btn:active {
     transform: translateY(0) scale(0.98);
-    box-shadow: inset 0 1px 2px rgba(8, 6, 4, 0.4);
+    box-shadow: inset 0 1px 2px rgba(27, 24, 19, 0.08);
   }
   .btn:disabled {
     @apply pointer-events-none opacity-45;
   }
-  /* Square icon-only button (back arrows, toggles) */
+  /* Square icon-only button */
   .btn-icon {
     @apply h-9 w-9 p-0;
     color: var(--color-muted);
@@ -234,22 +264,21 @@
   .btn-icon:hover {
     color: var(--color-text);
   }
+  .btn-sm {
+    @apply px-2.5 py-1 text-xs;
+  }
+  /* Primary = solid ink for quiet, high-contrast emphasis */
   .btn-primary {
-    background: linear-gradient(
-      to bottom,
-      var(--color-accent-hover),
-      var(--color-accent)
-    );
-    border-color: color-mix(in srgb, var(--color-accent) 70%, #000);
-    color: var(--color-accent-fg);
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
     font-weight: 600;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-      0 1px 2px rgba(8, 6, 4, 0.4);
+    box-shadow: 0 2px 10px -4px rgba(27, 24, 19, 0.4);
   }
   .btn-primary:hover {
-    background: var(--color-accent-hover);
-    border-color: var(--color-accent-hover);
+    background: #000;
+    border-color: #000;
+    color: var(--color-bg);
   }
   .btn-pick {
     background: var(--color-pick);
@@ -257,64 +286,61 @@
     color: var(--color-pick-fg);
     font-weight: 600;
   }
+  .btn-pick:hover {
+    background: color-mix(in srgb, var(--color-pick) 88%, #000);
+    color: var(--color-pick-fg);
+  }
   .btn-reject {
     background: var(--color-reject);
     border-color: var(--color-reject);
     color: var(--color-reject-fg);
     font-weight: 600;
   }
+  .btn-reject:hover {
+    background: color-mix(in srgb, var(--color-reject) 88%, #000);
+    color: var(--color-reject-fg);
+  }
 
   .input {
-    @apply rounded-[var(--radius)] border px-3 py-2 text-sm transition duration-150;
+    @apply rounded-[var(--radius)] border px-3.5 py-2 text-sm transition duration-150;
     background: var(--color-surface);
-    border-color: var(--color-border);
+    border-color: var(--color-border-strong);
     color: var(--color-text);
   }
   .input::placeholder {
     color: var(--color-faint);
   }
   .input:hover {
-    border-color: var(--color-border-strong);
+    border-color: var(--color-muted);
   }
   .input:focus {
     outline: none;
     border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
 
   /* ---- Control panel (pipeline) ----------------------------------------- */
   .control {
-    @apply flex flex-col gap-3.5 rounded-[var(--radius-lg)] border p-4;
-    background: linear-gradient(
-      to bottom,
-      var(--color-surface-2),
-      var(--color-surface)
-    );
+    @apply flex flex-col gap-4 rounded-[var(--radius-xl)] border p-5;
+    background: var(--color-surface);
     border-color: var(--color-border);
-    box-shadow:
-      var(--shadow-card),
-      inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    box-shadow: var(--shadow-card);
   }
   .statbar {
-    @apply grid gap-2.5;
-    grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   }
   .stat {
-    @apply relative overflow-hidden rounded-[var(--radius)] border p-3;
-    background: linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--color-surface-3) 55%, var(--color-surface-2)),
-      var(--color-surface-2)
-    );
+    @apply relative overflow-hidden rounded-[var(--radius-lg)] border p-3.5;
+    background: var(--color-surface-2);
     border-color: var(--color-border);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition: border-color 0.15s var(--ease-out),
       transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
   }
   .stat:hover {
     transform: translateY(-1px);
     border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    box-shadow: var(--shadow-card);
   }
   /* thin tone rail on the left edge */
   .stat::before {
@@ -323,16 +349,20 @@
     background: var(--color-border-strong);
   }
   .stat-value {
-    @apply text-2xl font-bold leading-none tracking-tight;
+    @apply text-2xl leading-none;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
   }
   .stat-label {
-    @apply mt-1.5 text-xs font-semibold uppercase;
-    letter-spacing: 0.05em;
+    @apply mt-2 text-[11px] font-semibold uppercase;
+    letter-spacing: 0.06em;
     color: var(--color-muted);
   }
   .stat-sub {
     @apply mt-1 text-[11px];
+    font-family: var(--font-mono);
     color: var(--color-faint);
   }
   .stat.ok::before {
@@ -387,9 +417,8 @@
   /* ---- Tabs (segmented control) ----------------------------------------- */
   .tabs {
     @apply inline-flex gap-1 rounded-[var(--radius-lg)] border p-1;
-    background: var(--color-surface);
+    background: var(--color-surface-2);
     border-color: var(--color-border);
-    box-shadow: inset 0 1px 3px rgba(8, 6, 4, 0.35);
   }
   .tab {
     @apply rounded-[var(--radius)] border-0 bg-transparent px-4 py-1.5 text-sm font-semibold transition duration-150;
@@ -397,29 +426,21 @@
   }
   .tab:hover {
     color: var(--color-text);
-    background: var(--color-surface-2);
   }
   .tab.active {
-    background: linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--color-surface-3) 60%, var(--color-border-strong)),
-      var(--color-surface-3)
-    );
+    background: var(--color-surface);
     color: var(--color-text);
-    box-shadow:
-      inset 0 0 0 1px var(--color-border-strong),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 1px 2px rgba(8, 6, 4, 0.4);
+    box-shadow: var(--shadow-card);
   }
   .tab-body,
   .tab-pane {
     @apply flex min-h-0 flex-1 flex-col;
   }
   .subtabs {
-    @apply flex gap-1.5 px-4 pb-1.5 pt-2.5;
+    @apply flex gap-1.5 px-5 pb-1.5 pt-3;
   }
   .sessions-pane {
-    @apply min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2.5;
+    @apply min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3;
   }
 
   /* ---- Cards (sessions / exports / batches) ----------------------------- */
@@ -428,20 +449,15 @@
   }
   .session-card {
     @apply flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border p-4 transition duration-200;
-    background: linear-gradient(
-      to bottom,
-      var(--color-surface-2),
-      var(--color-surface)
-    );
+    background: var(--color-surface);
     border-color: var(--color-border);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     transition-property: border-color, box-shadow, transform;
     transition-timing-function: var(--ease-out);
   }
   .session-card:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    box-shadow: var(--shadow-card);
   }
   .session-card.ignored {
     @apply opacity-55;
@@ -454,7 +470,7 @@
     color: var(--color-muted);
   }
   .counters {
-    @apply flex flex-wrap gap-2.5 text-xs;
+    @apply flex flex-wrap gap-2 text-xs;
   }
   .pill {
     @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium;
@@ -465,18 +481,22 @@
   .pill.ready {
     color: var(--color-pick);
     border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
   }
   .pill.pending {
-    color: var(--color-star);
-    border-color: color-mix(in srgb, var(--color-star) 30%, var(--color-border));
+    color: color-mix(in srgb, var(--color-star) 80%, #000);
+    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
   }
   .pill.error {
     color: var(--color-reject);
     border-color: color-mix(in srgb, var(--color-reject) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
   }
   .pill.picks {
     color: var(--color-accent);
     border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    background: var(--color-accent-wash);
   }
   .pill.done {
     color: var(--color-pick);
@@ -546,14 +566,14 @@
     @apply flex items-center justify-center rounded-[var(--radius)] border border-dashed text-xs;
     aspect-ratio: 4 / 3;
     color: var(--color-faint);
-    border-color: var(--color-border);
+    border-color: var(--color-border-strong);
     background: var(--color-surface-2);
   }
 
   /* ---- Sessions: list / card layout toggle ----------------------------- */
   .layout-toggle {
     @apply ml-auto inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
-    background: var(--color-surface);
+    background: var(--color-surface-2);
     border-color: var(--color-border);
   }
   .layout-btn {
@@ -562,12 +582,12 @@
   }
   .layout-btn:hover {
     color: var(--color-text);
-    background: var(--color-surface-2);
+    background: var(--color-surface-3);
   }
   .layout-btn.active {
-    background: var(--color-surface-3);
-    color: var(--color-text);
-    box-shadow: inset 0 0 0 1px var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-accent);
+    box-shadow: var(--shadow-card);
   }
 
   /* ---- Triage grid (sessions/[id]) -------------------------------------- */
@@ -583,7 +603,7 @@
   .cell {
     @apply relative overflow-hidden rounded-[var(--radius)] border-2 border-transparent;
     aspect-ratio: 1;
-    background: var(--color-surface);
+    background: var(--color-surface-2);
     transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out),
       border-color 0.16s var(--ease-out), opacity 0.16s var(--ease-out);
   }
@@ -597,7 +617,7 @@
   }
   .cell.reject {
     border-color: var(--color-reject);
-    opacity: 0.55;
+    opacity: 0.5;
   }
   .cell.reject:hover {
     opacity: 1;
@@ -613,28 +633,29 @@
     @apply flex h-full items-center justify-center p-1.5 text-center text-[11px];
     color: var(--color-faint);
   }
-  /* Glass badges so they sit cleanly on any image */
+  /* Glass badges stay dark so they read on any image, in any theme */
   .cell .badge {
-    @apply absolute left-1 top-1 rounded-[5px] px-1.5 py-px text-[11px] font-semibold;
-    background: rgba(8, 6, 4, 0.6);
+    @apply absolute left-1 top-1 rounded-[6px] px-1.5 py-px text-[11px] font-semibold;
+    background: rgba(16, 15, 13, 0.62);
     backdrop-filter: blur(4px);
-    color: var(--color-text);
+    color: #f4f0e7;
   }
   .cell .stars {
     @apply absolute bottom-1 left-1 text-[11px];
     color: var(--color-star);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   }
   .cell .ext-badge {
-    @apply absolute bottom-1 right-1 rounded-[5px] px-1.5 py-px text-[10px] uppercase;
-    background: rgba(8, 6, 4, 0.6);
+    @apply absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] uppercase;
+    font-family: var(--font-mono);
+    background: rgba(16, 15, 13, 0.62);
     backdrop-filter: blur(4px);
-    color: var(--color-muted);
+    color: rgba(244, 240, 231, 0.85);
   }
   .cell .play-badge {
     @apply absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2
       items-center justify-center rounded-full text-sm text-white;
-    background: rgba(8, 6, 4, 0.5);
+    background: rgba(16, 15, 13, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.45);
     backdrop-filter: blur(2px);
     pointer-events: none;
@@ -648,16 +669,18 @@
       rounded-full text-xs font-bold;
     background: var(--color-accent);
     color: var(--color-accent-fg);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 1px 4px rgba(16, 15, 13, 0.5);
   }
 
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
   }
 
-  /* ---- Full-screen viewer ----------------------------------------------- */
+  /* ---- Full-screen viewer (the dark frame) ------------------------------ */
   .viewer {
-    @apply fixed inset-0 z-50 flex flex-col bg-black;
+    @apply fixed inset-0 z-50 flex flex-col;
+    background: var(--color-frame);
+    color: #ece7da;
     touch-action: none;
   }
   .viewer .stage {
@@ -668,18 +691,18 @@
     @apply max-h-full max-w-full object-contain;
   }
   .viewer .exif {
-    @apply absolute left-3 top-3 max-w-[72vw] rounded-[var(--radius-lg)] px-3 py-2.5 text-xs leading-relaxed;
+    @apply absolute left-3 top-3 max-w-[72vw] rounded-[var(--radius-lg)] px-3.5 py-2.5 text-xs leading-relaxed;
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(14px) saturate(1.4);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: var(--color-text);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ece7da;
   }
   .viewer .controls {
     @apply flex flex-wrap items-center justify-center gap-2 p-3;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
     background: rgba(16, 15, 13, 0.6);
     backdrop-filter: blur(14px) saturate(1.4);
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .viewer .close {
     @apply absolute right-3 top-3 flex h-10 w-10 items-center justify-center
@@ -688,7 +711,7 @@
     backdrop-filter: blur(10px);
   }
   .viewer .close:hover {
-    background: rgba(40, 36, 30, 0.75);
+    background: rgba(60, 54, 46, 0.8);
     transform: scale(1.05);
   }
   .viewer-tags {
@@ -698,7 +721,7 @@
     color: var(--color-star);
   }
 
-  /* Structured metadata list inside the viewer (date, size, dimensions, GPS…) */
+  /* Structured metadata list inside the viewer */
   .asset-meta {
     @apply mt-2 grid gap-x-3 gap-y-0.5;
     grid-template-columns: auto 1fr;
@@ -712,11 +735,22 @@
   }
   .asset-meta dd {
     @apply m-0 break-words text-xs;
+    font-family: var(--font-mono);
     color: var(--color-text);
   }
   .asset-meta-link {
-    color: var(--color-accent-hover);
+    color: var(--color-accent);
     text-decoration: underline;
+  }
+  /* Within the dark viewer, the metadata flips to light ink */
+  .viewer .asset-meta dt {
+    color: rgba(236, 231, 218, 0.55);
+  }
+  .viewer .asset-meta dd {
+    color: #ece7da;
+  }
+  .viewer .asset-meta-link {
+    color: #ef8a72;
   }
 
   .hint {
@@ -727,13 +761,13 @@
   /* ---- Global gallery (virtualised + filters) -------------------------- */
   .gallery-layout {
     @apply flex flex-col;
-    height: 100dvh;
+    height: 100%;
   }
   .gallery-shell {
     @apply flex min-h-0 flex-1 flex-col;
   }
   .gallery-controls {
-    @apply flex items-center gap-2 px-3 py-2;
+    @apply flex items-center gap-2 px-4 py-2.5;
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
@@ -741,7 +775,7 @@
     @apply flex min-h-0 flex-1;
   }
   .gallery-aside {
-    @apply w-[280px] flex-shrink-0 overflow-y-auto p-3;
+    @apply w-[280px] flex-shrink-0 overflow-y-auto p-4;
     border-right: 1px solid var(--color-border);
     background: var(--color-surface);
   }
@@ -754,11 +788,11 @@
 
   /* ---- Filter panel ----------------------------------------------------- */
   .filter-panel {
-    @apply flex flex-col gap-4;
+    @apply flex flex-col gap-5;
   }
   .facet-title {
-    @apply mb-1.5 text-xs font-semibold uppercase;
-    letter-spacing: 0.05em;
+    @apply mb-2 text-[11px] font-semibold uppercase;
+    letter-spacing: 0.06em;
     color: var(--color-muted);
   }
   .chips {
@@ -783,11 +817,12 @@
   }
   .chip-count {
     @apply text-[10px];
+    font-family: var(--font-mono);
     color: var(--color-faint);
   }
   .chip.active .chip-count {
     color: var(--color-accent-fg);
-    opacity: 0.7;
+    opacity: 0.75;
   }
   .chip-x {
     @apply border-0 bg-transparent pl-0.5 text-[13px] leading-none;
@@ -796,9 +831,9 @@
 
   /* ---- Selection / bulk action bar -------------------------------------- */
   .selectbar {
-    @apply flex flex-wrap items-center gap-2 px-3 py-2;
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
+    @apply flex flex-wrap items-center gap-2 px-4 py-2.5;
+    background: var(--color-accent-wash);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
   }
   /* Compact star cluster in the bulk bar (5 buttons read as one control) */
   .bulk-stars {
@@ -823,20 +858,20 @@
   .ctx-sep-v {
     @apply mx-1 self-stretch;
     width: 1px;
-    background: var(--color-border);
+    background: var(--color-border-strong);
   }
   /* Transient confirmation toast in a top bar (export queued, deleted…) */
   .notice {
-    @apply rounded-full px-2.5 py-1 text-xs font-medium;
-    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    @apply rounded-full px-3 py-1 text-xs font-medium;
+    background: var(--color-accent-wash);
     color: var(--color-accent-hover);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
   }
 
   /* ---- Right-click action menu (grid views) ----------------------------- */
   .ctx-menu {
     @apply fixed z-[60] flex min-w-[176px] flex-col rounded-[var(--radius-lg)] border p-1;
-    background: var(--color-surface-2);
+    background: var(--color-surface);
     border-color: var(--color-border-strong);
     box-shadow: var(--shadow-pop);
     animation: ctx-in 0.12s var(--ease-out);
@@ -858,13 +893,13 @@
     color: var(--color-text);
   }
   .ctx-item:hover {
-    background: var(--color-surface-3);
+    background: var(--color-surface-2);
   }
   .ctx-danger {
     color: var(--color-reject);
   }
   .ctx-danger:hover {
-    background: color-mix(in srgb, var(--color-reject) 16%, transparent);
+    background: color-mix(in srgb, var(--color-reject) 12%, transparent);
   }
   .ctx-ic {
     @apply inline-flex w-4 justify-center text-[13px];
@@ -886,7 +921,7 @@
     color: var(--color-star);
   }
   .ctx-star:hover {
-    background: var(--color-surface-3);
+    background: var(--color-surface-2);
   }
   .ctx-star-off {
     @apply text-xs;
@@ -922,11 +957,12 @@
   }
   .tree-count {
     @apply text-[11px];
+    font-family: var(--font-mono);
     color: var(--color-faint);
   }
   .tree-row.active .tree-count {
     color: var(--color-accent-fg);
-    opacity: 0.75;
+    opacity: 0.8;
   }
 
   /* ---- Failures page ---------------------------------------------------- */
@@ -934,20 +970,17 @@
     @apply grid gap-2;
   }
   .fail-row {
-    @apply rounded-[var(--radius)] border p-3;
+    @apply rounded-[var(--radius-lg)] border p-3.5;
     background: var(--color-surface);
     border-color: var(--color-border);
   }
   .fail-row.selected {
     border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+    background: var(--color-accent-wash);
   }
   .fail-check {
     @apply h-4 w-4 shrink-0 cursor-pointer;
     accent-color: var(--color-accent);
-  }
-  .btn-sm {
-    @apply px-2 py-1 text-xs;
   }
   .fail-head {
     @apply flex items-center gap-2;
@@ -957,20 +990,23 @@
   }
   .fail-when {
     @apply whitespace-nowrap text-[11px];
+    font-family: var(--font-mono);
     color: var(--color-faint);
   }
   .fail-path {
     @apply mt-0.5 break-all text-[11px];
+    font-family: var(--font-mono);
     color: var(--color-muted);
   }
   .fail-err {
     @apply mt-1.5 whitespace-pre-wrap break-words text-xs;
+    font-family: var(--font-mono);
     color: var(--color-reject);
   }
 
   /* ---- States ----------------------------------------------------------- */
   .empty {
-    @apply px-4 py-12 text-center;
+    @apply px-4 py-14 text-center;
     color: var(--color-muted);
   }
   .spinner {
@@ -978,9 +1014,9 @@
     color: var(--color-muted);
   }
   .error-box {
-    @apply my-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] px-3.5 py-3 text-sm;
-    border: 1px solid color-mix(in srgb, var(--color-reject) 55%, var(--color-border));
-    background: color-mix(in srgb, var(--color-reject) 12%, transparent);
+    @apply my-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-4 py-3 text-sm;
+    border: 1px solid color-mix(in srgb, var(--color-reject) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
     color: var(--color-text);
   }
   .error-page {
@@ -997,9 +1033,9 @@
     @apply rounded-[var(--radius)];
     background: linear-gradient(
       100deg,
-      var(--color-surface) 30%,
-      var(--color-surface-2) 50%,
-      var(--color-surface) 70%
+      var(--color-surface-2) 30%,
+      var(--color-surface-3) 50%,
+      var(--color-surface-2) 70%
     );
     background-size: 220% 100%;
     animation: skeleton-shimmer 1.3s var(--ease-out) infinite;
@@ -1011,7 +1047,39 @@
   }
 }
 
-/* ---- Mobile: slide-over filter rail -------------------------------------- */
+/* ---- Mobile: rail becomes a bottom bar; filter rail slides over ---------- */
+@media (max-width: 767px) {
+  .rail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    height: auto;
+    flex-direction: row;
+    gap: 0;
+    padding: 6px 8px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--color-border);
+  }
+  .rail-brand {
+    display: none;
+  }
+  .rail-nav {
+    flex-direction: row;
+    justify-content: space-around;
+  }
+  .rail-link {
+    flex: 1;
+    padding: 6px 4px;
+  }
+  .root-main {
+    padding-bottom: 66px;
+  }
+}
+
 @media (max-width: 760px) {
   .gallery-filter-toggle {
     display: inline-flex;
@@ -1019,8 +1087,8 @@
   .gallery-aside {
     position: fixed;
     z-index: 30;
-    top: 53px;
-    bottom: 0;
+    top: 56px;
+    bottom: 66px;
     left: 0;
     width: 85vw;
     max-width: 320px;

@@ -138,7 +138,7 @@ export function EmptyState({
  * in the accent so it reads as the product's single signature colour, beside the
  * "Winnow" wordmark. Used in the home topbar.
  */
-export function Brand() {
+export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <span className="brand">
       <span className="brand-mark" aria-hidden>
@@ -159,7 +159,7 @@ export function Brand() {
           <circle cx="4" cy="20" r="1.4" fill="currentColor" />
         </svg>
       </span>
-      <span className="brand-word">Winnow</span>
+      {!compact && <span className="brand-word">Winnow</span>}
     </span>
   );
 }
@@ -169,6 +169,21 @@ export const Icons = {
   back: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 6l-6 6 6 6" />
+    </svg>
+  ),
+  library: (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  alert: (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
     </svg>
   ),
   inbox: (

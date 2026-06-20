@@ -1,8 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Link from "next/link";
-import { Icons } from "../ui";
 
 type BatchStatus = {
   id: number;
@@ -101,9 +99,6 @@ export default function ImportPage() {
   return (
     <>
       <div className="topbar">
-        <Link href="/" className="btn btn-icon" aria-label="Back">
-          {Icons.back}
-        </Link>
         <h1>Import</h1>
       </div>
 
