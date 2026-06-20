@@ -1,23 +1,57 @@
-// GET /api/sessions?kind=incoming|final -> sessions + counters (ready/pending
-// derivatives, picks) + the parent root's kind. The optional `kind` parameter
-// restricts to the role (Incoming = source/inbox, Final = finals).
+// GET /api/sessions?kind=incoming|final&<filters>&sort_dir=asc|desc
+//   -> sessions + counters (ready/pending derivatives, picks) + parent root kind.
+//
+// `kind` restricts to the role (Incoming = source/inbox, Final = finals). The
+// shared gallery filters (folder/date/device/tags/...) are honoured too: a
+// session is kept when it has at least one matching asset (EXISTS), so the
+// Filters/Browse panel narrows the session list just like the grid. With no
+// filter beyond the role, every session of that role shows (including empty
+// ones). `sort_dir` flips the captured-date ordering (newest vs oldest first).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
-import { json, serverError } from "@/lib/api";
+import { json, serverError, badRequest } from "@/lib/api";
 import { kindsForRole } from "@/lib/roles";
+import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const role = req.nextUrl.searchParams.get("kind");
+    const sp = req.nextUrl.searchParams;
+    const role = sp.get("kind");
+    const dir = sp.get("sort_dir") === "asc" ? "ASC" : "DESC";
+
     const params: unknown[] = [];
-    let whereKind = "";
+    const clauses: string[] = [];
     if (role === "incoming" || role === "final") {
       params.push(kindsForRole(role));
-      whereKind = `WHERE rt.kind = ANY($1)`;
+      clauses.push(`rt.kind = ANY($${params.length})`);
     }
+
+    // Asset-level filters: the role is handled above (rt.kind), so drop `kind`
+    // here and keep a session when at least one of its assets matches the rest.
+    let filter;
+    try {
+      filter = filterFromSearchParams(sp);
+    } catch (e) {
+      return badRequest("Invalid filter", (e as Error).message);
+    }
+    delete filter.kind;
+    const { conditions, params: fp } = buildFilter(filter, params.length + 1);
+    // buildFilter always emits the `deleted_at IS NULL` guard; anything beyond
+    // it means the user actually picked a filter, so scope the list with EXISTS.
+    if (conditions.length > 1) {
+      params.push(...fp);
+      clauses.push(
+        `EXISTS (
+           SELECT 1 FROM assets a
+           LEFT JOIN ratings r ON r.asset_id = a.id
+           WHERE a.session_id = s.id AND ${conditions.join(" AND ")})`,
+      );
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
     const sessions = await many(
       `SELECT
@@ -50,8 +84,8 @@ export async function GET(req: NextRequest) {
          LEFT JOIN ratings r ON r.asset_id = a.id
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
-       ${whereKind}
-       ORDER BY s.captured_at_max DESC NULLS LAST, s.id DESC`,
+       ${where}
+       ORDER BY s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`,
       params,
     );
     return json({ sessions });

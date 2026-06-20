@@ -11,6 +11,14 @@ import type { ReactNode } from "react";
 // This keeps the host (GalleryShell) free of hard-coded per-view conditions:
 // it just iterates the registry and renders `active.controls` / `active.render()`.
 
+// Context handed to a view's `render`: the host's current filter state, encoded
+// as a query string so injected views (e.g. Sessions) can reuse the shared
+// Filters/Browse panel against their own endpoint.
+export type ViewContext = {
+  /** Active scope + filters, ready to append to an API call. */
+  query: string;
+};
+
 export type SectionView = {
   id: string;
   label: string;
@@ -19,9 +27,12 @@ export type SectionView = {
    *  active — the view's own "modifier". */
   controls?: ReactNode;
   /** The view's body. */
-  render: () => ReactNode;
+  render: (ctx: ViewContext) => ReactNode;
   /** Marks views backed by the shared gallery dataset (Grid, Map). */
   usesGalleryData?: boolean;
+  /** Marks views that want the shared Filters/Browse aside (e.g. Sessions)
+   *  without consuming the gallery's own item feed. */
+  usesFilters?: boolean;
 };
 
 export function ViewSegments({

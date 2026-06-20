@@ -2,20 +2,23 @@
 
 import { useEffect, useState } from "react";
 import GalleryShell from "./gallery/GalleryShell";
-import SessionsPane, { type Layout } from "./SessionsPane";
+import SessionsPane, { type Layout, type SortDir } from "./SessionsPane";
 import type { SectionView } from "./gallery/ViewSwitch";
 import { Icons } from "./ui";
 
 // Incoming = everything to cull. It is one gallery section with three views:
 //   Sessions (default) · Grid · Map
 // The Sessions view is injected into the shared GalleryShell as an extra view,
-// carrying its own toolbar modifier (the list/card layout toggle). Grid and Map
+// carrying its own toolbar modifiers (the list/card layout toggle and a newest/
+// oldest sort toggle) and sharing the host's Filters/Browse panel. Grid and Map
 // are GalleryShell's built-in, filter-driven views.
 
 const LAYOUT_KEY = "winnow.sessions.layout";
 
 export default function IncomingTab() {
   const [layout, setLayout] = useState<Layout>("list");
+  // Newest-first by default; the toggle flips to oldest-first.
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // Restore / persist the layout choice (client-only to avoid SSR mismatch).
   useEffect(() => {
@@ -29,27 +32,43 @@ export default function IncomingTab() {
   const sessionsView: SectionView = {
     id: "sessions",
     label: "Sessions",
+    usesFilters: true,
     controls: (
-      <div className="layout-toggle" role="group" aria-label="Session layout">
+      <>
         <button
-          className={`layout-btn${layout === "list" ? " active" : ""}`}
-          onClick={() => setLayout("list")}
-          aria-pressed={layout === "list"}
-          title="List view"
+          className="btn"
+          onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+          aria-label={
+            sortDir === "desc" ? "Newest first (tap for oldest)" : "Oldest first (tap for newest)"
+          }
+          title={sortDir === "desc" ? "Newest first" : "Oldest first"}
         >
-          {Icons.viewList}
+          {sortDir === "desc" ? Icons.arrowDown : Icons.arrowUp}
+          <span className="max-sm:hidden">{sortDir === "desc" ? "Newest" : "Oldest"}</span>
         </button>
-        <button
-          className={`layout-btn${layout === "card" ? " active" : ""}`}
-          onClick={() => setLayout("card")}
-          aria-pressed={layout === "card"}
-          title="Card view"
-        >
-          {Icons.viewCard}
-        </button>
-      </div>
+        <div className="layout-toggle" role="group" aria-label="Session layout">
+          <button
+            className={`layout-btn${layout === "list" ? " active" : ""}`}
+            onClick={() => setLayout("list")}
+            aria-pressed={layout === "list"}
+            title="List view"
+          >
+            {Icons.viewList}
+          </button>
+          <button
+            className={`layout-btn${layout === "card" ? " active" : ""}`}
+            onClick={() => setLayout("card")}
+            aria-pressed={layout === "card"}
+            title="Card view"
+          >
+            {Icons.viewCard}
+          </button>
+        </div>
+      </>
     ),
-    render: () => <SessionsPane layout={layout} />,
+    render: (ctx) => (
+      <SessionsPane layout={layout} query={ctx.query} sortDir={sortDir} />
+    ),
   };
 
   return (

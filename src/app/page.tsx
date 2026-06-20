@@ -5,20 +5,19 @@ import Link from "next/link";
 import StatsStrip from "./StatsStrip";
 import IncomingTab from "./IncomingTab";
 import ExportsTab from "./ExportsTab";
-import GalleryShell from "./gallery/GalleryShell";
 import { Icons } from "./ui";
 
 // Home page = tabbed hub, reflecting the workflow:
-//   Incoming → to cull (NAS sources)   · Final → finalized, read-only view
+//   Incoming → to cull (NAS sources)
 //   Exports  → RAW copies for Capture One (view/delete)
-// A compact stats strip rides the tabs row; the full pipeline control panel
-// lives on its own /pipeline page (reached from the rail or a counter).
+// The finalized, read-only view of finals now lives on its own Gallery page
+// (in the rail), so it no longer needs a tab here. A compact stats strip rides
+// the tabs row; the full pipeline control panel lives on its own /pipeline page.
 
-type Tab = "incoming" | "final" | "exports";
+type Tab = "incoming" | "exports";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "incoming", label: "Incoming" },
-  { id: "final", label: "Final" },
   { id: "exports", label: "Exports" },
 ];
 
@@ -59,7 +58,6 @@ export default function Dashboard() {
 
       <div className="tab-body">
         {tab === "incoming" && <IncomingTab />}
-        {tab === "final" && <GalleryShell scope="final" />}
         {tab === "exports" && <ExportsTab />}
       </div>
     </div>
