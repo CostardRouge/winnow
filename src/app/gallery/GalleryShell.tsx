@@ -12,7 +12,7 @@ import FilterPanel, {
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import AssetMeta from "./AssetMeta";
-import { ViewSegments, type SectionView } from "./ViewSwitch";
+import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -177,9 +177,11 @@ export default function GalleryShell({
         setFacetsError(e.message);
       });
   }, [scope]);
+  // Facets feed the Filters panel, which is now available to the Sessions view
+  // too — so load them up front (memoized per scope), not only for Grid/Map.
   useEffect(() => {
-    if (galleryActive) loadFacets();
-  }, [loadFacets, galleryActive]);
+    loadFacets();
+  }, [loadFacets]);
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
@@ -432,72 +434,67 @@ export default function GalleryShell({
 
   const a = viewer != null ? items[viewer] : null;
 
-  // The shared, filter-driven body for the built-in Grid/Map views.
-  const renderGalleryBody = (mode: "grid" | "map") => (
-    <div className="gallery-body">
-      {/* Mobile: tap the content area (outside the panel) to dismiss it. */}
-      {panelOpen && (
-        <div
-          className="gallery-aside-backdrop"
-          onClick={() => setPanelOpen(false)}
-          aria-hidden
-        />
-      )}
-      <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
-        <div className="aside-head">
-          <div className="view-toggle" role="group" aria-label="Panel section">
-            <button
-              className={`view-btn${aside === "filters" ? " active" : ""}`}
-              onClick={() => setAside("filters")}
-              aria-pressed={aside === "filters"}
-            >
-              Filters
-            </button>
-            <button
-              className={`view-btn${aside === "browse" ? " active" : ""}`}
-              onClick={() => setAside("browse")}
-              aria-pressed={aside === "browse"}
-            >
-              Browse
-            </button>
-          </div>
+  // The shared Filters/Browse aside, available to every filter-aware view
+  // (the built-in Grid/Map and any injected view such as Sessions).
+  const renderAside = () => (
+    <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
+      <div className="aside-head">
+        <div className="view-toggle" role="group" aria-label="Panel section">
           <button
-            className="chip aside-reset"
-            onClick={() => {
-              setFilters(EMPTY_FILTERS);
-              setTreeKey("");
-            }}
-            title="Reset all filters"
+            className={`view-btn${aside === "filters" ? " active" : ""}`}
+            onClick={() => setAside("filters")}
+            aria-pressed={aside === "filters"}
           >
-            {Icons.reset} Reset
+            Filters
+          </button>
+          <button
+            className={`view-btn${aside === "browse" ? " active" : ""}`}
+            onClick={() => setAside("browse")}
+            aria-pressed={aside === "browse"}
+          >
+            Browse
           </button>
         </div>
+        <button
+          className="chip aside-reset"
+          onClick={() => {
+            setFilters(EMPTY_FILTERS);
+            setTreeKey("");
+          }}
+          title="Reset all filters"
+        >
+          {Icons.reset} Reset
+        </button>
+      </div>
 
-        {aside === "filters" ? (
-          facetsError ? (
-            <div className="error-box">
-              <span>Couldn’t load filters: {facetsError}</span>
-              <button className="btn" onClick={loadFacets}>
-                Retry
-              </button>
-            </div>
-          ) : (
-            <FilterPanel facets={facets} filters={filters} set={setFilters} />
-          )
+      {aside === "filters" ? (
+        facetsError ? (
+          <div className="error-box">
+            <span>Couldn’t load filters: {facetsError}</span>
+            <button className="btn" onClick={loadFacets}>
+              Retry
+            </button>
+          </div>
         ) : (
-          <Tree
-            activeKey={treeKey}
-            scope={scope}
-            onScope={(path) => {
-              setTreeKey(path.map((s) => `${s.key}:${s.value}`).join("/"));
-              setFilters((prev) => applyScope(prev, path));
-            }}
-          />
-        )}
-      </aside>
+          <FilterPanel facets={facets} filters={filters} set={setFilters} />
+        )
+      ) : (
+        <Tree
+          activeKey={treeKey}
+          scope={scope}
+          onScope={(path) => {
+            setTreeKey(path.map((s) => `${s.key}:${s.value}`).join("/"));
+            setFilters((prev) => applyScope(prev, path));
+          }}
+        />
+      )}
+    </aside>
+  );
 
-      <main className="gallery-main">
-        {mode === "map" ? (
+  // The filter-driven main for the built-in Grid/Map views.
+  const renderGalleryMain = (mode: "grid" | "map") => (
+    <main className="gallery-main">
+      {mode === "map" ? (
           <MapView
             points={geoPoints}
             truncated={geoTruncated}
@@ -547,7 +544,6 @@ export default function GalleryShell({
           </>
         )}
       </main>
-    </div>
   );
 
   // Built-in views. Grid carries the Select toggle as its modifier; Map none.
@@ -567,23 +563,27 @@ export default function GalleryShell({
         {selectMode ? "Done" : "Select"}
       </button>
     ),
-    render: () => renderGalleryBody("grid"),
+    render: () => renderGalleryMain("grid"),
   };
   const mapView: SectionView = {
     id: "map",
     label: "Map",
     usesGalleryData: true,
-    render: () => renderGalleryBody("map"),
+    render: () => renderGalleryMain("map"),
   };
   const views: SectionView[] = [...(extraViews ?? []), gridView, mapView];
   const current = views.find((v) => v.id === view) ?? views[0];
+
+  // Any view that shows the shared Filters/Browse aside (Grid, Map, Sessions).
+  const showAside = Boolean(current.usesGalleryData || current.usesFilters);
+  const viewCtx: ViewContext = { query: toQuery(filters, scope) };
 
   return (
     <div className="gallery-shell">
       <div className="gallery-controls">
         <ViewSegments views={views} active={current.id} onSelect={setView} />
         {current.controls}
-        {galleryActive && (
+        {showAside && (
           <button
             className="btn gallery-filter-toggle"
             onClick={() => setPanelOpen((o) => !o)}
@@ -695,7 +695,22 @@ export default function GalleryShell({
         </div>
       )}
 
-      {current.render()}
+      {showAside ? (
+        <div className="gallery-body">
+          {/* Mobile: tap the content area (outside the panel) to dismiss it. */}
+          {panelOpen && (
+            <div
+              className="gallery-aside-backdrop"
+              onClick={() => setPanelOpen(false)}
+              aria-hidden
+            />
+          )}
+          {renderAside()}
+          {current.render(viewCtx)}
+        </div>
+      ) : (
+        current.render(viewCtx)
+      )}
 
       {a && (
         <div className="viewer">

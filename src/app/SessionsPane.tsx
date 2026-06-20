@@ -14,6 +14,7 @@ import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 // of thumbnails per session). Thumbnails load on sight via LazyImage.
 
 export type Layout = "list" | "card";
+export type SortDir = "desc" | "asc";
 
 type SessionRow = {
   id: number;
@@ -106,7 +107,16 @@ function ThumbStack({ ids }: { ids: number[] }) {
   );
 }
 
-export default function SessionsPane({ layout }: { layout: Layout }) {
+export default function SessionsPane({
+  layout,
+  query = "kind=incoming",
+  sortDir = "desc",
+}: {
+  layout: Layout;
+  /** Scope + active filters (from the shared Filters/Browse panel). */
+  query?: string;
+  sortDir?: SortDir;
+}) {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +124,7 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
   const load = useCallback(async () => {
     try {
       const data = await fetchJson<{ sessions?: SessionRow[] }>(
-        "/api/sessions?kind=incoming",
+        `/api/sessions?${query}&sort_dir=${sortDir}`,
       );
       setSessions(data.sessions ?? []);
       setError(null);
@@ -123,7 +133,12 @@ export default function SessionsPane({ layout }: { layout: Layout }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [query, sortDir]);
+
+  // Reload (and show the skeleton) whenever the filters/sort change.
+  useEffect(() => {
+    setLoading(true);
+  }, [query, sortDir]);
 
   // Polls while mounted (i.e. while this view is active) to follow the
   // derivatives' progress.
