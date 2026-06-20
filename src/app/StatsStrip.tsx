@@ -4,7 +4,7 @@
 // the Incoming / Final / Exports tabs. On desktop it's a row of value+label
 // chips; on phones it collapses to a single summary chip that opens the detail
 // in a small popover (so the bento no longer eats half the screen). Tapping a
-// counter jumps to /pipeline (full control panel); Failures jumps to /failures.
+// counter jumps to its dedicated /pipeline triage page.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useStats, active, totalFailures } from "./useStats";
@@ -35,31 +35,37 @@ export default function StatsStrip() {
     tone?: "ok" | "warn" | "bad";
     href: string;
   }[] = [
-    { key: "media", label: "Media", value: a?.total ?? 0, href: "/pipeline" },
+    { key: "media", label: "Media", value: a?.total ?? 0, href: "/pipeline/media" },
     {
       key: "scan",
       label: paused ? "Paused" : "Scanning",
       value: active(stats?.queues?.scan),
       tone: paused ? "warn" : undefined,
-      href: "/pipeline",
+      href: "/pipeline/scanning",
     },
     {
       key: "analyzed",
       label: "Analyzed",
       value: a?.analyzed ?? 0,
       tone: "ok",
-      href: "/pipeline",
+      href: "/pipeline/analyzed",
     },
     {
       key: "pending",
       label: "Pending",
       value: a?.pending ?? 0,
       tone: "warn",
-      href: "/pipeline",
+      href: "/pipeline/pending",
     },
   ];
   if (fails > 0) {
-    chips.push({ key: "fail", label: "Failures", value: fails, tone: "bad", href: "/failures" });
+    chips.push({
+      key: "fail",
+      label: "Failures",
+      value: fails,
+      tone: "bad",
+      href: "/pipeline/failures",
+    });
   }
 
   return (

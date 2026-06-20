@@ -21,6 +21,10 @@ export async function generateDerivative(assetId: number): Promise<void> {
     assetId,
   ]);
   if (!asset) throw new Error(`Asset not found: ${assetId}`);
+  // Deliberately skipped (Pipeline "Pending" page) or soft-deleted: a job may
+  // still be sitting in the queue, but we must not (re)generate anything. Retry/
+  // Regenerate reset the status to 'pending', so they are unaffected.
+  if (asset.derivative_status === "skipped" || asset.deleted_at) return;
   if (asset.media_type === "video") {
     await generateVideoDerivative(asset);
     return;
