@@ -264,6 +264,15 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  // Density / thumbnail-size control on the grid toolbar.
+  gridSize: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.3" />
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.3" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.3" />
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.3" />
+    </svg>
+  ),
   panelLeft: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="16" rx="2" />
