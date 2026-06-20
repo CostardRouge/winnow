@@ -63,6 +63,17 @@ const MapView = dynamic(() => import("./MapView"), {
 
 const MB = 1024 * 1024;
 
+// Grid density presets (target cell width in px). Fewer/larger ↔ more/smaller
+// media per line. The responsive engine derives the actual column count from
+// the container width, so these stay sensible on both desktop and mobile.
+const GRID_SIZES = [
+  { w: 260, label: "Large" },
+  { w: 175, label: "Medium" },
+  { w: 110, label: "Small" },
+] as const;
+const GRID_SIZE_KEY = "winnow.grid.size";
+const GRID_SIZE_DEFAULT = 1; // Medium
+
 function toQuery(
   f: Filters,
   scope?: Scope,
@@ -74,6 +85,7 @@ function toQuery(
     a.length && sp.set(k, a.join(","));
   arr("media_type", f.media_type);
   arr("ext", f.ext);
+  arr("derivative_status", f.derivative_status);
   arr("device", f.device);
   arr("camera_model", f.camera_model);
   arr("lens", f.lens);
@@ -142,6 +154,10 @@ export default function GalleryShell({
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
   const [view, setView] = useState<string>(defaultView ?? "grid");
+  // Grid feed ordering (capture timeline) + thumbnail density. Newest-first by
+  // default; density restored from localStorage so it sticks between visits.
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const [gridSize, setGridSize] = useState(GRID_SIZE_DEFAULT);
   const [geoPoints, setGeoPoints] = useState<GeoPoint[]>([]);
   const [geoTruncated, setGeoTruncated] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
@@ -161,6 +177,16 @@ export default function GalleryShell({
   // Built-in views backed by the filter-driven dataset. Anything else (an
   // injected view such as Sessions) renders without touching the gallery feed.
   const galleryActive = view === "grid" || view === "map";
+
+  // Restore / persist the grid density choice (client-only, avoids SSR drift).
+  useEffect(() => {
+    const saved = Number(localStorage.getItem(GRID_SIZE_KEY));
+    if (Number.isInteger(saved) && saved >= 0 && saved < GRID_SIZES.length)
+      setGridSize(saved);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(GRID_SIZE_KEY, String(gridSize));
+  }, [gridSize]);
 
   // Transient confirmation ("Export queued", "3 deleted") — auto-clears.
   useEffect(() => {
@@ -193,7 +219,7 @@ export default function GalleryShell({
         const data = await fetchJson<{
           assets?: Row[];
           next_cursor?: string | null;
-        }>(`/api/assets?${toQuery(filters, scope, cur)}`);
+        }>(`/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}`);
         setError(null);
         setItems((prev) => (cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? []));
         setCursor(data.next_cursor ?? null);
@@ -206,7 +232,7 @@ export default function GalleryShell({
         loadingRef.current = false;
       }
     },
-    [filters, scope],
+    [filters, scope, sortDir],
   );
 
   useEffect(() => {
@@ -216,7 +242,7 @@ export default function GalleryShell({
     setHasMore(true);
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, scope, galleryActive]);
+  }, [filterKey, scope, galleryActive, sortDir]);
 
   // Map points: the full geotagged distribution for the current filters
   // (the zone/bbox is chosen ON the map, so it's excluded from this query).
@@ -519,6 +545,7 @@ export default function GalleryShell({
                 hasMore={hasMore}
                 loading={loading}
                 loadMore={() => fetchPage(cursor)}
+                targetWidth={GRID_SIZES[gridSize].w}
                 onOpen={setViewer}
                 selectMode={!readOnly && selectMode}
                 selectedIds={selected}
@@ -544,16 +571,44 @@ export default function GalleryShell({
     id: "grid",
     label: "Grid",
     usesGalleryData: true,
-    controls: readOnly ? undefined : (
-      <button
-        className={`btn${selectMode ? " btn-primary" : ""}`}
-        onClick={() => {
-          setSelectMode((m) => !m);
-          setSelected(new Set());
-        }}
-      >
-        {selectMode ? "Done" : "Select"}
-      </button>
+    controls: (
+      <>
+        <button
+          className="btn"
+          onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+          aria-label={
+            sortDir === "desc"
+              ? "Newest first (tap for oldest)"
+              : "Oldest first (tap for newest)"
+          }
+          title={sortDir === "desc" ? "Newest first" : "Oldest first"}
+        >
+          {sortDir === "desc" ? Icons.arrowDown : Icons.arrowUp}
+          <span className="max-sm:hidden">
+            {sortDir === "desc" ? "Newest" : "Oldest"}
+          </span>
+        </button>
+        <button
+          className="btn"
+          onClick={() => setGridSize((s) => (s + 1) % GRID_SIZES.length)}
+          aria-label={`Thumbnail size: ${GRID_SIZES[gridSize].label} (tap to change)`}
+          title={`Thumbnail size: ${GRID_SIZES[gridSize].label}`}
+        >
+          {Icons.gridSize}
+          <span className="max-sm:hidden">{GRID_SIZES[gridSize].label}</span>
+        </button>
+        {!readOnly && (
+          <button
+            className={`btn${selectMode ? " btn-primary" : ""}`}
+            onClick={() => {
+              setSelectMode((m) => !m);
+              setSelected(new Set());
+            }}
+          >
+            {selectMode ? "Done" : "Select"}
+          </button>
+        )}
+      </>
     ),
     render: () => renderGalleryMain("grid"),
   };

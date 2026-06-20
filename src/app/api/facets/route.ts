@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
       lenses,
       exts,
       mediaTypes,
+      derivativeStatuses,
       tags,
     ] = await Promise.all([
       one<{ count: number }>(
@@ -97,6 +98,7 @@ export async function GET(req: NextRequest) {
       settledArray(facet("lens", scope, params)),
       settledArray(facet("ext", scope, params)),
       settledArray(facet("media_type", scope, params, "value ASC")),
+      settledArray(facet("derivative_status", scope, params, "value ASC")),
       settledArray(
         many<{ value: string; count: number }>(
           `SELECT t.name AS value, count(*)::int AS count
@@ -121,6 +123,7 @@ export async function GET(req: NextRequest) {
       lenses,
       extensions: exts,
       media_types: mediaTypes,
+      derivative_statuses: derivativeStatuses,
       tags,
     });
   } catch (err) {

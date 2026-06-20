@@ -33,11 +33,16 @@ export async function GET(req: NextRequest) {
     const recent = sp.get("sort") === "recent";
     const sortCol = recent ? "a.updated_at" : "a.captured_at";
 
+    // Sort direction (default newest/most-recent first). `asc` flips both the
+    // ORDER BY and the keyset comparison so pagination keeps walking forward.
+    const dir = sp.get("sort_dir") === "asc" ? "ASC" : "DESC";
+    const cmp = dir === "ASC" ? ">" : "<";
+
     const cursorStr = sp.get("cursor");
     if (cursorStr) {
       const cur = decodeCursor(cursorStr);
       if (!cur) return badRequest("Invalid cursor");
-      conditions.push(`(${sortCol}, a.id) < ($${idx++}, $${idx++})`);
+      conditions.push(`(${sortCol}, a.id) ${cmp} ($${idx++}, $${idx++})`);
       params.push(cur.capturedAt, cur.id);
     }
 
@@ -53,7 +58,7 @@ export async function GET(req: NextRequest) {
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
        ${where}
-       ORDER BY ${sortCol} DESC, a.id DESC
+       ORDER BY ${sortCol} ${dir}, a.id ${dir}
        LIMIT $${idx}`,
       [...params, PAGE + 1],
     );

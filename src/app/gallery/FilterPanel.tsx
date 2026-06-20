@@ -20,13 +20,24 @@ export type Facets = {
   lenses: VC[];
   extensions: VC[];
   media_types: VC[];
+  derivative_statuses: VC[];
   tags: VC[];
 };
 type VC = { value: string | number; count: number };
 
+// Friendly labels for the technical derivative lifecycle states.
+const DERIVATIVE_LABELS: Record<string, string> = {
+  pending: "Pending",
+  processing: "Processing",
+  ready: "Ready",
+  error: "Error",
+  skipped: "Skipped",
+};
+
 export type Filters = {
   media_type: string[];
   ext: string[];
+  derivative_status: string[];
   device: string[];
   camera_model: string[];
   lens: string[];
@@ -58,6 +69,7 @@ export type Filters = {
 export const EMPTY_FILTERS: Filters = {
   media_type: [],
   ext: [],
+  derivative_status: [],
   device: [],
   camera_model: [],
   lens: [],
@@ -214,6 +226,15 @@ export default function FilterPanel({
         options={facets.extensions}
         selected={filters.ext}
         onToggle={(v) => u({ ext: toggle(filters.ext, String(v)) })}
+      />
+      <Chips
+        title="Derivative"
+        options={facets.derivative_statuses}
+        selected={filters.derivative_status}
+        onToggle={(v) =>
+          u({ derivative_status: toggle(filters.derivative_status, String(v)) })
+        }
+        label={(v) => DERIVATIVE_LABELS[String(v)] ?? String(v)}
       />
       <Chips
         title="Device"

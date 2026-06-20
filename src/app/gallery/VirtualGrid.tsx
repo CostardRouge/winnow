@@ -27,6 +27,7 @@ export default function VirtualGrid({
   selectedIds,
   onToggleSelect,
   onContextMenu,
+  targetWidth = TARGET,
 }: {
   items: GalleryAsset[];
   hasMore: boolean;
@@ -37,6 +38,8 @@ export default function VirtualGrid({
   selectedIds?: Set<number>;
   onToggleSelect?: (id: number) => void;
   onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
+  /** Target cell width (px). Smaller → more media per line. */
+  targetWidth?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -52,8 +55,8 @@ export default function VirtualGrid({
     return () => ro.disconnect();
   }, []);
 
-  const cols = Math.max(2, Math.floor((size.w + GAP) / (TARGET + GAP))) || 2;
-  const cell = size.w > 0 ? Math.floor((size.w - GAP * (cols - 1)) / cols) : TARGET;
+  const cols = Math.max(2, Math.floor((size.w + GAP) / (targetWidth + GAP))) || 2;
+  const cell = size.w > 0 ? Math.floor((size.w - GAP * (cols - 1)) / cols) : targetWidth;
   const rowHeight = cell + GAP;
   const rowCount = Math.ceil(items.length / cols);
 
