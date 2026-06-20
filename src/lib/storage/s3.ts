@@ -4,6 +4,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -45,6 +46,45 @@ export class S3Storage implements Storage {
       );
       const bytes = await r.Body?.transformToByteArray();
       return bytes ? Buffer.from(bytes) : null;
+    } catch (err: any) {
+      if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async stat(key: string): Promise<{ size: number } | null> {
+    try {
+      const r = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return { size: r.ContentLength ?? 0 };
+    } catch (err: any) {
+      if (err?.name === "NotFound" || err?.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async getRange(
+    key: string,
+    start: number,
+    end: number,
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    try {
+      const r = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: `bytes=${start}-${end}`,
+        }),
+      );
+      const body = r.Body as
+        | { transformToWebStream?: () => ReadableStream<Uint8Array> }
+        | undefined;
+      return body?.transformToWebStream?.() ?? null;
     } catch (err: any) {
       if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
         return null;

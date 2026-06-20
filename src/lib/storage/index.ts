@@ -12,6 +12,18 @@ export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   /** Reads a key's bytes (null if absent). */
   get(key: string): Promise<Buffer | null>;
+  /** Size (and existence) of a key without reading its bytes (null if absent). */
+  stat(key: string): Promise<{ size: number } | null>;
+  /**
+   * Streams an inclusive byte range [start, end] of a key (null if absent).
+   * Lets us serve video Range/seek requests without loading the whole file
+   * into RAM on every request.
+   */
+  getRange(
+    key: string,
+    start: number,
+    end: number,
+  ): Promise<ReadableStream<Uint8Array> | null>;
   /** Deletes a key (no error if absent). */
   del(key: string): Promise<void>;
   /**
