@@ -178,10 +178,10 @@ export default function ImportPage() {
                 style={{
                   color:
                     batch.status === "done"
-                      ? "var(--pick)"
+                      ? "var(--color-pick)"
                       : batch.status === "error"
-                        ? "var(--reject)"
-                        : "var(--star)",
+                        ? "var(--color-reject)"
+                        : "var(--color-star)",
                 }}
               >
                 {batch.status}
