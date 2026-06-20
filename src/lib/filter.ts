@@ -60,6 +60,9 @@ export const FilterSchema = z
     processing_state: z
       .enum(["ignored", "unprocessed", "triaged", "exported"])
       .optional(),
+    // Derivative lifecycle (multi): pending | processing | ready | error |
+    // skipped. Drives the Pipeline triage pages (Pending / Analyzed).
+    derivative_status: csv,
 
     // Culling
     verdict: z.enum(["pick", "reject", "unrated"]).optional(),
@@ -154,6 +157,8 @@ export function buildFilter(
   }
   if (filter.processing_state != null)
     eq("a.processing_state", filter.processing_state);
+  if (filter.derivative_status)
+    inAny("a.derivative_status", filter.derivative_status);
 
   if (filter.verdict != null) {
     if (filter.verdict === "unrated") {
@@ -238,6 +243,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "root_id",
     "kind",
     "processing_state",
+    "derivative_status",
     "tags",
     "not_tags",
     "verdict",

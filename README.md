@@ -103,7 +103,9 @@ See `.env.dist`. Main ones:
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
 | `GET /api/failures` | Everything that failed (scan / analyze / import) + messages |
 | `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
-| `GET /api/assets` `?<filters>&cursor` | Paginated global gallery (cumulative filters) |
+| `GET /api/pipeline/queue` `?name=scan\|analyze` | Live jobs of the scan/analyze queue, enriched with the root/asset they point at |
+| `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
+| `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status`; `sort=recent` orders by last update) |
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/sessions` | List of sessions + counters (ready/pending/picks) |
@@ -116,6 +118,7 @@ See `.env.dist`. Main ones:
 | `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Quick bulk culling |
 | `POST /api/assets/delete` `{ ids[], restore? }` | Soft delete / restore (hides from the library, RAW untouched) |
 | `POST /api/assets/regenerate` `{ ids[] }` | Rebuilds the derivatives (thumb + proxy) of a selection — re-enqueues generation whatever the current status |
+| `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
 | `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
 | `GET /api/export/:id` | Status + result |
@@ -204,12 +207,24 @@ The dedicated **Pipeline** page (`/pipeline`, in the rail) exposes the full
 **control panel** + **stats bar**, refreshed every 5 s (`GET /api/stats`). The
 Library header keeps only a **compact stats strip** (value+label chips on
 desktop; a single summary chip that opens the detail in a popover on phones, so
-the bento no longer eats half the screen) — each counter links through to the
-Pipeline page:
+the bento no longer eats half the screen) — each counter links through to its
+dedicated Pipeline triage page:
 
 - **Counters**: number of indexed **media**, **scan** (folders in the indexing
   queue), **analyzed** (derivatives ready), **pending** (to analyze), plus
-  errors — to see at a glance what's left to do.
+  **failures** (always shown) — to see at a glance what's left to do.
+- **Triage sub-pages** (tabs under `/pipeline`): each counter has its own page
+  with a **live, actionable list**:
+  - **Media** (`/pipeline/media`) — every indexed asset; open the full preview or
+    soft-delete (the RAW original is never touched).
+  - **Scanning** (`/pipeline/scanning`) — the live scan queue; **remove** a
+    stuck/unwanted folder job (active scans can't be removed mid-flight).
+  - **Pending** (`/pipeline/pending`) — media awaiting analysis; **regenerate**,
+    **skip** (take it out of the pipeline — honoured even by an already-queued job)
+    or remove.
+  - **Analyzed** (`/pipeline/analyzed`) — latest derivatives processed; re-create
+    a bad preview or remove the media.
+  - **Failures** (`/pipeline/failures`) — see below.
 - **Pause / resume**: suspends indexing **and** derivative generation
   (`POST /api/scan/control`). The pause is persisted in Redis (`queue.pause()`)
   *and* via a database flag, read by the indexer to stop **mid-scan**; resuming
@@ -234,7 +249,7 @@ iGPU (share `/dev/dri` with the worker container — already wired in
 `docker-compose-optiplex.yml`). Hardware encoding fails? **automatic fallback**
 to software libx264. Defaults to `none` (software) → works everywhere.
 
-## Failures: list + retry (page `/failures`)
+## Failures: list + retry (page `/pipeline/failures`)
 
 Everything that failed is listed in one place, with the **error message** to
 debug, and a **"retry"** button per family:
@@ -258,7 +273,7 @@ cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media
 select a zone → pick/reject/export the area), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
-acceleration), **failure list/retry** (page `/failures`), GitHub Actions **CI**
+acceleration), **failure list/retry** (page `/pipeline/failures`), GitHub Actions **CI**
 (typecheck + migrations + build).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,

@@ -149,6 +149,85 @@ export async function getQueueStats(): Promise<{
   return { scan, analyze, import: importCounts, paused };
 }
 
+// --- Queue introspection / triage (Pipeline pages) --------------------------
+
+// Public queue names used by the Pipeline triage pages. We deliberately expose
+// only scan/analyze (the two queues a human curates); import/export are managed
+// elsewhere.
+export type PublicQueueName = "scan" | "analyze";
+
+function queueByName(name: PublicQueueName): Queue {
+  const { index, derivatives } = getQueues();
+  return name === "scan" ? index : derivatives;
+}
+
+// A flattened, UI-friendly view of a BullMQ job. `data` carries the job-specific
+// payload (rootId for scan, assetId for analyze) the API enriches with DB rows.
+export type QueueJobInfo = {
+  id: string;
+  name: string;
+  state: string;
+  data: Record<string, unknown>;
+  priority: number | null;
+  attemptsMade: number;
+  timestamp: number | null;
+  processedOn: number | null;
+  failedReason: string | null;
+};
+
+const LISTABLE_STATES = [
+  "active",
+  "waiting",
+  "prioritized",
+  "delayed",
+  "failed",
+] as const;
+
+// Lists the pending/active/failed jobs of a queue (newest BullMQ ids first),
+// capped so a huge backlog can't blow up the response.
+export async function listQueueJobs(
+  name: PublicQueueName,
+  limit = 200,
+): Promise<QueueJobInfo[]> {
+  const queue = queueByName(name);
+  const jobs = await queue.getJobs([...LISTABLE_STATES], 0, limit - 1);
+  const out = await Promise.all(
+    jobs.map(async (job): Promise<QueueJobInfo | null> => {
+      if (!job?.id) return null;
+      const state = await job.getState();
+      return {
+        id: String(job.id),
+        name: job.name,
+        state,
+        data: (job.data ?? {}) as Record<string, unknown>,
+        priority: typeof job.opts?.priority === "number" ? job.opts.priority : null,
+        attemptsMade: job.attemptsMade ?? 0,
+        timestamp: job.timestamp ?? null,
+        processedOn: job.processedOn ?? null,
+        failedReason: job.failedReason ?? null,
+      } satisfies QueueJobInfo;
+    }),
+  );
+  return out.filter((j): j is QueueJobInfo => j !== null);
+}
+
+// Removes a single job from the queue. Active (locked) jobs can't be removed
+// mid-flight: BullMQ throws, which we surface as `{ removed: false }`.
+export async function removeQueueJob(
+  name: PublicQueueName,
+  jobId: string,
+): Promise<{ removed: boolean; reason?: string }> {
+  const queue = queueByName(name);
+  const job = await queue.getJob(jobId);
+  if (!job) return { removed: false, reason: "not found" };
+  try {
+    await job.remove();
+    return { removed: true };
+  } catch (err) {
+    return { removed: false, reason: (err as Error).message };
+  }
+}
+
 export async function enqueueExport(exportJobId: number) {
   return getQueues().export.add(
     "export",

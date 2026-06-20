@@ -2,7 +2,7 @@
 // a duplicate by its partial content_hash, we record it here so the decision is
 // never silent: a confirmed duplicate, a recovered FALSE collision (distinct
 // content, indexed anyway), or an unverified match are all traceable from
-// /failures.
+// /pipeline/failures.
 //
 // Upsert by abs_path (like scan_failures): a path re-seen on each incremental
 // scan updates its row + a hits counter instead of accumulating.

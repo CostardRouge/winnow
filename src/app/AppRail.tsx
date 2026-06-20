@@ -38,13 +38,8 @@ const NAV: NavItem[] = [
     href: "/pipeline",
     label: "Pipeline",
     icon: Icons.pipeline,
+    // Failures now lives under /pipeline, so the rail entry covers it too.
     match: (p) => p.startsWith("/pipeline"),
-  },
-  {
-    href: "/failures",
-    label: "Failures",
-    icon: Icons.alert,
-    match: (p) => p.startsWith("/failures"),
   },
 ];
 

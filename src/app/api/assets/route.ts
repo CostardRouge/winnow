@@ -27,11 +27,17 @@ export async function GET(req: NextRequest) {
     const { conditions, params } = buildFilter(filter, 1);
     let idx = params.length + 1;
 
+    // Sort key: default is the capture timeline (most recent shots first); the
+    // Pipeline triage pages pass `sort=recent` to surface what was *touched* last
+    // (most recent updated_at) — i.e. the latest derivatives processed / queued.
+    const recent = sp.get("sort") === "recent";
+    const sortCol = recent ? "a.updated_at" : "a.captured_at";
+
     const cursorStr = sp.get("cursor");
     if (cursorStr) {
       const cur = decodeCursor(cursorStr);
       if (!cur) return badRequest("Invalid cursor");
-      conditions.push(`(a.captured_at, a.id) < ($${idx++}, $${idx++})`);
+      conditions.push(`(${sortCol}, a.id) < ($${idx++}, $${idx++})`);
       params.push(cur.capturedAt, cur.id);
     }
 
@@ -47,7 +53,7 @@ export async function GET(req: NextRequest) {
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
        ${where}
-       ORDER BY a.captured_at DESC, a.id DESC
+       ORDER BY ${sortCol} DESC, a.id DESC
        LIMIT $${idx}`,
       [...params, PAGE + 1],
     );
@@ -55,10 +61,9 @@ export async function GET(req: NextRequest) {
     const hasMore = rows.length > PAGE;
     const page = hasMore ? rows.slice(0, PAGE) : rows;
     const last = page[page.length - 1];
+    const sortVal = recent ? last?.updated_at : last?.captured_at;
     const nextCursor =
-      hasMore && last?.captured_at
-        ? encodeCursor(last.captured_at, last.id)
-        : null;
+      hasMore && sortVal ? encodeCursor(sortVal, last.id) : null;
 
     return json({ assets: page, next_cursor: nextCursor });
   } catch (err) {

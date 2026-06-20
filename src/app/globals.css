@@ -416,6 +416,11 @@
     color: inherit;
   }
   .stat-link:hover .stat {
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-card);
+  }
+  /* The Failures card keeps its alarm-red accent on hover. */
+  .stat-link:hover .stat.bad {
     border-color: var(--color-reject);
   }
 
@@ -1162,6 +1167,106 @@
     @apply mt-1.5 whitespace-pre-wrap break-words text-xs;
     font-family: var(--font-mono);
     color: var(--color-reject);
+  }
+
+  /* ---- Pipeline sub-route tabs ------------------------------------------ */
+  .pipeline-tabs {
+    @apply flex items-center gap-1.5 overflow-x-auto px-5 pb-2 pt-1;
+    scrollbar-width: none;
+  }
+  .pipeline-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .pipeline-tab {
+    @apply inline-flex shrink-0 items-center gap-2 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+    transition: border-color 0.15s var(--ease-out),
+      background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+  }
+  .pipeline-tab:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+  }
+  .pipeline-tab.active {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
+  }
+  .pipeline-tab-count {
+    @apply rounded-full px-1.5 py-0.5 text-[11px] leading-none;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .pipeline-tab.active .pipeline-tab-count {
+    background: color-mix(in srgb, var(--color-bg) 25%, transparent);
+    color: var(--color-bg);
+  }
+  .pipeline-tab.ok .pipeline-tab-count {
+    color: var(--color-pick);
+  }
+  .pipeline-tab.warn .pipeline-tab-count {
+    color: color-mix(in srgb, var(--color-star) 80%, #000);
+  }
+  .pipeline-tab.bad .pipeline-tab-count {
+    color: var(--color-reject);
+  }
+
+  /* ---- Pipeline triage lists (Media / Analyzed / Pending / Scanning) ---- */
+  .pl-section {
+    @apply flex flex-col gap-3;
+  }
+  .pl-list {
+    @apply grid gap-2;
+  }
+  .pl-row {
+    @apply flex items-center gap-3 rounded-[var(--radius-lg)] border p-2.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .pl-thumb {
+    @apply flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] border;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+  }
+  .pl-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .pl-thumb-empty {
+    color: var(--color-faint);
+  }
+  .pl-main {
+    @apply min-w-0 flex-1;
+  }
+  .pl-name {
+    @apply flex flex-wrap items-center gap-2 break-all text-[13px] font-medium;
+  }
+  .pl-path {
+    @apply mt-0.5 break-all text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .pl-meta {
+    @apply mt-0.5 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .pl-err {
+    @apply mt-1 whitespace-pre-wrap break-words text-xs;
+    font-family: var(--font-mono);
+    color: var(--color-reject);
+  }
+  .pl-actions {
+    @apply flex shrink-0 flex-wrap items-center justify-end gap-1.5;
+  }
+  .pl-disabled {
+    @apply pointer-events-none opacity-45;
+  }
+  .pl-more {
+    @apply flex justify-center py-3;
   }
 
   /* ---- States ----------------------------------------------------------- */

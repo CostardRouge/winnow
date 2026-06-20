@@ -66,6 +66,23 @@ export async function regenerateAssets(ids: number[]): Promise<number> {
   return body.queued;
 }
 
+// Takes assets out of the analyze pipeline (derivative_status -> 'skipped') so a
+// stuck/unwanted item stops being processed. Reversible via regenerateAssets.
+export async function skipAssets(ids: number[]): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/skip", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Skip failed (${res.status})`);
+  }
+  const body = (await res.json()) as { skipped: number };
+  return body.skipped;
+}
+
 // Queues a RAW-copy export job scoped to exactly these asset ids (reuses the
 // existing export pipeline via the new `ids` filter). Returns the job id, or
 // throws on a non-2xx response.

@@ -1,7 +1,8 @@
 "use client";
 
 // Centralized list of what has failed (scan / analyze / import), with the
-// error message for debugging. Retry is available three ways:
+// error message for debugging. Lives under /pipeline (the section chrome — heading
+// + tabs — is provided by the layout). Retry is available three ways:
 //   - per item   : the "Retry" button on each row,
 //   - selected   : the checked rows ("Retry selected"),
 //   - everything : the whole family ("Retry all").
@@ -133,103 +134,104 @@ export default function FailuresPage() {
   }));
 
   return (
-    <>
-      <div className="topbar">
-        <h1>Failures</h1>
+    <section className="pl-section">
+      <div className="filterbar">
+        <span className="hint">
+          Everything that failed (scan · analyze · import), in one place. Fix the
+          cause, then retry per item, by selection, or by family.
+        </span>
         <span className="spacer" />
-        <button className="btn" onClick={load}>
+        <button className="btn btn-sm" onClick={load}>
           Refresh
         </button>
       </div>
 
-      <div className="container">
-        {error && (
-          <div className="error-box">
-            <span>Couldn’t load failures: {error}</span>
-            <button className="btn" onClick={load}>
-              Retry
-            </button>
-          </div>
-        )}
-        {msg && <p className="hint">{msg}</p>}
+      {error && (
+        <div className="error-box">
+          <span>Couldn’t load failures: {error}</span>
+          <button className="btn" onClick={load}>
+            Retry
+          </button>
+        </div>
+      )}
+      {msg && <p className="hint">{msg}</p>}
 
-        <RetrySection<number>
-          title="Analyze (derivatives)"
-          hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
-          count={data?.derivative.count ?? 0}
-          rows={derivRows}
-          retryAllLabel="Retry all"
-          prefix="derivative"
-          busy={busy}
-          onRetry={onRetryDeriv}
-        />
+      <RetrySection<number>
+        title="Analyze (derivatives)"
+        hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
+        count={data?.derivative.count ?? 0}
+        rows={derivRows}
+        retryAllLabel="Retry all"
+        prefix="derivative"
+        busy={busy}
+        onRetry={onRetryDeriv}
+      />
 
-        <RetrySection<string>
-          title="Scan (indexing)"
-          hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the affected roots."
-          count={data?.scan.count ?? 0}
-          rows={scanRows}
-          retryAllLabel="Retry all"
-          prefix="scan"
-          busy={busy}
-          onRetry={onRetryScan}
-        />
+      <RetrySection<string>
+        title="Scan (indexing)"
+        hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the affected roots."
+        count={data?.scan.count ?? 0}
+        rows={scanRows}
+        retryAllLabel="Retry all"
+        prefix="scan"
+        busy={busy}
+        onRetry={onRetryScan}
+      />
 
-        <Section
-          title="Import"
-          hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them (whole quarantine)."
-          count={data?.import.count ?? 0}
-          onRetry={() => doRetry("import", {}, "import:all")}
-          busy={busy === "import:all"}
-          disabled={busy !== null}
-          retryLabel="Retry quarantine"
-        >
-          {(data?.import.items ?? []).map((it, i) => (
-            <FailRow
-              key={`i${it.batch_id}-${i}`}
-              title={it.file}
-              error={it.error}
-              when={it.created_at}
-              badge={it.origin ?? undefined}
-            />
-          ))}
-        </Section>
+      <Section
+        title="Import"
+        hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them (whole quarantine)."
+        count={data?.import.count ?? 0}
+        onRetry={() => doRetry("import", {}, "import:all")}
+        busy={busy === "import:all"}
+        disabled={busy !== null}
+        retryLabel="Retry quarantine"
+      >
+        {(data?.import.items ?? []).map((it, i) => (
+          <FailRow
+            key={`i${it.batch_id}-${i}`}
+            title={it.file}
+            error={it.error}
+            when={it.created_at}
+            badge={it.origin ?? undefined}
+          />
+        ))}
+      </Section>
 
-        <Section
-          title="Deduplication"
-          hint={`Files matched as duplicates by partial hash. False collisions (genuinely distinct content) are indexed anyway — never dropped — and flagged here for audit.${
-            data && data.duplicates.falseCollisions > 0
-              ? ` ${data.duplicates.falseCollisions} false collision(s) recovered.`
-              : ""
-          }`}
-          count={data?.duplicates.count ?? 0}
-        >
-          {(data?.duplicates.items ?? []).map((it, i) => (
-            <FailRow
-              key={`u${it.abs_path}-${i}`}
-              title={it.abs_path}
-              error={`${it.source} · ${
-                it.verified === false
-                  ? "FALSE collision → indexed separately (kept)"
-                  : it.verified === true
-                    ? "confirmed duplicate (not reprocessed)"
-                    : "unverified (existing file unreadable) — treated as duplicate"
-              }${
-                it.existing_asset_id ? ` · matched asset #${it.existing_asset_id}` : ""
-              } · ${it.content_hash.slice(0, 12)}…`}
-              when={it.updated_at}
-              badge={
-                it.verified === false
-                  ? "false collision"
-                  : it.hits > 1
-                    ? `${it.hits}×`
-                    : undefined
-              }
-            />
-          ))}
-        </Section>
-      </div>
-    </>
+      <Section
+        title="Deduplication"
+        hint={`Files matched as duplicates by partial hash. False collisions (genuinely distinct content) are indexed anyway — never dropped — and flagged here for audit.${
+          data && data.duplicates.falseCollisions > 0
+            ? ` ${data.duplicates.falseCollisions} false collision(s) recovered.`
+            : ""
+        }`}
+        count={data?.duplicates.count ?? 0}
+      >
+        {(data?.duplicates.items ?? []).map((it, i) => (
+          <FailRow
+            key={`u${it.abs_path}-${i}`}
+            title={it.abs_path}
+            error={`${it.source} · ${
+              it.verified === false
+                ? "FALSE collision → indexed separately (kept)"
+                : it.verified === true
+                  ? "confirmed duplicate (not reprocessed)"
+                  : "unverified (existing file unreadable) — treated as duplicate"
+            }${
+              it.existing_asset_id ? ` · matched asset #${it.existing_asset_id}` : ""
+            } · ${it.content_hash.slice(0, 12)}…`}
+            when={it.updated_at}
+            badge={
+              it.verified === false
+                ? "false collision"
+                : it.hits > 1
+                  ? `${it.hits}×`
+                  : undefined
+            }
+          />
+        ))}
+      </Section>
+    </section>
   );
 }
 
@@ -263,7 +265,7 @@ function RetrySection<K extends string | number>({
   // Prune the selection when the rows change (e.g. items resolved after a
   // retry) so vanished items never stay checked. Keyed on the row signature so
   // the effect doesn't loop on every render.
-  const sig = rows.map((r) => r.key).join(" ");
+  const sig = rows.map((r) => r.key).join(" ");
   useEffect(() => {
     setSel((prev) => {
       const valid = new Set(rows.map((r) => r.key));

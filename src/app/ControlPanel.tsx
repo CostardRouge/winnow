@@ -65,30 +65,40 @@ export default function ControlPanel() {
   return (
     <div className="control">
       <div className="statbar">
-        <Stat label="Media" value={a?.total} sub={`${a?.photos ?? 0} photos · ${a?.videos ?? 0} videos`} />
-        <Stat
-          label="Scanning"
-          value={active(stats?.queues?.scan)}
-          sub={paused ? "paused" : "folders in queue"}
-          tone={paused ? "warn" : undefined}
-        />
-        <Stat label="Analyzed" value={a?.analyzed} sub="derivatives ready" tone="ok" />
-        <Stat
-          label="Pending"
-          value={a?.pending}
-          sub={`+ ${active(stats?.queues?.analyze)} in analyze queue`}
-          tone="warn"
-        />
-        {totalFail > 0 && (
-          <Link href="/failures" className="stat-link">
-            <Stat
-              label="Failures"
-              value={totalFail}
-              sub="scan · analyze · import →"
-              tone="bad"
-            />
-          </Link>
-        )}
+        <Link href="/pipeline/media" className="stat-link">
+          <Stat
+            label="Media"
+            value={a?.total}
+            sub={`${a?.photos ?? 0} photos · ${a?.videos ?? 0} videos →`}
+          />
+        </Link>
+        <Link href="/pipeline/scanning" className="stat-link">
+          <Stat
+            label="Scanning"
+            value={active(stats?.queues?.scan)}
+            sub={paused ? "paused →" : "folders in queue →"}
+            tone={paused ? "warn" : undefined}
+          />
+        </Link>
+        <Link href="/pipeline/analyzed" className="stat-link">
+          <Stat label="Analyzed" value={a?.analyzed} sub="derivatives ready →" tone="ok" />
+        </Link>
+        <Link href="/pipeline/pending" className="stat-link">
+          <Stat
+            label="Pending"
+            value={a?.pending}
+            sub={`+ ${active(stats?.queues?.analyze)} in analyze queue →`}
+            tone="warn"
+          />
+        </Link>
+        <Link href="/pipeline/failures" className="stat-link">
+          <Stat
+            label="Failures"
+            value={totalFail}
+            sub="scan · analyze · import →"
+            tone="bad"
+          />
+        </Link>
       </div>
 
       <div className="control-row">
