@@ -855,7 +855,7 @@
     @apply flex min-h-0 flex-1 flex-col;
   }
   .gallery-controls {
-    @apply flex items-center gap-2 px-4 py-2.5;
+    @apply flex items-center gap-2 px-5 py-2.5;
     /* One compromise height for every control on this row (between the thin
        text segments and the taller icon toggles) so swapping a view's modifier
        — Select, list/card toggle, or nothing — never reflows the row. */
@@ -942,6 +942,23 @@
   .map-count {
     @apply px-1 text-xs;
     color: var(--color-muted);
+  }
+  /* Custom zoom: same floating-card + button design as the toolbar, top-right. */
+  .map-zoom {
+    @apply absolute right-2 top-2 z-[500] flex items-center gap-1.5
+      rounded-[var(--radius-lg)] border p-1.5;
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .map-zoom .btn {
+    @apply px-0;
+    width: 2.25rem;
+    /* Bigger glyph but keep text-sm's line-height so the height matches the
+       toolbar buttons exactly. */
+    font-size: 1.1rem;
+    line-height: 1.25rem;
   }
   .map-area-bar {
     @apply absolute bottom-3 left-1/2 z-[500] flex flex-wrap items-center
