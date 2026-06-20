@@ -9,11 +9,13 @@ import FilterPanel, {
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
+import AssetMeta from "./AssetMeta";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
   exportAssets,
   rateAssets,
+  regenerateAssets,
 } from "@/lib/assetActions";
 import { EmptyState, Icons } from "../ui";
 
@@ -34,6 +36,14 @@ type Row = GalleryAsset & {
   shutter?: string | null;
   aperture?: number | null;
   focal_length?: number | null;
+  captured_at?: string | null;
+  file_mtime?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration_s?: number | null;
+  device?: string | null;
+  gps?: { lat: number; lon: number } | null;
+  rel_path?: string | null;
 };
 
 const MB = 1024 * 1024;
@@ -261,6 +271,24 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
     }
   }, []);
 
+  // Rebuilds the thumb + proxy for these ids. Optimistically flips the grid
+  // cells back to "pending" so the spinner shows until the worker is done.
+  const regenerateSelection = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setItems((prev) =>
+      prev.map((a) =>
+        idset.has(a.id) ? { ...a, derivative_status: "pending" } : a,
+      ),
+    );
+    try {
+      const n = await regenerateAssets(ids);
+      setNotice(n > 1 ? `Regenerating ${n} derivatives` : "Regenerating derivative");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   // Dispatch a context-menu action onto a single asset.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
@@ -273,11 +301,13 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
           return void assignTags([id], action.name, true);
         case "export":
           return void exportSelection([id]);
+        case "regenerate":
+          return void regenerateSelection([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, assignTags, exportSelection, removeAssets],
+    [rate, assignTags, exportSelection, regenerateSelection, removeAssets],
   );
 
   // Keyboard navigation in the viewer.
@@ -398,6 +428,14 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
             ⤓ Export
           </button>
           <button
+            className="btn"
+            disabled={!selected.size}
+            title="Rebuild thumbnail + proxy"
+            onClick={() => regenerateSelection([...selected])}
+          >
+            ↻ Regenerate
+          </button>
+          <button
             className="btn btn-reject"
             disabled={!selected.size}
             onClick={() => removeAssets([...selected])}
@@ -497,13 +535,7 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
           <button className="close" onClick={() => setViewer(null)}>×</button>
           <div className="exif">
             <strong>{a.filename}</strong>
-            <br />
-            {a.camera_model ?? "?"} · {a.lens ?? "?"}
-            <br />
-            {a.focal_length ? `${a.focal_length}mm · ` : ""}
-            {a.aperture ? `f/${a.aperture} · ` : ""}
-            {a.shutter ? `${a.shutter}s · ` : ""}
-            {a.iso ? `ISO ${a.iso}` : ""}
+            <AssetMeta asset={a} />
             <div className="viewer-tags">
               {(a.tags ?? []).map((t) => (
                 <span key={t} className="chip active">
@@ -582,6 +614,13 @@ export default function GalleryShell({ scope }: { scope?: Scope }) {
                 </button>
                 <button className="btn" onClick={() => exportSelection([a.id])}>
                   ⤓ Export
+                </button>
+                <button
+                  className="btn"
+                  title="Rebuild thumbnail + proxy"
+                  onClick={() => regenerateSelection([a.id])}
+                >
+                  ↻ Regenerate
                 </button>
                 <button
                   className="btn btn-reject"

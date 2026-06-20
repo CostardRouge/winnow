@@ -47,6 +47,25 @@ export async function deleteAssets(
   });
 }
 
+// Rebuilds the derivatives (thumb + proxy) of the given assets — resets them to
+// 'pending' and re-enqueues generation, whatever their current status. Works for
+// one (ids:[id]) or many. Returns how many were actually queued, or throws on a
+// non-2xx response.
+export async function regenerateAssets(ids: number[]): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/regenerate", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Regenerate failed (${res.status})`);
+  }
+  const body = (await res.json()) as { queued: number };
+  return body.queued;
+}
+
 // Queues a RAW-copy export job scoped to exactly these asset ids (reuses the
 // existing export pipeline via the new `ids` filter). Returns the job id, or
 // throws on a non-2xx response.

@@ -12,16 +12,25 @@ import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
-import { deleteAssets, exportAssets, tagAssets } from "@/lib/assetActions";
+import AssetMeta from "@/app/gallery/AssetMeta";
+import {
+  deleteAssets,
+  exportAssets,
+  regenerateAssets,
+  tagAssets,
+} from "@/lib/assetActions";
 import { Icons } from "@/app/ui";
 
 type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
   id: number;
   filename: string;
+  ext: string;
   media_type: "photo" | "video";
   derivative_status: string;
   captured_at: string | null;
+  file_mtime: string | null;
+  file_size: number | null;
   camera_model: string | null;
   lens: string | null;
   iso: number | null;
@@ -30,6 +39,10 @@ type AssetRow = {
   focal_length: number | null;
   width: number | null;
   height: number | null;
+  duration_s: number | null;
+  device: string | null;
+  gps: { lat: number; lon: number } | null;
+  rel_path: string | null;
   verdict: Verdict;
   star: number;
 };
@@ -165,6 +178,24 @@ export default function SessionGrid({
     }
   }, []);
 
+  // Rebuilds the thumb + proxy. Optimistically flips the cell back to "pending"
+  // so the spinner shows until the worker is done.
+  const regenerate = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setAssets((prev) =>
+      prev.map((a) =>
+        idset.has(a.id) ? { ...a, derivative_status: "pending" } : a,
+      ),
+    );
+    try {
+      const n = await regenerateAssets(ids);
+      setNotice(n > 1 ? `Regenerating ${n} derivatives` : "Regenerating derivative");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   const addTag = useCallback(async (id: number, name: string) => {
     if (!name.trim()) return;
     await tagAssets([id], name, true);
@@ -183,11 +214,13 @@ export default function SessionGrid({
           return void addTag(id, action.name);
         case "export":
           return void exportSelection([id]);
+        case "regenerate":
+          return void regenerate([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, addTag, exportSelection, removeAssets],
+    [rate, addTag, exportSelection, regenerate, removeAssets],
   );
 
   // Keyboard navigation in the viewer (desktop).
@@ -312,6 +345,7 @@ export default function SessionGrid({
           }
           onRate={(patch) => rate(assets[viewer].id, patch)}
           onExport={() => exportSelection([assets[viewer].id])}
+          onRegenerate={() => regenerate([assets[viewer].id])}
           onDelete={async () => {
             if (await removeAssets([assets[viewer].id])) setViewer(null);
           }}
@@ -340,6 +374,7 @@ function Viewer({
   onNext,
   onRate,
   onExport,
+  onRegenerate,
   onDelete,
 }: {
   asset: AssetRow;
@@ -350,6 +385,7 @@ function Viewer({
   onNext: () => void;
   onRate: (patch: { verdict?: Verdict; star?: number }) => void;
   onExport: () => void;
+  onRegenerate: () => void;
   onDelete: () => void;
 }) {
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -383,18 +419,10 @@ function Viewer({
       </button>
       <div className="exif">
         <strong>{asset.filename}</strong>
-        <br />
-        {asset.camera_model ?? "?"} · {asset.lens ?? "?"}
-        <br />
-        {asset.focal_length ? `${asset.focal_length}mm · ` : ""}
-        {asset.aperture ? `f/${asset.aperture} · ` : ""}
-        {asset.shutter ? `${asset.shutter}s · ` : ""}
-        {asset.iso ? `ISO ${asset.iso}` : ""}
-        <br />
-        {asset.width && asset.height
-          ? `${asset.width}×${asset.height}`
-          : ""}{" "}
-        {asset.star > 0 ? "★".repeat(asset.star) : ""}
+        {asset.star > 0 && (
+          <span className="viewer-stars"> {"★".repeat(asset.star)}</span>
+        )}
+        <AssetMeta asset={asset} />
       </div>
       <div className="stage">
         {asset.derivative_status === "ready" ? (
@@ -445,6 +473,13 @@ function Viewer({
         </button>
         <button className="btn" onClick={onExport}>
           ⤓ Export
+        </button>
+        <button
+          className="btn"
+          title="Rebuild thumbnail + proxy"
+          onClick={onRegenerate}
+        >
+          ↻ Regenerate
         </button>
         <button className="btn btn-reject" onClick={onDelete}>
           🗑 Delete

@@ -694,6 +694,30 @@
   .viewer-tags {
     @apply mt-2 flex flex-wrap items-center gap-1;
   }
+  .viewer-stars {
+    color: var(--color-star);
+  }
+
+  /* Structured metadata list inside the viewer (date, size, dimensions, GPS…) */
+  .asset-meta {
+    @apply mt-2 grid gap-x-3 gap-y-0.5;
+    grid-template-columns: auto 1fr;
+  }
+  .asset-meta-row {
+    @apply contents;
+  }
+  .asset-meta dt {
+    @apply text-[11px] uppercase tracking-wide;
+    color: var(--color-faint);
+  }
+  .asset-meta dd {
+    @apply m-0 break-words text-xs;
+    color: var(--color-text);
+  }
+  .asset-meta-link {
+    color: var(--color-accent-hover);
+    text-decoration: underline;
+  }
 
   .hint {
     @apply text-xs;
