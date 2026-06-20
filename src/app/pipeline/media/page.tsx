@@ -6,8 +6,8 @@ export default function MediaPage() {
   return (
     <PipelineAssetList
       query=""
-      actions={["view", "delete"]}
-      hint="All indexed media, newest first. Open the full preview or remove an item from the library (the original file is never touched)."
+      actions={["view", "download", "delete"]}
+      hint="All indexed media, newest first. Open the viewer, download the original, or remove an item from the library (the original file is never touched)."
       emptyTitle="No media yet"
       emptyHint="Indexed photos and videos will appear here as roots are scanned."
     />

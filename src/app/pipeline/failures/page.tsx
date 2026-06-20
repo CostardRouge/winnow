@@ -8,6 +8,7 @@
 //   - everything : the whole family ("Retry all").
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { Icons } from "../../ui";
 
 type DerivItem = {
   asset_id: number;
@@ -60,6 +61,9 @@ type RowData<K extends string | number> = {
   error: string;
   when: string;
   badge?: string;
+  // When the failure maps to an indexed asset, a link to download its original
+  // file (so an item that can't be previewed can still be inspected locally).
+  downloadHref?: string;
 };
 
 export default function FailuresPage() {
@@ -123,6 +127,7 @@ export default function FailuresPage() {
       path: it.abs_path,
       error: it.error ?? "—",
       when: it.updated_at,
+      downloadHref: `/api/assets/${it.asset_id}/download`,
     }),
   );
   const scanRows: RowData<string>[] = (data?.scan.items ?? []).map((it) => ({
@@ -421,6 +426,7 @@ function FailRow({
   error,
   when,
   badge,
+  downloadHref,
   selected,
   onToggle,
   onRetry,
@@ -432,6 +438,7 @@ function FailRow({
   error: string;
   when: string;
   badge?: string;
+  downloadHref?: string;
   selected?: boolean;
   onToggle?: () => void;
   onRetry?: () => void;
@@ -462,6 +469,17 @@ function FailRow({
             }
           })()}
         </span>
+        {downloadHref && (
+          <a
+            className="btn btn-sm btn-icon"
+            href={downloadHref}
+            download
+            title="Download the original file"
+            aria-label="Download the original file"
+          >
+            {Icons.download}
+          </a>
+        )}
         {onRetry && (
           <button
             className="btn btn-sm"

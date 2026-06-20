@@ -1273,9 +1273,17 @@
     border-color: var(--color-border);
   }
   .pl-thumb {
-    @apply flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] border;
+    @apply flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)] border p-0;
     background: var(--color-surface-2);
     border-color: var(--color-border);
+    transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+  }
+  button.pl-thumb:not(:disabled) {
+    cursor: pointer;
+  }
+  button.pl-thumb:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card);
   }
   .pl-thumb img {
     @apply h-full w-full object-cover;
@@ -1312,6 +1320,35 @@
   }
   .pl-more {
     @apply flex justify-center py-3;
+  }
+
+  /* ---- Pipeline asset card (Media / Pending / Analyzed) ----------------- */
+  /* Stacked so the full path is always readable: name + status on line 1, the
+     untruncated path on line 2, then thumbnail · details · actions. */
+  .pl-card {
+    @apply flex flex-col gap-2 rounded-[var(--radius-lg)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    transition: border-color 0.2s var(--ease-out);
+  }
+  .pl-card:hover {
+    border-color: var(--color-border-strong);
+  }
+  .pl-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .pl-body {
+    @apply flex flex-wrap items-center gap-3;
+  }
+  /* Details sit between the thumbnail and the actions, taking the slack so the
+     actions stay right-aligned (and wrap below on narrow/mobile widths). */
+  .pl-card .pl-meta {
+    @apply mt-0 min-w-0 flex-1;
+  }
+  /* Overflow-menu trigger: subtle pressed state while open. */
+  .btn-icon.is-open {
+    background: var(--color-surface-2);
+    color: var(--color-text);
   }
 
   /* ---- States ----------------------------------------------------------- */
@@ -1701,5 +1738,97 @@
   .picker-selected code {
     font-family: var(--font-mono);
     color: var(--color-text);
+  }
+}
+
+/* ---- Exports: downloadable, expandable cards --------------------------- */
+@layer components {
+  .export-card {
+    @apply flex-col items-stretch gap-3;
+  }
+  .export-card-head {
+    @apply flex flex-wrap items-center gap-4;
+  }
+  .export-body {
+    @apply flex flex-col items-start gap-2;
+  }
+
+  /* Collapsed: a single clipped row of derivatives (count set by a
+     ResizeObserver in ExportCard). */
+  .export-strip {
+    @apply flex w-full flex-nowrap gap-1.5 overflow-hidden;
+    cursor: pointer;
+  }
+
+  /* Expanded: every file as a responsive square grid. */
+  .export-grid {
+    @apply grid w-full gap-1.5;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  }
+
+  .export-thumb {
+    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
+    aspect-ratio: 1;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+    cursor: pointer;
+    transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+  }
+  .export-thumb:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card);
+    z-index: 1;
+  }
+  .export-thumb img,
+  .export-thumb .lazy-img {
+    @apply block h-full w-full object-cover;
+  }
+  .export-thumb-ph {
+    @apply flex h-full w-full items-center justify-center text-base;
+    color: var(--color-faint);
+  }
+  .export-thumb .ext-badge {
+    @apply absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] uppercase;
+    font-family: var(--font-mono);
+    background: rgba(16, 15, 13, 0.62);
+    backdrop-filter: blur(4px);
+    color: rgba(244, 240, 231, 0.85);
+  }
+  .export-thumb .play-badge {
+    @apply absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2
+      items-center justify-center rounded-full text-xs text-white;
+    background: rgba(16, 15, 13, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+
+  /* Per-file download chip, revealed on hover over a derivative. */
+  .export-dl {
+    @apply absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full;
+    background: rgba(16, 15, 13, 0.6);
+    backdrop-filter: blur(4px);
+    color: #f4f0e7;
+    opacity: 0;
+    transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+  }
+  .export-thumb:hover .export-dl,
+  .export-dl:focus-visible {
+    opacity: 1;
+  }
+  .export-dl:hover {
+    transform: scale(1.08);
+    background: rgba(16, 15, 13, 0.78);
+  }
+
+  /* The trailing "+N more" tile (collapsed strip). */
+  .export-more {
+    @apply flex items-center justify-center text-sm font-semibold;
+    color: var(--color-muted);
+    cursor: pointer;
+  }
+
+  .export-toggle {
+    @apply inline-flex items-center gap-1;
   }
 }

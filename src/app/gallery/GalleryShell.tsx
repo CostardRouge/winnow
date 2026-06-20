@@ -11,8 +11,8 @@ import FilterPanel, {
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
-import AssetMeta from "./AssetMeta";
 import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
+import MediaViewer from "../MediaViewer";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -412,27 +412,18 @@ export default function GalleryShell({
     [rate, assignTags, exportSelection, regenerateSelection, removeAssets],
   );
 
-  // Keyboard navigation in the viewer.
-  useEffect(() => {
-    if (viewer == null) return;
-    const onKey = (e: KeyboardEvent) => {
-      const a = items[viewer];
-      if (!a) return;
-      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-      if (e.key === "Escape") return setViewer(null);
-      if (e.key === "ArrowRight") return setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1));
-      if (e.key === "ArrowLeft") return setViewer((v) => Math.max((v ?? 0) - 1, 0));
-      if (readOnly) return; // no rating in read-only mode
-      if (e.key.toLowerCase() === "p") return void rate(a.id, { verdict: "pick" });
-      if (e.key.toLowerCase() === "x") return void rate(a.id, { verdict: "reject" });
-      if (e.key.toLowerCase() === "u") return void rate(a.id, { verdict: "unrated" });
-      if (/^[0-5]$/.test(e.key)) return void rate(a.id, { star: Number(e.key) });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [viewer, items, rate, readOnly]);
-
-  const a = viewer != null ? items[viewer] : null;
+  // Rating shortcuts inside the viewer (p/x/u + 0–5). Navigation and
+  // Escape-to-close are handled by MediaViewer itself.
+  const onViewerKey = useCallback(
+    (e: KeyboardEvent, it: Row) => {
+      if (readOnly) return;
+      if (e.key.toLowerCase() === "p") return void rate(it.id, { verdict: "pick" });
+      if (e.key.toLowerCase() === "x") return void rate(it.id, { verdict: "reject" });
+      if (e.key.toLowerCase() === "u") return void rate(it.id, { verdict: "unrated" });
+      if (/^[0-5]$/.test(e.key)) return void rate(it.id, { star: Number(e.key) });
+    },
+    [rate, readOnly],
+  );
 
   // The shared Filters/Browse aside, available to every filter-aware view
   // (the built-in Grid/Map and any injected view such as Sessions).
@@ -712,20 +703,30 @@ export default function GalleryShell({
         current.render(viewCtx)
       )}
 
-      {a && (
-        <div className="viewer">
-          <button className="close" onClick={() => setViewer(null)}>×</button>
-          <div className="exif">
-            <strong>{a.filename}</strong>
-            <AssetMeta asset={a} />
+      {viewer != null && items[viewer] && (
+        <MediaViewer
+          items={items}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          onKeyDown={onViewerKey}
+          onContextMenu={
+            readOnly
+              ? undefined
+              : (e, it) => {
+                  e.preventDefault();
+                  setMenu({ x: e.clientX, y: e.clientY, id: it.id });
+                }
+          }
+          renderInfo={(it) => (
             <div className="viewer-tags">
-              {(a.tags ?? []).map((t) => (
+              {(it.tags ?? []).map((t) => (
                 <span key={t} className="chip active">
                   {t}
                   {!readOnly && (
                     <button
                       className="chip-x"
-                      onClick={() => assignTags([a.id], t, false)}
+                      onClick={() => assignTags([it.id], t, false)}
                     >
                       ×
                     </button>
@@ -739,100 +740,63 @@ export default function GalleryShell({
                   style={{ width: 90, padding: "2px 8px" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      assignTags([a.id], (e.target as HTMLInputElement).value, true);
+                      assignTags([it.id], (e.target as HTMLInputElement).value, true);
                       (e.target as HTMLInputElement).value = "";
                     }
                   }}
                 />
               )}
             </div>
-          </div>
-          <div
-            className="stage"
-            onContextMenu={
-              readOnly
-                ? undefined
-                : (e) => {
-                    e.preventDefault();
-                    setMenu({ x: e.clientX, y: e.clientY, id: a.id });
-                  }
-            }
-          >
-            {a.derivative_status === "ready" ? (
-              a.media_type === "video" ? (
-                <video
-                  key={a.id}
-                  src={`/api/assets/${a.id}/proxy`}
-                  poster={`/api/assets/${a.id}/thumb`}
-                  controls
-                  playsInline
-                  autoPlay
-                  muted
-                  loop
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/assets/${a.id}/proxy`} alt={a.filename} />
-              )
-            ) : (
-              <div className="placeholder">Derivative unavailable</div>
-            )}
-          </div>
-          <div className="controls">
-            <button className="btn" onClick={() => setViewer((v) => Math.max((v ?? 0) - 1, 0))} disabled={viewer === 0}>←</button>
-            {!readOnly && (
-              <>
-                <button
-                  className={`btn ${a.verdict === "reject" ? "btn-reject" : ""}`}
-                  onClick={() => rate(a.id, { verdict: "reject" })}
-                >
-                  ✕ Reject
-                </button>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    className="btn"
-                    style={{ color: a.star >= n ? "var(--star)" : undefined }}
-                    onClick={() => rate(a.id, { star: n })}
-                  >
-                    ★
-                  </button>
-                ))}
-                <button
-                  className={`btn ${a.verdict === "pick" ? "btn-pick" : ""}`}
-                  onClick={() => rate(a.id, { verdict: "pick" })}
-                >
-                  ✓ Pick
-                </button>
-                <button className="btn" onClick={() => exportSelection([a.id])}>
-                  ⤓ Export
-                </button>
-                <button
-                  className="btn"
-                  title="Rebuild thumbnail + proxy"
-                  onClick={() => regenerateSelection([a.id])}
-                >
-                  ↻ Regenerate
-                </button>
-                <button
-                  className="btn btn-reject"
-                  onClick={async () => {
-                    if (await removeAssets([a.id])) setViewer(null);
-                  }}
-                >
-                  🗑 Delete
-                </button>
-              </>
-            )}
-            <button
-              className="btn"
-              onClick={() => setViewer((v) => Math.min((v ?? 0) + 1, items.length - 1))}
-              disabled={viewer === items.length - 1}
-            >
-              →
-            </button>
-          </div>
-        </div>
+          )}
+          renderActions={
+            readOnly
+              ? undefined
+              : (it) => (
+                  <>
+                    <button
+                      className={`btn ${it.verdict === "reject" ? "btn-reject" : ""}`}
+                      onClick={() => rate(it.id, { verdict: "reject" })}
+                    >
+                      ✕ Reject
+                    </button>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        className="btn"
+                        style={{ color: it.star >= n ? "var(--star)" : undefined }}
+                        onClick={() => rate(it.id, { star: n })}
+                      >
+                        ★
+                      </button>
+                    ))}
+                    <button
+                      className={`btn ${it.verdict === "pick" ? "btn-pick" : ""}`}
+                      onClick={() => rate(it.id, { verdict: "pick" })}
+                    >
+                      ✓ Pick
+                    </button>
+                    <button className="btn" onClick={() => exportSelection([it.id])}>
+                      ⤓ Export
+                    </button>
+                    <button
+                      className="btn"
+                      title="Rebuild thumbnail + proxy"
+                      onClick={() => regenerateSelection([it.id])}
+                    >
+                      ↻ Regenerate
+                    </button>
+                    <button
+                      className="btn btn-reject"
+                      onClick={async () => {
+                        if (await removeAssets([it.id])) setViewer(null);
+                      }}
+                    >
+                      🗑 Delete
+                    </button>
+                  </>
+                )
+          }
+        />
       )}
 
       {menu && (
