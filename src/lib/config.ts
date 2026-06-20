@@ -166,6 +166,16 @@ const EnvSchema = z
     SCAN_CONCURRENCY: intEnv(1, { min: 1 }),
     DERIVATIVE_CONCURRENCY: intEnv(3, { min: 1 }),
     EXPORT_CONCURRENCY: intEnv(2, { min: 1 }),
+    PURGE_CONCURRENCY: intEnv(1, { min: 1 }),
+
+    // --- Purge (reclaim space) -------------------------------------------
+    // The end of the "winnowing": soft-delete is the recycle bin (recoverable),
+    // purge physically removes the trashed originals + their derivatives to free
+    // the NAS. Irreversible → always gated by a UI confirmation. Set
+    // PURGE_ENABLED=false to disable the action entirely (the route returns 403).
+    // Note: only paths mounted read/write can actually be freed; rejects living
+    // on a read-only mount surface a per-file error and stay in the trash.
+    PURGE_ENABLED: boolEnv(true),
 
     // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
     THUMB_SIZE: intEnv(400, { min: 1 }),
@@ -252,6 +262,12 @@ function loadConfig() {
     scanConcurrency: e.SCAN_CONCURRENCY,
     derivativeConcurrency: e.DERIVATIVE_CONCURRENCY,
     exportConcurrency: e.EXPORT_CONCURRENCY,
+    purgeConcurrency: e.PURGE_CONCURRENCY,
+
+    // Reclaim-space (purge) capability. `enabled=false` makes /api/purge 403.
+    purge: {
+      enabled: e.PURGE_ENABLED,
+    },
 
     thumbSize: e.THUMB_SIZE,
     proxySize: e.PROXY_SIZE,

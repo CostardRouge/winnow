@@ -152,7 +152,9 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/:id/exports` | Lineage (finals linked to this original) |
 | `PATCH /api/assets/:id/rating` `{ verdict, star, color }` | Cull state |
 | `POST /api/ratings/bulk` `{ ids[], verdict, star }` | Quick bulk culling |
-| `POST /api/assets/delete` `{ ids[], restore? }` | Soft delete / restore (hides from the library, RAW untouched) |
+| `POST /api/assets/delete` `{ ids[] \| filter, restore? }` | Soft delete / restore — the recycle bin (hides from the library, RAW untouched). `filter` deletes/restores in bulk, e.g. `{ verdict:"reject" }` |
+| `GET /api/trash` | Trash summary: reclaimable count/bytes, rejects still in the library, recent purges |
+| `POST /api/purge` `{ filter?, dryRun? }` | **Reclaim space**: physically removes the trashed originals + derivatives (queued job). `dryRun` returns `{ count, bytes }` to free. Only ever touches soft-deleted assets |
 | `POST /api/assets/regenerate` `{ ids[] }` | Rebuilds the derivatives (thumb + proxy) of a selection — re-enqueues generation whatever the current status |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
@@ -191,14 +193,39 @@ shared endpoints above (`AssetActionMenu` + `lib/assetActions.ts`):
   tag, export, **regenerate derivatives** and delete applied to the whole
   selection.
 
-**Delete is a soft delete** (guiding principle: the RAWs are touched only once).
-It sets `assets.deleted_at` so the file is hidden from every listing/export but
-the original on the NAS is never modified; it's reversible
-(`POST /api/assets/delete { ids, restore: true }`). **Export** queues a normal
+**Delete is a soft delete** — the **recycle bin**, not the end of the road. It
+sets `assets.deleted_at` so the file is hidden from every listing/export but the
+original on the NAS is untouched and fully recoverable
+(`POST /api/assets/delete { ids, restore: true }`). Reclaiming the space is a
+**separate, confirmed** step (the **Trash** tab → *Empty trash*); see
+[Reclaiming space](#reclaiming-space-the-winnowing). **Export** queues a normal
 RAW-copy job scoped to exactly the chosen ids. **Regenerate derivatives**
 re-enqueues thumb/proxy generation for the selection (resets them to `pending`
 whatever the current status) — handy after a worker/codec upgrade or a bad
 preview; the RAW is read again but never modified.
+
+### Reclaiming space (the winnowing)
+
+Sorting (pick/reject/stars) is only half of *winnowing* — the point is to
+actually **slim the archive down**. Winnow does this in two deliberate stages so
+nothing is ever lost by accident:
+
+1. **Recycle bin (soft delete)** — *Delete* (gallery / viewer / bulk), or *Move
+   all rejects to trash* in the **Trash** tab, sets `deleted_at`. The shots
+   vanish from the library but the originals stay on the NAS, recoverable
+   (per-item *Restore* or *Restore all*).
+2. **Reclaim (purge)** — *Empty trash* asks for an explicit confirmation, then
+   queues a **purge job** that physically removes the trashed originals **and**
+   their cached derivatives, freeing the disk. The asset *row* is kept (audit +
+   export lineage): `purged_at` marks the bytes as gone, logged in `purge_log`.
+
+The purge runs on the worker with **bounded concurrency** (`PURGE_CONCURRENCY`,
+spares the HDD) and is **resilient**: a file already gone counts as reclaimed; a
+file that can't be removed (e.g. a **read-only mount**, so the filed NAS sessions
+must be mounted read/write to be freed) keeps its place in the trash with the
+reason recorded — nothing else is touched, and you can retry. Disable the whole
+capability with `PURGE_ENABLED=false`. The **Trash** tab shows the reclaimable
+size up front and the result of each purge (freed bytes, anything that failed).
 
 ### Global gallery & cumulative filters
 
@@ -364,7 +391,9 @@ otherwise libheif, since sharp's prebuilt libvips only ships the AVIF decoder;
 the decoder is lazy-loaded and serialized so it can never crash the worker),
 thumb/proxy derivatives
 in WebP, mobile-first culling grid, ignore-cascade, RAW-copy export + `exports`
-lineage, **multi-feeder ingest** (see below), **virtualized gallery with
+lineage, **reclaim space** (recycle-bin soft-delete → confirmed purge that frees
+the NAS originals + derivatives, with audit + per-file resilience),
+**multi-feeder ingest** (see below), **virtualized gallery with
 cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media,
 select a zone → pick/reject/export the area), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see

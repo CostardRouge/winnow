@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
       return badRequest("Invalid filter", (e as Error).message);
     }
 
-    const { conditions, params } = buildFilter(filter, 1);
+    // `?deleted=trash` lists the recycle bin (soft-deleted, not purged); the
+    // default shows the live library.
+    const deleted = sp.get("deleted") === "trash" ? "trash" : "exclude";
+    const { conditions, params } = buildFilter(filter, 1, { deleted });
     let idx = params.length + 1;
 
     // Sort key: default is the capture timeline (most recent shots first); the

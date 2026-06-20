@@ -69,8 +69,14 @@ export type Asset = {
   processing_state: ProcessingState;
   thumb_key: string | null;
   proxy_key: string | null;
-  // Soft delete: non-null = hidden from the library (original untouched).
+  // Soft delete: non-null = hidden from the library (original untouched). This
+  // is the recycle bin — recoverable until purged.
   deleted_at: string | null;
+  // Purge: non-null = the original (and its derivatives) were physically removed
+  // to reclaim space. The row is kept for audit/lineage. `purge_error` holds the
+  // last failure (e.g. a read-only mount) when a purge couldn't free the bytes.
+  purged_at: string | null;
+  purge_error: string | null;
   created_at: string;
   updated_at: string;
 };

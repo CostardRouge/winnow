@@ -25,6 +25,12 @@ const TABS: { id: string; label: string; href: string; match: (p: string) => boo
     href: "/library/exports",
     match: (p) => p.startsWith("/library/exports"),
   },
+  {
+    id: "trash",
+    label: "Trash",
+    href: "/library/trash",
+    match: (p) => p.startsWith("/library/trash"),
+  },
 ];
 
 export default function LibraryLayout({ children }: { children: ReactNode }) {

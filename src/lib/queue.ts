@@ -41,6 +41,7 @@ export async function pingRedis(timeoutMs = 3000): Promise<boolean> {
 export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };
 export type ExportJob = { exportJobId: number };
+export type PurgeJob = { purgeJobId: number };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -53,6 +54,7 @@ export const QUEUES = {
   derivatives: "winnow-derivatives",
   export: "winnow-export",
   import: "winnow-import",
+  purge: "winnow-purge",
 } as const;
 
 declare global {
@@ -63,6 +65,7 @@ declare global {
         derivatives: Queue;
         export: Queue;
         import: Queue;
+        purge: Queue;
       }
     | undefined;
 }
@@ -73,6 +76,7 @@ function build() {
     derivatives: new Queue(QUEUES.derivatives, { connection }),
     export: new Queue(QUEUES.export, { connection }),
     import: new Queue(QUEUES.import, { connection }),
+    purge: new Queue(QUEUES.purge, { connection }),
   };
 }
 
@@ -321,4 +325,12 @@ export async function enqueueExport(exportJobId: number) {
 
 export async function enqueueImport(job: ImportJob) {
   return getQueues().import.add("import", job, defaultJobOpts);
+}
+
+export async function enqueuePurge(purgeJobId: number) {
+  return getQueues().purge.add(
+    "purge",
+    { purgeJobId } satisfies PurgeJob,
+    defaultJobOpts,
+  );
 }
