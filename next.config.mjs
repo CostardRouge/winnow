@@ -5,6 +5,11 @@ const nextConfig = {
   serverExternalPackages: ["sharp", "exiftool-vendored", "pg"],
   // Lint runs separately (npm run lint); don't block the build on it.
   eslint: { ignoreDuringBuilds: true },
+  // Expose Prometheus metrics on the conventional /metrics path too (the route
+  // itself lives under /api/metrics).
+  async rewrites() {
+    return [{ source: "/metrics", destination: "/api/metrics" }];
+  },
 };
 
 export default nextConfig;

@@ -1,5 +1,8 @@
 // Helpers common to the route handlers.
 import { NextResponse } from "next/server";
+import { createLogger } from "./log";
+
+const log = createLogger("api");
 
 export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -14,7 +17,7 @@ export function notFound(message = "Not found") {
 }
 
 export function serverError(err: unknown) {
-  console.error("API error:", err);
+  log.error("API error", { err });
   const message = err instanceof Error ? err.message : "Internal error";
   return NextResponse.json({ error: message }, { status: 500 });
 }

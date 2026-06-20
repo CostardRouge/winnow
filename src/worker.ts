@@ -1,5 +1,6 @@
 // Entry point for the BullMQ workers (cf. §3).
 // Bounded concurrency to spare the NAS's full HDD and the Optiplex.
+import { createServer, type Server } from "node:http";
 import { Worker } from "bullmq";
 import { config } from "./lib/config";
 import {
@@ -24,17 +25,59 @@ import { closeExiftool } from "./lib/extract";
 import { getSettings } from "./lib/settings";
 import { reserveSlot, sleep } from "./lib/rate";
 import { one } from "./lib/db";
+import { createLogger } from "./lib/log";
+import { collectLiveGauges, metrics, render } from "./lib/metrics";
 
-console.log("Winnow workers — starting up");
-console.log(`  storage : ${config.storage.driver}`);
-console.log(`  derivative concurrency : ${config.derivativeConcurrency}`);
+const log = createLogger("worker");
+metrics.up.set({ component: "worker" }, 1);
+
+log.info("workers starting up", {
+  storage: config.storage.driver,
+  scanConcurrency: config.scanConcurrency,
+  derivativeConcurrency: config.derivativeConcurrency,
+  exportConcurrency: config.exportConcurrency,
+  importConcurrency: config.import.concurrency,
+});
+
+// Prometheus scrape endpoint for the worker process: the pipeline throughput,
+// duration and failure counters live here (this is where the work happens), so
+// this is the canonical target. Also serves /healthz for orchestration.
+const metricsServer: Server | null = config.metrics.enabled
+  ? createServer((req, res) => {
+      if (req.method !== "GET") {
+        res.writeHead(405).end();
+        return;
+      }
+      const path = (req.url ?? "").split("?")[0];
+      if (path === "/metrics") {
+        collectLiveGauges()
+          .catch(() => {})
+          .finally(() => {
+            res.writeHead(200, {
+              "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+            });
+            res.end(render());
+          });
+        return;
+      }
+      if (path === "/healthz" || path === "/") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+      res.writeHead(404).end();
+    })
+  : null;
+metricsServer?.listen(config.metrics.port, () =>
+  log.info("metrics endpoint listening", { port: config.metrics.port }),
+);
 
 const indexWorker = new Worker(
   QUEUES.index,
   async (job) => {
     const { rootId } = job.data as IndexJob;
     const myPriority = job.opts.priority ?? PRIORITY.normal;
-    console.log(`[index] root ${rootId}…`);
+    log.info("indexing root", { rootId, priority: myPriority });
 
     // Preemption: an ordinary scan yields as soon as a higher-priority
     // scan (incoming/inbox) is waiting. The result is cached for 2 s
@@ -67,7 +110,7 @@ const indexWorker = new Worker(
         }
       },
     });
-    console.log(`[index] done`, res);
+    log.info("indexing done", { rootId, ...res });
 
     // Interrupted by preemption (not by pause): re-enqueue the root to
     // resume incremental indexing once the higher-priority work is drained.
@@ -102,7 +145,7 @@ const exportWorker = new Worker(
   QUEUES.export,
   async (job) => {
     const { exportJobId } = job.data as ExportJob;
-    console.log(`[export] job ${exportJobId}…`);
+    log.info("export job", { exportJobId });
     await runExportJob(exportJobId);
   },
   { connection, concurrency: config.exportConcurrency },
@@ -112,9 +155,14 @@ const importWorker = new Worker(
   QUEUES.import,
   async (job) => {
     const data = job.data as ImportJob;
-    console.log(`[import] ${data.origin} ← ${data.sourceDir}`);
+    log.info("import starting", { origin: data.origin, sourceDir: data.sourceDir });
     const res = await runImport(data);
-    console.log(`[import] done`, res);
+    log.info("import done", {
+      origin: data.origin,
+      imported: res.imported,
+      duplicates: res.duplicates,
+      failed: res.failed,
+    });
     return res;
   },
   { connection, concurrency: config.import.concurrency },
@@ -126,9 +174,10 @@ for (const [name, w] of [
   ["export", exportWorker],
   ["import", importWorker],
 ] as const) {
-  w.on("failed", (job, err) =>
-    console.error(`[${name}] job ${job?.id} failed:`, err.message),
-  );
+  w.on("failed", (job, err) => {
+    metrics.jobsFailed.inc({ queue: name });
+    log.error("job failed", { queue: name, jobId: job?.id, err });
+  });
 }
 
 // Register + (re)index the known roots (incoming + configured final
@@ -153,8 +202,9 @@ const stopWatcher = config.import.watchInbox
   : null;
 
 async function shutdown() {
-  console.log("Stopping the workers…");
+  log.info("stopping the workers");
   if (stopWatcher) await stopWatcher();
+  metricsServer?.close();
   await Promise.allSettled([
     indexWorker.close(),
     derivativeWorker.close(),

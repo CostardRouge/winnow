@@ -30,7 +30,9 @@ RUN npm run build
 
 ENV NODE_ENV=production \
     PORT=3000
-EXPOSE 3000
+# 3000 = Next app (incl. /api/metrics). 9091 = worker Prometheus /metrics
+# (the worker service overrides `command`; this is documentation for scrapers).
+EXPOSE 3000 9091
 
 # Liveness probe (native Node 22 fetch, no external binary required).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

@@ -6,14 +6,17 @@ import { pool } from "../lib/db";
 import { enqueueIndex } from "../lib/queue";
 import { indexRoot } from "../lib/indexer";
 import { closeExiftool } from "../lib/extract";
+import { createLogger } from "../lib/log";
 import path from "node:path";
+
+const log = createLogger("scan");
 
 async function main() {
   const args = process.argv.slice(2);
   const sync = args.includes("--sync");
   const target = args.find((a) => !a.startsWith("--"));
   if (!target) {
-    console.error("Usage: npm run scan -- /path/to/folder [--sync]");
+    log.error("usage: npm run scan -- /path/to/folder [--sync]");
     process.exit(1);
   }
   const abs = path.resolve(target);
@@ -26,20 +29,22 @@ async function main() {
   );
 
   if (sync) {
-    console.log(`Synchronous indexing of ${abs}…`);
+    log.info("synchronous indexing", { path: abs });
     const res = await indexRoot(root!.id);
-    console.log(res);
+    log.info("indexing complete", { path: abs, ...res });
     await closeExiftool();
   } else {
     await enqueueIndex(root!.id);
-    console.log(`Indexing queued for root ${root!.id} (${abs}).`);
-    console.log("Run `npm run worker` to process it.");
+    log.info("indexing queued — run `npm run worker` to process it", {
+      rootId: root!.id,
+      path: abs,
+    });
   }
   await pool.end();
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error(err);
+  log.error("scan failed", { err });
   process.exit(1);
 });

@@ -7,6 +7,7 @@ import { config } from "./config";
 import { extractSourceJpeg } from "./extract";
 import { ffmpegAvailable, makeVideoThumb, makeVideoProxy } from "./video";
 import { getStorage } from "./storage/index";
+import { metrics } from "./metrics";
 import type { Asset } from "./types";
 
 // sharp reads large previews: we allow very wide images.
@@ -31,6 +32,7 @@ export async function generateDerivative(assetId: number): Promise<void> {
       "UPDATE assets SET derivative_status='skipped', updated_at=now() WHERE id=$1",
       [assetId],
     );
+    metrics.derivatives.inc({ media_type: "photo", result: "skipped" });
     return;
   }
 
@@ -39,6 +41,7 @@ export async function generateDerivative(assetId: number): Promise<void> {
     [assetId],
   );
 
+  const startedAt = Date.now();
   let cleanupDir: string | null = null;
   try {
     const src = await extractSourceJpeg(asset.abs_path, asset.ext);
@@ -91,14 +94,20 @@ export async function generateDerivative(assetId: number): Promise<void> {
        WHERE id=$1`,
       [assetId, thumbKey, proxyKey, meta.width ?? null, meta.height ?? null],
     );
+    metrics.derivatives.inc({ media_type: "photo", result: "ready" });
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
       [assetId, (err as Error).message?.slice(0, 500) ?? "unknown error"],
     );
+    metrics.derivatives.inc({ media_type: "photo", result: "error" });
     throw err;
   } finally {
     if (cleanupDir) await rm(cleanupDir, { recursive: true, force: true });
+    metrics.derivativeDuration.observe(
+      { media_type: "photo" },
+      (Date.now() - startedAt) / 1000,
+    );
   }
 }
 
@@ -109,6 +118,7 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
       "UPDATE assets SET derivative_status='skipped', updated_at=now() WHERE id=$1",
       [asset.id],
     );
+    metrics.derivatives.inc({ media_type: "video", result: "skipped" });
     return;
   }
   // ffmpeg missing: we mark the failure (visible in the error list) WITHOUT
@@ -120,6 +130,7 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
          updated_at=now() WHERE id=$1`,
       [asset.id],
     );
+    metrics.derivatives.inc({ media_type: "video", result: "error" });
     return;
   }
 
@@ -128,6 +139,7 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
     [asset.id],
   );
 
+  const startedAt = Date.now();
   try {
     const thumbKey = `thumb/${asset.id}.webp`;
     const proxyKey = `proxy/${asset.id}.mp4`;
@@ -144,11 +156,18 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
        WHERE id=$1`,
       [asset.id, thumbKey, proxyKey],
     );
+    metrics.derivatives.inc({ media_type: "video", result: "ready" });
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
       [asset.id, (err as Error).message?.slice(0, 500) ?? "unknown error"],
     );
+    metrics.derivatives.inc({ media_type: "video", result: "error" });
     throw err;
+  } finally {
+    metrics.derivativeDuration.observe(
+      { media_type: "video" },
+      (Date.now() - startedAt) / 1000,
+    );
   }
 }

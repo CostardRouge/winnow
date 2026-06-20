@@ -6,6 +6,9 @@ import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 import { json, serverError } from "@/lib/api";
+import { createLogger } from "@/lib/log";
+
+const log = createLogger("facets");
 
 // DB-backed route: never pre-rendered/cached at build time (otherwise Next
 // runs the query at build and freezes an empty response into the image).
@@ -43,7 +46,7 @@ async function facet(
 async function settledArray(p: Promise<ValueCount[]>): Promise<ValueCount[]> {
   const r = await Promise.allSettled([p]);
   if (r[0].status === "fulfilled") return r[0].value;
-  console.error("facet error:", r[0].reason);
+  log.error("facet query failed", { err: r[0].reason });
   return [];
 }
 

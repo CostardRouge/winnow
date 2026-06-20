@@ -124,6 +124,8 @@ See `.env.dist`. Main ones:
 | `GET /api/import/:id` | Status of an import batch |
 | `GET /api/roots` · `POST /api/roots` | Registered folders (sources + finals) |
 | `POST /api/reconcile` | Finals→sources reconciliation (**V2**, 501) |
+| `GET /api/health` | Liveness (app + Postgres + Redis) for the Docker healthcheck |
+| `GET /api/metrics` (also `GET /metrics`) | Prometheus metrics (queue depth, asset state, failures) |
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
 front-end grid infinite-scroll-loads the thumbnails as they come.
@@ -222,6 +224,41 @@ debug, and a **"retry"** button per family:
   Failed files are **quarantined** (`inbox/.failed/`) so they stop looping;
   retrying re-imports them.
 
+## Observability (logs + metrics)
+
+The indexer/worker run 24/7 over tens of thousands of files, so the pipeline is
+instrumented for monitoring rather than relying on stray `console.log`s.
+
+**Structured logs** (`src/lib/log.ts`, zero-dependency): every backend module
+logs through a scoped logger. Output is **JSON lines** when stdout is not a TTY
+(Docker → ship/parse with any collector) and a **pretty** single line on a dev
+TTY. Tune with `LOG_LEVEL` (`debug|info|warn|error`, default `info`) and
+`LOG_FORMAT` (`json|pretty`). `warn`/`error` go to stderr.
+
+```json
+{"ts":"2026-06-20T10:00:00.000Z","level":"info","scope":"index","msg":"indexing done","rootId":3,"scanned":812,"inserted":740,"failed":2,"stopped":false}
+```
+
+**Prometheus metrics** (`src/lib/metrics.ts`, zero-dependency): the worker
+exposes `/metrics` (+ `/healthz`) on `METRICS_PORT` (default `9091`) — this is
+the canonical scrape target, since the throughput/failure counters are
+incremented where the work happens. The app mirrors the live state gauges at
+`GET /api/metrics` (and `GET /metrics`), reachable behind the existing Traefik
+proxy. Toggle the worker endpoint with `METRICS_ENABLED`.
+
+| Metric | Type | Answers |
+|---|---|---|
+| `winnow_scan_files_total{result}` | counter | **Scan throughput** — `rate(…[5m])` by inserted/updated/skipped/duplicate/recovered/failed |
+| `winnow_scan_runs_total{outcome}` · `winnow_scan_duration_seconds` | counter · histogram | Runs completed vs. preempted, and how long a run takes |
+| `winnow_derivatives_total{media_type,result}` · `winnow_derivative_duration_seconds` | counter · histogram | Derivative throughput + latency (photo/video, ready/error/skipped) |
+| `winnow_import_files_total{result}` | counter | Import throughput (imported/duplicate/failed) |
+| `winnow_jobs_failed_total{queue}` | counter | **Failure rate** of BullMQ jobs per queue |
+| `winnow_queue_jobs{queue,state}` | gauge | **Queue depth** (scan/analyze/import × waiting/active/delayed/failed/…) |
+| `winnow_assets{state}` · `winnow_failures{kind}` · `winnow_scan_paused` | gauge | Library state, outstanding failures, pause flag |
+
+A Prometheus on the same Docker network scrapes `worker:9091` directly (see the
+commented `ports` in `docker-compose.yml` to publish it on the host as well).
+
 ## Scope & next steps
 
 **Implemented (MVP)**: incremental indexing (mtime+size), EXIF + hash + dedup,
@@ -233,8 +270,10 @@ lineage, **multi-feeder ingest** (see below), **virtualized gallery with
 cumulative filters** (DB-indexed attributes), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
-acceleration), **failure list/retry** (page `/failures`), GitHub Actions **CI**
-(typecheck + migrations + build).
+acceleration), **failure list/retry** (page `/failures`), **observability**
+(structured JSON logs + Prometheus `/metrics`: scan throughput, queue depth,
+failure rate — see below), GitHub Actions **CI** (typecheck + migrations +
+build).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
 automatic C1 finals reconciliation, adaptive throttling, agent-on-NAS, n8n

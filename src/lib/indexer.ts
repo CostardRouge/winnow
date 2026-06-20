@@ -11,7 +11,11 @@ import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
+import { createLogger } from "./log";
+import { metrics } from "./metrics";
 import type { Root, Session } from "./types";
+
+const log = createLogger("index");
 
 // Optional hooks injected by the worker: allow suspending/preempting
 // the scan (shouldStop) and smoothing its rate (throttle, called before each
@@ -26,7 +30,7 @@ async function* walk(dir: string): AsyncGenerator<string> {
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
-    console.warn(`Unable to read ${dir}:`, (err as Error).message);
+    log.warn("unable to read directory", { dir, err });
     return;
   }
   for (const entry of entries) {
@@ -98,6 +102,7 @@ export async function indexRoot(
     stopped: false,
   };
   const touchedSessions = new Set<number>();
+  const startedAt = Date.now();
 
   for await (const absPath of walk(root.path)) {
     // Suspension/preemption: we stop cleanly between two files.
@@ -288,7 +293,7 @@ export async function indexRoot(
     } catch (err) {
       res.failed++;
       const msg = (err as Error).message;
-      console.warn(`Unable to index ${absPath}:`, msg);
+      log.warn("unable to index file", { absPath, err });
       // Persist the failure so it can be listed/retried from the UI.
       await recordScanFailure(absPath, root.id, msg);
     }
@@ -315,6 +320,16 @@ export async function indexRoot(
       [sid],
     );
   }
+
+  // Throughput / outcome metrics (scrape rate(winnow_scan_files_total[…])).
+  metrics.scanDuration.observe({}, (Date.now() - startedAt) / 1000);
+  metrics.scanRuns.inc({ outcome: res.stopped ? "stopped" : "completed" });
+  metrics.scanFiles.inc({ result: "inserted" }, res.inserted);
+  metrics.scanFiles.inc({ result: "updated" }, res.updated);
+  metrics.scanFiles.inc({ result: "skipped" }, res.skipped);
+  metrics.scanFiles.inc({ result: "duplicate" }, res.duplicates);
+  metrics.scanFiles.inc({ result: "recovered" }, res.recovered);
+  metrics.scanFiles.inc({ result: "failed" }, res.failed);
 
   return res;
 }
