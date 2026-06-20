@@ -104,6 +104,7 @@ See `.env.dist`. Main ones:
 | `GET /api/failures` | Everything that failed (scan / analyze / import) + messages |
 | `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
 | `GET /api/assets` `?<filters>&cursor` | Paginated global gallery (cumulative filters) |
+| `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/sessions` | List of sessions + counters (ready/pending/picks) |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
@@ -176,6 +177,25 @@ ext, media_type, file_size, camera_model, lens, iso, focal_length, aperture).
 The available values/counts come from `GET /api/facets`; filtering is therefore
 100% indexed SQL, with no on-the-fly computation.
 
+### Map view (where the media are) & zone culling
+
+Every gallery (Incoming → *Browse*, *Final*, and `/gallery`) has a **Grid / Map**
+toggle. The **Map** plots one point per geotagged asset — so you can *see where
+the media are* — over OpenStreetMap tiles (source configurable via
+`NEXT_PUBLIC_MAP_TILE_URL`). The points respect the current cumulative filters
+(device, date, type…), and `GET /api/assets/geo` returns just `{id,lat,lon}` so
+even a large library plots in one request (capped, with a `truncated` flag).
+
+**Pick a zone, then act on it.** Either **Select visible area** (use the current
+viewport — works on touch too) or **Draw box** (drag a rectangle). The map shows
+how many media fall in the zone and lets you **Pick · Reject · Export** them in
+one go, or **Show in grid** to review the thumbnails. A clicked point pops its
+thumbnail. The zone is just a **bounding box** that becomes a regular cumulative
+filter (`bbox=w,s,e,n`), materialized + indexed in the DB (migration 0008:
+`gps_lat`/`gps_lon` populated by trigger from the `gps` JSONB), so it stacks with
+every other filter and scopes the grid, the selection, and exports — the picks
+that drop into Capture One are exactly the media from that area.
+
 ---
 
 ## Pipeline control (scan / analyze)
@@ -230,7 +250,8 @@ RAW preview extraction (ARW/DNG…) without demosaicing, **HEIF/HEVC decode**
 prebuilt libvips only ships the AVIF decoder), thumb/proxy derivatives
 in WebP, mobile-first culling grid, ignore-cascade, RAW-copy export + `exports`
 lineage, **multi-feeder ingest** (see below), **virtualized gallery with
-cumulative filters** (DB-indexed attributes), **pipeline control** (pause/resume,
+cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media,
+select a zone → pick/reject/export the area), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
 acceleration), **failure list/retry** (page `/failures`), GitHub Actions **CI**
