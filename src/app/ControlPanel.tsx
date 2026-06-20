@@ -1,49 +1,22 @@
 "use client";
 
-// Dashboard — strip of figures (media / scan / analyzed / pending)
-// + pipeline control: pause/resume of the scan and hourly rates (sliders).
-// Auto-refreshes every 5 s via /api/stats.
-import { useCallback, useEffect, useRef, useState } from "react";
+// Pipeline control surface — the detailed counters bento (media / scan /
+// analyzed / pending / failures) plus pause/resume of the scan and the hourly
+// rate sliders. Lives on the dedicated /pipeline page; the Library header only
+// carries the compact StatsStrip. Auto-refreshes every 5 s via /api/stats.
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { fetchJson } from "@/lib/fetchJson";
-
-type QueueCounts = Record<string, number>;
-type Stats = {
-  assets: {
-    total: number;
-    photos: number;
-    videos: number;
-    analyzed: number;
-    pending: number;
-    errors: number;
-    skipped: number;
-  };
-  queues: {
-    scan: QueueCounts;
-    analyze: QueueCounts;
-    import: QueueCounts;
-    paused: boolean;
-  } | null;
-  paused: boolean;
-  settings: { scanPerHour: number; analyzePerHour: number };
-  failures?: { derivative: number; scan: number; import: number };
-};
+import { active, totalFailures, useStats } from "./useStats";
 
 const RATE_MAX = 3000;
 const RATE_STEP = 50;
-
-// Active work in a queue = in progress + pending (prioritized included).
-function active(c: QueueCounts | undefined): number {
-  if (!c) return 0;
-  return (c.active ?? 0) + (c.waiting ?? 0) + (c.prioritized ?? 0);
-}
 
 function rateLabel(v: number): string {
   return v <= 0 ? "Unlimited" : `${v.toLocaleString()}/h`;
 }
 
 export default function ControlPanel() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const { stats, reload } = useStats();
   const [scanRate, setScanRate] = useState(0);
   const [analyzeRate, setAnalyzeRate] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -51,22 +24,13 @@ export default function ControlPanel() {
   const dragging = useRef({ scan: false, analyze: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const s = await fetchJson<Stats>("/api/stats");
-      setStats(s);
-      if (!dragging.current.scan) setScanRate(s.settings.scanPerHour);
-      if (!dragging.current.analyze) setAnalyzeRate(s.settings.analyzePerHour);
-    } catch {
-      /* transient error: keep the current display */
-    }
-  }, []);
-
+  // Mirror the persisted rates into the sliders, but never clobber a value the
+  // user is actively dragging.
   useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load]);
+    if (!stats) return;
+    if (!dragging.current.scan) setScanRate(stats.settings.scanPerHour);
+    if (!dragging.current.analyze) setAnalyzeRate(stats.settings.analyzePerHour);
+  }, [stats]);
 
   async function togglePause() {
     if (!stats) return;
@@ -77,7 +41,7 @@ export default function ControlPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: stats.paused ? "resume" : "pause" }),
       });
-      await load();
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -96,8 +60,7 @@ export default function ControlPanel() {
 
   const paused = stats?.paused ?? false;
   const a = stats?.assets;
-  const f = stats?.failures;
-  const totalFail = (f?.derivative ?? 0) + (f?.scan ?? 0) + (f?.import ?? 0);
+  const totalFail = totalFailures(stats);
 
   return (
     <div className="control">

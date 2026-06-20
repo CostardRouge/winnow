@@ -200,8 +200,12 @@ that drop into Capture One are exactly the media from that area.
 
 ## Pipeline control (scan / analyze)
 
-The dashboard (home page) exposes a **control panel** and a **stats bar**
-refreshed every 5 s (`GET /api/stats`):
+The dedicated **Pipeline** page (`/pipeline`, in the rail) exposes the full
+**control panel** + **stats bar**, refreshed every 5 s (`GET /api/stats`). The
+Library header keeps only a **compact stats strip** (value+label chips on
+desktop; a single summary chip that opens the detail in a popover on phones, so
+the bento no longer eats half the screen) — each counter links through to the
+Pipeline page:
 
 - **Counters**: number of indexed **media**, **scan** (folders in the indexing
   queue), **analyzed** (derivatives ready), **pending** (to analyze), plus
