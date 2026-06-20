@@ -856,8 +856,26 @@
   }
   .gallery-controls {
     @apply flex items-center gap-2 px-4 py-2.5;
+    /* One compromise height for every control on this row (between the thin
+       text segments and the taller icon toggles) so swapping a view's modifier
+       — Select, list/card toggle, or nothing — never reflows the row. */
+    --tb-control-h: 32px;
+    min-height: calc(var(--tb-control-h) + 1.25rem + 2px);
     background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
     border-bottom: 1px solid var(--color-border);
+  }
+  .gallery-controls .view-toggle,
+  .gallery-controls .layout-toggle,
+  .gallery-controls .btn {
+    height: var(--tb-control-h);
+  }
+  /* Drop the inner vertical padding so the icon/text centre within the shared
+     height instead of dictating it. */
+  .gallery-controls .view-btn,
+  .gallery-controls .layout-btn,
+  .gallery-controls .btn {
+    @apply py-0;
   }
   .gallery-body {
     @apply flex min-h-0 flex-1;
