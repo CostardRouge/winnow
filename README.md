@@ -129,6 +129,7 @@ See `.env.dist`. Main ones:
 | `GET /api/import/:id` | Status of an import batch |
 | `GET /api/roots` · `POST /api/roots` `{ path, type }` | Registered volumes (+ session/asset counts); `type` ∈ incoming·final·export, path-guarded |
 | `PATCH /api/roots/:id` `{ type?, watch?, reindex? }` · `DELETE /api/roots/:id` | Re-type / re-index / remove a volume (remove cascades to its index, files untouched) |
+| `GET /api/fs` `?path=<dir>` | Subdirectories of `<dir>` for the folder picker — confined to the browse roots (`BROWSE_ROOTS` + the volume dirs); omit `path` for the starting locations |
 | `POST /api/reconcile` | Finals→sources reconciliation (**V2**, 501) |
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
@@ -216,10 +217,16 @@ included).
 - **Type** decides how a folder is interpreted (maps to `roots.kind`):
   **Incoming** (`source`, cullable), **Final** (`finals`, view-only), **Export**
   (`export`, *listed for visibility only — never walked*). Editable inline.
-- **Add folder** opens a modal: a path **+ a type selector**, with guards that
-  reject `/` and system dirs and refuse a path that **overlaps** an existing
-  volume (parent/child ⇒ double indexing). The same guards back
-  `POST /api/index/scan` and `POST /api/roots`.
+- **Add folder** opens a modal with a **server-side folder picker** (`GET
+  /api/fs`): browse the NAS and click a folder instead of typing a path —
+  navigating into a folder also selects it. Navigation is **confined to the
+  browse roots** (`BROWSE_ROOTS`, default `/nas`, plus the configured volume
+  dirs), so the OS tree (`/etc`, `/usr`, …) is never reachable and symlinks
+  can't escape the bounds. An **Enter path** tab keeps manual entry as a
+  fallback. Either way a **type selector** decides how the folder is treated,
+  and the same guards (reject `/` and system dirs, refuse a path that
+  **overlaps** an existing volume) back `POST /api/index/scan` and
+  `POST /api/roots`.
 - **Origin** badge (`env` / `manual`): the four env vars
   (`INCOMING_DIR` / `FINALS_DIRS` / `EXPORT_DIR`) **seed** volumes at worker
   bootstrap and suggest the type per directory; the table is the editable source
