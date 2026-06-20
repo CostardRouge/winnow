@@ -96,6 +96,31 @@
   ::selection {
     background: color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
+  /* Ambient darkroom depth: one faint warm glow up top + a hair of teal in the
+     far corner. Fixed + non-interactive so it never repaints on scroll and never
+     competes with the photos sitting above it. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        120% 60% at 50% -10%,
+        color-mix(in srgb, var(--color-surface-2) 80%, transparent) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        90% 70% at 100% 0%,
+        color-mix(in srgb, var(--color-accent) 6%, transparent) 0%,
+        transparent 45%
+      );
+  }
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
   /* Scrollbars tuned to the dark surfaces */
   * {
     scrollbar-width: thin;
@@ -121,12 +146,35 @@
 @layer components {
   .topbar {
     @apply sticky top-0 z-20 flex items-center gap-3 px-4 py-3;
-    background: color-mix(in srgb, var(--color-bg) 82%, transparent);
-    backdrop-filter: blur(12px) saturate(1.4);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-bg) 90%, transparent),
+      color-mix(in srgb, var(--color-bg) 72%, transparent)
+    );
+    backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid var(--color-border);
+    /* hairline highlight on the underside of the bar reads as a polished edge */
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-text) 4%, transparent);
   }
   .topbar h1 {
     @apply m-0 text-base font-semibold tracking-tight;
+  }
+
+  /* ---- Brand lockup ----------------------------------------------------- */
+  .brand {
+    @apply inline-flex select-none items-center gap-2;
+  }
+  .brand-mark {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius)];
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-2));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .brand-word {
+    @apply text-base font-semibold tracking-tight;
+    color: var(--color-text);
   }
   .spacer {
     @apply flex-1;
@@ -151,27 +199,53 @@
     @apply inline-flex select-none items-center justify-center gap-1.5
       rounded-[var(--radius)] border px-3 py-2 text-sm font-medium
       transition duration-150;
-    background: var(--color-surface-2);
+    background: linear-gradient(
+      to bottom,
+      var(--color-surface-3),
+      var(--color-surface-2)
+    );
     border-color: var(--color-border);
     color: var(--color-text);
+    /* 1px inner highlight on top = light catching a raised surface */
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
     transition-timing-function: var(--ease-out);
   }
   .btn:hover {
-    background: var(--color-surface-3);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-surface-3) 70%, var(--color-border-strong)),
+      var(--color-surface-3)
+    );
     border-color: var(--color-border-strong);
     transform: translateY(-1px);
   }
   .btn:active {
     transform: translateY(0) scale(0.98);
+    box-shadow: inset 0 1px 2px rgba(8, 6, 4, 0.4);
   }
   .btn:disabled {
     @apply pointer-events-none opacity-45;
   }
+  /* Square icon-only button (back arrows, toggles) */
+  .btn-icon {
+    @apply h-9 w-9 p-0;
+    color: var(--color-muted);
+  }
+  .btn-icon:hover {
+    color: var(--color-text);
+  }
   .btn-primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
+    background: linear-gradient(
+      to bottom,
+      var(--color-accent-hover),
+      var(--color-accent)
+    );
+    border-color: color-mix(in srgb, var(--color-accent) 70%, #000);
     color: var(--color-accent-fg);
     font-weight: 600;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 1px 2px rgba(8, 6, 4, 0.4);
   }
   .btn-primary:hover {
     background: var(--color-accent-hover);
@@ -211,9 +285,15 @@
   /* ---- Control panel (pipeline) ----------------------------------------- */
   .control {
     @apply flex flex-col gap-3.5 rounded-[var(--radius-lg)] border p-4;
-    background: var(--color-surface);
+    background: linear-gradient(
+      to bottom,
+      var(--color-surface-2),
+      var(--color-surface)
+    );
     border-color: var(--color-border);
-    box-shadow: var(--shadow-card);
+    box-shadow:
+      var(--shadow-card),
+      inset 0 1px 0 rgba(255, 255, 255, 0.035);
   }
   .statbar {
     @apply grid gap-2.5;
@@ -221,9 +301,20 @@
   }
   .stat {
     @apply relative overflow-hidden rounded-[var(--radius)] border p-3;
-    background: var(--color-surface-2);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-surface-3) 55%, var(--color-surface-2)),
+      var(--color-surface-2)
+    );
     border-color: var(--color-border);
-    transition: border-color 0.15s var(--ease-out);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.15s var(--ease-out),
+      transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+  }
+  .stat:hover {
+    transform: translateY(-1px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   /* thin tone rail on the left edge */
   .stat::before {
@@ -298,6 +389,7 @@
     @apply inline-flex gap-1 rounded-[var(--radius-lg)] border p-1;
     background: var(--color-surface);
     border-color: var(--color-border);
+    box-shadow: inset 0 1px 3px rgba(8, 6, 4, 0.35);
   }
   .tab {
     @apply rounded-[var(--radius)] border-0 bg-transparent px-4 py-1.5 text-sm font-semibold transition duration-150;
@@ -308,9 +400,16 @@
     background: var(--color-surface-2);
   }
   .tab.active {
-    background: var(--color-surface-3);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-surface-3) 60%, var(--color-border-strong)),
+      var(--color-surface-3)
+    );
     color: var(--color-text);
-    box-shadow: inset 0 0 0 1px var(--color-border-strong);
+    box-shadow:
+      inset 0 0 0 1px var(--color-border-strong),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 2px rgba(8, 6, 4, 0.4);
   }
   .tab-body,
   .tab-pane {
@@ -329,13 +428,20 @@
   }
   .session-card {
     @apply flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border p-4 transition duration-200;
-    background: var(--color-surface);
+    background: linear-gradient(
+      to bottom,
+      var(--color-surface-2),
+      var(--color-surface)
+    );
     border-color: var(--color-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    transition-property: border-color, box-shadow, transform;
     transition-timing-function: var(--ease-out);
   }
   .session-card:hover {
+    transform: translateY(-1px);
     border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   .session-card.ignored {
     @apply opacity-55;

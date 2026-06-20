@@ -133,8 +133,44 @@ export function EmptyState({
   );
 }
 
+/**
+ * Brand lockup: a winnowing-fan / feather mark drawn as an SVG (no emoji), set
+ * in the accent so it reads as the product's single signature colour, beside the
+ * "Winnow" wordmark. Used in the home topbar.
+ */
+export function Brand() {
+  return (
+    <span className="brand">
+      <span className="brand-mark" aria-hidden>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 20c8.5-1 14-6.5 16-16"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          <path
+            d="M5.5 18.5c5.5-.4 9.8-4.2 11.7-10.6M7.5 16.8c3.6-.3 6.6-2.9 8.2-7.3"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            opacity="0.55"
+          />
+          <circle cx="4" cy="20" r="1.4" fill="currentColor" />
+        </svg>
+      </span>
+      <span className="brand-word">Winnow</span>
+    </span>
+  );
+}
+
 /** A few line-icons (Phosphor-style, 1.5 stroke) so empty states aren't bare text. */
 export const Icons = {
+  back: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  ),
   inbox: (
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 13h4l2 3h6l2-3h4" />

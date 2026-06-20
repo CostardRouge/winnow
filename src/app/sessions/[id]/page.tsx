@@ -13,6 +13,7 @@ import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
 import { deleteAssets, exportAssets, tagAssets } from "@/lib/assetActions";
+import { Icons } from "@/app/ui";
 
 type Verdict = "pick" | "reject" | "unrated";
 type AssetRow = {
@@ -215,8 +216,8 @@ export default function SessionGrid({
   return (
     <>
       <div className="topbar">
-        <Link href="/" className="btn">
-          ←
+        <Link href="/" className="btn btn-icon" aria-label="Back">
+          {Icons.back}
         </Link>
         <h1>Session #{id}</h1>
         <span className="spacer" />

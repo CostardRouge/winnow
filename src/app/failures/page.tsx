@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
+import { Icons } from "@/app/ui";
 
 type DerivItem = {
   asset_id: number;
@@ -136,8 +137,8 @@ export default function FailuresPage() {
   return (
     <>
       <div className="topbar">
-        <Link href="/" className="btn">
-          ←
+        <Link href="/" className="btn btn-icon" aria-label="Back">
+          {Icons.back}
         </Link>
         <h1>Failures</h1>
         <span className="spacer" />
