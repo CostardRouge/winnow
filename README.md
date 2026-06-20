@@ -273,6 +273,12 @@ dedicated Pipeline triage page:
 - **Incoming / inbox priority**: imports (incoming) and the inbox go **ahead** of
   ordinary scans/derivatives (BullMQ priority). A long ordinary scan is
   **preempted** as soon as an incoming scan is waiting, then re-enqueued.
+- **Scan coalescing**: indexing is incremental + idempotent, so every trigger
+  (bootstrap, import, resume, retry, preemption…) **coalesces** on the root id —
+  at most **one pending scan per root**. A more urgent request **promotes** the
+  queued job's priority instead of stacking a duplicate, and the worker
+  reconciles any leftover duplicates at startup. This stops the same folder from
+  piling up several times in the scan queue.
 
 ## Video derivatives (ffmpeg)
 

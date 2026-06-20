@@ -7,7 +7,7 @@
 import { stat } from "node:fs/promises";
 import { many, one } from "./db";
 import { config } from "./config";
-import { enqueueDerivative, enqueueIndex } from "./queue";
+import { coalescePendingIndexJobs, enqueueDerivative, enqueueIndex } from "./queue";
 import { isWalkable } from "./volumes";
 import type { Root } from "./types";
 
@@ -33,6 +33,15 @@ async function ensureRoot(path: string, kind: Root["kind"]): Promise<void> {
 }
 
 export async function bootstrapRoots(): Promise<void> {
+  // Self-heal: drop any duplicate scans left over from before coalescing existed
+  // (or queued while a worker was down) so each root starts with one pending job.
+  try {
+    const dropped = await coalescePendingIndexJobs();
+    if (dropped > 0) console.log(`[bootstrap] coalesced ${dropped} duplicate scan job(s)`);
+  } catch (err) {
+    console.error("[bootstrap] scan-queue coalescing failed:", err);
+  }
+
   const { incomingDir, finalsDirs } = config.import;
   const dirs: Array<{ path: string; kind: Root["kind"] }> = [];
   if (incomingDir) dirs.push({ path: incomingDir, kind: "source" });
