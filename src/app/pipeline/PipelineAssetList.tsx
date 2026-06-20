@@ -6,10 +6,13 @@
 //   1. the filename + status pill,
 //   2. the full absolute path (never truncated — debugging needs the real path),
 //   3. the thumbnail, a line of details, and the actions.
-// "View" opens the shared MediaViewer; "Download" pulls the original file (handy
-// for items with no derivative yet); the rest (regenerate / skip / delete) live
-// in a compact overflow menu. Mutations update the list optimistically.
-import { useCallback, useEffect, useRef, useState } from "react";
+// Actions render as a compact icon "bento" (at most four per page, all known up
+// front): "View" opens the shared MediaViewer; "Download" pulls the original
+// file (handy for items with no derivative yet); regenerate / skip / delete sit
+// beside them as icon buttons (delete carries a quiet danger tint). Everything
+// fits inline, so there's no overflow menu. Mutations update the list
+// optimistically.
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -19,7 +22,6 @@ import {
 import type { AssetGridRow } from "@/lib/types";
 import { EmptyState, Icons } from "../ui";
 import MediaViewer from "../MediaViewer";
-import ActionMenu, { type MenuItem } from "../ActionMenu";
 
 export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
 
@@ -27,15 +29,15 @@ type Mutation = Exclude<RowAction, "view" | "download">;
 
 type Page = { assets: AssetGridRow[]; next_cursor: string | null };
 
-// Each mutating action: how it's labelled, its menu glyph, whether it needs a
-// confirm, and whether a success removes the row from *this* list (true when the
-// action moves the asset out of the page's filter, e.g. delete everywhere, skip
-// on Pending).
+// Each mutating action: how it's labelled, its icon, whether it needs a confirm,
+// and whether a success removes the row from *this* list (true when the action
+// moves the asset out of the page's filter, e.g. delete everywhere, skip on
+// Pending).
 const MUTATIONS: Record<
   Mutation,
   {
     label: string;
-    glyph: string;
+    icon: ReactNode;
     danger?: boolean;
     confirm?: string;
     removes: boolean;
@@ -45,14 +47,14 @@ const MUTATIONS: Record<
 > = {
   regenerate: {
     label: "Regenerate",
-    glyph: "↻",
+    icon: Icons.regenerate,
     removes: false,
     run: (id) => regenerateAssets([id]),
     done: "Re-queued derivative generation.",
   },
   skip: {
     label: "Skip",
-    glyph: "⊘",
+    icon: Icons.skip,
     confirm:
       "Skip this item? It will be taken out of the analyze pipeline until you regenerate it. (The original file is untouched.)",
     removes: true,
@@ -61,7 +63,7 @@ const MUTATIONS: Record<
   },
   delete: {
     label: "Delete",
-    glyph: "🗑",
+    icon: Icons.trash,
     danger: true,
     confirm:
       "Delete this item from the library? It is hidden from every view, but the original file on disk is never touched (reversible).",
@@ -251,7 +253,7 @@ export default function PipelineAssetList({
                     disabled={busy != null}
                     onClick={() => runFromViewer(it.id, k)}
                   >
-                    {MUTATIONS[k].glyph} {MUTATIONS[k].label}
+                    {MUTATIONS[k].icon} {MUTATIONS[k].label}
                   </button>
                 ))}
             </>
@@ -279,17 +281,6 @@ function AssetRow({
 }) {
   const canView = actions.includes("view");
   const hasThumb = Boolean(asset.thumb_key);
-
-  const menuItems: MenuItem[] = (["regenerate", "skip", "delete"] as const)
-    .filter((k) => actions.includes(k))
-    .map((k) => ({
-      key: k,
-      label: MUTATIONS[k].label,
-      icon: MUTATIONS[k].glyph,
-      danger: MUTATIONS[k].danger,
-      disabled,
-      onSelect: () => onRun(asset.id, k),
-    }));
 
   const Thumb = hasThumb ? (
     <button
@@ -331,24 +322,42 @@ function AssetRow({
         <div className="pl-actions">
           {canView && (
             <button
-              className="btn btn-sm"
+              className="btn btn-icon"
               onClick={onView}
               title="Open the viewer"
+              aria-label={`View ${asset.filename}`}
             >
-              {Icons.view} View
+              {Icons.view}
             </button>
           )}
           {actions.includes("download") && (
             <a
-              className="btn btn-sm"
+              className="btn btn-icon"
               href={`/api/assets/${asset.id}/download`}
               download
               title="Download the original file"
+              aria-label={`Download ${asset.filename}`}
             >
-              {Icons.download} Download
+              {Icons.download}
             </a>
           )}
-          <ActionMenu items={menuItems} disabled={disabled || busy} label={asset.filename} />
+          {(["regenerate", "skip", "delete"] as const)
+            .filter((k) => actions.includes(k))
+            .map((k) => {
+              const m = MUTATIONS[k];
+              return (
+                <button
+                  key={k}
+                  className={`btn btn-icon${m.danger ? " btn-danger" : ""}`}
+                  disabled={disabled || busy}
+                  onClick={() => onRun(asset.id, k)}
+                  title={m.label}
+                  aria-label={`${m.label} ${asset.filename}`}
+                >
+                  {m.icon}
+                </button>
+              );
+            })}
         </div>
       </div>
     </div>

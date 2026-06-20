@@ -305,6 +305,18 @@
     background: color-mix(in srgb, var(--color-reject) 88%, #000);
     color: var(--color-reject-fg);
   }
+  /* Destructive icon button for in-list bento actions: a quiet red tint at rest
+     (so a long list isn't a wall of loud solid-red buttons) that fills in on
+     hover/focus. Defined after .btn-icon so it wins the muted-grey colour. */
+  .btn-danger {
+    color: var(--color-reject);
+  }
+  .btn-danger:hover,
+  .btn-danger:focus-visible {
+    background: color-mix(in srgb, var(--color-reject) 12%, transparent);
+    border-color: var(--color-reject);
+    color: color-mix(in srgb, var(--color-reject) 85%, #000);
+  }
 
   .input {
     @apply rounded-[var(--radius)] border px-3.5 py-2 text-sm transition duration-150;
