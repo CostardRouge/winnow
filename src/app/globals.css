@@ -2207,10 +2207,66 @@
     cursor: pointer;
   }
 
-  /* Expanded: every file as a responsive square grid. */
-  .export-grid {
-    @apply grid w-full gap-1.5;
-    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  /* Expanded: a detailed manifest of every file being copied. */
+  .export-detail-list {
+    @apply flex w-full list-none flex-col gap-1 p-0;
+  }
+  .export-detail-row {
+    @apply flex items-center gap-3 rounded-[var(--radius)] border p-1.5;
+    border-color: transparent;
+    transition: background 0.12s var(--ease-out);
+  }
+  .export-detail-row:hover {
+    background: var(--color-surface-2);
+  }
+  .export-detail-thumb {
+    @apply relative flex h-11 w-11 shrink-0 items-center justify-center
+      overflow-hidden rounded-[var(--radius-sm)] border;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+    cursor: pointer;
+  }
+  .export-detail-thumb img,
+  .export-detail-thumb .lazy-img {
+    @apply block h-full w-full object-cover;
+  }
+  .export-detail-thumb .export-thumb-ph {
+    @apply text-sm;
+  }
+  .export-detail-info {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+  .export-detail-name {
+    @apply flex min-w-0 items-center gap-2 truncate text-[13px] font-medium;
+    color: var(--color-text);
+  }
+  .export-detail-ext {
+    @apply shrink-0 rounded-[5px] px-1.5 py-px text-[10px] uppercase;
+    font-family: var(--font-mono);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-muted);
+  }
+  .export-detail-meta {
+    @apply truncate text-[12px];
+    color: var(--color-muted);
+  }
+  .export-detail-aside {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .export-detail-size {
+    @apply text-[12px] tabular-nums;
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .export-detail-dl {
+    @apply flex h-7 w-7 items-center justify-center rounded-full;
+    color: var(--color-muted);
+    transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+  }
+  .export-detail-dl:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
   }
 
   .export-thumb {

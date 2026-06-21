@@ -3,7 +3,9 @@
 // Compact dropdown menu: a trigger button that drops a list of actions. Used for
 // row overflow menus (a "⋯" kebab) and for grouping several download options
 // behind one labelled button. The menu is fixed-positioned next to the trigger
-// and clamped to the viewport.
+// and clamped to the viewport. It is rendered through a portal into <body> so a
+// transformed ancestor (e.g. a card's hover lift) can't capture the fixed
+// positioning and offset the menu away from its trigger.
 import {
   useEffect,
   useLayoutEffect,
@@ -11,6 +13,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Icons } from "./ui";
 
 export type MenuItem = {
@@ -114,39 +117,42 @@ export default function ActionMenu({
         )}
       </button>
 
-      {open && (
-        <div
-          ref={menuRef}
-          className="ctx-menu"
-          role="menu"
-          style={{
-            left: pos?.x ?? -9999,
-            top: pos?.y ?? -9999,
-            visibility: pos ? "visible" : "hidden",
-          }}
-        >
-          {label && <div className="ctx-label">{label}</div>}
-          {items.map((it) => (
-            <button
-              key={it.key}
-              type="button"
-              role="menuitem"
-              className={`ctx-item${it.danger ? " ctx-danger" : ""}`}
-              disabled={it.disabled}
-              onClick={() => {
-                setOpen(false);
-                it.onSelect();
-              }}
-            >
-              {it.icon != null && <span className="ctx-ic">{it.icon}</span>}
-              <span className="ctx-item-text">
-                {it.label}
-                {it.hint && <span className="ctx-item-hint">{it.hint}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="ctx-menu"
+            role="menu"
+            style={{
+              left: pos?.x ?? -9999,
+              top: pos?.y ?? -9999,
+              visibility: pos ? "visible" : "hidden",
+            }}
+          >
+            {label && <div className="ctx-label">{label}</div>}
+            {items.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                role="menuitem"
+                className={`ctx-item${it.danger ? " ctx-danger" : ""}`}
+                disabled={it.disabled}
+                onClick={() => {
+                  setOpen(false);
+                  it.onSelect();
+                }}
+              >
+                {it.icon != null && <span className="ctx-ic">{it.icon}</span>}
+                <span className="ctx-item-text">
+                  {it.label}
+                  {it.hint && <span className="ctx-item-hint">{it.hint}</span>}
+                </span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
