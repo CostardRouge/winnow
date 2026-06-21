@@ -1,99 +1,268 @@
-// Central configuration, read from the environment.
+// Central configuration, validated from the environment at startup.
 // All state and computation live on the Optiplex; the NAS is only a read-only source.
+//
+// The whole environment is parsed ONCE, here, through a Zod schema that
+// fail-fasts: a missing/garbled/incoherent variable (a typo'd STORAGE_DRIVER,
+// a non-numeric concurrency, s3 selected without credentials…) crashes the
+// process at boot with a precise message, instead of silently degrading in
+// production. Every consumer keeps reading the same `config` object below.
 
-function int(name: string, def: number): number {
-  const v = process.env[name];
-  if (!v) return def;
-  const n = Number.parseInt(v, 10);
-  return Number.isFinite(n) ? n : def;
+import { z } from "zod";
+
+// --- Env coercion helpers -------------------------------------------------
+// Each returns a Zod schema that reads ONE raw env string (or undefined) and
+// produces a typed value. Unlike a bare `process.env.X ?? default`, a value
+// that is present but invalid is a hard error, not a silent fallback.
+
+const blankToUndefined = (v: unknown) =>
+  typeof v === "string" && v.trim() === "" ? undefined : v;
+
+// Non-empty string, trimmed; falls back to `def` when unset/blank.
+function strEnv(def: string) {
+  return z
+    .string()
+    .optional()
+    .transform((raw) => {
+      const v = raw?.trim();
+      return v ? v : def;
+    });
 }
 
-// List of paths (separated by comma or colon) → cleaned array.
-// Allows multiple folders (e.g. several final zones) from today.
-function list(name: string, def: string[]): string[] {
-  const v = process.env[name];
-  if (!v) return def;
-  return v
-    .split(/[,:]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+// Integer within an optional [min, max] range; a non-integer or out-of-range
+// value fails instead of silently reverting to `def`.
+function intEnv(def: number, range: { min?: number; max?: number } = {}) {
+  const { min, max } = range;
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const v = raw?.trim();
+      if (!v) return def;
+      const n = Number(v);
+      if (!Number.isInteger(n)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be an integer (got "${raw}")`,
+        });
+        return z.NEVER;
+      }
+      if (min !== undefined && n < min) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be >= ${min} (got ${n})`,
+        });
+        return z.NEVER;
+      }
+      if (max !== undefined && n > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be <= ${max} (got ${n})`,
+        });
+        return z.NEVER;
+      }
+      return n;
+    });
 }
 
-export const config = {
-  databaseUrl:
-    process.env.DATABASE_URL ??
-    "postgres://winnow:winnow@localhost:5432/winnow",
+// Boolean from the usual truthy/falsy spellings; anything else fails (whereas
+// the old `=== "true"` quietly turned every typo into `false`).
+function boolEnv(def: boolean) {
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const v = raw?.trim().toLowerCase();
+      if (!v) return def;
+      if (["true", "1", "yes", "on"].includes(v)) return true;
+      if (["false", "0", "no", "off"].includes(v)) return false;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `must be a boolean (true/false), got "${raw}"`,
+      });
+      return z.NEVER;
+    });
+}
 
-  redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
+// Paths separated by comma or colon → cleaned array. Allows multiple folders
+// (e.g. several final zones). Falls back to `def` when unset/blank/empty.
+function listEnv(def: string[]) {
+  return z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (raw === undefined) return def;
+      const items = raw
+        .split(/[,:]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return items.length ? items : def;
+    });
+}
 
-  // --- Derivative storage ---------------------------------------------------
-  // "disk" driver (MVP) or "s3" (MinIO later). The interface is identical
-  // on the code side: we manipulate keys, read/write bytes, sign URLs.
-  storage: {
-    driver: (process.env.STORAGE_DRIVER ?? "disk") as "disk" | "s3",
-    diskPath: process.env.STORAGE_DISK_PATH ?? "/data/derivatives",
-    s3: {
-      endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
-      region: process.env.S3_REGION ?? "us-east-1",
-      bucket: process.env.S3_BUCKET ?? "winnow",
-      accessKeyId: process.env.S3_ACCESS_KEY ?? "minioadmin",
-      secretAccessKey: process.env.S3_SECRET_KEY ?? "minioadmin",
-      forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? "true") === "true",
-    },
-  },
+// One enum value (blank → default); a value outside the set is reported with
+// the list of accepted values.
+function enumEnv<const T extends readonly [string, ...string[]]>(
+  values: T,
+  def: T[number],
+) {
+  return z.preprocess(blankToUndefined, z.enum(values).default(def));
+}
 
-  // Directory where the "RAW copy for Capture One" export drops the originals.
-  exportDir: process.env.EXPORT_DIR ?? "/data/exports",
+// --- The schema: one entry per recognized environment variable ------------
 
-  // --- Folder picker (Volumes "Add folder") --------------------------------
-  // Base directories the server-side folder picker is allowed to browse. The
-  // configured volume dirs (incoming/finals/export) are always added on top, so
-  // this is really "where else can I browse" — defaults to the NAS mount.
-  // Containment to these roots is what stops the picker from ever exposing the
-  // OS (/etc, /usr, …) or letting "/" be registered by hand.
-  browse: {
-    roots: list("BROWSE_ROOTS", ["/nas"]),
-  },
+const EnvSchema = z
+  .object({
+    DATABASE_URL: strEnv("postgres://winnow:winnow@localhost:5432/winnow"),
+    REDIS_URL: strEnv("redis://localhost:6379"),
 
-  // --- Ingest / import ------------------------------------------------------
-  // All feeders (web upload, SMB drop, device FTP, card offload)
-  // converge to the inbox; the import worker verifies (hash), deduplicates, files
-  // into the incoming (NAS archive) according to a template, then the indexer takes over.
-  import: {
-    inboxDir: process.env.INBOX_DIR ?? "/data/inbox",
+    // --- Derivative storage -----------------------------------------------
+    // "disk" driver (MVP) or "s3" (MinIO later). The interface is identical
+    // on the code side: we manipulate keys, read/write bytes, sign URLs.
+    STORAGE_DRIVER: enumEnv(["disk", "s3"], "disk"),
+    STORAGE_DISK_PATH: strEnv("/data/derivatives"),
+    S3_ENDPOINT: strEnv("http://localhost:9000"),
+    S3_REGION: strEnv("us-east-1"),
+    S3_BUCKET: strEnv("winnow"),
+    S3_ACCESS_KEY: strEnv("minioadmin"),
+    S3_SECRET_KEY: strEnv("minioadmin"),
+    S3_FORCE_PATH_STYLE: boolEnv(true),
+
+    // Directory where the "RAW copy for Capture One" export drops the originals.
+    EXPORT_DIR: strEnv("/data/exports"),
+
+    // --- Folder picker (Volumes "Add folder") -----------------------------
+    // Base directories the server-side folder picker is allowed to browse. The
+    // configured volume dirs (incoming/finals/export) are always added on top,
+    // so this is really "where else can I browse" — defaults to the NAS mount.
+    // Containment to these roots is what stops the picker from ever exposing
+    // the OS (/etc, /usr, …) or letting "/" be registered by hand.
+    BROWSE_ROOTS: listEnv(["/nas"]),
+
+    // --- Ingest / import --------------------------------------------------
+    // All feeders (web upload, SMB drop, device FTP, card offload) converge to
+    // the inbox; the import worker verifies (hash), deduplicates, files into
+    // the incoming (NAS archive) per a template, then the indexer takes over.
+    INBOX_DIR: strEnv("/data/inbox"),
     // Permanent destination of the imported originals (NAS "incoming" zone).
-    incomingDir: process.env.INCOMING_DIR ?? "/nas/incoming",
-    // NAS "final" folders (Immich output): indexed for viewing
-    // (thumbnails) but never culled/exported. List → multi-folder possible.
-    finalsDirs: list("FINALS_DIRS", []),
-    concurrency: int("IMPORT_CONCURRENCY", 1),
+    INCOMING_DIR: strEnv("/nas/incoming"),
+    // NAS "final" folders (Immich output): indexed for viewing (thumbnails)
+    // but never culled/exported. List → multi-folder possible.
+    FINALS_DIRS: listEnv([]),
+    IMPORT_CONCURRENCY: intEnv(1, { min: 1 }),
     // Watches the inbox and enqueues an import when files arrive (SMB/FTP).
-    watchInbox: (process.env.WATCH_INBOX ?? "true") === "true",
-  },
+    WATCH_INBOX: boolEnv(true),
 
-  // --- Video (derivatives via ffmpeg) --------------------------------------
-  // Poster (thumbnail) + playable H.264 mp4 proxy for culling. Hardware
-  // acceleration is OPTIONAL: by default "none" (software libx264, works
-  // everywhere); set VIDEO_HWACCEL=vaapi once /dev/dri is shared with the container
-  // (automatic software fallback if hardware encoding fails).
-  video: {
-    proxyHeight: int("VIDEO_PROXY_HEIGHT", 720),
-    proxyCrf: int("VIDEO_PROXY_CRF", 24),
-    hwaccel: (process.env.VIDEO_HWACCEL ?? "none") as "none" | "vaapi",
-    vaapiDevice: process.env.VIDEO_VAAPI_DEVICE ?? "/dev/dri/renderD128",
-  },
+    // --- Video (derivatives via ffmpeg) -----------------------------------
+    // Poster (thumbnail) + playable H.264 mp4 proxy for culling. Hardware
+    // acceleration is OPTIONAL: by default "none" (software libx264, works
+    // everywhere); set VIDEO_HWACCEL=vaapi once /dev/dri is shared with the
+    // container (automatic software fallback if hardware encoding fails).
+    VIDEO_PROXY_HEIGHT: intEnv(720, { min: 1 }),
+    VIDEO_PROXY_CRF: intEnv(24, { min: 0, max: 63 }),
+    VIDEO_HWACCEL: enumEnv(["none", "vaapi"], "none"),
+    VIDEO_VAAPI_DEVICE: strEnv("/dev/dri/renderD128"),
 
-  // --- Bounded concurrency to spare the full HDD of the NAS ----------------
-  scanConcurrency: int("SCAN_CONCURRENCY", 1),
-  derivativeConcurrency: int("DERIVATIVE_CONCURRENCY", 3),
-  exportConcurrency: int("EXPORT_CONCURRENCY", 2),
+    // --- Bounded concurrency to spare the full HDD of the NAS -------------
+    SCAN_CONCURRENCY: intEnv(1, { min: 1 }),
+    DERIVATIVE_CONCURRENCY: intEnv(3, { min: 1 }),
+    EXPORT_CONCURRENCY: intEnv(2, { min: 1 }),
 
-  // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
-  thumbSize: int("THUMB_SIZE", 400),
-  proxySize: int("PROXY_SIZE", 2048),
-  thumbQuality: int("THUMB_QUALITY", 70),
-  proxyQuality: int("PROXY_QUALITY", 80),
-};
+    // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
+    THUMB_SIZE: intEnv(400, { min: 1 }),
+    PROXY_SIZE: intEnv(2048, { min: 1 }),
+    THUMB_QUALITY: intEnv(70, { min: 1, max: 100 }),
+    PROXY_QUALITY: intEnv(80, { min: 1, max: 100 }),
+  })
+  .superRefine((_env, ctx) => {
+    // Coherence: selecting the s3 driver but leaving the dev defaults in place
+    // (localhost endpoint, minioadmin credentials) is almost always a misconfig
+    // in production — require them to be set explicitly. We look at the raw env
+    // because the parsed values always carry their dev fallback.
+    if (blankToUndefined(process.env.STORAGE_DRIVER) === "s3") {
+      for (const key of [
+        "S3_ENDPOINT",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY",
+        "S3_SECRET_KEY",
+      ] as const) {
+        if (!process.env[key]?.trim()) {
+          ctx.addIssue({
+            path: [key],
+            code: z.ZodIssueCode.custom,
+            message: "must be set explicitly when STORAGE_DRIVER=s3",
+          });
+        }
+      }
+    }
+  });
+
+function loadConfig() {
+  const parsed = EnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const lines = parsed.error.issues.map((i) => {
+      const where = i.path.join(".") || "(env)";
+      return `  - ${where}: ${i.message}`;
+    });
+    // Fail fast: a broken config must never boot into a silent, half-working
+    // state. The aggregated message lists every offending variable at once.
+    throw new Error(
+      `Invalid Winnow configuration — fix these environment variables:\n${lines.join("\n")}`,
+    );
+  }
+  const e = parsed.data;
+
+  return {
+    databaseUrl: e.DATABASE_URL,
+    redisUrl: e.REDIS_URL,
+
+    storage: {
+      driver: e.STORAGE_DRIVER,
+      diskPath: e.STORAGE_DISK_PATH,
+      s3: {
+        endpoint: e.S3_ENDPOINT,
+        region: e.S3_REGION,
+        bucket: e.S3_BUCKET,
+        accessKeyId: e.S3_ACCESS_KEY,
+        secretAccessKey: e.S3_SECRET_KEY,
+        forcePathStyle: e.S3_FORCE_PATH_STYLE,
+      },
+    },
+
+    exportDir: e.EXPORT_DIR,
+
+    browse: {
+      roots: e.BROWSE_ROOTS,
+    },
+
+    import: {
+      inboxDir: e.INBOX_DIR,
+      incomingDir: e.INCOMING_DIR,
+      finalsDirs: e.FINALS_DIRS,
+      concurrency: e.IMPORT_CONCURRENCY,
+      watchInbox: e.WATCH_INBOX,
+    },
+
+    video: {
+      proxyHeight: e.VIDEO_PROXY_HEIGHT,
+      proxyCrf: e.VIDEO_PROXY_CRF,
+      hwaccel: e.VIDEO_HWACCEL,
+      vaapiDevice: e.VIDEO_VAAPI_DEVICE,
+    },
+
+    scanConcurrency: e.SCAN_CONCURRENCY,
+    derivativeConcurrency: e.DERIVATIVE_CONCURRENCY,
+    exportConcurrency: e.EXPORT_CONCURRENCY,
+
+    thumbSize: e.THUMB_SIZE,
+    proxySize: e.PROXY_SIZE,
+    thumbQuality: e.THUMB_QUALITY,
+    proxyQuality: e.PROXY_QUALITY,
+  };
+}
+
+export type Config = ReturnType<typeof loadConfig>;
+
+export const config: Config = loadConfig();
 
 // Recognized extensions. Culling is always done on lightweight proxies.
 export const PHOTO_RAW_EXTS = new Set([

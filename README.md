@@ -118,6 +118,12 @@ See `.env.dist`. Main ones:
 - `*_CONCURRENCY`: bounded concurrency to spare the NAS's full HDD
 - `THUMB_SIZE` / `PROXY_SIZE` / qualities
 
+The whole environment is validated **once at startup** by a Zod schema in
+`src/lib/config.ts`. A missing/garbled/incoherent variable (a typo'd
+`STORAGE_DRIVER`, a non-numeric `*_CONCURRENCY`, `STORAGE_DRIVER=s3` without
+the `S3_*` credentials…) fail-fasts the process with a message listing every
+offending variable — instead of silently degrading in production.
+
 ---
 
 ## API
