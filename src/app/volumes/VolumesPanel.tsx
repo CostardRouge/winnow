@@ -397,18 +397,25 @@ function AddVolumeModal({
           Browse the NAS and pick a folder, then choose how Winnow should treat it.
         </p>
 
-        <div className="subtabs" style={{ marginTop: 4 }}>
+        <div
+          className="view-toggle"
+          role="group"
+          aria-label="Add folder mode"
+          style={{ marginTop: 4 }}
+        >
           <button
             type="button"
-            className={`chip${mode === "browse" ? " active" : ""}`}
+            className={`view-btn${mode === "browse" ? " active" : ""}`}
             onClick={() => setMode("browse")}
+            aria-pressed={mode === "browse"}
           >
             Browse
           </button>
           <button
             type="button"
-            className={`chip${mode === "manual" ? " active" : ""}`}
+            className={`view-btn${mode === "manual" ? " active" : ""}`}
             onClick={() => setMode("manual")}
+            aria-pressed={mode === "manual"}
           >
             Enter path
           </button>
