@@ -59,3 +59,20 @@ export async function reconcileGroupsForSession(
   }
   return created;
 }
+
+// SQL CTE expanding a set of asset ids to include their RAW+JPEG group
+// companions, so an action applied to one file (rating, soft-delete) cascades
+// to the whole pair — the picking unit, per the Photo Mechanic model. `param`
+// is the positional placeholder carrying the input ids as a bigint[] (e.g.
+// "$1"). Defines a `target_ids(id)` CTE; compose it as the first WITH binding.
+export function groupExpandCTE(param: string): string {
+  return `target_ids AS (
+    SELECT a.id
+    FROM assets a
+    WHERE a.id = ANY(${param}::bigint[])
+       OR a.group_id IN (
+         SELECT group_id FROM assets
+         WHERE id = ANY(${param}::bigint[]) AND group_id IS NOT NULL
+       )
+  )`;
+}

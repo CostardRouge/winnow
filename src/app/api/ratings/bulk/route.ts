@@ -2,6 +2,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { q } from "@/lib/db";
+import { groupExpandCTE } from "@/lib/pairing";
 import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z.object({
@@ -18,10 +19,13 @@ export async function POST(req: NextRequest) {
     if (verdict == null && star == null)
       return badRequest("verdict or star required");
 
+    // RAW+JPEG pairing: cascade each rating to its group companion so a pair is
+    // rated as one logical media (cf. lib/pairing.ts).
     await q(
-      `INSERT INTO ratings (asset_id, verdict, star, reviewed_at)
-       SELECT x.id, COALESCE($2,'unrated'), COALESCE($3,0), now()
-       FROM unnest($1::bigint[]) AS x(id)
+      `WITH ${groupExpandCTE("$1")}
+       INSERT INTO ratings (asset_id, verdict, star, reviewed_at)
+       SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), now()
+       FROM target_ids
        ON CONFLICT (asset_id) DO UPDATE SET
          verdict     = COALESCE($2, ratings.verdict),
          star        = COALESCE($3, ratings.star),
@@ -30,8 +34,9 @@ export async function POST(req: NextRequest) {
     );
 
     await q(
-      `UPDATE assets SET processing_state = 'triaged', updated_at = now()
-       WHERE id = ANY($1::bigint[]) AND processing_state = 'unprocessed'`,
+      `WITH ${groupExpandCTE("$1")}
+       UPDATE assets SET processing_state = 'triaged', updated_at = now()
+       WHERE id IN (SELECT id FROM target_ids) AND processing_state = 'unprocessed'`,
       [ids],
     );
 

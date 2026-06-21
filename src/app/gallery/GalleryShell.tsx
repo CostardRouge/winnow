@@ -53,6 +53,10 @@ type Row = GalleryAsset & {
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
   rel_path?: string | null;
+  // RAW+JPEG pairing: the companion (RAW source) of this displayed primary, fed
+  // to the grid badge and the viewer's JPEG/RAW toggle (cf. lib/pairing.ts).
+  companion_id?: number | null;
+  companion_ext?: string | null;
 };
 
 // Leaflet touches `window` on import, so the map is client-only (no SSR).
@@ -249,10 +253,14 @@ export default function GalleryShell({
       loadingRef.current = true;
       setLoading(true);
       try {
+        // collapse=1: RAW+JPEG pairs show as one tile (the JPEG/HEIF primary);
+        // the RAW companion rides along on the row for the badge + viewer toggle.
         const data = await fetchJson<{
           assets?: Row[];
           next_cursor?: string | null;
-        }>(`/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}`);
+        }>(
+          `/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1`,
+        );
         setError(null);
         setItems((prev) => (cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? []));
         setCursor(data.next_cursor ?? null);
