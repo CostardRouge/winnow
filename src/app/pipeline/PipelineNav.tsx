@@ -45,6 +45,8 @@ export default function PipelineNav() {
       count: totalFailures(stats),
       tone: "bad",
     },
+    // Maintenance tool (on-demand scan, no live counter from /api/stats).
+    { href: "/pipeline/heic-rotation", label: "HEIC rotation" },
   ];
 
   return (
