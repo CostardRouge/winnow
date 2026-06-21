@@ -21,6 +21,10 @@ export type Metadata = {
   width: number | null;
   height: number | null;
   duration_s: number | null;
+  // iPhone Live Photo link: Apple's Content Identifier (a UUID written on BOTH
+  // the still and its companion .mov). Null for everything that isn't a Live
+  // Photo member. Used by lib/pairing.ts to tie the pair at scan time.
+  content_id: string | null;
 };
 
 function toIso(v: unknown): string | null {
@@ -118,6 +122,12 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
     width: num(t.ImageWidth ?? (t as any).ExifImageWidth),
     height: num(t.ImageHeight ?? (t as any).ExifImageHeight),
     duration_s: num((t as any).Duration ?? (t as any).MediaDuration),
+    // Apple writes the Live-Photo UUID as `ContentIdentifier` on the still
+    // (MakerNotes) and the .mov (QuickTime); `MediaGroupUUID` is the legacy
+    // spelling seen on some stills. Either side of the pair carries the same
+    // value, which is exactly what lets lib/pairing.ts match them.
+    content_id:
+      str((t as any).ContentIdentifier) ?? str((t as any).MediaGroupUUID),
   };
 }
 

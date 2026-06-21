@@ -448,7 +448,11 @@ RAW preview extraction (ARW/DNG…) without demosaicing, **HEIF/HEVC decode**
 otherwise libheif, since sharp's prebuilt libvips only ships the AVIF decoder;
 the decoder is lazy-loaded and serialized so it can never crash the worker),
 thumb/proxy derivatives
-in WebP, mobile-first culling grid, ignore-cascade, RAW-copy export + `exports`
+in WebP, mobile-first culling grid, ignore-cascade, **media pairing** (RAW+JPEG
+siblings tied by basename, **iPhone Live Photos** tied by Apple's Content
+Identifier — the pair shows, rates, soft-deletes and exports as one logical
+media; the viewer's segmented toggle swaps to the RAW source or plays the Live
+Photo's `.mov` motion), RAW-copy export + `exports`
 lineage, **reclaim space** (recycle-bin soft-delete → confirmed purge that frees
 the NAS originals + derivatives, with audit + per-file resilience),
 **multi-feeder ingest** (see below), **virtualized gallery with

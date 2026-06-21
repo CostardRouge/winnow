@@ -11,7 +11,10 @@ import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
-import { reconcileGroupsForSession } from "./pairing";
+import {
+  reconcileGroupsForSession,
+  reconcileLivePhotosForSession,
+} from "./pairing";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -166,6 +169,7 @@ export async function indexRoot(
            file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
            camera_model=$11, lens=$12, iso=$13, shutter=$14, aperture=$15,
            focal_length=$16, gps=$17, width=$18, height=$19, duration_s=$20,
+           content_id=$23,
            derivative_status=$21,
            processing_state=CASE WHEN $22 THEN 'ignored' ELSE processing_state END,
            updated_at=now()
@@ -193,6 +197,7 @@ export async function indexRoot(
           meta.duration_s,
           willDerive ? "pending" : "skipped",
           ignored,
+          meta.content_id,
         ],
       );
       res.updated++;
@@ -214,10 +219,10 @@ export async function indexRoot(
            session_id, abs_path, rel_path, filename, ext, media_type, device,
            file_size, file_mtime, content_hash, captured_at, camera_model, lens,
            iso, shutter, aperture, focal_length, gps, width, height, duration_s,
-           derivative_status, processing_state
+           derivative_status, processing_state, content_id
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-           $20,$21,$22,$23
+           $20,$21,$22,$23,$24
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -245,6 +250,7 @@ export async function indexRoot(
           meta.duration_s,
           willDerive ? "pending" : "skipped",
           ignored ? "ignored" : "unprocessed",
+          meta.content_id,
         ],
       );
 
@@ -318,9 +324,14 @@ export async function indexRoot(
        WHERE s.id = $1`,
       [sid],
     );
-    // Tie freshly indexed RAW+JPEG siblings into logical pairs. Runs after the
-    // counters above so newly inserted/updated files are visible to the matcher.
+    // Tie freshly indexed siblings into logical pairs. Runs after the counters
+    // above so newly inserted/updated files are visible to the matcher. RAW+JPEG
+    // first (shared basename), then iPhone Live Photos (still + .mov sharing the
+    // Apple Content Identifier). Both skip already-grouped files, so the order
+    // only decides which claims an asset eligible for both (a non-issue in
+    // practice: a RAW shares no content_id with a .mov).
     res.paired += await reconcileGroupsForSession(sid);
+    res.paired += await reconcileLivePhotosForSession(sid);
   }
 
   return res;

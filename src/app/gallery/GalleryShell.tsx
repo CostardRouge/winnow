@@ -53,15 +53,18 @@ type Row = GalleryAsset & {
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
   rel_path?: string | null;
-  // RAW+JPEG pairing: the companion (RAW source) of this displayed primary, fed
-  // to the grid badge and the viewer's JPEG/RAW toggle (cf. lib/pairing.ts). The
-  // per-file stats let the viewer describe the RAW side when it's on screen.
+  // Pairing: the companion of this displayed primary, its group kind and the
+  // companion's per-file stats, fed to the grid badge and the viewer's segmented
+  // toggle (cf. lib/pairing.ts) — the stats let the viewer describe the companion
+  // side when it's on screen.
   companion_id?: number | null;
   companion_ext?: string | null;
+  companion_media_type?: "photo" | "video" | null;
   companion_filename?: string | null;
   companion_file_size?: number | null;
   companion_width?: number | null;
   companion_height?: number | null;
+  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 // Leaflet touches `window` on import, so the map is client-only (no SSR).

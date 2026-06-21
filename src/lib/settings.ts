@@ -14,6 +14,9 @@ export type AppSettings = {
   // RAW+JPEG pairing: when exporting a pair, also copy the JPEG companion next
   // to the RAW keeper. Default false (RAW only). Cf. lib/export.ts, lib/pairing.ts.
   exportIncludeJpeg: boolean;
+  // Live Photo pairing: when exporting a Live Photo, also copy the .mov motion
+  // next to the still keeper. Default false (still only). Cf. lib/export.ts.
+  exportIncludeLiveVideo: boolean;
 };
 
 const DEFAULTS: AppSettings = {
@@ -21,6 +24,7 @@ const DEFAULTS: AppSettings = {
   scanPerHour: 0,
   analyzePerHour: 0,
   exportIncludeJpeg: false,
+  exportIncludeLiveVideo: false,
 };
 
 const TTL_MS = 1500;
@@ -41,6 +45,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.analyzePerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "export_include_jpeg")
         value.exportIncludeJpeg = r.value === true;
+      else if (r.key === "export_include_live_video")
+        value.exportIncludeLiveVideo = r.value === true;
     }
   } catch {
     // Table absent (before migration) or Postgres unavailable: we fall back
@@ -62,6 +68,11 @@ export async function setSettings(
     entries.push(["scan_paused", JSON.stringify(Boolean(patch.scanPaused))]);
   if (patch.exportIncludeJpeg !== undefined)
     entries.push(["export_include_jpeg", JSON.stringify(Boolean(patch.exportIncludeJpeg))]);
+  if (patch.exportIncludeLiveVideo !== undefined)
+    entries.push([
+      "export_include_live_video",
+      JSON.stringify(Boolean(patch.exportIncludeLiveVideo)),
+    ]);
 
   for (const [key, value] of entries) {
     await q(
