@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyCameraName } from "@/lib/cameraLabels";
 import {
   formatBytes,
   formatDateTime,
@@ -46,7 +47,9 @@ function exposureLine(a: AssetMetaInput): string | null {
 }
 
 export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
-  const camera = [asset.camera_model, asset.lens].filter(Boolean).join(" · ");
+  const camera = [friendlyCameraName(asset.camera_model), asset.lens]
+    .filter(Boolean)
+    .join(" · ");
   const exposure = exposureLine(asset);
   const dims = formatDimensions(asset.width, asset.height);
   const typeStr = [asset.ext?.replace(/^\./, "").toUpperCase(), asset.media_type]
@@ -62,7 +65,7 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
     rows.push(["Duration", formatDuration(asset.duration_s)]);
   if (asset.file_size != null) rows.push(["Size", formatBytes(asset.file_size)]);
   if (typeStr) rows.push(["Type", typeStr]);
-  if (asset.device) rows.push(["Device", asset.device]);
+  if (asset.device) rows.push(["Device", friendlyCameraName(asset.device)]);
   if (asset.gps) {
     const { lat, lon } = asset.gps;
     rows.push([
