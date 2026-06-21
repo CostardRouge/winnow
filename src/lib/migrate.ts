@@ -1,12 +1,47 @@
-// Applies the SQL migrations from db/migrations in lexicographic order.
-// Idempotent: each applied file is recorded in schema_migrations.
+// Applies the SQL migrations from db/migrations in lexicographic order, which
+// (thanks to the zero-padded NNNN_ prefix) is also numeric order. Idempotent:
+// each applied file is recorded by filename in schema_migrations and skipped on
+// the next run. Naming/ordering convention: db/migrations/README.md.
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import type { PoolClient } from "pg";
 import { pool } from "./db";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../db/migrations");
+
+// One-time shim for the 2026-06 renumbering that removed duplicate 0006_/0007_
+// prefixes (see db/migrations/README.md "History"). Migrations are tracked by
+// filename, so a database migrated before the renumbering recorded the OLD names
+// and would otherwise re-run the renamed files. Rewrite those rows to the new
+// names so the renumbered files are recognised as already applied. No new name
+// equals any old name, so the rewrites are independent; on a fresh database
+// nothing matches and this is a no-op.
+const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
+  ["0006_session_completed.sql", "0007_session_completed.sql"],
+  ["0007_duplicate_hits.sql", "0008_duplicate_hits.sql"],
+  ["0007_soft_delete.sql", "0009_soft_delete.sql"],
+  ["0008_gps_coords.sql", "0010_gps_coords.sql"],
+  ["0009_root_export_kind.sql", "0011_root_export_kind.sql"],
+];
+
+async function reconcileRenumbered(client: PoolClient): Promise<void> {
+  for (const [oldName, newName] of RENUMBERED) {
+    // Defensive: if both rows somehow exist, drop the stale one before renaming
+    // to avoid a primary-key conflict on the UPDATE below.
+    await client.query(
+      `DELETE FROM schema_migrations
+         WHERE name = $1
+           AND EXISTS (SELECT 1 FROM schema_migrations WHERE name = $2)`,
+      [oldName, newName],
+    );
+    await client.query(
+      "UPDATE schema_migrations SET name = $2 WHERE name = $1",
+      [oldName, newName],
+    );
+  }
+}
 
 export async function migrate(): Promise<void> {
   const client = await pool.connect();
@@ -16,6 +51,8 @@ export async function migrate(): Promise<void> {
         name TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
+
+    await reconcileRenumbered(client);
 
     const files = (await readdir(MIGRATIONS_DIR))
       .filter((f) => f.endsWith(".sql"))
