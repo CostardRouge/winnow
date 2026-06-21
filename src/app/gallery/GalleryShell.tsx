@@ -122,6 +122,7 @@ function toQuery(
   if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
+  if (f.group_kind) sp.set("group_kind", f.group_kind);
   // Session-grid status toggles (ignored/completed are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.show_completed) sp.set("show_completed", "true");

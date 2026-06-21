@@ -243,6 +243,8 @@ panel (combined with AND):
   aperture ranges
 - **Type / format**: photo·video, extension (multi)
 - **Size** (MB range), **GPS** present, **verdict**, **min rating**
+- **Live Photos** (`group_kind=live_photo`): show only iPhone Live Photos (the
+  still + `.mov` pairs)
 
 These dimensions are **materialized and indexed in the database** (migration
 0003: `capture_year/month/day/date` populated by trigger + indexes on device,

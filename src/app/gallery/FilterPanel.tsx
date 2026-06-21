@@ -26,6 +26,9 @@ export type Facets = {
   media_types: VC[];
   derivative_statuses: VC[];
   tags: VC[];
+  // iPhone Live Photos available in scope (still primaries, one per pair). Drives
+  // the "Live Photos" filter toggle. Cf. lib/pairing.ts.
+  live_photos?: number;
   // Session-level counts for the Sessions grid's status toggles.
   session_status?: { active: number; ignored: number; completed: number };
 };
@@ -73,6 +76,9 @@ export type Filters = {
   size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
   has_gps?: boolean;
+  // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
+  // `group_kind="live_photo"` (cf. lib/pairing.ts).
+  group_kind?: "raw_jpeg" | "live_photo";
   // Session grid only: ignored / completed sessions are hidden until opted in.
   show_ignored?: boolean;
   show_completed?: boolean;
@@ -535,6 +541,25 @@ export default function FilterPanel({
           Has GPS
         </label>
       </div>
+
+      {!!facets.live_photos && (
+        <div className="facet">
+          <label
+            className="hint"
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              type="checkbox"
+              checked={filters.group_kind === "live_photo"}
+              onChange={(e) =>
+                u({ group_kind: e.target.checked ? "live_photo" : undefined })
+              }
+            />
+            Live Photos
+            <span className="chip-count">{facets.live_photos}</span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }
