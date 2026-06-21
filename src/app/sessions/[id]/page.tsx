@@ -325,7 +325,7 @@ export default function SessionGrid({
       );
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error ?? "Couldn’t delete this session.");
-      router.push("/");
+      router.push("/library/incoming/sessions");
     },
     [session, router],
   );
@@ -367,7 +367,7 @@ export default function SessionGrid({
   return (
     <>
       <div className="topbar">
-        <Link href="/" className="btn btn-icon" aria-label="Back to library">
+        <Link href="/library/incoming/sessions" className="btn btn-icon" aria-label="Back to library">
           {Icons.back}
         </Link>
         <h1>{session?.name ?? `Session #${id}`}</h1>

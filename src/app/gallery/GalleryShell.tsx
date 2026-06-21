@@ -139,24 +139,41 @@ export default function GalleryShell({
   scope,
   extraViews,
   defaultView,
+  view: controlledView,
+  onSelectView,
+  initialFilters,
+  onFiltersChange,
 }: {
   scope?: Scope;
   /** Extra section views (e.g. Sessions) shown before the built-in Grid/Map. */
   extraViews?: SectionView[];
   /** Id of the view selected on mount (defaults to "grid"). */
   defaultView?: string;
+  /** Route-controlled active view; falls back to internal state when absent
+   *  (so /gallery keeps working without URL plumbing). */
+  view?: string;
+  /** Navigate when a view segment is chosen (route-controlled mode). */
+  onSelectView?: (id: string) => void;
+  /** Seed filters once on mount, e.g. parsed from the URL. */
+  initialFilters?: Filters;
+  /** Notified whenever filters change, so the host can mirror them to the URL. */
+  onFiltersChange?: (f: Filters) => void;
 }) {
   // Final = read-only: hide culling/selection/export.
   const readOnly = scope === "final";
 
   const [facets, setFacets] = useState<Facets | null>(null);
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<Filters>(initialFilters ?? EMPTY_FILTERS);
   const [items, setItems] = useState<Row[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
-  const [view, setView] = useState<string>(defaultView ?? "grid");
+  // The active view is route-controlled when `view`/`onSelectView` are supplied
+  // (Library), otherwise held internally (the standalone /gallery).
+  const [internalView, setInternalView] = useState<string>(defaultView ?? "grid");
+  const view = controlledView ?? internalView;
+  const selectView = onSelectView ?? setInternalView;
   // Grid feed ordering (capture timeline) + thumbnail density. Newest-first by
   // default; density restored from localStorage so it sticks between visits.
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
@@ -190,6 +207,18 @@ export default function GalleryShell({
   useEffect(() => {
     localStorage.setItem(GRID_SIZE_KEY, String(gridSize));
   }, [gridSize]);
+
+  // Mirror filter changes back to the host (which writes them to the URL). Skip
+  // the first run so we don't immediately rewrite the URL we just seeded from.
+  const firstFilterSync = useRef(true);
+  useEffect(() => {
+    if (firstFilterSync.current) {
+      firstFilterSync.current = false;
+      return;
+    }
+    onFiltersChange?.(filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   // Transient confirmation ("Export queued", "3 deleted") — auto-clears.
   useEffect(() => {
@@ -409,10 +438,13 @@ export default function GalleryShell({
     [rateMany],
   );
   // Apply the zone as a bbox filter and drop back to the grid to review it.
-  const showAreaInGrid = useCallback((bbox: Bbox) => {
-    setFilters((prev) => ({ ...prev, bbox: [bbox.w, bbox.s, bbox.e, bbox.n] }));
-    setView("grid");
-  }, []);
+  const showAreaInGrid = useCallback(
+    (bbox: Bbox) => {
+      setFilters((prev) => ({ ...prev, bbox: [bbox.w, bbox.s, bbox.e, bbox.n] }));
+      selectView("grid");
+    },
+    [selectView],
+  );
   const clearBbox = useCallback(() => {
     setFilters((prev) => {
       if (!prev.bbox) return prev;
@@ -636,7 +668,7 @@ export default function GalleryShell({
   return (
     <div className="gallery-shell">
       <div className="gallery-controls">
-        <ViewSegments views={views} active={current.id} onSelect={setView} />
+        <ViewSegments views={views} active={current.id} onSelect={selectView} />
         {current.controls}
         {showAside && (
           <button
