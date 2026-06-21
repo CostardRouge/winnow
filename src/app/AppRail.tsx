@@ -17,10 +17,10 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   {
-    href: "/",
+    href: "/library",
     label: "Library",
     icon: Icons.library,
-    match: (p) => p === "/" || p.startsWith("/sessions"),
+    match: (p) => p === "/" || p.startsWith("/library") || p.startsWith("/sessions"),
   },
   {
     href: "/gallery",
@@ -54,7 +54,7 @@ export default function AppRail() {
 
   return (
     <nav className="rail" aria-label="Primary">
-      <Link href="/" className="rail-brand" aria-label="Winnow — home">
+      <Link href="/library" className="rail-brand" aria-label="Winnow — home">
         <Brand compact />
       </Link>
       <div className="rail-nav">

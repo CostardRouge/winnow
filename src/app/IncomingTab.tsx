@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import GalleryShell from "./gallery/GalleryShell";
+import { decodeFilters, encodeFilters } from "./gallery/filterParams";
+import type { Filters } from "./gallery/FilterPanel";
 import SessionsPane, { type Layout, type SortDir } from "./SessionsPane";
 import type { SectionView } from "./gallery/ViewSwitch";
 import { Icons } from "./ui";
 
 // Incoming = everything to cull. It is one gallery section with three views:
 //   Sessions (default) · Grid · Map
+// The active view is a real route segment (/library/incoming/<view>) and the
+// filters live in the query string, so any state is shareable and reload-safe.
 // The Sessions view is injected into the shared GalleryShell as an extra view,
 // carrying its own toolbar modifiers (the list/card layout toggle and a newest/
 // oldest sort toggle) and sharing the host's Filters/Browse panel. Grid and Map
@@ -15,10 +20,40 @@ import { Icons } from "./ui";
 
 const LAYOUT_KEY = "winnow.sessions.layout";
 
-export default function IncomingTab() {
+export default function IncomingTab({ view }: { view: string }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [layout, setLayout] = useState<Layout>("list");
   // Newest-first by default; the toggle flips to oldest-first.
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Filters are seeded from the URL once (deep links / reloads restore them);
+  // GalleryShell owns them thereafter and notifies us to mirror them back.
+  const [initialFilters] = useState<Filters>(() =>
+    decodeFilters(new URLSearchParams(searchParams.toString())),
+  );
+
+  // Switch view by navigating — carry the current filters across the hop.
+  const onSelectView = useCallback(
+    (id: string) => {
+      const qs = searchParams.toString();
+      router.push(`/library/incoming/${id}${qs ? `?${qs}` : ""}`);
+    },
+    [router, searchParams],
+  );
+
+  // Reflect filter changes in the URL without growing history (replace, no
+  // scroll jump) so Back still steps between views rather than filter edits.
+  const onFiltersChange = useCallback(
+    (f: Filters) => {
+      const qs = encodeFilters(f).toString();
+      router.replace(`/library/incoming/${view}${qs ? `?${qs}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [router, view],
+  );
 
   // Restore / persist the layout choice (client-only to avoid SSR mismatch).
   useEffect(() => {
@@ -75,7 +110,10 @@ export default function IncomingTab() {
     <GalleryShell
       scope="incoming"
       extraViews={[sessionsView]}
-      defaultView="sessions"
+      view={view}
+      onSelectView={onSelectView}
+      initialFilters={initialFilters}
+      onFiltersChange={onFiltersChange}
     />
   );
 }
