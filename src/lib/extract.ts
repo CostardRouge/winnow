@@ -272,7 +272,8 @@ async function readOrientation(absPath: string): Promise<number | undefined> {
 // rotation as the `Rotation` tag, present iff the file carries an `irot` box, so
 // we use it to tell whether libheif's output is already display-oriented. When it
 // is, the worker must NOT re-apply EXIF (that would rotate the pixels twice).
-async function readHeicOrientation(
+// Exported so the heic-rotation diagnostic can reuse the exact same criterion.
+export async function readHeicOrientation(
   absPath: string,
 ): Promise<{ exif: number | undefined; containerRotated: boolean }> {
   try {
