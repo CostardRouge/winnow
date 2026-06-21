@@ -134,7 +134,7 @@ See `.env.dist`. Main ones:
 | `POST /api/failures/duplicates/delete` `{ paths[] }` | Hard-deletes extra copies recorded in `duplicate_hits` (whitelisted · never an indexed asset · confined to the browsable area) and clears their audit rows |
 | `GET /api/pipeline/queue` `?name=scan\|analyze` | Live jobs of the scan/analyze queue, enriched with the root/asset they point at |
 | `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
-| `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status`; `sort=recent` orders by last update) |
+| `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status` and `q=` free-text path search; `sort=recent` orders by last update) |
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/sessions` | List of sessions + counters (ready/pending/picks) |
@@ -200,6 +200,10 @@ preview; the RAW is read again but never modified.
 in the DOM, handles 30k+) over **all** the assets, with a **cumulative** filter
 panel (combined with AND):
 
+- **Search** (`q=`): free-text over the file path — **filename and folder**.
+  Whitespace splits the query into tokens, each an AND substring match
+  (case-insensitive). Debounced field at the top of the filter panel; mirrored
+  to the URL like every other filter.
 - **Calendar**: year / month / day (multi-select) + date range
 - **Device / EXIF**: device, camera model, lens (multi); ISO, focal length,
   aperture ranges
@@ -210,7 +214,9 @@ These dimensions are **materialized and indexed in the database** (migration
 0003: `capture_year/month/day/date` populated by trigger + indexes on device,
 ext, media_type, file_size, camera_model, lens, iso, focal_length, aperture).
 The available values/counts come from `GET /api/facets`; filtering is therefore
-100% indexed SQL, with no on-the-fly computation.
+100% indexed SQL, with no on-the-fly computation. The `q=` text search matches
+`rel_path` (which carries both the folder and the filename) and stays fast on a
+large library via **trigram GIN indexes** (`pg_trgm`, migration 0010).
 
 ### Map view (where the media are) & zone culling
 

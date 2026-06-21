@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { Icons } from "../ui";
+
 export type Facets = {
   total: number;
   ranges: {
@@ -37,6 +40,8 @@ const DERIVATIVE_LABELS: Record<string, string> = {
 };
 
 export type Filters = {
+  // Free-text search over the file path (folder + filename) — the `q=` param.
+  q?: string;
   media_type: string[];
   ext: string[];
   derivative_status: string[];
@@ -91,6 +96,60 @@ const MONTHS = [
 
 function toggle<T>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+
+// Free-text search over the filename / folder. Local state keeps the field
+// responsive while a debounce defers the actual filter change (and the refetch
+// it triggers) until typing pauses. `value` flows back in on external resets
+// (Reset button, deep link), so the field stays in sync without a refetch loop.
+function SearchBox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => setText(value), [value]);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const commit = (v: string) => {
+    setText(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onChange(v), 300);
+  };
+
+  return (
+    <div className="facet">
+      <div className="facet-title">Search</div>
+      <div className="search-field">
+        <span className="search-icon" aria-hidden>
+          {Icons.search}
+        </span>
+        <input
+          className="input search-input"
+          type="search"
+          placeholder="Filename or folder…"
+          value={text}
+          onChange={(e) => commit(e.target.value)}
+        />
+        {text && (
+          <button
+            className="search-clear"
+            onClick={() => commit("")}
+            aria-label="Clear search"
+            title="Clear search"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Chips<T extends string | number>({
@@ -188,6 +247,11 @@ export default function FilterPanel({
 
   return (
     <div className="filter-panel">
+      <SearchBox
+        value={filters.q ?? ""}
+        onChange={(v) => u({ q: v.trim() ? v : undefined })}
+      />
+
       {showSessionStatus && status && (
         <div className="facet">
           <div className="facet-title">Session status</div>

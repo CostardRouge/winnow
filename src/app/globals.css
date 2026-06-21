@@ -1229,6 +1229,34 @@
   .filter-panel {
     @apply flex flex-col gap-5;
   }
+  /* Text search field (filename / folder) — leading magnifier + clear button. */
+  .search-field {
+    @apply relative flex items-center;
+  }
+  .search-icon {
+    @apply pointer-events-none absolute left-3 flex;
+    color: var(--color-faint);
+  }
+  .search-input {
+    @apply w-full;
+    padding-left: 2.25rem;
+    padding-right: 2rem;
+  }
+  /* Hide the native WebKit search clear/decoration — we render our own button. */
+  .search-input::-webkit-search-cancel-button,
+  .search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search-clear {
+    @apply absolute right-2 flex h-5 w-5 items-center justify-center rounded-full border-0 text-base leading-none;
+    background: transparent;
+    color: var(--color-muted);
+  }
+  .search-clear:hover {
+    background: var(--color-surface-3);
+    color: var(--color-text);
+  }
   .facet-title {
     @apply mb-2 text-[11px] font-semibold uppercase;
     letter-spacing: 0.06em;
