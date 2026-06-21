@@ -551,6 +551,12 @@
     border-color: var(--color-border);
     transition-property: border-color, box-shadow, transform;
     transition-timing-function: var(--ease-out);
+    /* Skip rendering (layout/paint) of cards scrolled out of view. With ~200
+       sessions on a page this keeps the browser from laying out every card at
+       once — the dominant cost on mobile. The intrinsic size is a placeholder
+       so the scrollbar/scroll position stay stable for off-screen cards. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 180px;
   }
   .session-card:hover {
     transform: translateY(-2px);

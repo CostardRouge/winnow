@@ -38,6 +38,30 @@ export type StripItem = {
 const THUMB = 76; // default tile size (px)
 const GAP = 6;
 
+// One ResizeObserver shared by every ThumbStrip rather than one each, so a long
+// list of sessions/exports costs a single observer. Each strip's row registers a
+// callback keyed off its own element; the observer fans out width changes to the
+// matching callback.
+const stripCallbacks = new WeakMap<Element, (width: number) => void>();
+let stripObserver: ResizeObserver | null = null;
+
+function observeStrip(el: Element, onResize: (width: number) => void): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+  if (!stripObserver) {
+    stripObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        stripCallbacks.get(entry.target)?.(entry.contentRect.width);
+      }
+    });
+  }
+  stripCallbacks.set(el, onResize);
+  stripObserver.observe(el);
+  return () => {
+    stripObserver?.unobserve(el);
+    stripCallbacks.delete(el);
+  };
+}
+
 /** One derivative tile. Interactive (opens the viewer / navigates) when given
  *  an `onActivate`; otherwise a plain preview. */
 export function Thumb({
@@ -126,18 +150,15 @@ export default function ThumbStrip({
   const rowRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(8);
 
-  // How many tiles fit on one line — recomputed as the row resizes.
+  // How many tiles fit on one line — recomputed as the row resizes, via a
+  // single shared ResizeObserver (see observeStrip).
   useEffect(() => {
     const el = rowRef.current;
     if (!el) return;
     const measure = (w: number) =>
       setFit(Math.max(1, Math.floor((w + gap) / (size + gap))));
     measure(el.clientWidth);
-    const ro = new ResizeObserver((entries) =>
-      measure(entries[0].contentRect.width),
-    );
-    ro.observe(el);
-    return () => ro.disconnect();
+    return observeStrip(el, measure);
   }, [size, gap, items]);
 
   if (items != null && items.length === 0) return null;
