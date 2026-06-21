@@ -202,26 +202,46 @@ export default function SessionsPane({
 
   function sessionActions(s: SessionRow) {
     return (
-      <div className="session-actions">
-        <button className="btn" onClick={() => toggleComplete(s)}>
-          {s.completed ? "Unmark" : "Mark complete"}
-        </button>
-        <button className="btn" onClick={() => toggleIgnore(s)}>
-          {s.ignored ? "Reactivate" : "Ignore"}
+      <div className="seg-actions" role="group" aria-label="Session actions">
+        <button
+          className={`seg-btn${s.completed ? " is-on" : ""}`}
+          onClick={() => toggleComplete(s)}
+          aria-label={s.completed ? "Mark as not complete" : "Mark complete"}
+          title={s.completed ? "Mark as not complete" : "Mark complete"}
+        >
+          {Icons.keep}
+          <span className="seg-label">{s.completed ? "Completed" : "Complete"}</span>
         </button>
         <button
-          className="btn"
+          className="seg-btn"
+          onClick={() => toggleIgnore(s)}
+          aria-label={s.ignored ? "Reactivate this session" : "Ignore this session"}
+          title={s.ignored ? "Reactivate this session" : "Ignore this session"}
+        >
+          {s.ignored ? Icons.reset : Icons.skip}
+          <span className="seg-label">{s.ignored ? "Reactivate" : "Ignore"}</span>
+        </button>
+        <button
+          className="seg-btn"
           onClick={() => exportPicks(s)}
           disabled={s.pick_count === 0}
+          aria-label="Export picks"
+          title={
+            s.pick_count === 0
+              ? "No picks to export yet"
+              : "Export the RAW picks to the Capture One export folder"
+          }
         >
-          Export picks → C1
+          {Icons.upload}
+          <span className="seg-label">Export Pics</span>
         </button>
         <button
-          className="btn btn-danger"
+          className="seg-btn is-danger"
           onClick={() => setConfirming(s)}
+          aria-label="Delete session"
           title="Remove this session (optionally delete its files from disk)"
         >
-          Delete
+          {Icons.trash}
         </button>
       </div>
     );
