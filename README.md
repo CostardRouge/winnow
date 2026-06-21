@@ -355,6 +355,31 @@ debug, and a **"retry"** button per family:
   browsable area. False collisions are listed for audit but never offered for
   deletion (distinct content that was kept).
 
+## Backups & restore
+
+The RAWs are mounted **read-only** and never lost, but every bit of curation —
+verdicts, stars, tags, soft-deletes, the indexed facets and the source→export
+**lineage** — lives **only in Postgres**. So the database is the one piece of
+state that needs a backup.
+
+A `backup` sidecar (in both compose files) runs next to Postgres and, on a
+schedule (default **daily**, `BACKUP_INTERVAL`), takes a compressed `pg_dump`,
+names it `winnow-<UTC timestamp>.sql.gz`, and prunes dumps older than
+`BACKUP_KEEP_DAYS` (default 14). It shares the `postgres:16-alpine` image, so the
+dump tool always matches the server. Dumps land in `./backups` (dev) or
+`${WINNOW_DATA:-/opt/winnow}/backups` (Optiplex).
+
+```bash
+docker compose logs -f backup            # watch it run
+./scripts/pg-backup.sh                    # ad-hoc dump (e.g. before a migration)
+./scripts/pg-restore.sh ./backups/winnow-<ts>.sql.gz   # restore (stop app/worker first)
+```
+
+Full schedule/retention config, the host-cron alternative, **off-box copy**
+guidance (the Optiplex dumps sit on the same disk as `pgdata` — copy them to the
+NAS for disk-failure durability) and the **step-by-step restore procedure** are
+in **[`docs/BACKUP.md`](docs/BACKUP.md)**.
+
 ## Scope & next steps
 
 **Implemented (MVP)**: incremental indexing (mtime+size), EXIF + hash + dedup,
@@ -369,7 +394,9 @@ cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media
 select a zone → pick/reject/export the area), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
-acceleration), **failure list/retry** (page `/pipeline/failures`), GitHub Actions **CI**
+acceleration), **failure list/retry** (page `/pipeline/failures`), **scheduled
+Postgres backups** (compressed `pg_dump` sidecar + retention + documented
+restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
 (typecheck + migrations + build).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
