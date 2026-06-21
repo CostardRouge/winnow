@@ -451,4 +451,10 @@ export const Icons = {
       <path d="M20 6 9 17l-5-5" />
     </svg>
   ),
+  // Plain X — clear a selection / dismiss (the map zone "Clear", etc.).
+  close: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  ),
 };

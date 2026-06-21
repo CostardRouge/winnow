@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Icons } from "@/app/ui";
 
 // Map view for the gallery: plots every geotagged asset (a point per asset),
 // and lets the user carve out a zone — either the current viewport or a
@@ -164,37 +165,60 @@ export default function MapView({
   }, [points]);
 
   // --- Draw-a-box mode -----------------------------------------------------
+  // Bound with native Pointer events on the map container rather than Leaflet's
+  // synthetic `mousedown`/`mousemove`/`mouseup` — those don't fire for touch, so
+  // dragging a box never worked on phones/tablets. Pointer events cover mouse,
+  // touch and pen uniformly; pointer capture keeps the drag alive even if the
+  // finger strays off a marker, and `touch-action: none` (set in CSS while
+  // drawing) stops the browser from hijacking the gesture as a scroll/pan.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    const el = containerRef.current;
+    if (!map || !el) return;
     if (!drawing) {
       map.dragging.enable();
       return;
     }
     map.dragging.disable();
     let start: L.LatLng | null = null;
-    const onDown = (e: L.LeafletMouseEvent) => {
-      start = e.latlng;
+    let activeId: number | null = null;
+    const toLatLng = (ev: PointerEvent) =>
+      map.containerPointToLatLng(
+        map.mouseEventToContainerPoint(ev as unknown as MouseEvent),
+      );
+    const onDown = (ev: PointerEvent) => {
+      // Only the primary button / first contact starts a box.
+      if (start !== null || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+      activeId = ev.pointerId;
+      el.setPointerCapture?.(ev.pointerId);
+      start = toLatLng(ev);
       clearArea();
+      ev.preventDefault();
     };
-    const onMove = (e: L.LeafletMouseEvent) => {
-      if (!start) return;
-      setRect(L.latLngBounds(start, e.latlng));
+    const onMove = (ev: PointerEvent) => {
+      if (!start || ev.pointerId !== activeId) return;
+      setRect(L.latLngBounds(start, toLatLng(ev)));
+      ev.preventDefault();
     };
-    const onUp = (e: L.LeafletMouseEvent) => {
-      if (!start) return;
-      const b = L.latLngBounds(start, e.latlng);
+    const onUp = (ev: PointerEvent) => {
+      if (!start || ev.pointerId !== activeId) return;
+      const b = L.latLngBounds(start, toLatLng(ev));
       start = null;
+      activeId = null;
+      el.releasePointerCapture?.(ev.pointerId);
       setArea(idsInBounds(b));
       setDrawing(false);
+      ev.preventDefault();
     };
-    map.on("mousedown", onDown);
-    map.on("mousemove", onMove);
-    map.on("mouseup", onUp);
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
     return () => {
-      map.off("mousedown", onDown);
-      map.off("mousemove", onMove);
-      map.off("mouseup", onUp);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
     };
   }, [drawing, clearArea, idsInBounds, setRect]);
 
@@ -249,43 +273,66 @@ export default function MapView({
       {area && (
         <div className="map-area-bar">
           <span className="map-area-count">
-            {count} media in zone
+            <strong>{count}</strong> in zone
           </span>
-          {!readOnly && (
-            <>
-              <button
-                className="btn btn-pick"
-                disabled={!count}
-                onClick={() => onPickArea(area.ids)}
-              >
-                ✓ Pick
-              </button>
-              <button
-                className="btn btn-reject"
-                disabled={!count}
-                onClick={() => onRejectArea(area.ids)}
-              >
-                ✕ Reject
-              </button>
-              <button
-                className="btn"
-                disabled={!count}
-                onClick={() => onExportArea(area.ids)}
-              >
-                ⤓ Export
-              </button>
-            </>
-          )}
-          <button
-            className="btn"
-            disabled={!count}
-            onClick={() => onShowInGrid(area.bbox, area.ids)}
-          >
-            ▦ Show in grid
-          </button>
-          <button className="btn" onClick={clearArea}>
-            Clear
-          </button>
+          {/* Same segmented-control language as the session action bar — icons
+              carry the meaning and the labels collapse to icon-only on phones,
+              keeping every action on one tappable line. */}
+          <div className="seg-actions" role="group" aria-label="Zone actions">
+            {!readOnly && (
+              <>
+                <button
+                  className="seg-btn is-pick"
+                  disabled={!count}
+                  onClick={() => onPickArea(area.ids)}
+                  aria-label="Pick media in zone"
+                  title="Pick every media inside the zone"
+                >
+                  {Icons.keep}
+                  <span className="seg-label">Pick</span>
+                </button>
+                <button
+                  className="seg-btn is-reject"
+                  disabled={!count}
+                  onClick={() => onRejectArea(area.ids)}
+                  aria-label="Reject media in zone"
+                  title="Reject every media inside the zone"
+                >
+                  {Icons.skip}
+                  <span className="seg-label">Reject</span>
+                </button>
+                <button
+                  className="seg-btn"
+                  disabled={!count}
+                  onClick={() => onExportArea(area.ids)}
+                  aria-label="Export media in zone"
+                  title="Export the media inside the zone"
+                >
+                  {Icons.upload}
+                  <span className="seg-label">Export</span>
+                </button>
+              </>
+            )}
+            <button
+              className="seg-btn"
+              disabled={!count}
+              onClick={() => onShowInGrid(area.bbox, area.ids)}
+              aria-label="Show zone in grid"
+              title="Show the zone's media in the grid"
+            >
+              {Icons.viewCard}
+              <span className="seg-label">Grid</span>
+            </button>
+            <button
+              className="seg-btn"
+              onClick={clearArea}
+              aria-label="Clear zone"
+              title="Clear the zone"
+            >
+              {Icons.close}
+              <span className="seg-label">Clear</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
