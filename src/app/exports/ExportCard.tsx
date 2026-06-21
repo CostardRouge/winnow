@@ -8,6 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { formatBytes, formatDimensions, formatDuration } from "@/lib/format";
 import { LazyImage, Icons } from "../ui";
 import MediaViewer, { type ViewerItem } from "../MediaViewer";
 import ActionMenu, { type MenuItem } from "../ActionMenu";
@@ -92,6 +93,34 @@ type ExportItem = ViewerItem & {
 
 const THUMB = 76; // strip thumbnail size (px)
 const GAP = 6;
+
+// "50mm · f/2.8 · 1/200s · ISO 400" — the exposure triangle, blanks dropped.
+function exposureLine(it: ExportItem): string | null {
+  const parts = [
+    it.focal_length ? `${it.focal_length}mm` : null,
+    it.aperture ? `f/${it.aperture}` : null,
+    it.shutter ? `${it.shutter}s` : null,
+    it.iso ? `ISO ${it.iso}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+// The single descriptive line shown under each filename in the detailed list:
+// resolution, camera, exposure (and duration for video). Missing bits are
+// skipped so the line stays tight.
+function detailMeta(it: ExportItem): string {
+  const camera = [it.camera_model, it.lens].filter(Boolean).join(" · ");
+  return [
+    formatDimensions(it.width, it.height),
+    it.media_type === "video" && it.duration_s != null
+      ? formatDuration(it.duration_s)
+      : null,
+    camera || null,
+    exposureLine(it),
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -367,6 +396,70 @@ export default function ExportCard({
     </div>
   );
 
+  // One row of the detailed manifest: a small thumbnail (opens the viewer),
+  // the filename, a single descriptive metadata line, the file size and a
+  // per-file download link.
+  const detailRow = (it: ExportItem, idx: number) => {
+    const meta = detailMeta(it);
+    return (
+      <li key={it.id} className="export-detail-row">
+        <div
+          className="export-detail-thumb"
+          role="button"
+          tabIndex={0}
+          onClick={() => setViewerIndex(idx)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setViewerIndex(idx);
+            }
+          }}
+          title={it.filename}
+        >
+          {it.derivative_status === "ready" ? (
+            <LazyImage
+              src={`/api/assets/${it.source_asset_id}/thumb`}
+              alt={it.filename}
+            />
+          ) : (
+            <span className="export-thumb-ph">
+              {it.media_type === "video" ? "🎬" : "⏳"}
+            </span>
+          )}
+        </div>
+        <div className="export-detail-info">
+          <div className="export-detail-name" title={it.filename}>
+            {it.filename}
+            {it.ext && (
+              <span className="export-detail-ext">
+                {it.ext.replace(".", "").toUpperCase()}
+              </span>
+            )}
+          </div>
+          {meta && <div className="export-detail-meta">{meta}</div>}
+        </div>
+        <div className="export-detail-aside">
+          {it.file_size != null && (
+            <span className="export-detail-size">
+              {formatBytes(it.file_size)}
+            </span>
+          )}
+          {it.downloadable && (
+            <a
+              className="export-detail-dl"
+              href={fileUrl(it)}
+              download
+              title={`Download ${it.filename}`}
+              aria-label={`Download ${it.filename}`}
+            >
+              {Icons.download}
+            </a>
+          )}
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div ref={cardRef} className="session-card export-card">
       <div className="export-card-head">
@@ -413,26 +506,30 @@ export default function ExportCard({
             </div>
           ) : expanded ? (
             <>
-              <div className="export-grid">
-                {items?.map((it, idx) => tile(it, idx))}
-              </div>
+              {/* A detailed manifest of exactly what will be / was copied:
+                  filename, size, resolution, camera and exposure per file. Far
+                  more useful than enlarging the thumbnails (which revealed
+                  nothing new). */}
+              <ul className="export-detail-list">
+                {items?.map((it, idx) => detailRow(it, idx))}
+              </ul>
               <button
                 className="chip export-toggle"
                 onClick={() => setExpanded(false)}
               >
-                {Icons.arrowUp} Show less
+                {Icons.arrowUp} Hide details
               </button>
             </>
           ) : (
             <>
-              {/* Clicking the empty strip area expands the card; the thumbnails
-                  stop propagation to open the viewer instead. Keyboard users get
-                  the explicit "Show all" button below. */}
+              {/* Clicking the empty strip area opens the detailed list; the
+                  thumbnails stop propagation to open the viewer instead.
+                  Keyboard users get the explicit "Details" button below. */}
               <div
                 ref={stripRef}
                 className="export-strip"
                 onClick={() => items && setExpanded(true)}
-                title="Show all files"
+                title="Show file details"
               >
                 {items == null
                   ? Array.from({ length: Math.max(1, fit) }).map((_, i) => (
@@ -459,17 +556,18 @@ export default function ExportCard({
                   <span
                     className="export-thumb export-more"
                     style={{ width: THUMB, height: THUMB, flexShrink: 0 }}
+                    title={`${count - shown} more — open details`}
                   >
                     +{count - shown}
                   </span>
                 )}
               </div>
-              {items != null && items.length > 1 && (
+              {items != null && items.length > 0 && (
                 <button
                   className="chip export-toggle"
                   onClick={() => setExpanded(true)}
                 >
-                  {Icons.arrowDown} Show all ({count})
+                  {Icons.viewList} Details ({count})
                 </button>
               )}
             </>
