@@ -22,6 +22,9 @@ const ROTATING = new Set([3, 6, 8]);
 // the in-flight set bounded so a big library can't queue everything at once.
 const SCAN_CONCURRENCY = 8;
 
+// Emit a progress update every N files examined (plus first/last).
+const PROGRESS_EVERY = 20;
+
 export type HeicRotationItem = {
   id: number;
   filename: string;
@@ -36,6 +39,36 @@ export type HeicRotationReport = {
   missing: number; // originals not reachable this run (NAS offline, moved, …)
   affected: HeicRotationItem[]; // double-rotated, full list
 };
+
+// UI/job-facing shape: the report plus derived counts, with the affected list
+// capped for display (affectedIds stays exhaustive so "Fix all" covers all).
+export type HeicRotationResult = {
+  scanned: number;
+  missing: number;
+  ok: number;
+  affectedCount: number;
+  items: HeicRotationItem[];
+  itemsCapped: boolean;
+  affectedIds: number[];
+};
+
+// Cap the rows carried with paths so a huge backlog can't bloat the job result
+// stored in Redis (or the API response).
+const ITEM_CAP = 500;
+
+export function buildHeicRotationResult(
+  r: HeicRotationReport,
+): HeicRotationResult {
+  return {
+    scanned: r.scanned,
+    missing: r.missing,
+    ok: r.scanned - r.affected.length - r.missing,
+    affectedCount: r.affected.length,
+    items: r.affected.slice(0, ITEM_CAP),
+    itemsCapped: r.affected.length > ITEM_CAP,
+    affectedIds: r.affected.map((a) => a.id),
+  };
+}
 
 // Run `fn` over `items` with at most `limit` in flight, preserving order.
 async function mapLimit<T, R>(
@@ -60,7 +93,11 @@ async function mapLimit<T, R>(
 // Examine every `ready` HEIC/HEIF photo and flag the double-rotated ones. Pure
 // read: never mutates the DB nor touches the derivatives — callers decide what
 // to do with the result (the CLI/UI re-queue via the regenerate path).
-export async function scanHeicRotation(): Promise<HeicRotationReport> {
+// `onProgress` is called (throttled) as files are examined, for the job's
+// progress bar.
+export async function scanHeicRotation(opts?: {
+  onProgress?: (processed: number, total: number) => void;
+}): Promise<HeicRotationReport> {
   const rows = await many<{
     id: number;
     filename: string;
@@ -80,28 +117,44 @@ export async function scanHeicRotation(): Promise<HeicRotationReport> {
   let missing = 0;
   const affected: HeicRotationItem[] = [];
 
+  // Throttled progress: report at the start, every PROGRESS_EVERY files, and at
+  // the end — enough for a live bar without hammering Redis on every file.
+  const total = rows.length;
+  let done = 0;
+  opts?.onProgress?.(0, total);
+  const bump = () => {
+    done++;
+    if (done % PROGRESS_EVERY === 0 || done === total) {
+      opts?.onProgress?.(done, total);
+    }
+  };
+
   const results = await mapLimit(rows, SCAN_CONCURRENCY, async (r) => {
-    // Skip files that are currently offline (NAS unmounted, etc.) rather than
-    // guessing — they simply aren't evaluated this run.
     try {
-      await stat(r.abs_path);
-    } catch {
-      return { kind: "missing" as const };
+      // Skip files that are currently offline (NAS unmounted, etc.) rather than
+      // guessing — they simply aren't evaluated this run.
+      try {
+        await stat(r.abs_path);
+      } catch {
+        return { kind: "missing" as const };
+      }
+      const { exif, containerRotated } = await readHeicOrientation(r.abs_path);
+      if (containerRotated && exif !== undefined && ROTATING.has(exif)) {
+        return {
+          kind: "affected" as const,
+          item: {
+            id: r.id,
+            filename: r.filename,
+            abs_path: r.abs_path,
+            ext: r.ext,
+            orientation: exif,
+          },
+        };
+      }
+      return { kind: "ok" as const };
+    } finally {
+      bump();
     }
-    const { exif, containerRotated } = await readHeicOrientation(r.abs_path);
-    if (containerRotated && exif !== undefined && ROTATING.has(exif)) {
-      return {
-        kind: "affected" as const,
-        item: {
-          id: r.id,
-          filename: r.filename,
-          abs_path: r.abs_path,
-          ext: r.ext,
-          orientation: exif,
-        },
-      };
-    }
-    return { kind: "ok" as const };
   });
 
   for (const res of results) {

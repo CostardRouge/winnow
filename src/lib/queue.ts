@@ -48,6 +48,10 @@ export type ImportJob = {
   removeAfter: boolean;
   batchId?: number;
 };
+// Background maintenance tasks (currently just the HEIC double-rotation scan).
+// Kept on their own queue so they're tracked like any other job (state +
+// progress + result) and never compete with index/derivative work.
+export type MaintenanceJob = { kind: "heic-rotation-scan" };
 
 export const QUEUES = {
   index: "winnow-index",
@@ -55,6 +59,7 @@ export const QUEUES = {
   export: "winnow-export",
   import: "winnow-import",
   purge: "winnow-purge",
+  maintenance: "winnow-maintenance",
 } as const;
 
 declare global {
@@ -66,6 +71,7 @@ declare global {
         export: Queue;
         import: Queue;
         purge: Queue;
+        maintenance: Queue;
       }
     | undefined;
 }
@@ -77,6 +83,7 @@ function build() {
     export: new Queue(QUEUES.export, { connection }),
     import: new Queue(QUEUES.import, { connection }),
     purge: new Queue(QUEUES.purge, { connection }),
+    maintenance: new Queue(QUEUES.maintenance, { connection }),
   };
 }
 
@@ -198,6 +205,97 @@ export async function enqueueDerivative(
     { assetId } satisfies DerivativeJob,
     { ...defaultJobOpts, priority: opts.priority ?? PRIORITY.normal },
   );
+}
+
+// --- Maintenance: HEIC double-rotation scan ---------------------------------
+
+const MAINT_PENDING_STATES = [
+  "active",
+  "waiting",
+  "prioritized",
+  "delayed",
+] as const;
+
+// Enqueue a HEIC-rotation scan, coalescing on the (single) job kind: a scan
+// walks every HEIC original on the NAS, so running two at once is pure wasted
+// I/O. If one is already pending/running, that job is returned instead. The
+// scan is intentionally not retried (attempts:1) — a long walk shouldn't silently
+// restart — and a handful of finished runs are kept so the UI can show the last
+// result after a reload.
+export async function enqueueHeicRotationScan(): Promise<Job> {
+  const queue = getQueues().maintenance;
+  const pending = await queue.getJobs([...MAINT_PENDING_STATES], 0, 50);
+  for (const job of pending) {
+    if (job && (job.data as MaintenanceJob)?.kind === "heic-rotation-scan") {
+      return job;
+    }
+  }
+  return queue.add(
+    "heic-rotation-scan",
+    { kind: "heic-rotation-scan" } satisfies MaintenanceJob,
+    {
+      attempts: 1,
+      removeOnComplete: { count: 20 },
+      removeOnFail: { count: 50 },
+    },
+  );
+}
+
+export type HeicScanStatus = {
+  id: string | null;
+  // BullMQ state, or "none" when no scan has ever run.
+  state: string;
+  progress: { processed: number; total: number } | null;
+  // The scan result (HeicRotationResult), present once the job has completed.
+  result: unknown | null;
+  failedReason: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+};
+
+// The current or most-recent HEIC-rotation scan, flattened for the UI to poll.
+// Lets the page rebuild its state after a navigation/reload instead of losing an
+// in-flight scan. Picks the newest job across in-flight and finished states.
+export async function getHeicRotationScan(): Promise<HeicScanStatus> {
+  const queue = getQueues().maintenance;
+  const jobs = await queue.getJobs(
+    ["active", "waiting", "prioritized", "delayed", "completed", "failed"],
+    0,
+    50,
+  );
+  const mine = jobs.filter(
+    (j): j is Job =>
+      !!j && (j.data as MaintenanceJob)?.kind === "heic-rotation-scan",
+  );
+  if (!mine.length) {
+    return {
+      id: null,
+      state: "none",
+      progress: null,
+      result: null,
+      failedReason: null,
+      startedAt: null,
+      finishedAt: null,
+    };
+  }
+  // Newest first (a freshly-enqueued scan always has the latest timestamp).
+  mine.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  const job = mine[0];
+  const state = await job.getState();
+  const p = job.progress;
+  const progress =
+    p && typeof p === "object" && "total" in p
+      ? (p as { processed: number; total: number })
+      : null;
+  return {
+    id: String(job.id),
+    state,
+    progress,
+    result: state === "completed" ? (job.returnvalue ?? null) : null,
+    failedReason: job.failedReason ?? null,
+    startedAt: job.processedOn ?? null,
+    finishedAt: job.finishedOn ?? null,
+  };
 }
 
 // --- Scan/analyze pipeline control ------------------------------------------

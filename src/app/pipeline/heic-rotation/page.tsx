@@ -1,13 +1,11 @@
 "use client";
 
-// Pipeline "HEIC rotation" maintenance page. Scans every ready HEIC/HEIF photo
-// for the double-rotation bug (container transform + EXIF orientation both
-// applied by the pre-fix worker), shows the stats and the affected files (with
-// their current, wrongly-rotated thumbnail), and re-queues them for regeneration
-// — one by one or all at once. Lives under /pipeline (heading + tabs come from
-// the layout). The scan walks the originals on the NAS, so it's button-triggered,
-// never polled.
-import { useCallback, useState } from "react";
+// Pipeline "HEIC rotation" maintenance page. The scan is a tracked background
+// job (BullMQ, run by the worker): this page enqueues it, polls its live
+// progress, and rebuilds its state after a navigation/reload from the current or
+// last job. Once done it lists the double-rotated files (with their current,
+// wrong thumbnail) and re-queues them for regeneration — per file or all at once.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons, LazyImage } from "../../ui";
 
@@ -19,7 +17,7 @@ type Item = {
   orientation: number;
 };
 
-type Report = {
+type Result = {
   scanned: number;
   missing: number;
   ok: number;
@@ -27,36 +25,84 @@ type Report = {
   items: Item[];
   itemsCapped: boolean;
   affectedIds: number[];
-  ranAtMs: number;
+};
+
+type Status = {
+  id: string | null;
+  state: string; // none | waiting | prioritized | delayed | active | completed | failed
+  progress: { processed: number; total: number } | null;
+  result: Result | null;
+  failedReason: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
 };
 
 // EXIF orientation → human angle, for the per-row badge.
 const ANGLE: Record<number, string> = { 3: "180°", 6: "90°", 8: "270°" };
 
+const STATE_LABEL: Record<string, string> = {
+  waiting: "Queued",
+  prioritized: "Queued",
+  delayed: "Queued",
+  active: "Scanning",
+  completed: "Done",
+  failed: "Failed",
+};
+
 export default function HeicRotationPage() {
-  const [report, setReport] = useState<Report | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   const [msg, setMsg] = useState<string>("");
-  // Key of the in-flight fix ("all" or "one:<id>"), to spin one button while the
-  // rest stay disabled; ids already re-queued so their rows show "Queued".
+  // Key of the in-flight fix ("all" or "one:<id>") + ids already re-queued.
   const [busy, setBusy] = useState<string | null>(null);
   const [fixed, setFixed] = useState<Set<number>>(new Set());
 
-  const scan = useCallback(async () => {
-    setScanning(true);
-    setError(null);
-    setMsg("");
+  const ACTIVE = useMemo(
+    () => new Set(["waiting", "prioritized", "delayed", "active"]),
+    [],
+  );
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Self-rescheduling poll: keeps ticking while a scan is in flight, stops once
+  // it reaches a terminal state (the result is then stable).
+  const poll = useCallback(async () => {
     try {
-      const r = await fetchJson<Report>("/api/pipeline/heic-rotation");
-      setReport(r);
-      setFixed(new Set());
+      const s = await fetchJson<Status>("/api/pipeline/heic-rotation");
+      setStatus(s);
+      setError(null);
+      if (ACTIVE.has(s.state)) pollRef.current = setTimeout(poll, 1500);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setScanning(false);
+      pollRef.current = setTimeout(poll, 3000);
     }
-  }, []);
+  }, [ACTIVE]);
+
+  useEffect(() => {
+    poll();
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [poll]);
+
+  const startScan = useCallback(async () => {
+    setStarting(true);
+    setMsg("");
+    setError(null);
+    try {
+      const r = await fetch("/api/pipeline/heic-rotation", { method: "POST" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setError(d.error ?? `HTTP ${r.status}`);
+        return;
+      }
+      setFixed(new Set());
+      if (pollRef.current) clearTimeout(pollRef.current);
+      await poll();
+    } finally {
+      setStarting(false);
+    }
+  }, [poll]);
 
   const fix = useCallback(
     async (ids: number[], key: string) => {
@@ -79,7 +125,7 @@ export default function HeicRotationPage() {
             return next;
           });
           setMsg(
-            `Re-queued ${d.queued ?? ids.length} asset(s). Run the worker to rebuild them, then re-scan to confirm.`,
+            `Re-queued ${d.queued ?? ids.length} asset(s) for regeneration — track them under Pending. Re-scan once the worker has rebuilt them to confirm.`,
           );
         }
       } catch (e) {
@@ -91,46 +137,107 @@ export default function HeicRotationPage() {
     [busy],
   );
 
-  const pendingIds = (report?.affectedIds ?? []).filter((id) => !fixed.has(id));
-  const allFixed = report != null && report.affectedCount > 0 && pendingIds.length === 0;
+  const state = status?.state ?? "none";
+  const scanning = ACTIVE.has(state);
+  const result = state === "completed" ? status?.result : null;
+  const progress = status?.progress;
+  const pct =
+    progress && progress.total > 0
+      ? Math.round((progress.processed / progress.total) * 100)
+      : 0;
+
+  const pendingIds = (result?.affectedIds ?? []).filter((id) => !fixed.has(id));
+  const allFixed =
+    result != null && result.affectedCount > 0 && pendingIds.length === 0;
 
   return (
     <section className="pl-section">
       <div className="filterbar">
         <span className="hint">
           Finds HEIC/HEIF whose thumbnail/proxy was rotated twice (the original
-          stores its orientation in both the HEIF container and EXIF). Scanning
-          reads the originals’ metadata on the NAS — it can take a moment.
+          stores its orientation in both the HEIF container and EXIF). Runs as a
+          background job — you can leave this page and come back.
         </span>
         <span className="spacer" />
-        <button className="btn" onClick={scan} disabled={scanning || busy !== null}>
-          {scanning ? "Scanning…" : report ? "Re-scan" : "Scan now"}
+        {state !== "none" && STATE_LABEL[state] && (
+          <span
+            className={`pill${
+              state === "failed"
+                ? " error"
+                : state === "completed"
+                  ? " ready"
+                  : " pending"
+            }`}
+          >
+            {STATE_LABEL[state]}
+            {status?.id ? ` · #${status.id}` : ""}
+          </span>
+        )}
+        <button className="btn" onClick={startScan} disabled={scanning || starting}>
+          {starting
+            ? "Starting…"
+            : scanning
+              ? "Scanning…"
+              : result
+                ? "Re-scan"
+                : "Scan now"}
         </button>
       </div>
 
       {error && (
         <div className="error-box">
-          <span>Scan failed: {error}</span>
-          <button className="btn" onClick={scan}>
+          <span>{error}</span>
+          <button className="btn" onClick={poll}>
             Retry
+          </button>
+        </div>
+      )}
+      {state === "failed" && status?.failedReason && (
+        <div className="error-box">
+          <span>Scan failed: {status.failedReason}</span>
+          <button className="btn" onClick={startScan}>
+            Run again
           </button>
         </div>
       )}
       {msg && <p className="hint">{msg}</p>}
 
-      {report && (
+      {scanning && (
+        <div className="session-progress" style={{ margin: "12px 0" }}>
+          <div className="session-progress-track">
+            <div
+              className="session-progress-fill"
+              style={{
+                width: `${pct}%`,
+                background: "var(--color-accent)",
+              }}
+            />
+          </div>
+          <span className="session-progress-label">
+            {progress
+              ? `${progress.processed.toLocaleString()} / ${progress.total.toLocaleString()} (${pct}%)`
+              : state === "active"
+                ? "Starting…"
+                : "Queued — waiting for the worker…"}
+          </span>
+        </div>
+      )}
+
+      {result && (
         <>
           <div className="filterbar" style={{ marginTop: 8, marginBottom: 6 }}>
-            <span className="pill total">{report.scanned} scanned</span>
-            <span className={`pill${report.affectedCount ? " error" : " ready"}`}>
-              {report.affectedCount} affected
+            <span className="pill total">{result.scanned} scanned</span>
+            <span
+              className={`pill${result.affectedCount ? " error" : " ready"}`}
+            >
+              {result.affectedCount} affected
             </span>
-            <span className="pill ready">{report.ok} OK</span>
-            {report.missing > 0 && (
-              <span className="pill pending">{report.missing} unreachable</span>
+            <span className="pill ready">{result.ok} OK</span>
+            {result.missing > 0 && (
+              <span className="pill pending">{result.missing} unreachable</span>
             )}
             <span className="spacer" />
-            {report.affectedCount > 0 && (
+            {result.affectedCount > 0 && (
               <button
                 className="btn"
                 onClick={() => fix(pendingIds, "all")}
@@ -148,7 +255,7 @@ export default function HeicRotationPage() {
             )}
           </div>
 
-          {report.affectedCount === 0 ? (
+          {result.affectedCount === 0 ? (
             <div className="empty" style={{ padding: 16 }}>
               No double-rotated HEIC derivatives. 🎉
             </div>
@@ -159,7 +266,7 @@ export default function HeicRotationPage() {
                 re-queues generation with the corrected orientation handling.
               </p>
               <div className="fail-list">
-                {report.items.map((it) => {
+                {result.items.map((it) => {
                   const done = fixed.has(it.id);
                   const oneKey = `one:${it.id}`;
                   return (
@@ -172,7 +279,8 @@ export default function HeicRotationPage() {
                           #{it.id} · {it.filename}
                         </strong>
                         <span className="pill">
-                          {it.ext} · {ANGLE[it.orientation] ?? `orient ${it.orientation}`}
+                          {it.ext} ·{" "}
+                          {ANGLE[it.orientation] ?? `orient ${it.orientation}`}
                         </span>
                         <span className="spacer" />
                         <a
@@ -197,10 +305,11 @@ export default function HeicRotationPage() {
                   );
                 })}
               </div>
-              {report.itemsCapped && (
+              {result.itemsCapped && (
                 <p className="hint">
-                  Showing the first {report.items.length} of {report.affectedCount}.
-                  “Fix all” re-queues every affected asset.
+                  Showing the first {result.items.length} of{" "}
+                  {result.affectedCount}. “Fix all” re-queues every affected
+                  asset.
                 </p>
               )}
             </>
@@ -208,7 +317,7 @@ export default function HeicRotationPage() {
         </>
       )}
 
-      {!report && !scanning && !error && (
+      {state === "none" && !scanning && !error && (
         <div className="empty" style={{ padding: 16 }}>
           Run a scan to check your HEIC/HEIF derivatives for double rotation.
         </div>
