@@ -6,6 +6,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import AppRail from "./AppRail";
+import ServiceWorkerRegister from "./ServiceWorkerRegister";
 
 // "Paper" type system: Space Grotesk drives the UI, Instrument Serif sets the
 // editorial display headings, JetBrains Mono carries every number.
@@ -27,14 +28,32 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "Winnow",
   title: "Winnow — media triage",
   description: "Ingest, triage and export of NAS photos/videos.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Winnow",
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
+  icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
   themeColor: "#f4f0e7",
 };
 
@@ -53,6 +72,7 @@ export default function RootLayout({
           <AppRail />
           <div className="root-main">{children}</div>
         </div>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
