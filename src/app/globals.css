@@ -857,6 +857,19 @@
     @apply mb-3 flex flex-wrap items-center gap-2;
   }
 
+  /* Exports tab: preferences toolbar above the job list */
+  .exports-toolbar {
+    @apply mb-3 flex flex-wrap items-center gap-3;
+  }
+  .export-opt {
+    @apply inline-flex cursor-pointer select-none items-center gap-2 text-sm;
+    color: var(--color-faint);
+  }
+  .export-opt input {
+    @apply h-4 w-4 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+
   /* ---- Full-screen viewer (the dark frame) ------------------------------ */
   .viewer {
     @apply fixed inset-0 z-50 flex flex-col;

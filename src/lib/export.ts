@@ -56,12 +56,31 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     const { conditions, params } = buildFilter(filter, 1);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
+    // RAW+JPEG pairing: the picks selected in the (collapsed) gallery are the
+    // JPEG primaries, but the keeper is the RAW. So for every matched PAIR we
+    // export its RAW companion, and the JPEG too only when include_jpeg is set.
+    // Standalone (unpaired) matches export as-is. Cf. lib/pairing.ts.
+    const includeJpeg = job.params?.include_jpeg === true;
+    const jpegIdx = params.length + 1;
+
     const assets = await many<Asset>(
-      `SELECT a.* FROM assets a
-       LEFT JOIN ratings r ON r.asset_id = a.id
-       ${where}
+      `WITH matched AS (
+         SELECT a.id, a.group_id
+         FROM assets a
+         LEFT JOIN ratings r ON r.asset_id = a.id
+         ${where}
+       ),
+       grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
+       SELECT a.* FROM assets a
+       WHERE a.deleted_at IS NULL AND (
+              a.id IN (SELECT id FROM matched WHERE group_id IS NULL)
+           OR (a.group_id IN (SELECT group_id FROM grp) AND a.group_role = 'companion')
+           OR ($${jpegIdx}::boolean
+               AND a.group_id IN (SELECT group_id FROM grp)
+               AND a.group_role = 'primary')
+       )
        ORDER BY a.captured_at, a.id`,
-      params,
+      [...params, includeJpeg],
     );
 
     const destDir = path.join(config.exportDir, sanitize(job.name));
@@ -74,10 +93,18 @@ export async function runExportJob(exportJobId: number): Promise<void> {
       const dest = path.join(destDir, asset.filename);
       try {
         await copyVerified(asset.abs_path, dest);
+        // Lineage role: 'raw' (the keeper) / 'jpeg' (companion) / 'single'
+        // (unpaired). `kind` stays 'raw_copy' — an original-file copy either way.
+        const role =
+          asset.group_role === "companion"
+            ? "raw"
+            : asset.group_role === "primary"
+              ? "jpeg"
+              : "single";
         await q(
           `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
            VALUES ($1, $2, 'raw_copy', $3, $4)`,
-          [asset.id, exportJobId, dest, JSON.stringify({})],
+          [asset.id, exportJobId, dest, JSON.stringify({ role })],
         );
         await q(
           "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
