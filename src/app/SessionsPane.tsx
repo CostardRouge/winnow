@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import SessionActions from "./sessions/SessionActions";
+import ThumbStrip, { type StripItem } from "./ThumbStrip";
 
 // The incoming "Sessions" view: the work queue of scanned NAS folders.
 //  - counters + actions per session (ignore, mark done, export picks to C1);
@@ -68,17 +70,13 @@ function SessionCounters({ s }: { s: SessionRow }) {
   );
 }
 
-// A few thumbnails in a row (list layout) to hint at the session's content.
-function ThumbStrip({ ids }: { ids: number[] }) {
-  const shown = (ids ?? []).slice(0, 3);
-  if (shown.length === 0) return null;
-  return (
-    <div className="thumb-strip">
-      {shown.map((id) => (
-        <LazyImage key={id} src={`/api/assets/${id}/thumb`} alt="" />
-      ))}
-    </div>
-  );
+// Map a session's sample asset ids onto the shared strip's tile shape. The
+// samples are ready thumbnails; the strip advertises the full file count.
+function sessionStripItems(ids: number[]): StripItem[] {
+  return (ids ?? []).map((id) => ({
+    key: id,
+    thumbSrc: `/api/assets/${id}/thumb`,
+  }));
 }
 
 // An overlapping "deck" of a few thumbnails (card layout): front-most first.
@@ -119,6 +117,7 @@ export default function SessionsPane({
   query?: string;
   sortDir?: SortDir;
 }) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -299,7 +298,13 @@ export default function SessionsPane({
                 <div style={{ marginTop: 8 }}>
                   <SessionCounters s={s} />
                 </div>
-                <ThumbStrip ids={s.sample_asset_ids} />
+                <ThumbStrip
+                  className="mt-2"
+                  items={sessionStripItems(s.sample_asset_ids)}
+                  total={s.asset_count}
+                  onItemActivate={() => router.push(`/sessions/${s.id}`)}
+                  onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
+                />
               </div>
               {sessionActions(s)}
             </div>

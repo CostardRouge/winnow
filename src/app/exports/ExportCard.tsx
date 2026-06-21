@@ -5,11 +5,11 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { formatBytes, formatDimensions, formatDuration } from "@/lib/format";
 import { LazyImage, Icons } from "../ui";
+import ThumbStrip, { type StripItem } from "../ThumbStrip";
 import MediaViewer, { type ViewerItem } from "../MediaViewer";
 import ActionMenu, { type MenuItem } from "../ActionMenu";
 
@@ -91,9 +91,6 @@ type ExportItem = ViewerItem & {
   downloadable: boolean;
 };
 
-const THUMB = 76; // strip thumbnail size (px)
-const GAP = 6;
-
 // "50mm · f/2.8 · 1/200s · ISO 400" — the exposure triangle, blanks dropped.
 function exposureLine(it: ExportItem): string | null {
   const parts = [
@@ -139,12 +136,10 @@ export default function ExportCard({
   onChanged: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const stripRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<ExportItem[] | null>(null);
   const [itemsError, setItemsError] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [fit, setFit] = useState(8);
   const [busy, setBusy] = useState(false);
   const loadedRef = useRef(false);
 
@@ -184,20 +179,6 @@ export default function ExportCard({
     io.observe(el);
     return () => io.disconnect();
   }, [load]);
-
-  // How many derivatives fit on one line — recomputed as the card resizes.
-  useEffect(() => {
-    const el = stripRef.current;
-    if (!el || expanded) return;
-    const measure = (w: number) =>
-      setFit(Math.max(1, Math.floor((w + GAP) / (THUMB + GAP))));
-    measure(el.clientWidth);
-    const ro = new ResizeObserver((entries) => {
-      measure(entries[0].contentRect.width);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [expanded, items]);
 
   async function del() {
     if (
@@ -343,58 +324,26 @@ export default function ExportCard({
   ];
 
   const count = items?.length ?? job.export_count;
-  const overflow = items != null && items.length > fit;
-  const shown = overflow ? Math.max(1, fit - 1) : items?.length ?? 0;
 
   const fileUrl = (it: ExportItem) =>
     `/api/exports/${job.id}/items/${it.id}`;
 
-  // A derivative tile. It's a div (not a button) so the per-file download <a>
-  // can nest inside it as valid HTML; click/keyboard open the viewer.
-  const tile = (it: ExportItem, idx: number, style?: CSSProperties) => (
-    <div
-      key={it.id}
-      className="export-thumb"
-      style={style}
-      role="button"
-      tabIndex={0}
-      onClick={(e) => {
-        e.stopPropagation();
-        setViewerIndex(idx);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          setViewerIndex(idx);
-        }
-      }}
-      title={it.filename}
-    >
-      {it.derivative_status === "ready" ? (
-        <LazyImage src={`/api/assets/${it.source_asset_id}/thumb`} alt={it.filename} />
-      ) : (
-        <span className="export-thumb-ph">
-          {it.media_type === "video" ? "🎬" : "⏳"}
-        </span>
-      )}
-      {it.media_type === "video" && it.derivative_status === "ready" && (
-        <span className="play-badge">▶</span>
-      )}
-      {it.downloadable && (
-        <a
-          className="export-dl"
-          href={fileUrl(it)}
-          download
-          onClick={(e) => e.stopPropagation()}
-          title={`Download ${it.filename}`}
-          aria-label={`Download ${it.filename}`}
-        >
-          {Icons.download}
-        </a>
-      )}
-      <span className="ext-badge">{(it.ext ?? "").replace(".", "")}</span>
-    </div>
-  );
+  // Map the export's files onto the shared strip's tile shape: a ready
+  // derivative carries a thumbnail (and a per-file download href); everything
+  // else falls back to a placeholder.
+  const stripItems: StripItem[] | null =
+    items?.map((it) => ({
+      key: it.id,
+      thumbSrc:
+        it.derivative_status === "ready"
+          ? `/api/assets/${it.source_asset_id}/thumb`
+          : undefined,
+      ext: it.ext,
+      isVideo: it.media_type === "video",
+      pending: it.derivative_status !== "ready",
+      downloadHref: it.downloadable ? fileUrl(it) : undefined,
+      title: it.filename,
+    })) ?? null;
 
   // One row of the detailed manifest: a small thumbnail (opens the viewer),
   // the filename, a single descriptive metadata line, the file size and a
@@ -422,7 +371,7 @@ export default function ExportCard({
               alt={it.filename}
             />
           ) : (
-            <span className="export-thumb-ph">
+            <span className="thumb-tile-ph">
               {it.media_type === "video" ? "🎬" : "⏳"}
             </span>
           )}
@@ -522,46 +471,15 @@ export default function ExportCard({
             </>
           ) : (
             <>
-              {/* Clicking the empty strip area opens the detailed list; the
-                  thumbnails stop propagation to open the viewer instead.
-                  Keyboard users get the explicit "Details" button below. */}
-              <div
-                ref={stripRef}
-                className="export-strip"
-                onClick={() => items && setExpanded(true)}
-                title="Show file details"
-              >
-                {items == null
-                  ? Array.from({ length: Math.max(1, fit) }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="skeleton"
-                        style={{
-                          width: THUMB,
-                          height: THUMB,
-                          flex: "0 0 auto",
-                        }}
-                      />
-                    ))
-                  : items
-                      .slice(0, shown)
-                      .map((it, idx) =>
-                        tile(it, idx, {
-                          width: THUMB,
-                          height: THUMB,
-                          flexShrink: 0,
-                        }),
-                      )}
-                {overflow && (
-                  <span
-                    className="export-thumb export-more"
-                    style={{ width: THUMB, height: THUMB, flexShrink: 0 }}
-                    title={`${count - shown} more — open details`}
-                  >
-                    +{count - shown}
-                  </span>
-                )}
-              </div>
+              {/* The thumbnails open the viewer; clicking the "+N" tile or the
+                  empty strip area opens the detailed list. A "Details" button
+                  below keeps that reachable for keyboard users. */}
+              <ThumbStrip
+                items={stripItems}
+                total={count}
+                onItemActivate={(idx) => setViewerIndex(idx)}
+                onOverflowActivate={() => items && setExpanded(true)}
+              />
               {items != null && items.length > 0 && (
                 <button
                   className="chip export-toggle"

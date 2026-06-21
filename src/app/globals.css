@@ -615,13 +615,75 @@
     font-weight: 600;
   }
 
-  .thumb-strip {
-    @apply mt-2 flex flex-wrap gap-1;
+  /* ---- Media strip: a responsive row of derivative tiles --------------- */
+  /* Shared by the exports cards and the incoming sessions list (the ThumbStrip
+     component). A ResizeObserver fits as many fixed-size tiles as the row's
+     width allows; the remainder collapse behind a trailing "+N" tile. */
+  .thumb-row {
+    @apply flex w-full flex-nowrap overflow-hidden;
   }
-  .thumb-strip img {
-    @apply h-14 w-14 rounded-[var(--radius-sm)] border object-cover;
+  .thumb-row.is-clickable {
+    cursor: pointer;
+  }
+  .thumb-tile {
+    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
+    aspect-ratio: 1;
     border-color: var(--color-border);
     background: var(--color-surface-2);
+    transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+  }
+  .thumb-tile[role="button"] {
+    cursor: pointer;
+  }
+  .thumb-tile[role="button"]:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card);
+    z-index: 1;
+  }
+  .thumb-tile img,
+  .thumb-tile .lazy-img {
+    @apply block h-full w-full object-cover;
+  }
+  .thumb-tile-ph {
+    @apply flex h-full w-full items-center justify-center text-base;
+    color: var(--color-faint);
+  }
+  .thumb-tile .ext-badge {
+    @apply absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] uppercase;
+    font-family: var(--font-mono);
+    background: rgba(16, 15, 13, 0.62);
+    backdrop-filter: blur(4px);
+    color: rgba(244, 240, 231, 0.85);
+  }
+  .thumb-tile .play-badge {
+    @apply absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2
+      items-center justify-center rounded-full text-xs text-white;
+    background: rgba(16, 15, 13, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+  /* Per-file download chip, revealed on hover over a tile. */
+  .thumb-dl {
+    @apply absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full;
+    background: rgba(16, 15, 13, 0.6);
+    backdrop-filter: blur(4px);
+    color: #f4f0e7;
+    opacity: 0;
+    transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+  }
+  .thumb-tile:hover .thumb-dl,
+  .thumb-dl:focus-visible {
+    opacity: 1;
+  }
+  .thumb-dl:hover {
+    transform: scale(1.08);
+    background: rgba(16, 15, 13, 0.78);
+  }
+  /* The trailing "+N more" tile. */
+  .thumb-more {
+    @apply flex items-center justify-center text-sm font-semibold;
+    color: var(--color-muted);
   }
 
   /* Shared action cluster (right-aligned in list rows, footer in cards). */
@@ -2302,13 +2364,6 @@
     @apply flex flex-col items-start gap-2;
   }
 
-  /* Collapsed: a single clipped row of derivatives (count set by a
-     ResizeObserver in ExportCard). */
-  .export-strip {
-    @apply flex w-full flex-nowrap gap-1.5 overflow-hidden;
-    cursor: pointer;
-  }
-
   /* Expanded: a detailed manifest of every file being copied. */
   .export-detail-list {
     @apply flex w-full list-none flex-col gap-1 p-0;
@@ -2332,7 +2387,7 @@
   .export-detail-thumb .lazy-img {
     @apply block h-full w-full object-cover;
   }
-  .export-detail-thumb .export-thumb-ph {
+  .export-detail-thumb .thumb-tile-ph {
     @apply text-sm;
   }
   .export-detail-info {
@@ -2369,68 +2424,6 @@
   .export-detail-dl:hover {
     background: var(--color-surface);
     color: var(--color-text);
-  }
-
-  .export-thumb {
-    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
-    aspect-ratio: 1;
-    border-color: var(--color-border);
-    background: var(--color-surface-2);
-    cursor: pointer;
-    transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
-  }
-  .export-thumb:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-card);
-    z-index: 1;
-  }
-  .export-thumb img,
-  .export-thumb .lazy-img {
-    @apply block h-full w-full object-cover;
-  }
-  .export-thumb-ph {
-    @apply flex h-full w-full items-center justify-center text-base;
-    color: var(--color-faint);
-  }
-  .export-thumb .ext-badge {
-    @apply absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] uppercase;
-    font-family: var(--font-mono);
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
-    color: rgba(244, 240, 231, 0.85);
-  }
-  .export-thumb .play-badge {
-    @apply absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2
-      items-center justify-center rounded-full text-xs text-white;
-    background: rgba(16, 15, 13, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    backdrop-filter: blur(2px);
-    pointer-events: none;
-  }
-
-  /* Per-file download chip, revealed on hover over a derivative. */
-  .export-dl {
-    @apply absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full;
-    background: rgba(16, 15, 13, 0.6);
-    backdrop-filter: blur(4px);
-    color: #f4f0e7;
-    opacity: 0;
-    transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
-  }
-  .export-thumb:hover .export-dl,
-  .export-dl:focus-visible {
-    opacity: 1;
-  }
-  .export-dl:hover {
-    transform: scale(1.08);
-    background: rgba(16, 15, 13, 0.78);
-  }
-
-  /* The trailing "+N more" tile (collapsed strip). */
-  .export-more {
-    @apply flex items-center justify-center text-sm font-semibold;
-    color: var(--color-muted);
-    cursor: pointer;
   }
 
   .export-toggle {
