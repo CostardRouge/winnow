@@ -2,6 +2,7 @@
   "name": "winnow",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Media management tool (ingest / cull / export) — indexes, culls and exports the NAS RAW/videos without ever touching the originals more than once.",
   "type": "module",
   "scripts": {
