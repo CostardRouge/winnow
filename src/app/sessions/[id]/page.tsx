@@ -453,9 +453,10 @@ export default function SessionGrid({
                         : "⏳ deriving…"}
                   </div>
                 )}
-                {a.media_type === "video" && (
-                  <span className="play-badge">▶</span>
-                )}
+                {a.media_type === "video" &&
+                  a.derivative_status === "ready" && (
+                    <span className="play-badge">▶</span>
+                  )}
                 {a.verdict !== "unrated" && (
                   <span className="badge">
                     {a.verdict === "pick" ? "✓" : "✕"}
@@ -464,6 +465,7 @@ export default function SessionGrid({
                 {a.star > 0 && (
                   <span className="stars">{"★".repeat(a.star)}</span>
                 )}
+                <span className="ext-badge">{a.ext.replace(".", "")}</span>
               </div>
             ))}
           </div>

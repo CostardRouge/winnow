@@ -789,7 +789,6 @@
       border-color 0.16s var(--ease-out), opacity 0.16s var(--ease-out);
   }
   .cell:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-card);
     z-index: 1;
   }
@@ -840,10 +839,6 @@
     border: 1px solid rgba(255, 255, 255, 0.45);
     backdrop-filter: blur(2px);
     pointer-events: none;
-    transition: transform 0.16s var(--ease-out);
-  }
-  .cell:hover .play-badge {
-    transform: translate(-50%, -50%) scale(1.08);
   }
   .cell .select-check {
     @apply absolute right-1 top-1 flex h-5 w-5 items-center justify-center
