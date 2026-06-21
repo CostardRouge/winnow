@@ -110,10 +110,15 @@ export type Tag = {
   color: string | null;
 };
 
-// Row returned by the cull grid (asset + joined verdict + tags).
+// Row returned by the cull grid (asset + joined verdict + tags + companion).
 export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;
   color_label: string | null;
   tags: string[];
+  // RAW+JPEG pairing: the other member of this asset's group (cf. lib/pairing.ts).
+  // Null when the asset is not paired. Lets the viewer offer the JPEG/RAW toggle
+  // and the grid badge the pair without a second round-trip.
+  companion_id: number | null;
+  companion_ext: string | null;
 };

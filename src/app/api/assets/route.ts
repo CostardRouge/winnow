@@ -3,6 +3,7 @@
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
+import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import {
   json,
   badRequest,
@@ -27,7 +28,14 @@ export async function GET(req: NextRequest) {
     // `?deleted=trash` lists the recycle bin (soft-deleted, not purged); the
     // default shows the live library.
     const deleted = sp.get("deleted") === "trash" ? "trash" : "exclude";
-    const { conditions, params } = buildFilter(filter, 1, { deleted });
+    // `?collapse=1` shows one tile per logical media: RAW+JPEG companions are
+    // hidden so a pair counts once (the displayed `primary` stays). Off by
+    // default — the Pipeline/triage views list every file.
+    const collapseGroups = sp.get("collapse") === "1";
+    const { conditions, params } = buildFilter(filter, 1, {
+      deleted,
+      collapseGroups,
+    });
     let idx = params.length + 1;
 
     // Sort key: default is the capture timeline (most recent shots first); the
@@ -51,15 +59,8 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = await many<AssetGridRow>(
-      `SELECT a.*,
-              COALESCE(r.verdict, 'unrated') AS verdict,
-              COALESCE(r.star, 0)            AS star,
-              r.color_label,
-              (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
-                 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-                WHERE at.asset_id = a.id) AS tags
-       FROM assets a
-       LEFT JOIN ratings r ON r.asset_id = a.id
+      `SELECT ${GRID_SELECT}
+       ${GRID_FROM}
        ${where}
        ORDER BY ${sortCol} ${dir}, a.id ${dir}
        LIMIT $${idx}`,

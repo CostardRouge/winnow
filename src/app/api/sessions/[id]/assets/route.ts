@@ -3,6 +3,7 @@
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
+import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import {
   json,
   badRequest,
@@ -29,7 +30,10 @@ export async function GET(
     } catch (e) {
       return badRequest("Invalid filter", (e as Error).message);
     }
-    const { conditions, params: fParams } = buildFilter(filter, 1);
+    const collapseGroups = sp.get("collapse") === "1";
+    const { conditions, params: fParams } = buildFilter(filter, 1, {
+      collapseGroups,
+    });
 
     let idx = fParams.length + 1;
     const cursorStr = sp.get("cursor");
@@ -42,15 +46,8 @@ export async function GET(
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = await many<AssetGridRow>(
-      `SELECT a.*,
-              COALESCE(r.verdict, 'unrated') AS verdict,
-              COALESCE(r.star, 0)            AS star,
-              r.color_label,
-              (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
-                 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-                WHERE at.asset_id = a.id) AS tags
-       FROM assets a
-       LEFT JOIN ratings r ON r.asset_id = a.id
+      `SELECT ${GRID_SELECT}
+       ${GRID_FROM}
        ${where}
        ORDER BY a.captured_at ASC, a.id ASC
        LIMIT $${idx}`,

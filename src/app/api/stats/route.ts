@@ -26,6 +26,8 @@ export async function GET() {
   try {
     const counts = await one<{
       total: number;
+      media: number;
+      pairs: number;
       photos: number;
       videos: number;
       analyzed: number;
@@ -33,8 +35,13 @@ export async function GET() {
       errors: number;
       skipped: number;
     }>(
+      // `total` counts physical files; `media` counts logical items, where a
+      // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
+      // number of such RAW+JPEG groups. See lib/pairing.ts.
       `SELECT
          count(*)                                                            AS total,
+         count(*) FILTER (WHERE group_role IS DISTINCT FROM 'companion')     AS media,
+         count(*) FILTER (WHERE group_role = 'companion')                    AS pairs,
          count(*) FILTER (WHERE media_type = 'photo')                        AS photos,
          count(*) FILTER (WHERE media_type = 'video')                        AS videos,
          count(*) FILTER (WHERE derivative_status = 'ready')                 AS analyzed,
@@ -58,6 +65,8 @@ export async function GET() {
     return json({
       assets: counts ?? {
         total: 0,
+        media: 0,
+        pairs: 0,
         photos: 0,
         videos: 0,
         analyzed: 0,

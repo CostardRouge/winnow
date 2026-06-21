@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
 
     const [
       total,
+      paired,
       ranges,
       years,
       months,
@@ -73,6 +74,12 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a WHERE true${scope}`,
+        params,
+      ).catch(() => null),
+      // RAW+JPEG pairing: how many assets belong to a pair (drives the
+      // "RAW+JPEG" filter toggle → ?paired=1). See lib/pairing.ts.
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a WHERE a.group_id IS NOT NULL${scope}`,
         params,
       ).catch(() => null),
       one<{
@@ -127,6 +134,7 @@ export async function GET(req: NextRequest) {
 
     return json({
       total: total?.count ?? 0,
+      paired: paired?.count ?? 0,
       ranges: ranges ?? {},
       years,
       months,
