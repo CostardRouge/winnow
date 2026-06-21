@@ -11,12 +11,16 @@ export type AppSettings = {
   scanPaused: boolean;
   scanPerHour: number;
   analyzePerHour: number;
+  // RAW+JPEG pairing: when exporting a pair, also copy the JPEG companion next
+  // to the RAW keeper. Default false (RAW only). Cf. lib/export.ts, lib/pairing.ts.
+  exportIncludeJpeg: boolean;
 };
 
 const DEFAULTS: AppSettings = {
   scanPaused: false,
   scanPerHour: 0,
   analyzePerHour: 0,
+  exportIncludeJpeg: false,
 };
 
 const TTL_MS = 1500;
@@ -35,6 +39,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.scanPerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "analyze_per_hour")
         value.analyzePerHour = Math.max(0, Number(r.value) || 0);
+      else if (r.key === "export_include_jpeg")
+        value.exportIncludeJpeg = r.value === true;
     }
   } catch {
     // Table absent (before migration) or Postgres unavailable: we fall back
@@ -54,6 +60,8 @@ export async function setSettings(
     entries.push(["analyze_per_hour", JSON.stringify(Math.max(0, Math.floor(patch.analyzePerHour)))]);
   if (patch.scanPaused !== undefined)
     entries.push(["scan_paused", JSON.stringify(Boolean(patch.scanPaused))]);
+  if (patch.exportIncludeJpeg !== undefined)
+    entries.push(["export_include_jpeg", JSON.stringify(Boolean(patch.exportIncludeJpeg))]);
 
   for (const [key, value] of entries) {
     await q(

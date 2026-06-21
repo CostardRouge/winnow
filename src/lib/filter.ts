@@ -34,6 +34,21 @@ const bbox = z
     return { w, s, e, n };
   });
 
+// Tri-state boolean from a query string: "1"/"true"/"yes" → true,
+// "0"/"false"/"no" → false, anything else → undefined. Unlike z.coerce.boolean
+// (where the string "0" is truthy), this lets a filter mean "only false".
+const boolish = z
+  .union([z.string(), z.boolean()])
+  .optional()
+  .transform((v) => {
+    if (v == null) return undefined;
+    if (typeof v === "boolean") return v;
+    const s = v.trim().toLowerCase();
+    if (s === "1" || s === "true" || s === "yes") return true;
+    if (s === "0" || s === "false" || s === "no") return false;
+    return undefined;
+  });
+
 // Like intList, but also tolerates a JSON array of numbers (export jobs persist
 // `filter.ids` as numbers, not strings).
 const intList = z
@@ -71,6 +86,9 @@ export const FilterSchema = z
     // Type / format
     media_type: csv, // photo | video (multi)
     ext: csv, // .arw, .jpg... (multi)
+    // RAW+JPEG pairing: true → only paired assets, false → only standalone ones
+    // (cf. lib/pairing.ts). The "RAW+JPEG" facet toggle maps to `paired=1`.
+    paired: boolish,
 
     // Device / EXIF (multi)
     device: csv,
@@ -125,7 +143,7 @@ export type DeletedScope = "exclude" | "trash";
 export function buildFilter(
   filter: AssetFilter,
   startIdx = 1,
-  opts: { deleted?: DeletedScope } = {},
+  opts: { deleted?: DeletedScope; collapseGroups?: boolean } = {},
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -195,6 +213,15 @@ export function buildFilter(
 
   if (filter.media_type) inAny("a.media_type", filter.media_type);
   if (filter.ext) inAny("a.ext", filter.ext);
+  if (filter.paired === true) conditions.push("a.group_id IS NOT NULL");
+  else if (filter.paired === false) conditions.push("a.group_id IS NULL");
+
+  // Collapse RAW+JPEG pairs to one row: hide the companion, keep the displayed
+  // primary. Opt-in (gallery/session grid) so exports and per-file triage still
+  // see every file. NULL group_role (unpaired) is always kept.
+  if (opts.collapseGroups) {
+    conditions.push("a.group_role IS DISTINCT FROM 'companion'");
+  }
   if (filter.device) inAny("a.device", filter.device);
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
   if (filter.lens) inAny("a.lens", filter.lens);
@@ -283,6 +310,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "star_min",
     "media_type",
     "ext",
+    "paired",
     "device",
     "camera_model",
     "lens",

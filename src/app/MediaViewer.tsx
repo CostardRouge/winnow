@@ -21,7 +21,18 @@ export type ViewerItem = AssetMetaInput & {
   filename: string;
   media_type?: "photo" | "video";
   derivative_status?: string;
+  // RAW+JPEG pairing (cf. lib/pairing.ts). When the item has a companion, the
+  // viewer offers a segmented toggle to swap the displayed source between this
+  // file (the JPEG/HEIF primary) and its RAW companion. `ext`/`companion_ext`
+  // label the two segments.
+  ext?: string;
+  companion_id?: number | null;
+  companion_ext?: string | null;
 };
+
+// "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
+const fmtExt = (ext?: string | null) =>
+  (ext ?? "").replace(".", "").toUpperCase();
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
@@ -63,6 +74,10 @@ export default function MediaViewer<T extends ViewerItem>({
   // icon so it never has to cover the media.
   const [panelOpen, setPanelOpen] = useState(true);
 
+  // RAW+JPEG pairing: which side of the pair is displayed. Resets to the primary
+  // (JPEG/HEIF) whenever we move to another item.
+  const [showCompanion, setShowCompanion] = useState(false);
+
   // Zoom/pan transform applied to the current media. Reset whenever we move to
   // another item so each photo/video starts fitted.
   const [scale, setScale] = useState(1);
@@ -74,6 +89,7 @@ export default function MediaViewer<T extends ViewerItem>({
     setScale(1);
     setTx(0);
     setTy(0);
+    setShowCompanion(false);
   }, [index]);
 
   // Once back to fit, drop any leftover pan so the media re-centres.
@@ -180,6 +196,15 @@ export default function MediaViewer<T extends ViewerItem>({
   // assumed displayable; otherwise we only show it once the derivative is ready.
   const ready = item.derivative_status ? item.derivative_status === "ready" : true;
 
+  // RAW+JPEG pairing: a paired photo can be viewed as its primary (JPEG/HEIF) or
+  // its RAW companion. When showing the companion, source its proxy directly
+  // (custom mediaSrc overrides don't apply to the companion asset).
+  const hasCompanion = item.companion_id != null && !!item.companion_ext;
+  const companionShown = hasCompanion && showCompanion;
+  const currentSrc = companionShown
+    ? `/api/assets/${item.companion_id}/proxy`
+    : mediaSrc(item);
+
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
     cursor: scale > MIN_SCALE ? "grab" : undefined,
@@ -229,7 +254,12 @@ export default function MediaViewer<T extends ViewerItem>({
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={mediaSrc(item)} alt={item.filename} style={transform} />
+              <img
+                key={companionShown ? `c${item.companion_id}` : item.id}
+                src={currentSrc}
+                alt={item.filename}
+                style={transform}
+              />
             )
           ) : (
             <div className="placeholder">Derivative unavailable</div>
@@ -254,6 +284,31 @@ export default function MediaViewer<T extends ViewerItem>({
         )}
       </div>
       <div className="controls">
+        {hasCompanion && (
+          <div
+            className="vbar-verdict vbar-format"
+            role="group"
+            aria-label="Format"
+          >
+            <button
+              type="button"
+              className={`vbar-btn${!companionShown ? " active" : ""}`}
+              aria-pressed={!companionShown}
+              onClick={() => setShowCompanion(false)}
+            >
+              {fmtExt(item.ext)}
+            </button>
+            <button
+              type="button"
+              className={`vbar-btn${companionShown ? " active" : ""}`}
+              aria-pressed={companionShown}
+              title="Show the RAW source"
+              onClick={() => setShowCompanion(true)}
+            >
+              {fmtExt(item.companion_ext)}
+            </button>
+          </div>
+        )}
         <button
           className="btn"
           onClick={() => onIndexChange(Math.max(index - 1, 0))}

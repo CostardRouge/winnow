@@ -832,6 +832,11 @@
     backdrop-filter: blur(4px);
     color: rgba(244, 240, 231, 0.85);
   }
+  /* RAW+JPEG pair: the ext badge reads "RAW+JPG" and gains a faint accent ring */
+  .cell .ext-badge.paired {
+    color: #f4f0e7;
+    box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.35);
+  }
   .cell .play-badge {
     @apply absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2
       items-center justify-center rounded-full text-sm text-white;
@@ -850,6 +855,19 @@
 
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
+  }
+
+  /* Exports tab: preferences toolbar above the job list */
+  .exports-toolbar {
+    @apply mb-3 flex flex-wrap items-center gap-3;
+  }
+  .export-opt {
+    @apply inline-flex cursor-pointer select-none items-center gap-2 text-sm;
+    color: var(--color-faint);
+  }
+  .export-opt input {
+    @apply h-4 w-4 cursor-pointer;
+    accent-color: var(--color-accent);
   }
 
   /* ---- Full-screen viewer (the dark frame) ------------------------------ */
@@ -967,6 +985,15 @@
   }
   .vbar-pick.active:hover {
     background: color-mix(in srgb, var(--color-pick) 88%, #000);
+  }
+  /* RAW+JPEG format toggle: a neutral segmented control (reuses .vbar-verdict
+     framing). The active side reads as a lit segment. */
+  .vbar-format .vbar-btn {
+    @apply px-3 font-mono text-xs uppercase tracking-wide;
+  }
+  .vbar-format .vbar-btn.active {
+    background: rgba(255, 255, 255, 0.24);
+    color: #fff;
   }
   /* Stars sit in their own translucent well so they read as one rating control */
   .vbar-stars {

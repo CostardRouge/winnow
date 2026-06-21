@@ -12,6 +12,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { q } from "@/lib/db";
 import { buildFilter, FilterSchema } from "@/lib/filter";
+import { groupExpandCTE } from "@/lib/pairing";
 import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z
@@ -34,10 +35,14 @@ export async function POST(req: NextRequest) {
 
     let res;
     if (ids && ids.length) {
-      // Explicit selection. A restore must never resurrect a purged asset.
+      // Explicit selection. RAW+JPEG pairing: delete/restore cascades to the
+      // group companion so a pair is trashed as one logical media and no orphan
+      // RAW lingers when its displayed JPEG is removed (cf. lib/pairing.ts).
+      // A restore must never resurrect a purged asset.
       res = await q(
-        `UPDATE assets SET ${setClause}
-          WHERE id = ANY($1::bigint[])${restore ? " AND purged_at IS NULL" : ""}`,
+        `WITH ${groupExpandCTE("$1")}
+         UPDATE assets SET ${setClause}
+          WHERE id IN (SELECT id FROM target_ids)${restore ? " AND purged_at IS NULL" : ""}`,
         [ids],
       );
     } else {

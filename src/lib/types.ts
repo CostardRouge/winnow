@@ -77,8 +77,23 @@ export type Asset = {
   // last failure (e.g. a read-only mount) when a purge couldn't free the bytes.
   purged_at: string | null;
   purge_error: string | null;
+  // RAW+JPEG pairing (cf. lib/pairing.ts). `group_id` ties a RAW and its direct
+  // JPEG/HEIF companion together; `group_role` says which side this file is.
+  // The `primary` (direct file) is shown by default; the `companion` (RAW) is
+  // the reachable "source brute". Both null when the file is not paired.
+  group_id: number | null;
+  group_role: "primary" | "companion" | null;
   created_at: string;
   updated_at: string;
+};
+
+// A media group: the link between a RAW "source" and its direct JPEG/HEIF
+// companion shot together by the camera. One row per logical pair.
+export type AssetGroup = {
+  id: number;
+  session_id: number;
+  kind: "raw_jpeg";
+  created_at: string;
 };
 
 export type Rating = {
@@ -95,10 +110,15 @@ export type Tag = {
   color: string | null;
 };
 
-// Row returned by the cull grid (asset + joined verdict + tags).
+// Row returned by the cull grid (asset + joined verdict + tags + companion).
 export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;
   color_label: string | null;
   tags: string[];
+  // RAW+JPEG pairing: the other member of this asset's group (cf. lib/pairing.ts).
+  // Null when the asset is not paired. Lets the viewer offer the JPEG/RAW toggle
+  // and the grid badge the pair without a second round-trip.
+  companion_id: number | null;
+  companion_ext: string | null;
 };

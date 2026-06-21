@@ -12,6 +12,10 @@ export type GalleryAsset = {
   file_size: number | null;
   verdict: "pick" | "reject" | "unrated";
   star: number;
+  // RAW+JPEG pairing: the companion (RAW source) of this displayed primary, if
+  // any (cf. lib/pairing.ts). Drives the "RAW+…" badge.
+  companion_id?: number | null;
+  companion_ext?: string | null;
 };
 
 const TARGET = 175; // target cell width (px)
@@ -104,7 +108,11 @@ export default function VirtualGrid({
                 <span className="badge">{a.verdict === "pick" ? "✓" : "✕"}</span>
               )}
               {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
-              <span className="ext-badge">{a.ext.replace(".", "")}</span>
+              <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
+                {a.companion_ext
+                  ? `RAW+${a.ext.replace(".", "")}`
+                  : a.ext.replace(".", "")}
+              </span>
               {sel && <span className="select-check">✓</span>}
             </div>
           );
