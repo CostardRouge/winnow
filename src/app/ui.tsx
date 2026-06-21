@@ -279,6 +279,13 @@ export const Icons = {
       <path d="M9 4v16" />
     </svg>
   ),
+  // Magnifier — the filename/folder text search field.
+  search: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.2-3.2" />
+    </svg>
+  ),
   reset: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />

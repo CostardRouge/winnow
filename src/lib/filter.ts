@@ -98,6 +98,10 @@ export const FilterSchema = z
     tags: csv,
     not_tags: csv,
 
+    // Free-text search over the file path (folder + filename). Whitespace splits
+    // it into tokens, each matched as a case-insensitive substring (AND).
+    q: z.string().trim().min(1).max(200).optional(),
+
     // Misc
     has_gps: z.coerce.boolean().optional(),
     // Map zone: bounding box "w,s,e,n" (filters on the materialized gps_lat/lon).
@@ -106,6 +110,12 @@ export const FilterSchema = z
   .strip();
 
 export type AssetFilter = z.infer<typeof FilterSchema>;
+
+// Escapes the LIKE/ILIKE wildcards so a user's literal `%`/`_` (and the `\`
+// escape char itself) match themselves rather than acting as patterns.
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
 
 export function buildFilter(
   filter: AssetFilter,
@@ -208,6 +218,18 @@ export function buildFilter(
     params.push(filter.not_tags);
   }
 
+  if (filter.q) {
+    // Free-text path search: every whitespace-separated token must appear
+    // somewhere in rel_path (folder + filename), case-insensitively. ANDed
+    // tokens narrow the result; each ILIKE rides the rel_path trigram index
+    // (migration 0010). Capped so a pathological query can't explode the SQL.
+    const tokens = filter.q.split(/\s+/).filter(Boolean).slice(0, 10);
+    for (const tok of tokens) {
+      conditions.push(`a.rel_path ILIKE $${i++}`);
+      params.push(`%${escapeLike(tok)}%`);
+    }
+  }
+
   if (filter.has_gps) conditions.push(`a.gps IS NOT NULL`);
 
   if (filter.bbox) {
@@ -268,6 +290,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "size_max",
     "has_gps",
     "bbox",
+    "q",
   ] as const;
   const raw: Record<string, string> = {};
   for (const k of keys) {

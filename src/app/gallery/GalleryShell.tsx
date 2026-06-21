@@ -83,6 +83,7 @@ function toQuery(
   const sp = new URLSearchParams();
   const arr = (k: string, a: (string | number)[]) =>
     a.length && sp.set(k, a.join(","));
+  if (f.q) sp.set("q", f.q);
   arr("media_type", f.media_type);
   arr("ext", f.ext);
   arr("derivative_status", f.derivative_status);
