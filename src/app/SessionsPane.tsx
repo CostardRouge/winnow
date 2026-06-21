@@ -5,6 +5,7 @@ import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
+import SessionActions from "./sessions/SessionActions";
 
 // The incoming "Sessions" view: the work queue of scanned NAS folders.
 //  - counters + actions per session (ignore, mark done, export picks to C1);
@@ -202,48 +203,15 @@ export default function SessionsPane({
 
   function sessionActions(s: SessionRow) {
     return (
-      <div className="seg-actions" role="group" aria-label="Session actions">
-        <button
-          className={`seg-btn${s.completed ? " is-on" : ""}`}
-          onClick={() => toggleComplete(s)}
-          aria-label={s.completed ? "Mark as not complete" : "Mark complete"}
-          title={s.completed ? "Mark as not complete" : "Mark complete"}
-        >
-          {Icons.keep}
-          <span className="seg-label">{s.completed ? "Completed" : "Complete"}</span>
-        </button>
-        <button
-          className="seg-btn"
-          onClick={() => toggleIgnore(s)}
-          aria-label={s.ignored ? "Reactivate this session" : "Ignore this session"}
-          title={s.ignored ? "Reactivate this session" : "Ignore this session"}
-        >
-          {s.ignored ? Icons.reset : Icons.skip}
-          <span className="seg-label">{s.ignored ? "Reactivate" : "Ignore"}</span>
-        </button>
-        <button
-          className="seg-btn"
-          onClick={() => exportPicks(s)}
-          disabled={s.pick_count === 0}
-          aria-label="Export picks"
-          title={
-            s.pick_count === 0
-              ? "No picks to export yet"
-              : "Export the RAW picks to the Capture One export folder"
-          }
-        >
-          {Icons.upload}
-          <span className="seg-label">Export Pics</span>
-        </button>
-        <button
-          className="seg-btn is-danger"
-          onClick={() => setConfirming(s)}
-          aria-label="Delete session"
-          title="Remove this session (optionally delete its files from disk)"
-        >
-          {Icons.trash}
-        </button>
-      </div>
+      <SessionActions
+        completed={s.completed}
+        ignored={s.ignored}
+        canExport={s.pick_count > 0}
+        onComplete={() => toggleComplete(s)}
+        onIgnore={() => toggleIgnore(s)}
+        onExportPicks={() => exportPicks(s)}
+        onDelete={() => setConfirming(s)}
+      />
     );
   }
 
