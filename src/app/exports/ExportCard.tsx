@@ -11,7 +11,8 @@ import { formatBytes, formatDimensions, formatDuration } from "@/lib/format";
 import { LazyImage, Icons } from "../ui";
 import ThumbStrip, { type StripItem } from "../ThumbStrip";
 import MediaViewer, { type ViewerItem } from "../MediaViewer";
-import ActionMenu, { type MenuItem } from "../ActionMenu";
+import { type MenuItem } from "../ActionMenu";
+import ExportActions from "./ExportActions";
 
 // Minimal typing for the File System Access API (Chromium). Lets us save an
 // export's files straight into a folder the user picks, instead of going through
@@ -411,8 +412,8 @@ export default function ExportCard({
 
   return (
     <div ref={cardRef} className="session-card export-card">
-      <div className="export-card-head">
-        <div style={{ flex: 1, minWidth: 200 }}>
+      <div className="card-head">
+        <div className="card-info">
           <h3>{job.name}</h3>
           <div className="meta">
             {job.target} · {fmtDate(job.created_at)} · {count} files
@@ -422,25 +423,16 @@ export default function ExportCard({
             {job.result?.error ? ` · ${job.result.error}` : ""}
           </div>
         </div>
-        <div className="session-actions">
-          {dlMsg && <span className="hint export-dl-msg">{dlMsg}</span>}
+        <div className="card-side">
+          <ExportActions
+            downloadItems={downloadMenu}
+            downloadBusy={dlBusy}
+            canDownload={count > 0}
+            onDelete={del}
+            deleteBusy={busy}
+          />
           <span className={`pill ${statusPill(job.status)}`}>{job.status}</span>
-          {count > 0 && (
-            <ActionMenu
-              ariaLabel="Download options"
-              label="Download"
-              items={downloadMenu}
-              disabled={dlBusy}
-              trigger={{
-                label: dlBusy ? "Downloading…" : "Download",
-                icon: Icons.download,
-                className: "btn",
-              }}
-            />
-          )}
-          <button className="btn btn-reject" disabled={busy} onClick={del}>
-            {busy ? "…" : "Delete"}
-          </button>
+          {dlMsg && <span className="hint export-dl-msg">{dlMsg}</span>}
         </div>
       </div>
 

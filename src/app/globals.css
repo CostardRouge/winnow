@@ -567,6 +567,45 @@
     @apply text-[13px];
     color: var(--color-muted);
   }
+
+  /* ---- Two-level media card: head (info | actions) over a media row ----- */
+  /* Shared by the incoming sessions list and the exports cards so both read the
+     same: a first row split into a title/details column and a right-aligned
+     actions + status column, then a full-width thumbnail strip below. */
+  .session-card.is-stacked {
+    @apply flex-col flex-nowrap items-stretch gap-3;
+  }
+  .card-head {
+    @apply flex items-start justify-between gap-4;
+  }
+  .card-info {
+    @apply min-w-0 flex-1;
+  }
+  /* Orange title in both contexts (sessions get it from the <a>; give plain
+     export titles the same accent). */
+  .card-info h3 {
+    @apply truncate;
+    color: var(--color-accent);
+  }
+  .card-side {
+    @apply flex shrink-0 flex-col items-end gap-2;
+  }
+  .card-side .counters {
+    @apply justify-end;
+  }
+  /* On phones the two columns stack (info over a left-aligned actions + pills
+     block), so a long title isn't squeezed by the action bar. */
+  @media (max-width: 640px) {
+    .card-head {
+      @apply flex-col gap-2.5;
+    }
+    .card-side {
+      @apply w-full items-start;
+    }
+    .card-side .counters {
+      @apply justify-start;
+    }
+  }
   .counters {
     @apply flex flex-wrap gap-2 text-xs;
   }
@@ -686,22 +725,27 @@
     color: var(--color-muted);
   }
 
-  /* Shared action cluster (right-aligned in list rows, footer in cards). */
-  .session-actions {
-    @apply flex flex-wrap items-center gap-2;
-  }
-
   /* ---- Sessions: segmented action bar ---------------------------------- */
   /* Per-session actions joined into one pill-shaped segmented control that
      stays on a single line. Icons carry the meaning; the text labels show on
      wider screens and collapse to icon-only on small viewports / card decks
      (tooltips keep every action discoverable). */
+  /* No overflow-clip here: a segment can be a dropdown trigger (ExportActions)
+     whose floating menu must escape the bar — so the end segments round their
+     own outer corners instead of relying on the container clipping them. */
   .seg-actions {
-    @apply inline-flex flex-nowrap items-stretch overflow-hidden
-      rounded-[var(--radius)] border;
+    @apply inline-flex flex-nowrap items-stretch rounded-[var(--radius)] border;
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     box-shadow: 0 1px 1.5px rgba(27, 24, 19, 0.04);
+  }
+  .seg-btn:first-child {
+    border-top-left-radius: calc(var(--radius) - 1px);
+    border-bottom-left-radius: calc(var(--radius) - 1px);
+  }
+  .seg-btn:last-child {
+    border-top-right-radius: calc(var(--radius) - 1px);
+    border-bottom-right-radius: calc(var(--radius) - 1px);
   }
   .seg-btn {
     @apply inline-flex select-none items-center justify-center gap-1.5
@@ -711,7 +755,10 @@
     transition-timing-function: var(--ease-out);
     transition-property: color, background-color;
   }
-  .seg-btn + .seg-btn {
+  /* Hairline dividers between segments. :not(:first-child) (rather than the
+     adjacent-sibling selector) keeps the divider correct even when a segment is
+     a dropdown trigger that renders a sibling menu node (ExportActions). */
+  .seg-btn:not(:first-child) {
     border-left: 1px solid var(--color-border);
   }
   .seg-btn svg {
@@ -2356,9 +2403,6 @@
 @layer components {
   .export-card {
     @apply flex-col items-stretch gap-3;
-  }
-  .export-card-head {
-    @apply flex flex-wrap items-center gap-4;
   }
   .export-body {
     @apply flex flex-col items-start gap-2;

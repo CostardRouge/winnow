@@ -20,6 +20,14 @@ import ThumbStrip, { type StripItem } from "./ThumbStrip";
 export type Layout = "list" | "card";
 export type SortDir = "desc" | "asc";
 
+// A ready thumbnail previewing the session, carrying enough to badge the tile
+// (extension + a play badge for videos) in the shared strip.
+type SampleAsset = {
+  id: number;
+  ext: string;
+  media_type: "photo" | "video";
+};
+
 type SessionRow = {
   id: number;
   name: string;
@@ -34,7 +42,7 @@ type SessionRow = {
   pending_count: number;
   error_count: number;
   pick_count: number;
-  sample_asset_ids: number[];
+  sample_assets: SampleAsset[];
 };
 
 function fmtDate(s: string | null): string {
@@ -70,18 +78,21 @@ function SessionCounters({ s }: { s: SessionRow }) {
   );
 }
 
-// Map a session's sample asset ids onto the shared strip's tile shape. The
-// samples are ready thumbnails; the strip advertises the full file count.
-function sessionStripItems(ids: number[]): StripItem[] {
-  return (ids ?? []).map((id) => ({
-    key: id,
-    thumbSrc: `/api/assets/${id}/thumb`,
+// Map a session's sample assets onto the shared strip's tile shape — ready
+// thumbnails badged with their extension / media type; the strip advertises the
+// session's full file count.
+function sessionStripItems(samples: SampleAsset[]): StripItem[] {
+  return (samples ?? []).map((a) => ({
+    key: a.id,
+    thumbSrc: `/api/assets/${a.id}/thumb`,
+    ext: a.ext,
+    isVideo: a.media_type === "video",
   }));
 }
 
 // An overlapping "deck" of a few thumbnails (card layout): front-most first.
-function ThumbStack({ ids }: { ids: number[] }) {
-  const shown = (ids ?? []).slice(0, 3);
+function ThumbStack({ samples }: { samples: SampleAsset[] }) {
+  const shown = (samples ?? []).slice(0, 3).map((a) => a.id);
   if (shown.length === 0) {
     return <div className="thumb-stack is-empty">No preview yet</div>;
   }
@@ -270,7 +281,7 @@ export default function SessionsPane({
               className={`session-card as-card${s.ignored ? " ignored" : ""}`}
             >
               <Link href={`/sessions/${s.id}`} className="session-preview">
-                <ThumbStack ids={s.sample_asset_ids} />
+                <ThumbStack samples={s.sample_assets} />
               </Link>
               <div className="session-card-body">
                 <h3>
@@ -288,25 +299,26 @@ export default function SessionsPane({
           {sessions.map((s) => (
             <div
               key={s.id}
-              className={`session-card${s.ignored ? " ignored" : ""}`}
+              className={`session-card is-stacked${s.ignored ? " ignored" : ""}`}
             >
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <h3>
-                  <Link href={`/sessions/${s.id}`}>{s.name}</Link>
-                </h3>
-                <SessionMeta s={s} />
-                <div style={{ marginTop: 8 }}>
+              <div className="card-head">
+                <div className="card-info">
+                  <h3>
+                    <Link href={`/sessions/${s.id}`}>{s.name}</Link>
+                  </h3>
+                  <SessionMeta s={s} />
+                </div>
+                <div className="card-side">
+                  {sessionActions(s)}
                   <SessionCounters s={s} />
                 </div>
-                <ThumbStrip
-                  className="mt-2"
-                  items={sessionStripItems(s.sample_asset_ids)}
-                  total={s.asset_count}
-                  onItemActivate={() => router.push(`/sessions/${s.id}`)}
-                  onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
-                />
               </div>
-              {sessionActions(s)}
+              <ThumbStrip
+                items={sessionStripItems(s.sample_assets)}
+                total={s.asset_count}
+                onItemActivate={() => router.push(`/sessions/${s.id}`)}
+                onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
+              />
             </div>
           ))}
         </div>
