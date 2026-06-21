@@ -1134,6 +1134,37 @@
     @apply mt-2 flex flex-wrap items-center gap-1;
   }
 
+  /* RAW+JPEG group block: the two files of one logical media, side by side, so
+     the pairing is explicit and either side can be selected from the panel. The
+     active member (the one on screen) reads as a lit chip. */
+  .viewer-pair {
+    @apply mt-2.5 flex flex-wrap gap-1.5 border-t pt-2.5;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .viewer-pair-label {
+    @apply w-full text-[0.65rem] font-medium uppercase tracking-wide;
+    color: rgba(236, 231, 218, 0.5);
+  }
+  .viewer-pair-member {
+    @apply flex flex-1 flex-col items-start gap-0.5 rounded-[var(--radius)] border-0 px-2.5 py-1.5 text-left transition duration-150;
+    background: rgba(255, 255, 255, 0.06);
+    color: #ece7da;
+  }
+  .viewer-pair-member:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .viewer-pair-member.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+  .viewer-pair-ext {
+    @apply font-mono text-xs font-medium uppercase tracking-wide;
+  }
+  .viewer-pair-stat {
+    @apply text-[0.7rem];
+    color: rgba(236, 231, 218, 0.7);
+  }
+
   /* ---- Viewer action bar (grouped culling controls) --------------------- */
   /* Lives on the dark frame, so the buttons are translucent light-on-dark.
      Grouped by intent: a verdict segment, a star cluster, an overflow menu. */
