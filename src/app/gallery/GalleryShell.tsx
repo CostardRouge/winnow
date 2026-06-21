@@ -814,7 +814,17 @@ export default function GalleryShell({
                     onExport={() => exportSelection([it.id])}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onDelete={async () => {
-                      if (await removeAssets([it.id])) setViewer(null);
+                      if (await removeAssets([it.id])) {
+                        // Keep the viewer open on the previous item rather than
+                        // closing it; only bail out if nothing is left.
+                        setViewer((cur) => {
+                          if (cur == null) return null;
+                          const remaining = items.length - 1;
+                          return remaining > 0
+                            ? Math.min(Math.max(cur - 1, 0), remaining - 1)
+                            : null;
+                        });
+                      }
                     }}
                   />
                 )

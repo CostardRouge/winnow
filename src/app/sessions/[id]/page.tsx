@@ -13,7 +13,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
-import AssetMeta from "@/app/gallery/AssetMeta";
+import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import { Icons } from "@/app/ui";
@@ -352,29 +352,17 @@ export default function SessionGrid({
   );
 
   // Keyboard navigation in the viewer (desktop).
-  useEffect(() => {
-    if (viewer == null) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      const a = assets[viewer];
-      if (!a) return;
-      if (e.key === "Escape") return setViewer(null);
-      if (e.key === "ArrowRight")
-        return setViewer((v) => Math.min((v ?? 0) + 1, assets.length - 1));
-      if (e.key === "ArrowLeft")
-        return setViewer((v) => Math.max((v ?? 0) - 1, 0));
+  // Rating shortcuts inside the viewer. Escape/arrow navigation is owned by
+  // MediaViewer; this only adds the verdict (p/x/u) and star (0–5) keys.
+  const onViewerKey = useCallback(
+    (e: KeyboardEvent, a: AssetRow) => {
       if (e.key.toLowerCase() === "p") return void rate(a.id, { verdict: "pick" });
-      if (e.key.toLowerCase() === "x")
-        return void rate(a.id, { verdict: "reject" });
-      if (e.key.toLowerCase() === "u")
-        return void rate(a.id, { verdict: "unrated" });
-      if (/^[0-5]$/.test(e.key))
-        return void rate(a.id, { star: Number.parseInt(e.key, 10) });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [viewer, assets, rate]);
+      if (e.key.toLowerCase() === "x") return void rate(a.id, { verdict: "reject" });
+      if (e.key.toLowerCase() === "u") return void rate(a.id, { verdict: "unrated" });
+      if (/^[0-5]$/.test(e.key)) return void rate(a.id, { star: Number.parseInt(e.key, 10) });
+    },
+    [rate],
+  );
 
   return (
     <>
@@ -453,9 +441,10 @@ export default function SessionGrid({
                         : "⏳ deriving…"}
                   </div>
                 )}
-                {a.media_type === "video" && (
-                  <span className="play-badge">▶</span>
-                )}
+                {a.media_type === "video" &&
+                  a.derivative_status === "ready" && (
+                    <span className="play-badge">▶</span>
+                  )}
                 {a.verdict !== "unrated" && (
                   <span className="badge">
                     {a.verdict === "pick" ? "✓" : "✕"}
@@ -464,6 +453,7 @@ export default function SessionGrid({
                 {a.star > 0 && (
                   <span className="stars">{"★".repeat(a.star)}</span>
                 )}
+                <span className="ext-badge">{a.ext.replace(".", "")}</span>
               </div>
             ))}
           </div>
@@ -474,22 +464,40 @@ export default function SessionGrid({
       </div>
 
       {viewer != null && assets[viewer] && (
-        <Viewer
-          asset={assets[viewer]}
-          hasPrev={viewer > 0}
-          hasNext={viewer < assets.length - 1}
+        <MediaViewer
+          items={assets}
+          index={viewer}
+          onIndexChange={setViewer}
           onClose={() => setViewer(null)}
-          onPrev={() => setViewer((v) => Math.max((v ?? 0) - 1, 0))}
-          onNext={() =>
-            setViewer((v) => Math.min((v ?? 0) + 1, assets.length - 1))
-          }
-          onRate={(patch) => rate(assets[viewer].id, patch)}
-          onTag={(name) => addTag(assets[viewer].id, name)}
-          onExport={() => exportSelection([assets[viewer].id])}
-          onRegenerate={() => regenerate([assets[viewer].id])}
-          onDelete={async () => {
-            if (await removeAssets([assets[viewer].id])) setViewer(null);
+          onKeyDown={onViewerKey}
+          onContextMenu={(e, a) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY, id: a.id });
           }}
+          renderActions={(a) => (
+            <ViewerActions
+              verdict={a.verdict}
+              star={a.star}
+              onVerdict={(verdict) => rate(a.id, { verdict })}
+              onStar={(star) => rate(a.id, { star })}
+              onTag={(name) => addTag(a.id, name)}
+              onExport={() => exportSelection([a.id])}
+              onRegenerate={() => regenerate([a.id])}
+              onDelete={async () => {
+                if (await removeAssets([a.id])) {
+                  // Keep the viewer open on the previous item rather than
+                  // closing it; only bail out if nothing is left.
+                  setViewer((cur) => {
+                    if (cur == null) return null;
+                    const remaining = assets.length - 1;
+                    return remaining > 0
+                      ? Math.min(Math.max(cur - 1, 0), remaining - 1)
+                      : null;
+                  });
+                }
+              }}
+            />
+          )}
         />
       )}
 
@@ -618,109 +626,5 @@ function SessionHeader({
         <span className="session-progress-label">{pct}% triaged</span>
       </div>
     </section>
-  );
-}
-
-function Viewer({
-  asset,
-  hasPrev,
-  hasNext,
-  onClose,
-  onPrev,
-  onNext,
-  onRate,
-  onTag,
-  onExport,
-  onRegenerate,
-  onDelete,
-}: {
-  asset: AssetRow;
-  hasPrev: boolean;
-  hasNext: boolean;
-  onClose: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  onRate: (patch: { verdict?: Verdict; star?: number }) => void;
-  onTag: (name: string) => void;
-  onExport: () => void;
-  onRegenerate: () => void;
-  onDelete: () => void;
-}) {
-  const touch = useRef<{ x: number; y: number } | null>(null);
-
-  function onTouchStart(e: React.TouchEvent) {
-    const t = e.touches[0];
-    touch.current = { x: t.clientX, y: t.clientY };
-  }
-  function onTouchEnd(e: React.TouchEvent) {
-    if (!touch.current) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touch.current.x;
-    const dy = t.clientY - touch.current.y;
-    touch.current = null;
-    const TH = 60;
-    if (Math.abs(dx) > Math.abs(dy)) {
-      // Horizontal: navigation.
-      if (dx > TH && hasPrev) onPrev();
-      else if (dx < -TH && hasNext) onNext();
-    } else {
-      // Vertical: culling (swipe up = pick, down = reject).
-      if (dy < -TH) onRate({ verdict: "pick" });
-      else if (dy > TH) onRate({ verdict: "reject" });
-    }
-  }
-
-  return (
-    <div className="viewer" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      <button className="close" onClick={onClose}>
-        ×
-      </button>
-      <div className="exif">
-        <strong>{asset.filename}</strong>
-        {asset.star > 0 && (
-          <span className="viewer-stars"> {"★".repeat(asset.star)}</span>
-        )}
-        <AssetMeta asset={asset} />
-      </div>
-      <div className="stage">
-        {asset.derivative_status === "ready" ? (
-          asset.media_type === "video" ? (
-            <video
-              key={asset.id}
-              src={`/api/assets/${asset.id}/proxy`}
-              poster={`/api/assets/${asset.id}/thumb`}
-              controls
-              playsInline
-              autoPlay
-              muted
-              loop
-            />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={`/api/assets/${asset.id}/proxy`} alt={asset.filename} />
-          )
-        ) : (
-          <div className="placeholder">Derivative unavailable</div>
-        )}
-      </div>
-      <div className="controls">
-        <button className="btn btn-icon" onClick={onPrev} disabled={!hasPrev} aria-label="Previous">
-          ←
-        </button>
-        <ViewerActions
-          verdict={asset.verdict}
-          star={asset.star}
-          onVerdict={(verdict) => onRate({ verdict })}
-          onStar={(star) => onRate({ star })}
-          onTag={onTag}
-          onExport={onExport}
-          onRegenerate={onRegenerate}
-          onDelete={onDelete}
-        />
-        <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} aria-label="Next">
-          →
-        </button>
-      </div>
-    </div>
   );
 }

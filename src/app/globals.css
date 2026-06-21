@@ -789,7 +789,6 @@
       border-color 0.16s var(--ease-out), opacity 0.16s var(--ease-out);
   }
   .cell:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-card);
     z-index: 1;
   }
@@ -840,10 +839,6 @@
     border: 1px solid rgba(255, 255, 255, 0.45);
     backdrop-filter: blur(2px);
     pointer-events: none;
-    transition: transform 0.16s var(--ease-out);
-  }
-  .cell:hover .play-badge {
-    transform: translate(-50%, -50%) scale(1.08);
   }
   .cell .select-check {
     @apply absolute right-1 top-1 flex h-5 w-5 items-center justify-center
@@ -864,8 +859,8 @@
     color: #ece7da;
     touch-action: none;
   }
-  /* Stage + metadata panel sit side by side on desktop, stacked on mobile so
-     the panel lands between the media and the verdict controls. */
+  /* Stage + metadata panel stack vertically: the panel is a bottom sheet on
+     every viewport, sitting between the media and the verdict controls. */
   .viewer-body {
     @apply flex min-h-0 flex-1 flex-col;
   }
@@ -903,35 +898,18 @@
   .viewer-panel-toggle:hover {
     background: rgba(255, 255, 255, 0.18);
   }
-  /* The "reopen" affordance shown once the panel is collapsed. */
+  /* The "reopen" affordance shown once the panel is collapsed: bottom-left,
+     over the empty (left) end of the centred controls bar. */
   .viewer-info-btn {
-    @apply absolute left-3 top-3 z-10 flex h-10 w-10 items-center justify-center
+    @apply absolute bottom-3 left-3 z-10 flex h-10 w-10 items-center justify-center
       rounded-full border-0 text-lg text-white transition duration-150;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(10px);
   }
   .viewer-info-btn:hover {
     background: rgba(60, 54, 46, 0.8);
     transform: scale(1.05);
-  }
-  /* Floating metadata box still used by the dedicated session culling viewer. */
-  .viewer .exif {
-    @apply absolute left-3 top-3 max-w-[72vw] rounded-[var(--radius-lg)] px-3.5 py-2.5 text-xs leading-relaxed;
-    background: rgba(16, 15, 13, 0.55);
-    backdrop-filter: blur(14px) saturate(1.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #ece7da;
-  }
-  @media (min-width: 768px) {
-    .viewer-body {
-      @apply flex-row;
-    }
-    .viewer-panel {
-      @apply w-80 flex-none;
-      max-height: none;
-      border-top: 0;
-      border-left: 1px solid rgba(255, 255, 255, 0.1);
-    }
   }
   .viewer .controls {
     @apply flex flex-wrap items-center justify-center gap-2 p-3;
@@ -941,7 +919,7 @@
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .viewer .close {
-    @apply absolute right-3 top-3 flex h-10 w-10 items-center justify-center
+    @apply absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center
       rounded-full border-0 text-xl text-white transition duration-150;
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(10px);
@@ -952,9 +930,6 @@
   }
   .viewer-tags {
     @apply mt-2 flex flex-wrap items-center gap-1;
-  }
-  .viewer-stars {
-    color: var(--color-star);
   }
 
   /* ---- Viewer action bar (grouped culling controls) --------------------- */
