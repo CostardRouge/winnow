@@ -495,18 +495,41 @@ function FailRow({
   );
 }
 
-// Whether a duplicate row is a safe extra copy (an identical/unverifiable match
-// that was NOT indexed) — the only kind we offer to hard-delete. A FALSE
-// collision (verified === false) is distinct content that got indexed and kept,
-// so deleting it would lose a real shot: shown, never deletable.
-const isDeletable = (it: DuplicateItem) => it.verified !== false;
+// Whether a duplicate row is an exact copy we can safely collapse. A FALSE
+// collision (verified === false) is distinct content that merely shares a
+// partial hash; it gets indexed and kept on its own, so it is never grouped with
+// — nor treated as a copy of — anything. Shown below for audit only.
+const isIdentical = (it: DuplicateItem) => it.verified !== false;
 
-// Deduplication audit with hands-on triage. Each entry is one extra copy found
-// on disk (the kept, indexed original is shown beside it for comparison). The
-// user can: filter by path (e.g. "trash" to isolate Capture One's trash folder),
-// expand a row to compare kept vs duplicate with a thumbnail, download the raw
-// duplicate to verify it by hand, and delete the extra copies — one at a time or
-// the whole filtered selection — always behind a confirmation.
+// One group of byte-identical copies: the library-indexed copy (if any) plus
+// every recorded on-disk copy of the same content. The user keeps exactly one.
+type DupGroup = {
+  hash: string;
+  existing: ExistingAsset | null;
+  copies: DuplicateItem[];
+};
+
+// A pending "keep only this" decision, surfaced in the confirm modal: the
+// survivor, what gets deleted, and whether the library entry is being relinked
+// onto it (true when the survivor is an on-disk copy, not the indexed original).
+type KeepTarget = {
+  hash: string;
+  keepPath: string;
+  keepLabel: string;
+  deletions: string[];
+  relink: boolean;
+};
+
+// Deduplication audit with hands-on triage. Copies of the same bytes are grouped
+// by content; each group lists every place that content lives — the library’s
+// indexed copy (if any) and the extra copies sitting on disk. We make no
+// assumption about which is "the original": the user picks the survivor with
+// "Keep only this" (the rest are deleted; the library entry is relinked onto the
+// survivor when it's an on-disk copy), so a single media remains. A path filter
+// (e.g. "trash") isolates a folder, and on-disk copies can still be culled
+// one-at-a-time or by selection. False collisions — distinct content that merely
+// shares a partial hash — are never grouped or collapsed; they're listed apart,
+// for audit only.
 function DedupSection({
   count,
   falseCollisions,
@@ -521,42 +544,69 @@ function DedupSection({
   setMsg: (s: string) => void;
 }) {
   const [filter, setFilter] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sel, setSel] = useState<Set<string>>(new Set());
+  // Pending confirmations: a list of on-disk paths to delete, or a keep-one pick.
   const [confirm, setConfirm] = useState<string[] | null>(null);
+  const [keep, setKeep] = useState<KeepTarget | null>(null);
   const [busy, setBusy] = useState(false);
 
   const needle = filter.trim().toLowerCase();
-  const shown = useMemo(
+
+  // Group identical copies by content; keep false collisions aside (audit only).
+  const { groups, falseItems } = useMemo(() => {
+    const map = new Map<string, DupGroup>();
+    const falses: DuplicateItem[] = [];
+    for (const it of items) {
+      if (!isIdentical(it)) {
+        falses.push(it);
+        continue;
+      }
+      let g = map.get(it.content_hash);
+      if (!g) {
+        g = { hash: it.content_hash, existing: it.existing, copies: [] };
+        map.set(it.content_hash, g);
+      }
+      if (!g.existing && it.existing) g.existing = it.existing;
+      g.copies.push(it);
+    }
+    return { groups: [...map.values()], falseItems: falses };
+  }, [items]);
+
+  const shownGroups = useMemo(
     () =>
       needle
-        ? items.filter(
-            (it) =>
-              it.abs_path.toLowerCase().includes(needle) ||
-              (it.existing?.abs_path ?? "").toLowerCase().includes(needle),
+        ? groups.filter(
+            (g) =>
+              (g.existing?.abs_path ?? "").toLowerCase().includes(needle) ||
+              g.copies.some((c) => c.abs_path.toLowerCase().includes(needle)),
           )
-        : items,
-    [items, needle],
+        : groups,
+    [groups, needle],
   );
+  const shownFalse = needle
+    ? falseItems.filter((it) => it.abs_path.toLowerCase().includes(needle))
+    : falseItems;
 
-  // Keep selection/expansion in sync with what's actually listed (items vanish
-  // after a delete or a refresh) so a stale path is never carried around.
+  // Keep selection in sync with the copies still listed (rows vanish after a
+  // delete/keep/refresh) so a stale path is never carried around.
   const sig = items.map((i) => i.abs_path).join("\n");
   useEffect(() => {
     const live = new Set(items.map((i) => i.abs_path));
-    const prune = (s: Set<string>) => {
+    setSel((s) => {
       const next = new Set<string>();
       for (const p of s) if (live.has(p)) next.add(p);
       return next.size === s.size ? s : next;
-    };
-    setSel(prune);
-    setExpanded(prune);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
-  const deletableShown = shown.filter(isDeletable);
+  // Only on-disk copies are bulk-selectable; the indexed copy is removed via
+  // "Keep only this" (which relinks the library entry), never a blind delete.
+  const selectableShown = shownGroups.flatMap((g) =>
+    g.copies.map((c) => c.abs_path),
+  );
   const allChecked =
-    deletableShown.length > 0 && deletableShown.every((it) => sel.has(it.abs_path));
+    selectableShown.length > 0 && selectableShown.every((p) => sel.has(p));
   const someChecked = sel.size > 0 && !allChecked;
   const headRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -570,13 +620,18 @@ function DedupSection({
       else n.add(p);
       return n;
     });
-  const toggleExpand = (p: string) =>
-    setExpanded((s) => {
-      const n = new Set(s);
-      if (n.has(p)) n.delete(p);
-      else n.add(p);
-      return n;
-    });
+
+  // Stage a "keep only this" decision: which copies would be deleted, and whether
+  // keeping this one relinks the library entry (true when it's an on-disk copy).
+  const askKeep = (g: DupGroup, keepPath: string, keepLabel: string) => {
+    const members = [
+      ...(g.existing?.abs_path ? [g.existing.abs_path] : []),
+      ...g.copies.map((c) => c.abs_path),
+    ];
+    const deletions = members.filter((p) => p !== keepPath);
+    const relink = !!(g.existing?.abs_path && keepPath !== g.existing.abs_path);
+    setKeep({ hash: g.hash, keepPath, keepLabel, deletions, relink });
+  };
 
   async function runDelete(paths: string[]) {
     setBusy(true);
@@ -606,22 +661,45 @@ function DedupSection({
     }
   }
 
+  async function runKeep(t: KeepTarget) {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/failures/duplicates/keep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentHash: t.hash, keepPath: t.keepPath }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setMsg(`Error: ${d.error ?? "unknown"}`);
+      } else {
+        const skipped = (d.skipped ?? []).length;
+        setMsg(
+          `Kept 1 copy; deleted ${d.deleted ?? 0} file(s).${
+            d.relinked ? " Library entry relinked to the copy you kept." : ""
+          }${skipped ? ` ${skipped} skipped (protected).` : ""}`,
+        );
+      }
+      setKeep(null);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section style={{ marginBottom: 28 }}>
       <div className="filterbar" style={{ marginBottom: 6 }}>
-        {deletableShown.length > 0 && (
+        {selectableShown.length > 0 && (
           <input
             ref={headRef}
             type="checkbox"
             className="fail-check"
-            aria-label="Select all listed duplicates"
+            aria-label="Select all listed on-disk copies"
             checked={allChecked}
             onChange={(e) =>
-              setSel(
-                e.target.checked
-                  ? new Set(deletableShown.map((it) => it.abs_path))
-                  : new Set(),
-              )
+              setSel(e.target.checked ? new Set(selectableShown) : new Set())
             }
           />
         )}
@@ -646,11 +724,14 @@ function DedupSection({
         </button>
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
-        Files matched as duplicates by partial hash. Each is an extra copy that
-        was <strong>not</strong> indexed (the kept original is shown beside it);
-        deleting one frees space without losing anything. False collisions
-        (genuinely distinct content) are indexed anyway — never dropped — and
-        flagged here for audit only.
+        Files matched as duplicates by partial hash, grouped by content. Each
+        group holds the same bytes in more than one place — the library’s copy
+        and any extra copies on disk. Winnow doesn’t assume which is the original:
+        pick the one to keep with <strong>“Keep only this”</strong> and the rest
+        are removed (the library entry is relinked onto your pick if it’s an
+        on-disk copy), leaving a single media. False collisions — genuinely
+        distinct content that merely shares a partial hash — are indexed
+        separately and never collapsed; they’re listed below for audit only.
         {falseCollisions > 0
           ? ` ${falseCollisions} false collision(s) recovered.`
           : ""}
@@ -660,24 +741,33 @@ function DedupSection({
         <div className="empty" style={{ padding: 16 }}>
           Nothing here. 🎉
         </div>
-      ) : shown.length === 0 ? (
+      ) : shownGroups.length === 0 && shownFalse.length === 0 ? (
         <div className="empty" style={{ padding: 16 }}>
           No duplicate matches “{filter}”.
         </div>
       ) : (
-        <div className="fail-list">
-          {shown.map((it) => (
-            <DuplicateRow
-              key={it.abs_path}
-              it={it}
-              expanded={expanded.has(it.abs_path)}
-              onToggleExpand={() => toggleExpand(it.abs_path)}
-              selected={sel.has(it.abs_path)}
-              onToggleSel={() => toggleSel(it.abs_path)}
-              onDelete={() => setConfirm([it.abs_path])}
+        <div className="dup-groups">
+          {shownGroups.map((g) => (
+            <DupGroupCard
+              key={g.hash}
+              group={g}
+              sel={sel}
+              onToggleSel={toggleSel}
+              onKeep={(p, label) => askKeep(g, p, label)}
+              onDeleteCopy={(p) => setConfirm([p])}
               busy={busy}
             />
           ))}
+          {shownFalse.length > 0 && (
+            <div className="dup-false">
+              <div className="dup-false-head">
+                Distinct content (false collisions) — kept, audit only
+              </div>
+              {shownFalse.map((it) => (
+                <FalseCollisionRow key={it.abs_path} it={it} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -689,58 +779,45 @@ function DedupSection({
           onConfirm={() => runDelete(confirm)}
         />
       )}
+      {keep && (
+        <ConfirmKeepModal
+          target={keep}
+          busy={busy}
+          onCancel={() => setKeep(null)}
+          onConfirm={() => runKeep(keep)}
+        />
+      )}
     </section>
   );
 }
 
-function DuplicateRow({
-  it,
-  expanded,
-  onToggleExpand,
-  selected,
+// One content group: a thumbnail header (the bytes are identical, so the
+// library copy's thumbnail stands in for the whole group) over a flat list of
+// every place that content lives — the library copy first (if any), then each
+// on-disk copy. Every member can be downloaded and chosen as the survivor.
+function DupGroupCard({
+  group,
+  sel,
   onToggleSel,
-  onDelete,
+  onKeep,
+  onDeleteCopy,
   busy,
 }: {
-  it: DuplicateItem;
-  expanded: boolean;
-  onToggleExpand: () => void;
-  selected: boolean;
-  onToggleSel: () => void;
-  onDelete: () => void;
+  group: DupGroup;
+  sel: Set<string>;
+  onToggleSel: (p: string) => void;
+  onKeep: (keepPath: string, keepLabel: string) => void;
+  onDeleteCopy: (p: string) => void;
   busy: boolean;
 }) {
-  const deletable = isDeletable(it);
-  // The kept asset's thumbnail only stands in for the duplicate when the content
-  // is the same. For a FALSE collision the two genuinely differ, so showing the
-  // matched thumbnail would misrepresent this file — fall back to a placeholder.
-  const thumb =
-    deletable && it.existing?.has_thumb
-      ? `/api/assets/${it.existing.id}/thumb`
-      : null;
-  const dlHref = `/api/failures/duplicates/file?path=${encodeURIComponent(
-    it.abs_path,
-  )}`;
-  const status =
-    it.verified === false
-      ? "FALSE collision → indexed separately (kept)"
-      : it.verified === true
-        ? "confirmed duplicate"
-        : "unverified (existing file unreadable) — treated as duplicate";
+  const { existing, copies, hash } = group;
+  const thumb = existing?.has_thumb ? `/api/assets/${existing.id}/thumb` : null;
+  const size = copies.find((c) => c.file_size != null)?.file_size ?? null;
+  const total = (existing ? 1 : 0) + copies.length;
 
   return (
-    <div className={`dup-row${selected ? " selected" : ""}`}>
-      <div className="dup-head" onClick={onToggleExpand}>
-        {deletable && (
-          <input
-            type="checkbox"
-            className="fail-check"
-            checked={selected}
-            onClick={(e) => e.stopPropagation()}
-            onChange={onToggleSel}
-            aria-label={`Select ${it.abs_path}`}
-          />
-        )}
+    <div className="dup-group">
+      <div className="dup-group-head">
         <div className="pl-thumb" aria-hidden>
           {thumb ? (
             <LazyImage src={thumb} alt="" />
@@ -749,120 +826,233 @@ function DuplicateRow({
           )}
         </div>
         <div className="dup-main">
-          <div className="dup-path">{it.abs_path}</div>
-          <div className="dup-sub">
-            {it.source} · {status}
-            {it.file_size != null ? ` · ${formatBytes(it.file_size)}` : ""} ·{" "}
-            {it.content_hash.slice(0, 12)}…
+          <div className="dup-path">
+            {total} identical {total === 1 ? "copy" : "copies"}
           </div>
-        </div>
-        {it.verified === false ? (
-          <span className="pill">false collision</span>
-        ) : it.hits > 1 ? (
-          <span className="pill">{it.hits}×</span>
-        ) : null}
-        <div className="dup-actions" onClick={(e) => e.stopPropagation()}>
-          <a
-            className="btn btn-sm btn-icon"
-            href={dlHref}
-            download
-            title="Download this duplicate file to inspect it"
-            aria-label="Download this duplicate file"
-          >
-            {Icons.download}
-          </a>
-          {deletable && (
-            <button
-              className="btn btn-sm btn-icon btn-danger"
-              onClick={onDelete}
-              disabled={busy}
-              title="Delete this duplicate file from disk"
-              aria-label="Delete this duplicate file"
-            >
-              {Icons.trash}
-            </button>
-          )}
-          <span
-            className="dup-chevron"
-            style={{ transform: expanded ? "rotate(90deg)" : undefined }}
-            aria-hidden
-          >
-            {Icons.chevronRight}
-          </span>
+          <div className="dup-sub">
+            {size != null ? `${formatBytes(size)} each · ` : ""}
+            {hash.slice(0, 12)}…
+          </div>
         </div>
       </div>
 
-      {expanded && (
-        <div className="dup-body">
-          <div className="dup-cmp">
-            <div className="pl-thumb" aria-hidden>
-              {thumb ? (
-                <LazyImage src={thumb} alt="" />
-              ) : (
-                <span className="pl-thumb-empty">{Icons.photos}</span>
-              )}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div className="dup-cmp-label">Kept (in library)</div>
-              {it.existing ? (
-                <>
-                  <div className="dup-cmp-name">
-                    #{it.existing.id} · {it.existing.filename}
-                    {it.existing.deleted ? " (soft-deleted)" : ""}
-                  </div>
-                  <div className="dup-cmp-path">{it.existing.abs_path}</div>
-                  <a
-                    className="btn btn-sm"
-                    href={`/api/assets/${it.existing.id}/download`}
-                    download
-                    style={{ marginTop: 8 }}
-                  >
-                    {Icons.download}
-                    <span>Download original</span>
-                  </a>
-                </>
-              ) : (
-                <div className="dup-cmp-path">
-                  No indexed asset linked (matched a file already on disk at the
-                  import destination).
-                </div>
-              )}
-            </div>
-          </div>
+      <div className="dup-members">
+        {existing && (
+          <MemberRow
+            label="In library"
+            primary={`#${existing.id} · ${existing.filename ?? "—"}${
+              existing.deleted ? " (soft-deleted)" : ""
+            }`}
+            path={existing.abs_path ?? "(path unknown)"}
+            downloadHref={`/api/assets/${existing.id}/download`}
+            canKeep={!!existing.abs_path}
+            onKeep={() => {
+              if (existing.abs_path)
+                onKeep(
+                  existing.abs_path,
+                  `#${existing.id} · ${existing.filename ?? existing.abs_path}`,
+                );
+            }}
+            busy={busy}
+          />
+        )}
+        {copies.map((c) => (
+          <MemberRow
+            key={c.abs_path}
+            label="On disk"
+            sub={c.source}
+            path={c.abs_path}
+            downloadHref={`/api/failures/duplicates/file?path=${encodeURIComponent(
+              c.abs_path,
+            )}`}
+            canKeep
+            onKeep={() => onKeep(c.abs_path, c.abs_path)}
+            selected={sel.has(c.abs_path)}
+            onToggleSel={() => onToggleSel(c.abs_path)}
+            onDelete={() => onDeleteCopy(c.abs_path)}
+            busy={busy}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
-          <div className="dup-cmp">
-            <div className="pl-thumb" aria-hidden>
-              {thumb ? (
-                <LazyImage src={thumb} alt="" />
-              ) : (
-                <span className="pl-thumb-empty">{Icons.photos}</span>
-              )}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div className="dup-cmp-label">
-                Duplicate copy{deletable ? "" : " — kept (distinct)"}
-              </div>
-              <div className="dup-cmp-path">{it.abs_path}</div>
-              <div className="dup-actions" style={{ marginTop: 8 }}>
-                <a className="btn btn-sm" href={dlHref} download>
-                  {Icons.download}
-                  <span>Download</span>
-                </a>
-                {deletable && (
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={onDelete}
-                    disabled={busy}
-                  >
-                    {Icons.trash}
-                    <span>Delete</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+// A single copy within a group. The indexed library copy gets no checkbox and no
+// blind "delete" (removing it has to go through "Keep only this", which relinks
+// the asset); on-disk copies get both, plus the shared "Keep only this".
+function MemberRow({
+  label,
+  sub,
+  primary,
+  path,
+  downloadHref,
+  canKeep,
+  onKeep,
+  selected,
+  onToggleSel,
+  onDelete,
+  busy,
+}: {
+  label: string;
+  sub?: string;
+  primary?: string;
+  path: string;
+  downloadHref: string;
+  canKeep: boolean;
+  onKeep: () => void;
+  selected?: boolean;
+  onToggleSel?: () => void;
+  onDelete?: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className={`dup-member${selected ? " selected" : ""}`}>
+      {onToggleSel ? (
+        <input
+          type="checkbox"
+          className="fail-check"
+          checked={!!selected}
+          onChange={onToggleSel}
+          aria-label={`Select ${path}`}
+        />
+      ) : (
+        <span className="fail-check" aria-hidden />
       )}
+      <span className="pill dup-member-tag">{label}</span>
+      <div className="dup-main">
+        {primary && <div className="dup-cmp-name">{primary}</div>}
+        <div className="dup-cmp-path">{path}</div>
+        {sub && <div className="dup-sub">{sub}</div>}
+      </div>
+      <div className="dup-actions">
+        <a
+          className="btn btn-sm btn-icon"
+          href={downloadHref}
+          download
+          title="Download this copy"
+          aria-label="Download this copy"
+        >
+          {Icons.download}
+        </a>
+        {onDelete && (
+          <button
+            className="btn btn-sm btn-icon btn-danger"
+            onClick={onDelete}
+            disabled={busy}
+            title="Delete just this copy"
+            aria-label="Delete just this copy"
+          >
+            {Icons.trash}
+          </button>
+        )}
+        <button
+          className="btn btn-sm"
+          onClick={onKeep}
+          disabled={busy || !canKeep}
+          title="Keep only this copy and delete the others"
+        >
+          {Icons.keep}
+          <span>Keep only this</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// A false collision: distinct content that merely shares a partial hash with an
+// indexed asset. It's already kept on its own, so there's nothing to keep/delete
+// — just a download to inspect it and a note of what it collided with.
+function FalseCollisionRow({ it }: { it: DuplicateItem }) {
+  const dlHref = `/api/failures/duplicates/file?path=${encodeURIComponent(
+    it.abs_path,
+  )}`;
+  return (
+    <div className="dup-member">
+      <span className="fail-check" aria-hidden />
+      <span className="pill">false collision</span>
+      <div className="dup-main">
+        <div className="dup-cmp-path">{it.abs_path}</div>
+        <div className="dup-sub">
+          {it.source} · distinct content, indexed separately
+          {it.file_size != null ? ` · ${formatBytes(it.file_size)}` : ""} ·{" "}
+          {it.content_hash.slice(0, 12)}…
+        </div>
+        {it.existing && (
+          <div className="dup-cmp-path">
+            shares a partial hash with #{it.existing.id} ·{" "}
+            {it.existing.filename ?? it.existing.abs_path}
+          </div>
+        )}
+      </div>
+      <div className="dup-actions">
+        <a
+          className="btn btn-sm btn-icon"
+          href={dlHref}
+          download
+          title="Download this file to inspect it"
+          aria-label="Download this file"
+        >
+          {Icons.download}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmKeepModal({
+  target,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  target: KeepTarget;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const n = target.deletions.length;
+  return (
+    <div className="modal-overlay" onClick={onCancel} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keep one copy"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal-title">Keep only this copy?</h2>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Keeping <strong className="dup-cmp-name">{target.keepLabel}</strong>.{" "}
+          {n === 0
+            ? "Nothing else to remove."
+            : `The other ${n} identical file${
+                n > 1 ? "s" : ""
+              } below will be permanently removed from disk.`}{" "}
+          {target.relink
+            ? "The library entry (rating, tags, derivatives) is relinked onto the copy you keep — the original file it currently points at is the one being deleted."
+            : ""}{" "}
+          This is irreversible.
+        </p>
+        {n > 0 && (
+          <div className="dup-confirm-list">
+            {target.deletions.slice(0, 12).map((p) => (
+              <div key={p} className="dup-cmp-path">
+                {p}
+              </div>
+            ))}
+            {n > 12 && <div className="hint">…and {n - 12} more.</div>}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+            {busy ? "Working…" : "Keep only this"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -138,6 +138,7 @@ offending variable — instead of silently degrading in production.
 | `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
 | `GET /api/failures/duplicates/file` `?path=` | Streams a recorded duplicate's raw file (whitelisted to `duplicate_hits`) so an unindexed extra copy can be inspected locally |
 | `POST /api/failures/duplicates/delete` `{ paths[] }` | Hard-deletes extra copies recorded in `duplicate_hits` (whitelisted · never an indexed asset · confined to the browsable area) and clears their audit rows |
+| `POST /api/failures/duplicates/keep` `{ contentHash, keepPath }` | Collapses a group of byte-identical copies to the single survivor the user picked. Keeping an on-disk copy **relinks** the library asset onto it (id/rating/tags/derivatives preserved) and deletes the former original; keeping the indexed copy just removes the recorded extras. False collisions are never eligible |
 | `GET /api/pipeline/queue` `?name=scan\|analyze` | Live jobs of the scan/analyze queue, enriched with the root/asset they point at |
 | `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
 | `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status` and `q=` free-text path search; `sort=recent` orders by last update) |
@@ -369,18 +370,21 @@ debug, and a **"retry"** button per family:
 - **Import**: per-file errors of the batches (`import_batches.result`) — *retroactive*.
   Failed files are **quarantined** (`inbox/.failed/`) so they stop looping;
   retrying re-imports them.
-- **Deduplication** (audit + triage): every `duplicate_hits` row is an extra copy
-  found on disk that was *not* indexed. Each row shows the kept original beside it
-  (its thumbnail stands in for the identical copy), and is **expandable** to
-  compare the two. Hands-on actions: **filter by path** (e.g. `trash` to isolate
-  Capture One's trash folder), **download** the raw duplicate to verify it
-  yourself, and **delete** the extra copies — one at a time or the whole filtered
-  selection — always behind a confirmation. Deletion is *hard* (these files were
-  never indexed, so there is no soft-delete row to flip) but guarded three ways:
-  it only ever touches a path recorded in `duplicate_hits`, never a live indexed
-  asset (a kept original or a recovered false collision), and only within the
-  browsable area. False collisions are listed for audit but never offered for
-  deletion (distinct content that was kept).
+- **Deduplication** (audit + triage): copies of the same bytes are **grouped by
+  content**. Each group lists *every* place that content lives — the library's
+  indexed copy (its thumbnail stands in for the group) and any extra copies on
+  disk — making no assumption about which is "the original". The user picks the
+  survivor with **Keep only this**: the rest are hard-deleted and, when the
+  survivor is an on-disk copy, the library asset is **relinked** onto it (its id,
+  rating, tags and derivatives are preserved — the bytes are identical), so a
+  single media remains. Other hands-on actions: **filter by path** (e.g. `trash`
+  to isolate Capture One's trash folder), **download** any copy to verify it, and
+  **delete** on-disk extras one at a time or by selection. Everything is behind a
+  confirmation and guarded: file deletes are confined to the browsable area, only
+  ever touch a recorded copy or the relinked-away original, and a **false
+  collision** (distinct content that merely shares a partial hash) is never
+  grouped, collapsed, or deletable — it's indexed on its own and listed apart for
+  audit only.
 
 ## Backups & restore
 

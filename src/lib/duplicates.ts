@@ -7,8 +7,13 @@
 // Upsert by abs_path (like scan_failures): a path re-seen on each incremental
 // scan updates its row + a hits counter instead of accumulating.
 import { rm } from "node:fs/promises";
-import { q, many } from "./db";
+import { q, one, many } from "./db";
 import { isWithinBrowseRoots } from "./fsbrowse";
+
+// Thrown for user-fixable problems while resolving a duplicate group (the chosen
+// survivor isn't part of the group, sits outside the browsable area, …) → mapped
+// to HTTP 400 by the route rather than a 500.
+export class DuplicateError extends Error {}
 
 export type DuplicateSource = "index" | "import";
 
@@ -114,5 +119,113 @@ export async function deleteDuplicateFiles(
       result.deleted,
     ]);
   }
+  return result;
+}
+
+export type KeepOneResult = {
+  kept: string;
+  deleted: string[];
+  relinked: boolean;
+  skipped: { path: string; reason: string }[];
+};
+
+// Resolve a group of byte-identical copies down to the SINGLE survivor the user
+// picked. This is the one operation allowed to drop the library-indexed copy:
+// deleteDuplicateFiles refuses to touch a live asset (it only ever clears the
+// non-indexed extras), but here the user has explicitly decided which copy to
+// keep — the library no longer assumes its own copy is the keeper.
+//
+//   - keep the indexed copy  → just delete the recorded on-disk duplicates,
+//   - keep an on-disk copy    → RELINK the asset row onto it first (its id,
+//     rating, tags and derivatives all stay valid — the bytes are identical),
+//     THEN delete the former original and every other copy.
+//
+// Only verified-identical / unverifiable copies are eligible — a FALSE collision
+// (distinct content sharing a partial hash) is stored with a NULL content_hash
+// and is never pulled in here, so genuinely different shots can't be collapsed.
+// Relink happens before any unlink, so a mid-way failure can never leave the
+// asset pointing at a file we already removed.
+export async function keepOneCopy(args: {
+  contentHash: string;
+  keepPath: string;
+}): Promise<KeepOneResult> {
+  const { contentHash, keepPath } = args;
+  const result: KeepOneResult = {
+    kept: keepPath,
+    deleted: [],
+    relinked: false,
+    skipped: [],
+  };
+
+  // The indexed asset holding this content (the current "original"). A recovered
+  // false collision has content_hash = NULL, so it can never match here.
+  const asset = await one<{ id: number; abs_path: string }>(
+    "SELECT id, abs_path FROM assets WHERE content_hash = $1 AND deleted_at IS NULL",
+    [contentHash],
+  );
+  // Every recorded on-disk copy of this content (never a false collision).
+  const copies = (
+    await many<{ abs_path: string }>(
+      "SELECT abs_path FROM duplicate_hits WHERE content_hash = $1 AND verified IS NOT FALSE",
+      [contentHash],
+    )
+  ).map((r) => r.abs_path);
+
+  const members = new Set<string>(copies);
+  if (asset) members.add(asset.abs_path);
+  if (!members.has(keepPath))
+    throw new DuplicateError("The copy to keep is not part of this duplicate group.");
+
+  // Nothing else to remove: just clear the audit row(s) for this content.
+  if (members.size <= 1) {
+    await q(
+      "DELETE FROM duplicate_hits WHERE content_hash = $1 AND verified IS NOT FALSE",
+      [contentHash],
+    );
+    return result;
+  }
+
+  // Relink the asset onto the survivor up front, when the user keeps an on-disk
+  // copy rather than the indexed original.
+  if (asset && keepPath !== asset.abs_path) {
+    if (!isWithinBrowseRoots(keepPath))
+      throw new DuplicateError("The copy to keep is outside the allowed area.");
+    // abs_path is UNIQUE: refuse if the survivor is somehow already indexed.
+    const occupied = await one<{ id: number }>(
+      "SELECT id FROM assets WHERE abs_path = $1 AND deleted_at IS NULL AND id <> $2",
+      [keepPath, asset.id],
+    );
+    if (occupied)
+      throw new DuplicateError("The copy to keep is already indexed as another asset.");
+    await q("UPDATE assets SET abs_path = $1, updated_at = now() WHERE id = $2", [
+      keepPath,
+      asset.id,
+    ]);
+    result.relinked = true;
+  }
+
+  // Delete every member except the survivor (the former original included — the
+  // asset already points elsewhere). Containment is re-checked per path.
+  for (const p of members) {
+    if (p === keepPath) continue;
+    if (!isWithinBrowseRoots(p)) {
+      result.skipped.push({ path: p, reason: "outside the allowed area" });
+      continue;
+    }
+    try {
+      await rm(p, { force: true });
+      result.deleted.push(p);
+    } catch (err) {
+      result.skipped.push({ path: p, reason: (err as Error).message });
+    }
+  }
+
+  // Clear the audit rows we've resolved: the survivor (no longer a pending
+  // duplicate) and everything we actually deleted. A copy we had to skip keeps
+  // its row so it stays visible for a retry.
+  await q("DELETE FROM duplicate_hits WHERE abs_path = ANY($1::text[])", [
+    [keepPath, ...result.deleted],
+  ]);
+
   return result;
 }
