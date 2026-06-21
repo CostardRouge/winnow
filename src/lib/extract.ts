@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config, HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
+import { readHeicOrientation, readOrientation } from "./orientation";
 
 export type Metadata = {
   captured_at: string | null;
@@ -111,6 +112,9 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
  *    AVIF decoder but NOT the HEVC one. We prefer the embedded JPEG preview when
  *    the file carries a full-size one (Sony .hif), and otherwise decode the real
  *    pixels with libheif (heic-convert, lazy-loaded + serialized) to a temp JPEG.
+ *    libheif applies the container transform (irot/imir) on its own, so for that
+ *    decode path we only carry the EXIF orientation when the file has no such
+ *    transform (cf. readHeicOrientation) - re-applying it otherwise rotates twice.
  *  - RAW: we extract the embedded JPEG preview (JpgFromRaw, otherwise PreviewImage,
  *    otherwise ThumbnailImage) - near-instant extraction, zero demosaicing.
  *    This preview often does NOT carry the Orientation tag: so we return
@@ -132,27 +136,33 @@ export async function extractSourceJpeg(
   }
 
   // HEIF/HEVC stills. Two-tier strategy, both isolated from the rest of the
-  // worker. libheif and the preview path both drop the EXIF Orientation, so we
-  // carry it over and let the worker re-apply it (same as RAW previews).
+  // worker. The embedded preview is its own JPEG (untouched by libheif), so it
+  // carries the EXIF orientation as RAW previews do; the libheif decode path,
+  // however, gets pixels libheif already oriented from the container transform.
   if (HEIC_EXTS.has(e)) {
-    const orientation = await readOrientation(absPath);
+    const { exif, containerRotated } = await readHeicOrientation(absPath);
     const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
     try {
       // 1) A full-size embedded preview is ideal: instant, no pixel decode at
       //    all (Sony .hif and most camera HEIFs ship one).
       const preview = await extractEmbeddedPreview(absPath, dir);
       if (preview && (await longestEdge(preview)) >= config.proxySize) {
-        return { jpegPath: preview, cleanupDir: dir, orientation };
+        return { jpegPath: preview, cleanupDir: dir, orientation: exif };
       }
-      // 2) Otherwise decode the real pixels with libheif…
+      // 2) Otherwise decode the real pixels with libheif. libheif applies the
+      //    container transform (irot/imir) itself and ignores EXIF, so we only
+      //    re-apply the EXIF orientation when the file carries no container
+      //    transform — otherwise the worker would rotate the pixels a 2nd time.
       try {
         const dest = path.join(dir, "decoded.jpg");
         await writeFile(dest, await decodeHeicToJpeg(absPath));
+        const orientation = containerRotated ? undefined : exif;
         return { jpegPath: dest, cleanupDir: dir, orientation };
       } catch (decodeErr) {
         // …and if even that fails, a smaller embedded preview still beats no
         // thumbnail at all.
-        if (preview) return { jpegPath: preview, cleanupDir: dir, orientation };
+        if (preview)
+          return { jpegPath: preview, cleanupDir: dir, orientation: exif };
         throw decodeErr;
       }
     } catch (err) {
@@ -242,18 +252,6 @@ function decodeHeicToJpeg(absPath: string): Promise<Buffer> {
     () => undefined,
   );
   return run;
-}
-
-// Numeric EXIF orientation (1-8) of the original. `-n` disables exiftool's
-// "human" conversion to obtain the raw integer.
-async function readOrientation(absPath: string): Promise<number | undefined> {
-  try {
-    const tags = await exiftool.read(absPath, ["-n"]);
-    const o = (tags as { Orientation?: unknown }).Orientation;
-    return typeof o === "number" ? o : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export async function closeExiftool(): Promise<void> {
