@@ -17,6 +17,7 @@ import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
+import PullToRefresh from "@/app/PullToRefresh";
 import { Icons } from "@/app/ui";
 import {
   deleteAssets,
@@ -182,6 +183,12 @@ export default function SessionGrid({
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verdict]);
+
+  // Pull-to-refresh: re-pull the header counts and the first page of the grid.
+  const refresh = useCallback(async () => {
+    reset();
+    await Promise.all([loadSession(), fetchPage(null)]);
+  }, [reset, loadSession, fetchPage]);
 
   // Infinite scroll.
   useEffect(() => {
@@ -377,7 +384,7 @@ export default function SessionGrid({
         <span className="hint">{assets.length} loaded</span>
       </div>
 
-      <div className="container">
+      <PullToRefresh className="container" onRefresh={refresh}>
         {session && (
           <SessionHeader
             s={session}
@@ -462,7 +469,7 @@ export default function SessionGrid({
 
         <div ref={sentinel} style={{ height: 40 }} />
         {loading && <div className="spinner">Loading…</div>}
-      </div>
+      </PullToRefresh>
 
       {viewer != null && assets[viewer] && (
         <MediaViewer

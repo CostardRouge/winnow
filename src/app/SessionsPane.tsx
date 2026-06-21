@@ -8,6 +8,7 @@ import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import SessionActions from "./sessions/SessionActions";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
+import PullToRefresh from "./PullToRefresh";
 
 // The incoming "Sessions" view: the work queue of scanned NAS folders.
 //  - counters + actions per session (ignore, mark done, export picks to C1);
@@ -247,7 +248,7 @@ export default function SessionsPane({
   }
 
   return (
-    <div className="sessions-pane">
+    <PullToRefresh className="sessions-pane" onRefresh={load}>
       {notice && (
         <div style={{ marginBottom: 12 }}>
           <span className="notice">{notice}</span>
@@ -334,6 +335,6 @@ export default function SessionsPane({
           }}
         />
       )}
-    </div>
+    </PullToRefresh>
   );
 }

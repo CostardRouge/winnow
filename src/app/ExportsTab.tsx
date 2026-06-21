@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { SkeletonCards, EmptyState, Icons } from "./ui";
 import ExportCard, { type ExportJob } from "./exports/ExportCard";
+import PullToRefresh from "./PullToRefresh";
 
 // Exports tab: browse the exports that were made and act on each one — download
 // it (whole archive or file by file, via the expandable card) or delete it
@@ -51,7 +52,7 @@ export default function ExportsTab() {
   }, []);
 
   return (
-    <div className="tab-pane sessions-pane">
+    <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
       <div className="exports-toolbar">
         <label className="export-opt" title="When a picked photo is a RAW+JPEG pair, also copy the JPEG next to the RAW keeper.">
           <input
@@ -85,6 +86,6 @@ export default function ExportsTab() {
           ))}
         </div>
       )}
-    </div>
+    </PullToRefresh>
   );
 }

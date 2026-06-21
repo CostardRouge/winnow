@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { active, totalFailures, useStats } from "./useStats";
+import PullToRefresh from "./PullToRefresh";
 
 const RATE_MAX = 3000;
 const RATE_STEP = 50;
@@ -63,7 +64,7 @@ export default function ControlPanel() {
   const totalFail = totalFailures(stats);
 
   return (
-    <div className="control">
+    <PullToRefresh className="control" onRefresh={reload}>
       <div className="statbar">
         <Link href="/pipeline/media" className="stat-link">
           <Stat
@@ -155,7 +156,7 @@ export default function ControlPanel() {
         Photos/hour, 0 = unlimited. Incoming &amp; inbox folders are scanned and
         analyzed first.
       </div>
-    </div>
+    </PullToRefresh>
   );
 }
 
