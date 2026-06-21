@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { friendlyCameraName } from "@/lib/cameraLabels";
 import { Icons } from "../ui";
 
 export type Facets = {
@@ -341,12 +342,14 @@ export default function FilterPanel({
         options={facets.devices}
         selected={filters.device}
         onToggle={(v) => u({ device: toggle(filters.device, String(v)) })}
+        label={(v) => friendlyCameraName(String(v))}
       />
       <Chips
         title="Camera"
         options={facets.camera_models}
         selected={filters.camera_model}
         onToggle={(v) => u({ camera_model: toggle(filters.camera_model, String(v)) })}
+        label={(v) => friendlyCameraName(String(v))}
       />
       <Chips
         title="Lens"
