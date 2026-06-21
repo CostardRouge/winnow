@@ -11,6 +11,7 @@ import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
+import { reconcileGroupsForSession } from "./pairing";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -71,6 +72,8 @@ export type IndexResult = {
   recovered: number;
   enqueued: number;
   failed: number;
+  // RAW+JPEG pairs newly tied together this scan (cf. lib/pairing.ts).
+  paired: number;
   // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
@@ -95,6 +98,7 @@ export async function indexRoot(
     recovered: 0,
     enqueued: 0,
     failed: 0,
+    paired: 0,
     stopped: false,
   };
   const touchedSessions = new Set<number>();
@@ -314,6 +318,9 @@ export async function indexRoot(
        WHERE s.id = $1`,
       [sid],
     );
+    // Tie freshly indexed RAW+JPEG siblings into logical pairs. Runs after the
+    // counters above so newly inserted/updated files are visible to the matcher.
+    res.paired += await reconcileGroupsForSession(sid);
   }
 
   return res;

@@ -77,8 +77,23 @@ export type Asset = {
   // last failure (e.g. a read-only mount) when a purge couldn't free the bytes.
   purged_at: string | null;
   purge_error: string | null;
+  // RAW+JPEG pairing (cf. lib/pairing.ts). `group_id` ties a RAW and its direct
+  // JPEG/HEIF companion together; `group_role` says which side this file is.
+  // The `primary` (direct file) is shown by default; the `companion` (RAW) is
+  // the reachable "source brute". Both null when the file is not paired.
+  group_id: number | null;
+  group_role: "primary" | "companion" | null;
   created_at: string;
   updated_at: string;
+};
+
+// A media group: the link between a RAW "source" and its direct JPEG/HEIF
+// companion shot together by the camera. One row per logical pair.
+export type AssetGroup = {
+  id: number;
+  session_id: number;
+  kind: "raw_jpeg";
+  created_at: string;
 };
 
 export type Rating = {
