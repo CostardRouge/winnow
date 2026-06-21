@@ -911,14 +911,6 @@
     background: rgba(60, 54, 46, 0.8);
     transform: scale(1.05);
   }
-  /* Floating metadata box still used by the dedicated session culling viewer. */
-  .viewer .exif {
-    @apply absolute left-3 top-3 max-w-[72vw] rounded-[var(--radius-lg)] px-3.5 py-2.5 text-xs leading-relaxed;
-    background: rgba(16, 15, 13, 0.55);
-    backdrop-filter: blur(14px) saturate(1.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #ece7da;
-  }
   .viewer .controls {
     @apply flex flex-wrap items-center justify-center gap-2 p-3;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
@@ -938,9 +930,6 @@
   }
   .viewer-tags {
     @apply mt-2 flex flex-wrap items-center gap-1;
-  }
-  .viewer-stars {
-    color: var(--color-star);
   }
 
   /* ---- Viewer action bar (grouped culling controls) --------------------- */
