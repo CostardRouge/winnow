@@ -66,10 +66,29 @@ function num(v: unknown): number | null {
   return m ? Number.parseFloat(m[0]) : null;
 }
 
+// Coerce an EXIF tag value into a clean display string, or null. exiftool-vendored
+// normally hands back strings/numbers, but some tags arrive as a plain object —
+// notably certain Sony lens fields on video files, which carry no usable
+// LensModel. A bare `.toString()` on such a value yields the literal
+// "[object Object]", and that placeholder was being stored as the lens and then
+// surfaced as a junk chip in the filter sidebar. We accept strings and finite
+// numbers, trust a *meaningful* custom toString() (e.g. an ExifDateTime), and
+// otherwise drop the value rather than persist a placeholder.
+function str(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : null;
+  if (typeof v === "boolean") return null;
+  // Object/array: String() uses any overridden toString (ExifDateTime, arrays…)
+  // but falls back to "[object Object]" for plain objects — never store that.
+  const s = String(v).trim();
+  return !s || s.startsWith("[object ") ? null : s;
+}
+
 export async function readMetadata(absPath: string): Promise<Metadata> {
   const t: Tags = await exiftool.read(absPath);
-  const make = (t.Make ?? "").toString().trim();
-  const model = (t.Model ?? "").toString().trim();
+  const make = str(t.Make) ?? "";
+  const model = str(t.Model) ?? "";
   const device = [make, model].filter(Boolean).join(" ") || null;
 
   let gps: { lat: number; lon: number } | null = null;
@@ -86,12 +105,13 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
       null,
     camera_model: model || null,
     device,
+    // Try each lens tag in turn, coercing every candidate to a clean string so an
+    // empty/object-valued LensModel falls through to LensID / Lens instead of
+    // winning the `??` and poisoning the value.
     lens:
-      (t.LensModel ?? (t as any).LensID ?? (t as any).Lens ?? null)?.toString() ??
-      null,
+      str(t.LensModel) ?? str((t as any).LensID) ?? str((t as any).Lens),
     iso: num(t.ISO),
-    shutter:
-      (t.ShutterSpeed ?? t.ExposureTime ?? null)?.toString() ?? null,
+    shutter: str(t.ShutterSpeed) ?? str(t.ExposureTime),
     aperture: num(t.FNumber ?? (t as any).Aperture),
     focal_length: num(t.FocalLength),
     gps,
