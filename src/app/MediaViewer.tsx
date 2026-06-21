@@ -7,7 +7,7 @@
 //
 // It owns only what is universal: rendering the current media, prev/next
 // navigation (buttons + arrow keys + touch swipe), pinch/trackpad zoom,
-// Escape-to-close and the (toggleable) metadata side panel. Everything
+// Escape-to-close and the (toggleable) metadata bottom panel. Everything
 // contextual (rating controls, tag editing, a download button…) is injected by
 // the caller through `renderActions` / `renderInfo`, and extra shortcuts through
 // `onKeyDown`. Media URLs default to the asset derivatives but can be overridden
@@ -59,8 +59,8 @@ export default function MediaViewer<T extends ViewerItem>({
 }) {
   const last = items.length - 1;
 
-  // Metadata side panel: shown by default, toggleable down to a small info icon
-  // so it never has to cover the media.
+  // Metadata bottom panel: shown by default, toggleable down to a small info
+  // icon so it never has to cover the media.
   const [panelOpen, setPanelOpen] = useState(true);
 
   // Zoom/pan transform applied to the current media. Reset whenever we move to

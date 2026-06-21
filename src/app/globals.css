@@ -864,8 +864,8 @@
     color: #ece7da;
     touch-action: none;
   }
-  /* Stage + metadata panel sit side by side on desktop, stacked on mobile so
-     the panel lands between the media and the verdict controls. */
+  /* Stage + metadata panel stack vertically: the panel is a bottom sheet on
+     every viewport, sitting between the media and the verdict controls. */
   .viewer-body {
     @apply flex min-h-0 flex-1 flex-col;
   }
@@ -903,10 +903,12 @@
   .viewer-panel-toggle:hover {
     background: rgba(255, 255, 255, 0.18);
   }
-  /* The "reopen" affordance shown once the panel is collapsed. */
+  /* The "reopen" affordance shown once the panel is collapsed: bottom-left,
+     over the empty (left) end of the centred controls bar. */
   .viewer-info-btn {
-    @apply absolute left-3 top-3 z-10 flex h-10 w-10 items-center justify-center
+    @apply absolute bottom-3 left-3 z-10 flex h-10 w-10 items-center justify-center
       rounded-full border-0 text-lg text-white transition duration-150;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(10px);
   }
@@ -922,17 +924,6 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #ece7da;
   }
-  @media (min-width: 768px) {
-    .viewer-body {
-      @apply flex-row;
-    }
-    .viewer-panel {
-      @apply w-80 flex-none;
-      max-height: none;
-      border-top: 0;
-      border-left: 1px solid rgba(255, 255, 255, 0.1);
-    }
-  }
   .viewer .controls {
     @apply flex flex-wrap items-center justify-center gap-2 p-3;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
@@ -941,7 +932,7 @@
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .viewer .close {
-    @apply absolute right-3 top-3 flex h-10 w-10 items-center justify-center
+    @apply absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center
       rounded-full border-0 text-xl text-white transition duration-150;
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(10px);
