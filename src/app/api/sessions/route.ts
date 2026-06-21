@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
          COALESCE(d.pending, 0) AS pending_count,
          COALESCE(d.error, 0)   AS error_count,
          COALESCE(d.picks, 0)   AS pick_count,
-         COALESCE(d.sample, '[]'::jsonb) AS sample_asset_ids
+         COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (
@@ -85,20 +85,25 @@ export async function GET(req: NextRequest) {
            count(*) FILTER (WHERE a.derivative_status = 'ready')                       AS ready,
            count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))     AS pending,
            count(*) FILTER (WHERE a.derivative_status = 'error')                       AS error,
-           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks,
-           -- A handful of ready thumbnails (earliest first) to preview the session.
-           -- COALESCE the slice so sessions with no ready assets yield [] not null.
-           to_jsonb(
-             COALESCE(
-               (array_agg(a.id ORDER BY a.captured_at ASC NULLS LAST, a.id ASC)
-                  FILTER (WHERE a.derivative_status = 'ready'))[1:8],
-               '{}'::bigint[]
-             )
-           )                                                                            AS sample
+           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
+       -- A handful of ready thumbnails (earliest first) to preview the session,
+       -- carrying each file's extension + media type so the strip can badge them.
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(
+                  jsonb_build_object('id', x.id, 'ext', x.ext, 'media_type', x.media_type)
+                ) AS sample
+         FROM (
+           SELECT a.id, a.ext, a.media_type
+           FROM assets a
+           WHERE a.session_id = s.id AND a.derivative_status = 'ready'
+           ORDER BY a.captured_at ASC NULLS LAST, a.id ASC
+           LIMIT 8
+         ) x
+       ) samp ON true
        ${where}
        ORDER BY s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`,
       params,

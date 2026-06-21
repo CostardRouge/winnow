@@ -16,6 +16,7 @@ import AssetActionMenu, {
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
+import SessionActions from "@/app/sessions/SessionActions";
 import { Icons } from "@/app/ui";
 import {
   deleteAssets,
@@ -574,28 +575,20 @@ function SessionHeader({
           </div>
         </div>
 
-        <div className="session-actions">
-          <button className="btn" onClick={onComplete}>
-            {s.completed ? "Unmark complete" : "Mark complete"}
-          </button>
-          <button className="btn" onClick={onIgnore}>
-            {s.ignored ? "Reactivate" : "Ignore"}
-          </button>
-          <button className="btn" onClick={onExportPicks} disabled={picks === 0}>
-            ⤓ Export picks → C1
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={onDelete}
-            title={
-              cullable
-                ? "Remove this session (optionally delete its files)"
-                : "Remove this session from the database"
-            }
-          >
-            🗑 Delete
-          </button>
-        </div>
+        <SessionActions
+          completed={s.completed}
+          ignored={s.ignored}
+          canExport={picks > 0}
+          onComplete={onComplete}
+          onIgnore={onIgnore}
+          onExportPicks={onExportPicks}
+          onDelete={onDelete}
+          deleteTitle={
+            cullable
+              ? "Remove this session (optionally delete its files)"
+              : "Remove this session from the database"
+          }
+        />
       </div>
 
       <div className="session-detail-stats">

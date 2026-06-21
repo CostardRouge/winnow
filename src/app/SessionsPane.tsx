@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
+import SessionActions from "./sessions/SessionActions";
+import ThumbStrip, { type StripItem } from "./ThumbStrip";
 
 // The incoming "Sessions" view: the work queue of scanned NAS folders.
 //  - counters + actions per session (ignore, mark done, export picks to C1);
@@ -16,6 +19,14 @@ import DeleteSessionModal from "./sessions/DeleteSessionModal";
 
 export type Layout = "list" | "card";
 export type SortDir = "desc" | "asc";
+
+// A ready thumbnail previewing the session, carrying enough to badge the tile
+// (extension + a play badge for videos) in the shared strip.
+type SampleAsset = {
+  id: number;
+  ext: string;
+  media_type: "photo" | "video";
+};
 
 type SessionRow = {
   id: number;
@@ -31,7 +42,7 @@ type SessionRow = {
   pending_count: number;
   error_count: number;
   pick_count: number;
-  sample_asset_ids: number[];
+  sample_assets: SampleAsset[];
 };
 
 function fmtDate(s: string | null): string {
@@ -67,22 +78,21 @@ function SessionCounters({ s }: { s: SessionRow }) {
   );
 }
 
-// A few thumbnails in a row (list layout) to hint at the session's content.
-function ThumbStrip({ ids }: { ids: number[] }) {
-  const shown = (ids ?? []).slice(0, 3);
-  if (shown.length === 0) return null;
-  return (
-    <div className="thumb-strip">
-      {shown.map((id) => (
-        <LazyImage key={id} src={`/api/assets/${id}/thumb`} alt="" />
-      ))}
-    </div>
-  );
+// Map a session's sample assets onto the shared strip's tile shape — ready
+// thumbnails badged with their extension / media type; the strip advertises the
+// session's full file count.
+function sessionStripItems(samples: SampleAsset[]): StripItem[] {
+  return (samples ?? []).map((a) => ({
+    key: a.id,
+    thumbSrc: `/api/assets/${a.id}/thumb`,
+    ext: a.ext,
+    isVideo: a.media_type === "video",
+  }));
 }
 
 // An overlapping "deck" of a few thumbnails (card layout): front-most first.
-function ThumbStack({ ids }: { ids: number[] }) {
-  const shown = (ids ?? []).slice(0, 3);
+function ThumbStack({ samples }: { samples: SampleAsset[] }) {
+  const shown = (samples ?? []).slice(0, 3).map((a) => a.id);
   if (shown.length === 0) {
     return <div className="thumb-stack is-empty">No preview yet</div>;
   }
@@ -118,6 +128,7 @@ export default function SessionsPane({
   query?: string;
   sortDir?: SortDir;
 }) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -202,28 +213,15 @@ export default function SessionsPane({
 
   function sessionActions(s: SessionRow) {
     return (
-      <div className="session-actions">
-        <button className="btn" onClick={() => toggleComplete(s)}>
-          {s.completed ? "Unmark" : "Mark complete"}
-        </button>
-        <button className="btn" onClick={() => toggleIgnore(s)}>
-          {s.ignored ? "Reactivate" : "Ignore"}
-        </button>
-        <button
-          className="btn"
-          onClick={() => exportPicks(s)}
-          disabled={s.pick_count === 0}
-        >
-          Export picks → C1
-        </button>
-        <button
-          className="btn btn-danger"
-          onClick={() => setConfirming(s)}
-          title="Remove this session (optionally delete its files from disk)"
-        >
-          Delete
-        </button>
-      </div>
+      <SessionActions
+        completed={s.completed}
+        ignored={s.ignored}
+        canExport={s.pick_count > 0}
+        onComplete={() => toggleComplete(s)}
+        onIgnore={() => toggleIgnore(s)}
+        onExportPicks={() => exportPicks(s)}
+        onDelete={() => setConfirming(s)}
+      />
     );
   }
 
@@ -283,7 +281,7 @@ export default function SessionsPane({
               className={`session-card as-card${s.ignored ? " ignored" : ""}`}
             >
               <Link href={`/sessions/${s.id}`} className="session-preview">
-                <ThumbStack ids={s.sample_asset_ids} />
+                <ThumbStack samples={s.sample_assets} />
               </Link>
               <div className="session-card-body">
                 <h3>
@@ -301,19 +299,26 @@ export default function SessionsPane({
           {sessions.map((s) => (
             <div
               key={s.id}
-              className={`session-card${s.ignored ? " ignored" : ""}`}
+              className={`session-card is-stacked${s.ignored ? " ignored" : ""}`}
             >
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <h3>
-                  <Link href={`/sessions/${s.id}`}>{s.name}</Link>
-                </h3>
-                <SessionMeta s={s} />
-                <div style={{ marginTop: 8 }}>
+              <div className="card-head">
+                <div className="card-info">
+                  <h3>
+                    <Link href={`/sessions/${s.id}`}>{s.name}</Link>
+                  </h3>
+                  <SessionMeta s={s} />
+                </div>
+                <div className="card-side">
+                  {sessionActions(s)}
                   <SessionCounters s={s} />
                 </div>
-                <ThumbStrip ids={s.sample_asset_ids} />
               </div>
-              {sessionActions(s)}
+              <ThumbStrip
+                items={sessionStripItems(s.sample_assets)}
+                total={s.asset_count}
+                onItemActivate={() => router.push(`/sessions/${s.id}`)}
+                onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
+              />
             </div>
           ))}
         </div>
