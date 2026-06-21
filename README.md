@@ -226,7 +226,7 @@ viewport — works on touch too) or **Draw box** (drag a rectangle). The map sho
 how many media fall in the zone and lets you **Pick · Reject · Export** them in
 one go, or **Show in grid** to review the thumbnails. A clicked point pops its
 thumbnail. The zone is just a **bounding box** that becomes a regular cumulative
-filter (`bbox=w,s,e,n`), materialized + indexed in the DB (migration 0008:
+filter (`bbox=w,s,e,n`), materialized + indexed in the DB (migration 0010:
 `gps_lat`/`gps_lon` populated by trigger from the `gps` JSONB), so it stacks with
 every other filter and scopes the grid, the selection, and exports — the picks
 that drop into Capture One are exactly the media from that area.
