@@ -33,6 +33,7 @@ export type AssetMetaInput = {
   gps?: { lat: number; lon: number } | null;
   derivative_status?: string;
   rel_path?: string | null;
+  sidecar_count?: number | null;
 };
 
 // Joins the exposure triangle into one compact line ("50mm · f/2.8 · 1/200s · ISO 400").
@@ -83,6 +84,9 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   }
   if (asset.derivative_status)
     rows.push(["Derivative", asset.derivative_status]);
+  const sidecars = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;
+  if (sidecars > 0)
+    rows.push(["Sidecar", sidecars === 1 ? "1 file" : `${sidecars} files`]);
   if (asset.rel_path) rows.push(["File", asset.rel_path]);
 
   if (!rows.length) return null;

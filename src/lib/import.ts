@@ -20,6 +20,7 @@ import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
 import { recordDuplicateHit } from "./duplicates";
+import { findSidecars } from "./sidecars";
 import { slug } from "./slug";
 
 // HIDDEN subfolders of the inbox (prefix ". ") — therefore ignored both by
@@ -91,6 +92,59 @@ function planDestination(
     `${yyyy}-${mm}-${dd}`,
     filename,
   );
+}
+
+// Filename minus its extension.
+function baseName(filename: string): string {
+  const ext = path.extname(filename);
+  return ext ? filename.slice(0, filename.length - ext.length) : filename;
+}
+
+// Carry the Sony video sidecars (C0001M01.XML / C0001.THM …) next to a clip we
+// just filed, renaming each to track the video's final (possibly collision-
+// suffixed) name so the base⇔base link survives. Best-effort: a sidecar is a
+// nicety and must NEVER fail or abort the import of the video itself.
+async function carrySidecars(
+  srcVideo: string,
+  destVideo: string,
+  removeAfter: boolean,
+): Promise<void> {
+  const srcDir = path.dirname(srcVideo);
+  let siblings: string[];
+  try {
+    siblings = (await readdir(srcDir, { withFileTypes: true }))
+      .filter((e) => e.isFile())
+      .map((e) => e.name);
+  } catch {
+    return;
+  }
+  const matches = findSidecars(path.basename(srcVideo), siblings);
+  if (!matches.length) return;
+
+  const destDir = path.dirname(destVideo);
+  const destBase = baseName(path.basename(destVideo));
+  for (const m of matches) {
+    const srcSc = path.join(srcDir, m.filename);
+    const destSc = path.join(destDir, destBase + m.suffix);
+    try {
+      // Don't clobber an existing sidecar at the destination (re-import): the
+      // name already encodes the video, so leaving it is correct.
+      if (!(await exists(destSc))) {
+        const tmp = `${destSc}.part`;
+        await rm(tmp, { force: true });
+        await copyFile(srcSc, tmp);
+        const [s1, s2] = await Promise.all([stat(srcSc), stat(tmp)]);
+        if (s1.size !== s2.size) {
+          await rm(tmp, { force: true });
+          continue;
+        }
+        await rename(tmp, destSc);
+      }
+      if (removeAfter) await rm(srcSc, { force: true });
+    } catch {
+      /* best-effort: never let a sidecar break the video's import */
+    }
+  }
 }
 
 // Avoids overwriting a different file with the same name: we add a suffix.
@@ -212,6 +266,12 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
         throw new Error("copy verification failed (size/hash)");
       }
       await rename(tmp, dest);
+
+      // Sony writes a metadata sidecar next to each video clip — carry it along
+      // so the clip and its companion stay together in the incoming archive.
+      if (classifyExt(ext)?.mediaType === "video") {
+        await carrySidecars(src, dest, args.removeAfter);
+      }
 
       if (args.removeAfter) await rm(src, { force: true });
       res.imported++;

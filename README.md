@@ -361,6 +361,29 @@ iGPU (share `/dev/dri` with the worker container — already wired in
 `docker-compose-optiplex.yml`). Hardware encoding fails? **automatic fallback**
 to software libx264. Defaults to `none` (software) → works everywhere.
 
+### Sony video sidecars (companion files)
+
+Sony cameras (A7C II / XAVC-S) write a small **metadata companion** next to every
+video clip — `C0001.MP4` → `C0001M01.XML` (the non-real-time metadata: real
+capture time, GPS, recording mode, codec…); other cameras drop a per-clip
+thumbnail `C0001.THM`. These are **not media** — never indexed as their own
+assets, never given derivatives — but Winnow keeps each one **tied to its clip**
+so it travels with the video (the same "carry the companion" model as RAW+JPEG
+pairing). Detection is by name (`<base>M01.XML` / `<base>.XML` / `<base>.THM`),
+recorded in `asset_sidecars` (migration 0015). Concretely:
+
+- **Import** files the clip into the incoming archive **and carries its
+  sidecar(s) alongside** (renamed to track any collision-suffix on the clip, so
+  the link survives) instead of orphaning them.
+- **Index** detects the sidecars sitting next to a freshly indexed clip and
+  records them on the video asset (idempotent — re-indexing never duplicates).
+- **Export** copies each clip's sidecars next to the exported video and records
+  the lineage (`exports.kind = 'sidecar'`).
+- **Reclaim/delete** removes a clip's sidecars together with the original when
+  purging the trash or deleting a session's files — no satellites left behind.
+
+The viewer's info panel notes when a clip carries sidecar files.
+
 ## Failures: list + retry (page `/pipeline/failures`)
 
 Everything that failed is listed in one place, with the **error message** to
