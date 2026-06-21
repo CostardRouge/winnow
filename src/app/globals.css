@@ -1473,6 +1473,18 @@
     letter-spacing: 0.06em;
     color: var(--color-muted);
   }
+  /* Facet header row: title on the left, an inline control (e.g. the
+     Include/Exclude mode toggle) pushed to the right. */
+  .facet-head {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+  .facet-head .facet-title {
+    @apply mb-0;
+  }
+  /* Smaller toggle to sit neatly inside a facet header. */
+  .facet-head .view-btn {
+    @apply px-2 py-0.5 text-[11px];
+  }
   .chips {
     @apply flex flex-wrap gap-1.5;
   }
@@ -1500,6 +1512,17 @@
   }
   .chip.active .chip-count {
     color: var(--color-accent-fg);
+    opacity: 0.75;
+  }
+  /* Excluded (negated) selection: a red chip reads as "hidden", distinct from
+     the accent-coloured "shown" selection. Used by the Derivative Exclude mode. */
+  .chip.active.exclude {
+    background: var(--color-reject);
+    border-color: var(--color-reject);
+    color: var(--color-reject-fg);
+  }
+  .chip.active.exclude .chip-count {
+    color: var(--color-reject-fg);
     opacity: 0.75;
   }
   .chip-x {

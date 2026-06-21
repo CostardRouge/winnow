@@ -77,7 +77,10 @@ export const FilterSchema = z
       .optional(),
     // Derivative lifecycle (multi): pending | processing | ready | error |
     // skipped. Drives the Pipeline triage pages (Pending / Analyzed).
+    // `not_derivative_status` is the inverse (NOT IN): the gallery's
+    // "Exclude" filter mode hides assets in the listed states.
     derivative_status: csv,
+    not_derivative_status: csv,
 
     // Culling
     verdict: z.enum(["pick", "reject", "unrated"]).optional(),
@@ -198,6 +201,13 @@ export function buildFilter(
     eq("a.processing_state", filter.processing_state);
   if (filter.derivative_status)
     inAny("a.derivative_status", filter.derivative_status);
+  if (filter.not_derivative_status) {
+    // Inverse of the above: keep assets whose status is none of the listed
+    // values (<> ALL == NOT IN). derivative_status is never NULL, so no
+    // COALESCE is needed.
+    conditions.push(`a.derivative_status <> ALL($${i++})`);
+    params.push(filter.not_derivative_status);
+  }
 
   if (filter.verdict != null) {
     if (filter.verdict === "unrated") {
@@ -304,6 +314,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "kind",
     "processing_state",
     "derivative_status",
+    "not_derivative_status",
     "tags",
     "not_tags",
     "verdict",
