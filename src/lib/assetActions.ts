@@ -47,6 +47,41 @@ export async function deleteAssets(
   });
 }
 
+// Soft delete (or restore) every asset matching a filter — e.g.
+// `{ verdict: "reject" }` to send all rejects to the trash, or `{}` + restore to
+// empty the recycle bin back into the library. Returns how many rows moved.
+export async function deleteAssetsByFilter(
+  filter: Record<string, unknown>,
+  restore = false,
+): Promise<number> {
+  const res = await fetch("/api/assets/delete", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ filter, restore }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { updated?: number };
+  return body.updated ?? 0;
+}
+
+// Reclaim space: physically remove the trashed originals + derivatives. With
+// `dryRun` it only measures the selection ({ count, bytes }); otherwise it
+// queues a purge job and returns its id. Irreversible — callers confirm first.
+export async function purgeTrash(
+  filter: Record<string, unknown> = {},
+  dryRun = false,
+): Promise<{ count?: number; bytes?: number; purge_job_id?: number }> {
+  const res = await fetch("/api/purge", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ filter, dryRun }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Purge failed (${res.status})`);
+  }
+  return res.json();
+}
+
 // Rebuilds the derivatives (thumb + proxy) of the given assets — resets them to
 // 'pending' and re-enqueues generation, whatever their current status. Works for
 // one (ids:[id]) or many. Returns how many were actually queued, or throws on a

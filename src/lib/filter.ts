@@ -117,18 +117,29 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+// How a query treats soft-deleted assets:
+//   "exclude" (default) → live library: deleted_at IS NULL (hides trash + purged).
+//   "trash"             → the recycle bin: deleted but not yet purged.
+export type DeletedScope = "exclude" | "trash";
+
 export function buildFilter(
   filter: AssetFilter,
   startIdx = 1,
+  opts: { deleted?: DeletedScope } = {},
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
   let i = startIdx;
 
   // Soft-deleted assets are hidden everywhere (gallery, sessions, facets,
-  // exports). No param: a constant predicate the planner uses with the
-  // assets_not_deleted_idx partial index.
-  conditions.push("a.deleted_at IS NULL");
+  // exports). No param: constant predicates the planner serves from the
+  // assets_not_deleted_idx / assets_trash_idx partial indexes. The Trash view
+  // and the purge worker flip this to "trash" to operate on the recycle bin.
+  if ((opts.deleted ?? "exclude") === "trash") {
+    conditions.push("a.deleted_at IS NOT NULL AND a.purged_at IS NULL");
+  } else {
+    conditions.push("a.deleted_at IS NULL");
+  }
 
   const eq = (col: string, val: unknown) => {
     conditions.push(`${col} = $${i++}`);

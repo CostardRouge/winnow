@@ -164,6 +164,92 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/**
+ * Confirmation modal for irreversible actions (notably emptying the trash /
+ * purging the NAS). `danger` paints the confirm button red; when `requireAck`
+ * is set the confirm button stays disabled until the user ticks the
+ * acknowledgement box — a deliberate gate for actions that can't be undone.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  danger = false,
+  busy = false,
+  requireAck,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  requireAck?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [ack, setAck] = useState(false);
+
+  // Reset the acknowledgement whenever the dialog (re)opens.
+  useEffect(() => {
+    if (open) setAck(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy, onCancel]);
+
+  if (!open) return null;
+  const blocked = busy || (requireAck != null && !ack);
+
+  return (
+    <div className="modal-backdrop" onMouseDown={() => !busy && onCancel()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 className="modal-title">{title}</h3>
+        <div className="modal-body">{message}</div>
+        {requireAck != null && (
+          <label className="modal-ack">
+            <input
+              type="checkbox"
+              checked={ack}
+              onChange={(e) => setAck(e.target.checked)}
+            />
+            <span>{requireAck}</span>
+          </label>
+        )}
+        <div className="modal-actions">
+          <button className="btn" onClick={onCancel} disabled={busy}>
+            {cancelLabel}
+          </button>
+          <button
+            className={`btn ${danger ? "btn-reject" : "btn-primary"}`}
+            onClick={onConfirm}
+            disabled={blocked}
+          >
+            {busy ? "…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** A few line-icons (Phosphor-style, 1.5 stroke) so empty states aren't bare text. */
 export const Icons = {
   back: (

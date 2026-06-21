@@ -13,10 +13,12 @@ import {
   type DerivativeJob,
   type ExportJob,
   type ImportJob,
+  type PurgeJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
+import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
 import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
@@ -132,11 +134,24 @@ const importWorker = new Worker(
   { connection, concurrency: config.import.concurrency },
 );
 
+// Purge: physically removes the trashed originals + derivatives to reclaim NAS
+// space. Bounded concurrency (defaults to 1) to spare the full HDD.
+const purgeWorker = new Worker(
+  QUEUES.purge,
+  async (job) => {
+    const { purgeJobId } = job.data as PurgeJob;
+    console.log(`[purge] job ${purgeJobId}…`);
+    await runPurgeJob(purgeJobId);
+  },
+  { connection, concurrency: config.purgeConcurrency },
+);
+
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
   ["export", exportWorker],
   ["import", importWorker],
+  ["purge", purgeWorker],
 ] as const) {
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
@@ -172,6 +187,7 @@ async function shutdown() {
     derivativeWorker.close(),
     exportWorker.close(),
     importWorker.close(),
+    purgeWorker.close(),
   ]);
   await closeExiftool();
   process.exit(0);
