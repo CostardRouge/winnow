@@ -482,4 +482,37 @@ export const Icons = {
       <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   ),
+  // Sift — a deck of cards with a swipe flick: the fast, mobile triage page.
+  sift: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6.5" y="5" width="11" height="14" rx="2" />
+      <path d="M9.5 2.8 17 4.2a2 2 0 0 1 1.6 2.3l-1 6.5" opacity="0.55" />
+      <path d="m3.5 12 2.5 2.5M3.5 12l2.5-2.5M3.5 12H1" />
+    </svg>
+  ),
+  // Check / X / forward — the swipe-deck verdict buttons (pick / reject / skip).
+  pick: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  ),
+  reject: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  ),
+  // Skip — a forward double-chevron (move on without a verdict).
+  skipFwd: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m6 5 7 7-7 7" />
+      <path d="m13 5 7 7-7 7" />
+    </svg>
+  ),
+  // Undo — a curved back-arrow (revert the last swipe).
+  undo: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+    </svg>
+  ),
 };

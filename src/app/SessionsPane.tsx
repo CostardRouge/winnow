@@ -8,6 +8,7 @@ import { sessionDownloadFiles } from "@/lib/assetActions";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import SessionActions from "./sessions/SessionActions";
+import SessionProgress from "./sessions/SessionProgress";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
 import PullToRefresh from "./PullToRefresh";
 
@@ -44,8 +45,17 @@ type SessionRow = {
   pending_count: number;
   error_count: number;
   pick_count: number;
+  reject_count: number;
+  unrated_count: number;
+  last_reviewed_at: string | null;
   sample_assets: SampleAsset[];
 };
+
+// Picks + rejects vs the whole session (picks + rejects + unrated): every asset
+// falls in exactly one bucket, so the three counts sum to the cullable total.
+function triageTotal(s: SessionRow): number {
+  return Number(s.pick_count) + Number(s.reject_count) + Number(s.unrated_count);
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -124,11 +134,14 @@ export default function SessionsPane({
   layout,
   query = "kind=incoming",
   sortDir = "desc",
+  progress = "",
 }: {
   layout: Layout;
   /** Scope + active filters (from the shared Filters/Browse panel). */
   query?: string;
   sortDir?: SortDir;
+  /** Triage-progress filter: ""·untouched·partial·incomplete·complete. */
+  progress?: string;
 }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -141,7 +154,7 @@ export default function SessionsPane({
   const load = useCallback(async () => {
     try {
       const data = await fetchJson<{ sessions?: SessionRow[] }>(
-        `/api/sessions?${query}&sort_dir=${sortDir}`,
+        `/api/sessions?${query}&sort_dir=${sortDir}${progress ? `&progress=${progress}` : ""}`,
       );
       setSessions(data.sessions ?? []);
       setError(null);
@@ -150,12 +163,12 @@ export default function SessionsPane({
     } finally {
       setLoading(false);
     }
-  }, [query, sortDir]);
+  }, [query, sortDir, progress]);
 
   // Reload (and show the skeleton) whenever the filters/sort change.
   useEffect(() => {
     setLoading(true);
-  }, [query, sortDir]);
+  }, [query, sortDir, progress]);
 
   // Polls while mounted (i.e. while this view is active) to follow the
   // derivatives' progress.
@@ -297,6 +310,12 @@ export default function SessionsPane({
                 </h3>
                 <SessionMeta s={s} />
                 <SessionCounters s={s} />
+                <SessionProgress
+                  picks={Number(s.pick_count)}
+                  rejects={Number(s.reject_count)}
+                  total={triageTotal(s)}
+                  compact
+                />
               </div>
               {sessionActions(s)}
             </div>
@@ -321,6 +340,12 @@ export default function SessionsPane({
                   <SessionCounters s={s} />
                 </div>
               </div>
+              <SessionProgress
+                picks={Number(s.pick_count)}
+                rejects={Number(s.reject_count)}
+                total={triageTotal(s)}
+                compact
+              />
               <ThumbStrip
                 items={sessionStripItems(s.sample_assets)}
                 total={s.asset_count}

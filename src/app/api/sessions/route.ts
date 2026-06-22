@@ -1,17 +1,25 @@
-// GET /api/sessions?kind=incoming|final&<filters>&sort_dir=asc|desc
-//   -> sessions + counters (ready/pending derivatives, picks) + parent root kind.
+// GET /api/sessions?kind=incoming|final&<filters>&sort=...&sort_dir=asc|desc&progress=...
+//   -> sessions + counters (ready/pending derivatives, picks/rejects/unrated) +
+//      parent root kind + the most recent verdict timestamp.
 //
 // `kind` restricts to the role (Incoming = source/inbox, Final = finals). The
 // shared gallery filters (folder/date/device/tags/...) are honoured too: a
 // session is kept when it has at least one matching asset (EXISTS), so the
 // Filters/Browse panel narrows the session list just like the grid. With no
 // filter beyond the role, every active session of that role shows (including
-// empty ones). `sort_dir` flips the captured-date ordering (newest vs oldest
-// first).
+// empty ones).
 //
 // Session STATUS (ignored / completed) is a session-level flag, not an asset
 // filter: both are HIDDEN by default. `show_ignored=true` / `show_completed=true`
 // opt those sessions back into the list (additively).
+//
+// TRIAGE progress: each session carries pick/reject/unrated counts plus a
+// `frac` (triaged ÷ total) so the UI can draw the progress bar and the Sift page
+// can rank / filter by completeness:
+//   - `progress` filter: untouched (nothing triaged) · partial (some, not all) ·
+//     incomplete (untouched+partial — "still to sort") · complete (all triaged).
+//   - `sort`: captured (capture date, default) · touched (most recent verdict) ·
+//     progress (most/least complete). `sort_dir` flips each ordering.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { json, serverError, badRequest } from "@/lib/api";
@@ -44,6 +52,26 @@ export async function GET(req: NextRequest) {
     params.push(showCompleted);
     clauses.push(`(s.completed = false OR $${params.length})`);
 
+    // Triage-progress filter, expressed against the counters in the `d`
+    // subquery below (LEFT JOIN → COALESCE the NULLs of an empty session to 0).
+    // No user input is interpolated, so these fixed fragments are injection-safe.
+    const triaged = "(COALESCE(d.picks,0) + COALESCE(d.rejects,0))";
+    const total = `(${triaged} + COALESCE(d.unrated,0))`;
+    switch (sp.get("progress")) {
+      case "untouched":
+        clauses.push(`${triaged} = 0`);
+        break;
+      case "partial":
+        clauses.push(`${triaged} > 0 AND ${triaged} < ${total}`);
+        break;
+      case "incomplete":
+        clauses.push(`${triaged} < ${total}`);
+        break;
+      case "complete":
+        clauses.push(`${total} > 0 AND ${triaged} = ${total}`);
+        break;
+    }
+
     // Asset-level filters: the role is handled above (rt.kind), so drop `kind`
     // here and keep a session when at least one of its assets matches the rest.
     let filter;
@@ -68,6 +96,16 @@ export async function GET(req: NextRequest) {
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
+    // Ordering: capture timeline (default), last-touched (most recent verdict)
+    // or triage completeness. `dir` flips each. NULLS LAST keeps never-touched /
+    // empty sessions at the tail whichever direction is chosen.
+    const orderBy =
+      sp.get("sort") === "touched"
+        ? `d.last_reviewed ${dir} NULLS LAST, s.id ${dir}`
+        : sp.get("sort") === "progress"
+          ? `d.frac ${dir} NULLS LAST, s.id ${dir}`
+          : `s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`;
+
     const sessions = await many(
       `SELECT
          s.*,
@@ -76,6 +114,9 @@ export async function GET(req: NextRequest) {
          COALESCE(d.pending, 0) AS pending_count,
          COALESCE(d.error, 0)   AS error_count,
          COALESCE(d.picks, 0)   AS pick_count,
+         COALESCE(d.rejects, 0) AS reject_count,
+         COALESCE(d.unrated, 0) AS unrated_count,
+         d.last_reviewed        AS last_reviewed_at,
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
@@ -85,7 +126,14 @@ export async function GET(req: NextRequest) {
            count(*) FILTER (WHERE a.derivative_status = 'ready')                       AS ready,
            count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))     AS pending,
            count(*) FILTER (WHERE a.derivative_status = 'error')                       AS error,
-           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks
+           count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks,
+           count(*) FILTER (WHERE r.verdict = 'reject')                                AS rejects,
+           count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')          AS unrated,
+           max(r.reviewed_at)                                                          AS last_reviewed,
+           -- Fraction triaged (picks+rejects ÷ all media); NULL for an empty
+           -- session so NULLS LAST parks it at the end of a progress sort.
+           (count(*) FILTER (WHERE r.verdict IN ('pick','reject')))::float
+             / NULLIF(count(*), 0)                                                     AS frac
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
          GROUP BY a.session_id
@@ -105,7 +153,7 @@ export async function GET(req: NextRequest) {
          ) x
        ) samp ON true
        ${where}
-       ORDER BY s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`,
+       ORDER BY ${orderBy}`,
       params,
     );
     return json({ sessions });

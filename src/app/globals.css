@@ -2690,3 +2690,361 @@
     @apply max-w-[200px] truncate;
   }
 }
+
+/* =========================================================================
+   Triage progress bar — compact + done variants (the base lives with the
+   session detail header above). Reused by the session list, detail and Sift.
+   ========================================================================= */
+@layer components {
+  .session-progress.is-compact {
+    @apply gap-2;
+  }
+  .session-progress.is-compact .session-progress-track {
+    height: 6px;
+  }
+  .session-progress.is-compact .session-progress-label {
+    @apply text-[11px];
+    min-width: 30px;
+    text-align: right;
+  }
+  /* Fully triaged: the label leans green so a finished session reads at a glance. */
+  .session-progress.is-done .session-progress-label {
+    color: var(--color-pick);
+    font-weight: 600;
+  }
+
+  /* The Sift entry button on the Sessions toolbar carries an icon at the shared
+     toolbar height; keep its glyph from inflating the row. */
+  .incoming-sift-link svg {
+    width: 18px;
+    height: 18px;
+  }
+  /* "Sift N unrated" CTA under the session detail progress bar. */
+  .session-detail-sift {
+    @apply mt-1 inline-flex w-fit items-center gap-1.5;
+  }
+  .session-detail-sift svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* =======================================================================
+     Sift hub (/sift) — the fast-triage dashboard.
+     ======================================================================= */
+  .sift-hub-title,
+  .sift-deck-title {
+    @apply inline-flex items-center gap-2;
+  }
+  .sift-hub-title svg {
+    width: 22px;
+    height: 22px;
+    color: var(--color-accent);
+  }
+  .sift-hub-body {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4;
+  }
+
+  /* Resume card — the big "pick up where you left off" hero. */
+  .sift-resume {
+    @apply flex items-stretch gap-3 rounded-[var(--radius-xl)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+    color: var(--color-text);
+    transition: transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+  }
+  .sift-resume:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-pop);
+    color: var(--color-text);
+  }
+  .sift-resume-cover {
+    @apply flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-lg)];
+    width: 96px;
+    height: 96px;
+    background: var(--color-surface-2);
+  }
+  .sift-resume-cover img {
+    @apply h-full w-full object-cover;
+  }
+  .sift-resume-cover-empty {
+    color: var(--color-faint);
+  }
+  .sift-resume-info {
+    @apply flex min-w-0 flex-1 flex-col justify-center gap-1.5;
+  }
+  .sift-resume-kicker {
+    @apply inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-accent);
+  }
+  .sift-resume-kicker svg {
+    width: 14px;
+    height: 14px;
+  }
+  .sift-resume-info h2 {
+    @apply truncate text-lg font-semibold leading-tight;
+    font-family: var(--font-serif);
+  }
+  .sift-resume-meta {
+    @apply text-[13px];
+    color: var(--color-muted);
+  }
+  .sift-resume-go {
+    @apply flex flex-shrink-0 items-center justify-center self-center;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border-radius: 999px;
+  }
+  .sift-resume-go svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Toolbar: rank + direction + progress shortcut. Wraps on narrow phones. */
+  .sift-controls {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .sift-count {
+    @apply text-[13px] font-medium;
+    color: var(--color-muted);
+  }
+
+  /* The session list: cover · info (+ progress) · Sift button. */
+  .sift-list {
+    @apply grid gap-2.5;
+  }
+  .sift-tile {
+    @apply flex items-center gap-3 rounded-[var(--radius-lg)] border p-2.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .sift-tile-cover {
+    @apply relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius)];
+    width: 64px;
+    height: 64px;
+    background: var(--color-surface-2);
+  }
+  .sift-tile-cover img {
+    @apply h-full w-full object-cover;
+  }
+  .sift-tile-cover-empty {
+    color: var(--color-faint);
+  }
+  .sift-tile-done {
+    @apply absolute inset-0 flex items-center justify-center;
+    background: color-mix(in srgb, var(--color-pick) 30%, transparent);
+    color: #fff;
+  }
+  .sift-tile-info {
+    @apply flex min-w-0 flex-1 flex-col gap-1;
+  }
+  .sift-tile-info h3 {
+    @apply truncate text-sm font-semibold;
+  }
+  .sift-tile-meta {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  .sift-tile-go {
+    @apply flex flex-shrink-0 items-center justify-center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .sift-tile-go svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* =======================================================================
+     Sift deck (/sift/[id]) — the swipe culling surface.
+     ======================================================================= */
+  .sift-deck-page {
+    @apply flex h-full min-h-0 flex-col;
+  }
+  .sift-deck-title {
+    @apply truncate text-base font-semibold;
+  }
+  .sift-deck-progress {
+    @apply px-4 pt-2;
+  }
+  .sift-deck-body {
+    @apply flex min-h-0 flex-1 flex-col items-center justify-center p-4;
+  }
+  .deck {
+    @apply flex w-full flex-col items-center gap-5;
+    max-width: 460px;
+  }
+  .deck-stack {
+    @apply relative w-full;
+    aspect-ratio: 3 / 4;
+    max-height: min(64vh, 560px);
+    touch-action: pan-y;
+  }
+  .deck-card {
+    @apply absolute inset-0 flex items-center justify-center overflow-hidden
+      rounded-[var(--radius-xl)] border;
+    background: var(--color-frame);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    will-change: transform;
+    user-select: none;
+  }
+  .deck-card.is-top {
+    cursor: grab;
+    touch-action: none;
+  }
+  .deck-card.is-top:active {
+    cursor: grabbing;
+  }
+  .deck-card img {
+    @apply h-full w-full object-contain;
+    pointer-events: none;
+  }
+  .deck-card-play {
+    @apply absolute flex items-center justify-center rounded-full;
+    width: 56px;
+    height: 56px;
+    background: color-mix(in srgb, #000 45%, transparent);
+    color: #fff;
+    font-size: 22px;
+    backdrop-filter: blur(2px);
+  }
+  .deck-card-badge {
+    @apply absolute left-2.5 top-2.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase;
+    background: color-mix(in srgb, #000 55%, transparent);
+    color: #fff;
+    letter-spacing: 0.03em;
+  }
+  .deck-card-name {
+    @apply absolute right-2.5 bottom-2.5 left-2.5 truncate text-right text-[11px];
+    color: color-mix(in srgb, #fff 78%, transparent);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    font-family: var(--font-mono);
+  }
+  /* Drag stamps — the "Pick / Nope / Skip" verdict cue rotated into a corner. */
+  .deck-stamp {
+    @apply pointer-events-none absolute top-6 rounded-lg border-[3px] px-3 py-1
+      text-2xl font-extrabold uppercase;
+    letter-spacing: 0.05em;
+    transition: opacity 0.1s linear;
+  }
+  .deck-stamp.is-pick {
+    left: 18px;
+    transform: rotate(-14deg);
+    color: var(--color-pick);
+    border-color: var(--color-pick);
+  }
+  .deck-stamp.is-reject {
+    right: 18px;
+    transform: rotate(14deg);
+    color: var(--color-reject);
+    border-color: var(--color-reject);
+  }
+  .deck-stamp.is-skip {
+    left: 50%;
+    transform: translateX(-50%) rotate(-4deg);
+    color: var(--color-star);
+    border-color: var(--color-star);
+  }
+
+  /* Verdict buttons — round, colour-coded, glowing while a swipe leans in. */
+  .deck-actions {
+    @apply flex items-center justify-center gap-4;
+  }
+  .deck-btn {
+    @apply inline-flex flex-shrink-0 items-center justify-center rounded-full border
+      transition duration-150;
+    width: 60px;
+    height: 60px;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-muted);
+    box-shadow: var(--shadow-card);
+    transition-timing-function: var(--ease-out);
+  }
+  .deck-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+  .deck-btn:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+  .deck-btn:disabled {
+    @apply pointer-events-none opacity-40;
+  }
+  .deck-btn.is-undo {
+    width: 46px;
+    height: 46px;
+  }
+  .deck-btn.is-reject {
+    color: var(--color-reject);
+    border-color: color-mix(in srgb, var(--color-reject) 45%, var(--color-border-strong));
+  }
+  .deck-btn.is-pick {
+    color: var(--color-pick);
+    border-color: color-mix(in srgb, var(--color-pick) 45%, var(--color-border-strong));
+  }
+  .deck-btn.is-skip {
+    color: var(--color-star);
+    border-color: color-mix(in srgb, var(--color-star) 45%, var(--color-border-strong));
+  }
+  .deck-btn.is-reject.lean {
+    background: var(--color-reject);
+    border-color: var(--color-reject);
+    color: var(--color-reject-fg);
+  }
+  .deck-btn.is-pick.lean {
+    background: var(--color-pick);
+    border-color: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .deck-btn.is-skip.lean {
+    background: var(--color-star);
+    border-color: var(--color-star);
+    color: #fff;
+  }
+
+  /* Completion panel shown when the deck runs dry. */
+  .sift-done {
+    @apply flex flex-col items-center gap-2 text-center;
+    max-width: 360px;
+  }
+  .sift-done-mark {
+    @apply mb-1 flex items-center justify-center rounded-full;
+    width: 64px;
+    height: 64px;
+    background: color-mix(in srgb, var(--color-pick) 14%, var(--color-surface));
+    color: var(--color-pick);
+  }
+  .sift-done-mark svg {
+    width: 32px;
+    height: 32px;
+  }
+  .sift-done h2 {
+    @apply text-xl font-semibold;
+    font-family: var(--font-serif);
+  }
+  .sift-done p {
+    @apply text-sm;
+    color: var(--color-muted);
+  }
+  .sift-done-actions {
+    @apply mt-3 flex flex-wrap items-center justify-center gap-2;
+  }
+  .sift-done-actions svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* On phones the Sessions/Grid toolbar gains a progress filter; let it wrap to a
+   second line rather than overflow the row. */
+@media (max-width: 760px) {
+  .gallery-controls {
+    flex-wrap: wrap;
+  }
+}
+

@@ -53,6 +53,12 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
+        name: "Sift — swipe triage",
+        short_name: "Sift",
+        url: "/sift",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
         name: "Library",
         short_name: "Library",
         url: "/library",

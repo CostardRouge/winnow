@@ -23,6 +23,12 @@ const NAV: NavItem[] = [
     match: (p) => p === "/" || p.startsWith("/library") || p.startsWith("/sessions"),
   },
   {
+    href: "/sift",
+    label: "Sift",
+    icon: Icons.sift,
+    match: (p) => p.startsWith("/sift"),
+  },
+  {
     href: "/gallery",
     label: "Gallery",
     icon: Icons.photos,
