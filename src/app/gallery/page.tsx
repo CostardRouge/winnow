@@ -1,19 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import GalleryShell from "./GalleryShell";
-
-// The finals gallery: a read-only view of finalized exports only (kind=finals).
-// Incoming / inbox / export-staging assets are excluded by the `final` scope —
-// this is the canonical place to browse finished work (it replaced the former
-// "Final" tab on the Library page).
-export default function GalleryPage() {
-  return (
-    <div className="gallery-layout">
-      <div className="topbar">
-        <h1>Gallery</h1>
-        <span className="hint">finals only</span>
-      </div>
-      <GalleryShell scope="final" />
-    </div>
-  );
+// The finals gallery moved into the Library as a tab (/library/gallery) and was
+// dropped from the nav rail. This route stays as a redirect so old links,
+// bookmarks and PWA shortcuts still land in the right place. The gallery's
+// shared components (GalleryShell, FilterPanel, …) continue to live in this
+// folder and are imported from there by the Library tabs.
+export default function GalleryRedirect() {
+  redirect("/library/gallery");
 }

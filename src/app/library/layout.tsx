@@ -8,7 +8,7 @@ import { Icons } from "../ui";
 
 // Library chrome shared by every tab/view under /library. The tabs and the
 // active view are now real URL segments:
-//   /library/incoming/{sessions|grid|map}   ·   /library/exports
+//   /library/incoming/{sessions|grid|map}   ·   /library/gallery   ·   /library/exports
 // so each pane is shareable and reload-safe. The compact stats strip rides the
 // tabs row; the full pipeline control panel lives on its own /pipeline page.
 
@@ -18,6 +18,12 @@ const TABS: { id: string; label: string; href: string; match: (p: string) => boo
     label: "Incoming",
     href: "/library/incoming/sessions",
     match: (p) => p.startsWith("/library/incoming"),
+  },
+  {
+    id: "gallery",
+    label: "Gallery",
+    href: "/library/gallery",
+    match: (p) => p.startsWith("/library/gallery"),
   },
   {
     id: "exports",
