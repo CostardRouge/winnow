@@ -798,6 +798,25 @@
   .seg-btn.is-danger:focus-visible svg {
     color: var(--color-reject);
   }
+  /* Pick / reject segments (the map zone bar): the verdict colour rides on the
+     icon at rest so the action stays readable when labels collapse to icon-only
+     on mobile, then floods the segment on hover/focus. */
+  .seg-btn.is-pick svg {
+    color: var(--color-pick);
+  }
+  .seg-btn.is-pick:hover,
+  .seg-btn.is-pick:focus-visible {
+    background: color-mix(in srgb, var(--color-pick) 12%, transparent);
+    color: color-mix(in srgb, var(--color-pick) 85%, #000);
+  }
+  .seg-btn.is-reject svg {
+    color: var(--color-reject);
+  }
+  .seg-btn.is-reject:hover,
+  .seg-btn.is-reject:focus-visible {
+    background: color-mix(in srgb, var(--color-reject) 12%, transparent);
+    color: color-mix(in srgb, var(--color-reject) 85%, #000);
+  }
   /* Collapse labels (icon-only) on small screens; cards do this regardless. */
   @media (max-width: 640px) {
     .seg-label {
@@ -1371,6 +1390,9 @@
   }
   .map-wrap.is-drawing .leaflet-container {
     cursor: crosshair;
+    /* Let our Pointer handlers own the gesture instead of the browser treating
+       a touch-drag as a scroll/pan (which would cancel the box drag on mobile). */
+    touch-action: none;
   }
   .map-canvas {
     @apply absolute inset-0;
