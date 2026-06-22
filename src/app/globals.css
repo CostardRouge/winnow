@@ -538,7 +538,7 @@
   }
 
   .sessions-pane {
-    @apply min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3;
+    @apply min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-5 pt-3;
   }
 
   /* ---- Pull-to-refresh -------------------------------------------------- */
@@ -575,6 +575,11 @@
   /* ---- Cards (sessions / exports / batches) ----------------------------- */
   .session-list {
     @apply grid gap-3;
+    /* A single column whose minimum is 0 (not min-content): the card gets a
+       definite width and can never be forced wider than the viewport by its
+       contents (e.g. the thumbnail strip), so the list never scrolls
+       sideways on mobile. The card grid (.as-cards) sets its own columns. */
+    grid-template-columns: minmax(0, 1fr);
   }
   .session-card {
     @apply flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border p-4 transition duration-200;
@@ -700,6 +705,12 @@
   }
   .thumb-row.is-clickable {
     cursor: pointer;
+  }
+  /* Sessions preview: only whole tiles fit (the ResizeObserver caps the count),
+     so centre the row to split the leftover gap evenly — equal left/right
+     margin within the card rather than all the slack trailing on the right. */
+  .thumb-row.is-centered {
+    @apply justify-center;
   }
   .thumb-tile {
     @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
