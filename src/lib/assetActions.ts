@@ -19,6 +19,21 @@ export async function rateAssets(
   });
 }
 
+// Pull the indexed original (abs_path) for a single asset down to the browser as
+// an attachment. Goes straight at the /download route — which streams the real
+// file even when no derivative exists yet — so you can inspect a Pending/failed
+// item that has no preview. Triggered through a throwaway anchor so the current
+// page isn't navigated away from.
+export function downloadAssetOriginal(id: number): void {
+  if (typeof document === "undefined") return;
+  const a = document.createElement("a");
+  a.href = `/api/assets/${id}/download`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 // Add (or remove) a single tag by name across the given assets.
 export async function tagAssets(
   ids: number[],

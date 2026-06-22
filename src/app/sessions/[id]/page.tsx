@@ -22,6 +22,7 @@ import { Icons } from "@/app/ui";
 import { formatBadge } from "@/lib/format";
 import {
   deleteAssets,
+  downloadAssetOriginal,
   exportAssets,
   regenerateAssets,
   tagAssets,
@@ -366,6 +367,8 @@ export default function SessionGrid({
           return void addTag(id, action.name);
         case "export":
           return void exportSelection([id]);
+        case "download":
+          return downloadAssetOriginal(id);
         case "regenerate":
           return void regenerate([id]);
         case "delete":
