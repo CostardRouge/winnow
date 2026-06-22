@@ -6,7 +6,8 @@
 // metadata panel.
 //
 // It owns only what is universal: rendering the current media, prev/next
-// navigation (buttons + arrow keys + touch swipe), pinch/trackpad zoom,
+// navigation (buttons + arrow keys + touch swipe), zoom (pinch/trackpad,
+// mouse wheel, double-click) with pan (touch drag or mouse drag),
 // Escape-to-close and the (toggleable) metadata bottom panel. Everything
 // contextual (rating controls, tag editing, a download button…) is injected by
 // the caller through `renderActions` / `renderInfo`, and extra shortcuts through
@@ -112,6 +113,7 @@ export default function MediaViewer<T extends ViewerItem>({
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -145,15 +147,24 @@ export default function MediaViewer<T extends ViewerItem>({
     return () => window.removeEventListener("keydown", onKey);
   }, [items, index, last, onIndexChange, onClose, onKeyDown]);
 
-  // Trackpad pinch (and ctrl+wheel) zoom. Attached natively so we can call
-  // preventDefault — React's onWheel is passive and would let the page zoom.
+  // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
+  // deltas; a plain mouse wheel sends coarse notches. Both zoom the stage (it
+  // has nothing to scroll), so we take over the event either way. Attached
+  // natively so we can call preventDefault — React's onWheel is passive and
+  // would let the page zoom/scroll instead.
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return; // browsers flag trackpad pinch as ctrl+wheel
       e.preventDefault();
-      setScale((s) => clamp(s - e.deltaY * 0.01, MIN_SCALE, MAX_SCALE));
+      setScale((s) =>
+        e.ctrlKey
+          ? // Trackpad pinch: proportional to the pinch delta.
+            clamp(s - e.deltaY * 0.01, MIN_SCALE, MAX_SCALE)
+          : // Mouse wheel: a fixed multiplicative step per notch, independent of
+            // the OS-reported delta magnitude (pixels vs lines).
+            clamp(s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), MIN_SCALE, MAX_SCALE),
+      );
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -218,6 +229,34 @@ export default function MediaViewer<T extends ViewerItem>({
   // Double-click/tap toggles between fit and a 2× zoom.
   const onDoubleClick = () => setScale((s) => (s > MIN_SCALE ? MIN_SCALE : 2));
 
+  // Mouse drag to pan when zoomed in (desktop). This is the pointer equivalent
+  // of the one-finger touch pan above. The move/up listeners go on window for
+  // the duration of the drag so panning keeps tracking when the cursor leaves
+  // the stage and always releases, even on a mouseup outside it.
+  const drag = useRef({ startX: 0, startY: 0, startTx: 0, startTy: 0 });
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || scale <= MIN_SCALE) return; // left-button pan, zoomed only
+    e.preventDefault(); // suppress the browser's native image drag
+    const d = drag.current;
+    d.startX = e.clientX;
+    d.startY = e.clientY;
+    d.startTx = tx;
+    d.startTy = ty;
+    setDragging(true);
+    const onMove = (ev: MouseEvent) => {
+      setTx(d.startTx + (ev.clientX - d.startX));
+      setTy(d.startTy + (ev.clientY - d.startY));
+    };
+    const onUp = () => {
+      setDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   // A <video> renders its own native controls (the scrubber especially): a
   // one-finger drag on the timeline is scrubbing, not a navigation swipe. Keep
   // those single-finger touches from bubbling up to the stage so releasing the
@@ -226,6 +265,10 @@ export default function MediaViewer<T extends ViewerItem>({
   const stopVideoTouch = (e: React.TouchEvent) => {
     if (e.touches.length < 2) e.stopPropagation();
   };
+
+  // Likewise for the mouse: keep a press on the video (its native controls)
+  // from starting a stage pan, so play/scrub stay usable even when zoomed in.
+  const stopVideoMouse = (e: React.MouseEvent) => e.stopPropagation();
 
   const item = items[index];
   if (!item) return null;
@@ -268,7 +311,7 @@ export default function MediaViewer<T extends ViewerItem>({
 
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
-    cursor: scale > MIN_SCALE ? "grab" : undefined,
+    cursor: scale > MIN_SCALE ? (dragging ? "grabbing" : "grab") : undefined,
   };
 
   // Render through a portal on <body>: the overlay is position:fixed, so any
@@ -294,6 +337,7 @@ export default function MediaViewer<T extends ViewerItem>({
         <div
           ref={stageRef}
           className="stage"
+          onMouseDown={onMouseDown}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -313,6 +357,7 @@ export default function MediaViewer<T extends ViewerItem>({
                 muted
                 loop
                 style={transform}
+                onMouseDown={stopVideoMouse}
                 onTouchStart={stopVideoTouch}
                 onTouchMove={stopVideoTouch}
                 onTouchEnd={stopVideoTouch}
@@ -328,6 +373,7 @@ export default function MediaViewer<T extends ViewerItem>({
                 muted
                 loop
                 style={transform}
+                onMouseDown={stopVideoMouse}
                 onTouchStart={stopVideoTouch}
                 onTouchMove={stopVideoTouch}
                 onTouchEnd={stopVideoTouch}
