@@ -143,6 +143,7 @@ offending variable — instead of silently degrading in production.
 | `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
 | `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status` and `q=` free-text path search; `sort=recent` orders by last update) |
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
+| `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched or triage completeness; `progress` filters by how far each session has been triaged |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
@@ -279,10 +280,22 @@ The available values/counts come from `GET /api/facets`; filtering is therefore
 `rel_path` (which carries both the folder and the filename) and stays fast on a
 large library via **trigram GIN indexes** (`pg_trgm`, migration 0010).
 
+### Calendar view (when the media were shot)
+
+Alongside the grid, every gallery has a **Calendar** view: a month-at-a-glance
+wall calendar where each day that holds media shows a **cover thumbnail** and a
+**count**. It respects the current cumulative filters (device, type, tags…) via
+the shared Filters/Browse aside, opens on the **most recent month with media**,
+and clamps year/month navigation to the filtered span. Picking a day pins it as
+a `date_from=date_to` filter and drops back to the **Grid** to review that day —
+the same hand-off the map's *Show in grid* uses. `GET /api/assets/calendar`
+returns one row per capture date (`{date,count,cover_id}`) for the visible
+window plus the overall `bounds`, so a month renders in a single request.
+
 ### Map view (where the media are) & zone culling
 
-Every gallery (Incoming → *Browse*, *Final*, and `/gallery`) has a **Grid / Map**
-toggle. The **Map** plots one point per geotagged asset — so you can *see where
+Every gallery (Incoming → *Browse*, *Final*, and `/gallery`) has a
+**Grid / Calendar / Map** toggle. The **Map** plots one point per geotagged asset — so you can *see where
 the media are* — over OpenStreetMap tiles (source configurable via
 `NEXT_PUBLIC_MAP_TILE_URL`). The points respect the current cumulative filters
 (device, date, type…), and `GET /api/assets/geo` returns just `{id,lat,lon}` so
@@ -509,7 +522,8 @@ Photo's `.mov` motion), RAW-copy export + `exports`
 lineage, **reclaim space** (recycle-bin soft-delete → confirmed purge that frees
 the NAS originals + derivatives, with audit + per-file resilience),
 **multi-feeder ingest** (see below), **virtualized gallery with
-cumulative filters** (DB-indexed attributes), **map view** (plot geotagged media,
+cumulative filters** (DB-indexed attributes), **calendar view** (month grid with
+per-day cover + count → drill into a day), **map view** (plot geotagged media,
 select a zone → pick/reject/export the area), **pipeline control** (pause/resume,
 incoming/inbox priority, adjustable scan/analyze rates, real-time counters — see
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware

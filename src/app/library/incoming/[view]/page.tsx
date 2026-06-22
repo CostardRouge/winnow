@@ -7,7 +7,7 @@ import IncomingTab from "../../../IncomingTab";
 // Navigating between them re-renders this page in place (same dynamic segment),
 // so IncomingTab/GalleryShell stay mounted and the loaded grid + filter state
 // carry across the switch.
-const VIEWS = ["sessions", "grid", "map"];
+const VIEWS = ["sessions", "grid", "calendar", "map"];
 
 export default function IncomingViewPage() {
   const { view } = useParams<{ view: string }>();
