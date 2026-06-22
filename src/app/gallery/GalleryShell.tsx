@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import VirtualGrid, { type GalleryAsset } from "./VirtualGrid";
+import CalendarView from "./CalendarView";
 import type { Bbox, GeoPoint } from "./MapView";
 import FilterPanel, {
   EMPTY_FILTERS,
@@ -473,6 +474,16 @@ export default function GalleryShell({
     });
   }, []);
 
+  // Calendar → Grid: pin the picked day as a date range filter and drop back to
+  // the grid to review it (mirrors the map's "show zone in grid" hand-off).
+  const showDateInGrid = useCallback(
+    (date: string) => {
+      setFilters((prev) => ({ ...prev, date_from: date, date_to: date }));
+      selectView("grid");
+    },
+    [selectView],
+  );
+
   // Dispatch a context-menu action onto a single asset.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
@@ -677,7 +688,20 @@ export default function GalleryShell({
     usesGalleryData: true,
     render: () => renderGalleryMain("map"),
   };
-  const views: SectionView[] = [...(extraViews ?? []), gridView, mapView];
+  // Calendar shares the Filters/Browse aside but fetches its own per-day
+  // aggregates (not the item feed), so it's `usesFilters`, not `usesGalleryData`.
+  const calendarView: SectionView = {
+    id: "calendar",
+    label: "Calendar",
+    usesFilters: true,
+    render: (ctx) => <CalendarView query={ctx.query} onOpenDate={showDateInGrid} />,
+  };
+  const views: SectionView[] = [
+    ...(extraViews ?? []),
+    gridView,
+    calendarView,
+    mapView,
+  ];
   const current = views.find((v) => v.id === view) ?? views[0];
 
   // Any view that shows the shared Filters/Browse aside (Grid, Map, Sessions).

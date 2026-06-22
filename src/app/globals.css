@@ -1602,6 +1602,118 @@
     @apply block h-auto w-40 rounded-[var(--radius-sm)];
   }
 
+  /* ---- Calendar view --------------------------------------------------- */
+  .cal-wrap {
+    @apply flex min-h-0 flex-1 flex-col gap-3 p-2;
+  }
+  /* Month navigation header: year/month steppers, the month label, Today. */
+  .cal-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .cal-nav {
+    @apply flex items-center gap-1;
+  }
+  .cal-nav .icon-toggle {
+    @apply h-8 w-8 text-base leading-none;
+  }
+  .cal-title {
+    @apply min-w-[8.5rem] px-1 text-center text-sm font-semibold;
+    color: var(--color-text);
+  }
+  .cal-month-total {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  /* The board fills the remaining height; the grid itself flexes to fit. */
+  .cal-board {
+    @apply flex min-h-0 flex-1 flex-col gap-1.5;
+    transition: opacity 150ms ease;
+  }
+  .cal-board.is-loading {
+    opacity: 0.55;
+  }
+  .cal-weekdays,
+  .cal-grid {
+    @apply grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .cal-weekday {
+    @apply pb-0.5 text-center text-xs font-medium uppercase tracking-wide;
+    color: var(--color-faint);
+  }
+  .cal-grid {
+    @apply min-h-0 flex-1;
+    grid-auto-rows: minmax(56px, 1fr);
+  }
+  /* A day cell: a thumbnail backdrop with the day number + count overlaid.
+     Empty days are flat and non-interactive; days with media lift on hover. */
+  .cal-day {
+    @apply relative flex items-start justify-start overflow-hidden p-1.5;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-muted);
+    aspect-ratio: 1 / 1;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  }
+  .cal-day.is-outside {
+    opacity: 0.4;
+  }
+  .cal-day.is-today {
+    border-color: var(--color-accent, var(--color-border-strong));
+    box-shadow: inset 0 0 0 1px var(--color-accent, var(--color-border-strong));
+  }
+  .cal-day.has-media {
+    cursor: pointer;
+    color: #fff;
+    border-color: var(--color-border-strong);
+  }
+  .cal-day.has-media:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card);
+    border-color: var(--color-accent, var(--color-border-strong));
+  }
+  .cal-day:disabled {
+    cursor: default;
+  }
+  .cal-thumb {
+    @apply absolute inset-0 h-full w-full object-cover;
+    z-index: 0;
+  }
+  /* Scrim under the labels so day number + count stay legible over any photo. */
+  .cal-day.has-media::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.45) 0%,
+      rgba(0, 0, 0, 0) 38%,
+      rgba(0, 0, 0, 0) 62%,
+      rgba(0, 0, 0, 0.45) 100%
+    );
+    z-index: 1;
+  }
+  .cal-day-num {
+    @apply relative text-xs font-semibold leading-none;
+    z-index: 2;
+  }
+  .cal-day-count {
+    @apply absolute bottom-1 right-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none;
+    z-index: 2;
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    color: var(--color-text);
+    backdrop-filter: blur(4px);
+  }
+  .cal-day.has-media .cal-day-count {
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    backdrop-filter: none;
+  }
+  .cal-empty {
+    @apply py-3 text-center;
+  }
+
   /* ---- Filter panel ----------------------------------------------------- */
   .filter-panel {
     @apply flex flex-col gap-5;
