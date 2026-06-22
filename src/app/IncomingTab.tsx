@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GalleryShell from "./gallery/GalleryShell";
 import { decodeFilters, encodeFilters } from "./gallery/filterParams";
@@ -34,9 +34,21 @@ export default function IncomingTab({ view }: { view: string }) {
     decodeFilters(new URLSearchParams(searchParams.toString())),
   );
 
+  // The `view` prop trails the router by a tick (navigation is async), so when
+  // an action switches view *and* changes filters in the same commit — e.g. the
+  // map's "Grid" zone action, which applies a bbox then jumps to the grid — the
+  // filter-mirror below would otherwise replace the URL using the stale, current
+  // view and cancel the view switch (the classic "click Grid twice" bug). Latch
+  // the view we're navigating to so the filter mirror targets the right segment.
+  const pendingViewRef = useRef<string | null>(null);
+  useEffect(() => {
+    pendingViewRef.current = null;
+  }, [view]);
+
   // Switch view by navigating — carry the current filters across the hop.
   const onSelectView = useCallback(
     (id: string) => {
+      pendingViewRef.current = id;
       const qs = searchParams.toString();
       router.push(`/library/incoming/${id}${qs ? `?${qs}` : ""}`);
     },
@@ -47,8 +59,9 @@ export default function IncomingTab({ view }: { view: string }) {
   // scroll jump) so Back still steps between views rather than filter edits.
   const onFiltersChange = useCallback(
     (f: Filters) => {
+      const target = pendingViewRef.current ?? view;
       const qs = encodeFilters(f).toString();
-      router.replace(`/library/incoming/${view}${qs ? `?${qs}` : ""}`, {
+      router.replace(`/library/incoming/${target}${qs ? `?${qs}` : ""}`, {
         scroll: false,
       });
     },
