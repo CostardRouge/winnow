@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FixedSizeList, type ListOnItemsRenderedProps } from "react-window";
+import { formatBadge } from "@/lib/format";
 
 export type GalleryAsset = {
   id: number;
@@ -112,11 +113,7 @@ export default function VirtualGrid({
               )}
               {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
               <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
-                {a.group_kind === "live_photo"
-                  ? "LIVE"
-                  : a.companion_ext
-                    ? `RAW+${a.ext.replace(".", "")}`
-                    : a.ext.replace(".", "")}
+                {formatBadge(a.ext, a.companion_ext, a.group_kind)}
               </span>
               {sel && <span className="select-check">✓</span>}
             </div>

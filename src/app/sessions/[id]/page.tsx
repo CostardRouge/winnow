@@ -19,6 +19,7 @@ import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
 import PullToRefresh from "@/app/PullToRefresh";
 import { Icons } from "@/app/ui";
+import { formatBadge } from "@/lib/format";
 import {
   deleteAssets,
   exportAssets,
@@ -50,6 +51,17 @@ type AssetRow = {
   rel_path: string | null;
   verdict: Verdict;
   star: number;
+  // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, its
+  // group kind and the companion's per-file stats. Feed the grid badge and the
+  // viewer's segmented light↔RAW toggle; NULL when the asset isn't paired.
+  companion_id?: number | null;
+  companion_ext?: string | null;
+  companion_media_type?: "photo" | "video" | null;
+  companion_filename?: string | null;
+  companion_file_size?: number | null;
+  companion_width?: number | null;
+  companion_height?: number | null;
+  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 // Session metadata + status breakdown (GET /api/sessions/:id). Postgres returns
@@ -156,10 +168,14 @@ export default function SessionGrid({
         const sp = new URLSearchParams();
         if (cur) sp.set("cursor", cur);
         if (verdict) sp.set("verdict", verdict);
+        // collapse=1: a RAW+JPEG (or Live Photo) pair shows as one tile — the
+        // lighter direct file (JPEG/HEIF) primary — with its companion riding
+        // along on the row for the badge + the viewer's light↔RAW toggle. So
+        // prev/next walks pair-by-pair instead of stepping through each file.
         const data = await fetchJson<{
           assets?: AssetRow[];
           next_cursor?: string | null;
-        }>(`/api/sessions/${id}/assets?${sp.toString()}`);
+        }>(`/api/sessions/${id}/assets?${sp.toString()}&collapse=1`);
         setError(null);
         setAssets((prev) =>
           cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? [],
@@ -461,7 +477,9 @@ export default function SessionGrid({
                 {a.star > 0 && (
                   <span className="stars">{"★".repeat(a.star)}</span>
                 )}
-                <span className="ext-badge">{a.ext.replace(".", "")}</span>
+                <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
+                  {formatBadge(a.ext, a.companion_ext, a.group_kind)}
+                </span>
               </div>
             ))}
           </div>
