@@ -317,6 +317,7 @@ export default function SessionsPane({
               <ThumbStrip
                 items={sessionStripItems(s.sample_assets)}
                 total={s.asset_count}
+                className="is-centered"
                 onItemActivate={() => router.push(`/sessions/${s.id}`)}
                 onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
               />
