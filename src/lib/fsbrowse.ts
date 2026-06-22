@@ -8,7 +8,7 @@
 // `readdir` per navigation — we keep NAS I/O minimal (guiding principle).
 import { readdir, realpath } from "node:fs/promises";
 import path from "node:path";
-import { config } from "./config";
+import { config, isIgnoredEntry } from "./config";
 import { normalizeRootPath } from "./volumes";
 
 // Thrown for user-fixable problems (out of bounds, missing folder) → HTTP 400.
@@ -96,7 +96,7 @@ export async function listDir(input?: string): Promise<FsListing> {
   }
 
   const entries = dirents
-    .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+    .filter((d) => d.isDirectory() && !isIgnoredEntry(d.name))
     .map((d) => ({
       name: d.name,
       path: normalizeRootPath(path.join(requested, d.name)),
