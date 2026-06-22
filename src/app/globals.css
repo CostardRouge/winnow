@@ -468,7 +468,7 @@
     border-color: var(--color-border);
   }
   .tab {
-    @apply rounded-[var(--radius)] border-0 bg-transparent px-4 py-1.5 text-sm font-semibold transition duration-150;
+    @apply inline-flex items-center justify-center rounded-[var(--radius)] border-0 bg-transparent px-4 py-1.5 text-sm font-semibold leading-none transition duration-150;
     color: var(--color-muted);
   }
   .tab:hover {
@@ -496,7 +496,7 @@
     @apply flex flex-wrap items-center gap-2;
   }
   .stat-chip {
-    @apply inline-flex items-baseline gap-1.5 rounded-[var(--radius)] border px-2.5 py-1;
+    @apply inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1;
     background: var(--color-surface-2);
     border-color: var(--color-border);
     color: var(--color-text);
@@ -672,6 +672,31 @@
     .card-side .counters {
       @apply justify-start;
     }
+  }
+  /* The triage bar rides the very bottom of a stacked session card as a
+     full-width footer band: it cancels the card's padding to sit flush on the
+     edges, a top rule separates it from the body, and the percentage parks at
+     the right behind its own divider with left/right padding. */
+  .session-card.is-stacked .session-progress.is-footer {
+    margin: 0 -1rem -1rem;
+    align-items: stretch;
+    gap: 0;
+    min-height: 1em;
+    border-top: 1px solid var(--color-border);
+    border-bottom-left-radius: var(--radius-lg);
+    border-bottom-right-radius: var(--radius-lg);
+    background: var(--color-surface-2);
+    overflow: hidden;
+  }
+  .session-card.is-stacked .session-progress.is-footer .session-progress-track {
+    align-self: center;
+    margin: 0 0.875rem;
+  }
+  .session-card.is-stacked .session-progress.is-footer .session-progress-label {
+    @apply inline-flex items-center;
+    padding: 0.5em 0.875rem;
+    border-left: 1px solid var(--color-border);
+    color: var(--color-text);
   }
   .counters {
     @apply flex flex-wrap gap-2 text-xs;

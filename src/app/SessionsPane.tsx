@@ -340,18 +340,18 @@ export default function SessionsPane({
                   <SessionCounters s={s} />
                 </div>
               </div>
+              <ThumbStrip
+                items={sessionStripItems(s.sample_assets)}
+                total={s.asset_count}
+                onItemActivate={() => router.push(`/sessions/${s.id}`)}
+                onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
+              />
               <SessionProgress
                 picks={Number(s.pick_count)}
                 rejects={Number(s.reject_count)}
                 total={triageTotal(s)}
                 compact
-              />
-              <ThumbStrip
-                items={sessionStripItems(s.sample_assets)}
-                total={s.asset_count}
-                className="is-centered"
-                onItemActivate={() => router.push(`/sessions/${s.id}`)}
-                onOverflowActivate={() => router.push(`/sessions/${s.id}`)}
+                className="is-footer"
               />
             </div>
           ))}
