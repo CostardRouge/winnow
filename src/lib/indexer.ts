@@ -15,6 +15,7 @@ import {
   reconcileGroupsForSession,
   reconcileLivePhotosForSession,
 } from "./pairing";
+import { recordSidecars } from "./sidecars";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -77,6 +78,8 @@ export type IndexResult = {
   failed: number;
   // RAW+JPEG pairs newly tied together this scan (cf. lib/pairing.ts).
   paired: number;
+  // Video sidecars (Sony .XML / .THM) tied to their clip this scan (lib/sidecars.ts).
+  sidecars: number;
   // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
@@ -102,9 +105,13 @@ export async function indexRoot(
     enqueued: 0,
     failed: 0,
     paired: 0,
+    sidecars: 0,
     stopped: false,
   };
   const touchedSessions = new Set<number>();
+  // Memoize per-directory file listings so a clip-heavy session reads each
+  // folder at most once while detecting video sidecars.
+  const dirCache = new Map<string, string[]>();
 
   for await (const absPath of walk(root.path)) {
     // Suspension/preemption: we stop cleanly between two files.
@@ -205,6 +212,14 @@ export async function indexRoot(
         await enqueueDerivative(existing.id, { priority: derivePriority });
         res.enqueued++;
       }
+      if (cls.mediaType === "video") {
+        res.sidecars += await recordSidecars({
+          assetId: existing.id,
+          absPath,
+          rootPath: root.path,
+          dirCache,
+        });
+      }
       continue;
     }
 
@@ -294,6 +309,14 @@ export async function indexRoot(
     if (willDerive) {
       await enqueueDerivative(inserted.id, { priority: derivePriority });
       res.enqueued++;
+    }
+    if (cls.mediaType === "video") {
+      res.sidecars += await recordSidecars({
+        assetId: inserted.id,
+        absPath,
+        rootPath: root.path,
+        dirCache,
+      });
     }
     } catch (err) {
       res.failed++;

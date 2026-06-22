@@ -129,6 +129,30 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
 
+        // 1b) Remove the clip's Sony sidecars (XML/THM) — they travel with the
+        //     video, so reclaiming the clip reclaims them too. Confined to the
+        //     same session folder, idempotent on ENOENT, then their rows go.
+        const sidecars = await many<{
+          id: number;
+          abs_path: string;
+          file_size: string | number | null;
+        }>(
+          "SELECT id, abs_path, file_size FROM asset_sidecars WHERE asset_id = $1",
+          [asset.id],
+        );
+        for (const sc of sidecars) {
+          const scTarget = path.resolve(sc.abs_path);
+          if (scTarget !== base && !scTarget.startsWith(base + path.sep)) continue;
+          try {
+            await unlink(scTarget);
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+          }
+          freedBytes += Number(sc.file_size ?? 0);
+        }
+        if (sidecars.length)
+          await q("DELETE FROM asset_sidecars WHERE asset_id = $1", [asset.id]);
+
         // 2) Remove the cached derivatives (thumb + proxy). These live on the
         //    Optiplex cache, so freeing them is best-effort and never blocking.
         for (const key of [asset.thumb_key, asset.proxy_key]) {

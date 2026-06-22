@@ -99,6 +99,7 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     await mkdir(destDir, { recursive: true });
 
     let copied = 0;
+    let sidecarsCopied = 0;
     const errors: Array<{ asset_id: number; error: string }> = [];
 
     for (const asset of assets) {
@@ -129,6 +130,43 @@ export async function runExportJob(exportJobId: number): Promise<void> {
           [asset.id],
         );
         copied++;
+
+        // Sony video sidecars travel with the clip: copy each next to the
+        // exported video (its filename already tracks the clip's name) and
+        // record the lineage. A sidecar copy that fails is reported but never
+        // discards the video that was already exported above.
+        if (asset.media_type === "video") {
+          const sidecars = await many<{
+            id: number;
+            abs_path: string;
+            filename: string;
+          }>(
+            "SELECT id, abs_path, filename FROM asset_sidecars WHERE asset_id = $1",
+            [asset.id],
+          );
+          for (const sc of sidecars) {
+            const scDest = path.join(destDir, sc.filename);
+            try {
+              await copyVerified(sc.abs_path, scDest);
+              await q(
+                `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
+                 VALUES ($1, $2, 'sidecar', $3, $4)`,
+                [
+                  asset.id,
+                  exportJobId,
+                  scDest,
+                  JSON.stringify({ role: "sidecar", sidecar_id: sc.id }),
+                ],
+              );
+              sidecarsCopied++;
+            } catch (err) {
+              errors.push({
+                asset_id: asset.id,
+                error: `sidecar ${sc.filename}: ${(err as Error).message}`,
+              });
+            }
+          }
+        }
       } catch (err) {
         errors.push({ asset_id: asset.id, error: (err as Error).message });
       }
@@ -142,6 +180,7 @@ export async function runExportJob(exportJobId: number): Promise<void> {
           dest_dir: destDir,
           total: assets.length,
           copied,
+          sidecars: sidecarsCopied,
           errors,
         }),
       ],

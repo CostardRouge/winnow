@@ -189,6 +189,19 @@ export async function DELETE(
       [sessionId],
     );
 
+    // Sony video sidecars (XML/THM) sit on disk next to their clip; the DB rows
+    // cascade-drop with the assets below, but their FILES must be removed too
+    // when files=true. Loaded up front, before the cascade clears them.
+    const sidecars = deleteFiles
+      ? await many<{ abs_path: string }>(
+          `SELECT sc.abs_path
+             FROM asset_sidecars sc
+             JOIN assets a ON a.id = sc.asset_id
+            WHERE a.session_id = $1`,
+          [sessionId],
+        )
+      : [];
+
     let filesDeleted = 0;
     let folderRemoved = false;
     const fileErrors: string[] = [];
@@ -217,6 +230,20 @@ export async function DELETE(
           filesDeleted++;
         } catch (err) {
           fileErrors.push(`${a.abs_path}: ${(err as Error).message}`);
+        }
+      }
+      // Same treatment for the clips' sidecars — confined to the session folder.
+      for (const sc of sidecars) {
+        const target = path.resolve(sc.abs_path);
+        if (target !== base && !target.startsWith(base + path.sep)) {
+          fileErrors.push(`skipped (outside session folder): ${sc.abs_path}`);
+          continue;
+        }
+        try {
+          await rm(target, { force: true });
+          filesDeleted++;
+        } catch (err) {
+          fileErrors.push(`${sc.abs_path}: ${(err as Error).message}`);
         }
       }
       // Drop the now-empty session folder. Non-recursive: rmdir only succeeds on

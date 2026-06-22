@@ -101,6 +101,20 @@ export type AssetGroup = {
   created_at: string;
 };
 
+// A Sony video sidecar (cf. lib/sidecars.ts): the small metadata/thumbnail
+// companion the camera writes next to a clip (C0001M01.XML / C0001.THM). Not a
+// media asset — tied to its video so it travels through import/export/purge.
+export type AssetSidecar = {
+  id: number;
+  asset_id: number;
+  abs_path: string;
+  rel_path: string;
+  filename: string;
+  kind: "xml" | "thm";
+  file_size: number | null;
+  created_at: string;
+};
+
 export type Rating = {
   asset_id: number;
   verdict: Verdict;
@@ -134,4 +148,7 @@ export type AssetGridRow = Asset & {
   companion_width: number | null;
   companion_height: number | null;
   group_kind: "raw_jpeg" | "live_photo" | null;
+  // Number of Sony sidecar files (XML/THM) tied to this asset (0 for most).
+  // Lets the viewer note that a clip carries its camera metadata companion.
+  sidecar_count: number;
 };

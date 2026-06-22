@@ -23,6 +23,8 @@ export const GRID_SELECT = `a.*,
         comp.width      AS companion_width,
         comp.height     AS companion_height,
         g.kind          AS group_kind,
+        (SELECT count(*)::int FROM asset_sidecars sc
+          WHERE sc.asset_id = a.id) AS sidecar_count,
         (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
            FROM asset_tags at JOIN tags t ON t.id = at.tag_id
           WHERE at.asset_id = a.id) AS tags`;
