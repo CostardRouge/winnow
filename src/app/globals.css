@@ -1177,12 +1177,11 @@
   .viewer-panel-toggle:hover {
     background: rgba(255, 255, 255, 0.18);
   }
-  /* The "reopen" affordance shown once the panel is collapsed: bottom-left,
-     over the empty (left) end of the centred controls bar. */
+  /* The "reopen" affordance shown once the panel is collapsed: top-left, at the
+     same level and margins as the close button so the two top corners mirror. */
   .viewer-info-btn {
-    @apply absolute bottom-3 left-3 z-10 flex h-10 w-10 items-center justify-center
+    @apply absolute left-3 top-3 z-10 flex h-10 w-10 items-center justify-center
       rounded-full border-0 text-lg text-white transition duration-150;
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
     background: rgba(16, 15, 13, 0.55);
     backdrop-filter: blur(10px);
   }

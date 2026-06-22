@@ -218,6 +218,15 @@ export default function MediaViewer<T extends ViewerItem>({
   // Double-click/tap toggles between fit and a 2× zoom.
   const onDoubleClick = () => setScale((s) => (s > MIN_SCALE ? MIN_SCALE : 2));
 
+  // A <video> renders its own native controls (the scrubber especially): a
+  // one-finger drag on the timeline is scrubbing, not a navigation swipe. Keep
+  // those single-finger touches from bubbling up to the stage so releasing the
+  // scrubber doesn't fire a swipe. Two-finger gestures still reach the stage so
+  // pinch-zoom keeps working over the video.
+  const stopVideoTouch = (e: React.TouchEvent) => {
+    if (e.touches.length < 2) e.stopPropagation();
+  };
+
   const item = items[index];
   if (!item) return null;
 
@@ -304,6 +313,9 @@ export default function MediaViewer<T extends ViewerItem>({
                 muted
                 loop
                 style={transform}
+                onTouchStart={stopVideoTouch}
+                onTouchMove={stopVideoTouch}
+                onTouchEnd={stopVideoTouch}
               />
             ) : item.media_type === "video" ? (
               <video
@@ -316,6 +328,9 @@ export default function MediaViewer<T extends ViewerItem>({
                 muted
                 loop
                 style={transform}
+                onTouchStart={stopVideoTouch}
+                onTouchMove={stopVideoTouch}
+                onTouchEnd={stopVideoTouch}
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
