@@ -636,7 +636,7 @@ export default function GalleryShell({
     controls: (
       <>
         <button
-          className="btn"
+          className="icon-toggle"
           onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
           aria-label={
             sortDir === "desc"
@@ -646,9 +646,6 @@ export default function GalleryShell({
           title={sortDir === "desc" ? "Newest first" : "Oldest first"}
         >
           {sortDir === "desc" ? Icons.arrowDown : Icons.arrowUp}
-          <span className="max-sm:hidden">
-            {sortDir === "desc" ? "Newest" : "Oldest"}
-          </span>
         </button>
         <button
           className="btn"
@@ -694,11 +691,13 @@ export default function GalleryShell({
         {current.controls}
         {showAside && (
           <button
-            className="btn gallery-filter-toggle"
+            className={`icon-toggle gallery-filter-toggle${panelOpen ? " active" : ""}`}
             onClick={() => setPanelOpen((o) => !o)}
             aria-label="Toggle filters panel"
+            aria-pressed={panelOpen}
+            title="Toggle filters panel"
           >
-            {Icons.panelLeft} Panel
+            {Icons.panelLeft}
           </button>
         )}
         {galleryActive && filters.bbox && (

@@ -9,6 +9,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useStats, active, totalFailures } from "./useStats";
 
+// Compact notation for the mobile summary chip so a six-figure library (88,035)
+// reads as "88K" and never forces the header to wrap onto a second row. The full
+// figure still shows in the desktop chip row and the popover detail.
+const compact = (n: number) =>
+  new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+
 export default function StatsStrip() {
   const { stats } = useStats();
   const [open, setOpen] = useState(false);
@@ -78,7 +87,7 @@ export default function StatsStrip() {
         aria-expanded={open}
         aria-label="Pipeline counters"
       >
-        <span className="stats-summary-value">{(a?.total ?? 0).toLocaleString()}</span>
+        <span className="stats-summary-value">{compact(a?.total ?? 0)}</span>
         <span className="stats-summary-label">media</span>
         {fails > 0 && <span className="stats-summary-dot" aria-hidden />}
         <span className="stats-caret" aria-hidden>
