@@ -67,7 +67,7 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         name: "Gallery",
         short_name: "Gallery",
-        url: "/gallery",
+        url: "/library/gallery",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
