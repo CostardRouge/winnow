@@ -11,6 +11,7 @@ export type AssetMenuAction =
   | { kind: "star"; star: number }
   | { kind: "tag"; name: string }
   | { kind: "export" }
+  | { kind: "download" }
   | { kind: "regenerate" }
   | { kind: "delete" };
 
@@ -132,6 +133,10 @@ export default function AssetActionMenu({
 
       <button className="ctx-item" onClick={() => fire({ kind: "export" })}>
         <span className="ctx-ic">⤓</span> Export
+      </button>
+
+      <button className="ctx-item" onClick={() => fire({ kind: "download" })}>
+        <span className="ctx-ic">⇩</span> Download original
       </button>
 
       <button className="ctx-item" onClick={() => fire({ kind: "regenerate" })}>

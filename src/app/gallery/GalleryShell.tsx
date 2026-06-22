@@ -17,6 +17,7 @@ import ViewerActions from "../ViewerActions";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
+  downloadAssetOriginal,
   exportAssets,
   rateAssets,
   regenerateAssets,
@@ -484,6 +485,8 @@ export default function GalleryShell({
           return void assignTags([id], action.name, true);
         case "export":
           return void exportSelection([id]);
+        case "download":
+          return downloadAssetOriginal(id);
         case "regenerate":
           return void regenerateSelection([id]);
         case "delete":
