@@ -318,6 +318,31 @@
     color: color-mix(in srgb, var(--color-reject) 85%, #000);
   }
 
+  /* Standalone square icon toggle that matches the segmented toggles it sits
+     beside on the gallery toolbar (.view-toggle / .layout-toggle): a muted icon
+     in a bordered pill, no hover lift. Used for the newest/oldest sort flip and
+     the mobile filter-panel toggle, so they read as one family. */
+  .icon-toggle {
+    @apply inline-flex items-center justify-center rounded-[var(--radius)]
+      border p-0 transition duration-150;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+    transition-timing-function: var(--ease-out);
+  }
+  .icon-toggle:hover {
+    color: var(--color-text);
+    background: var(--color-surface-3);
+  }
+  .icon-toggle:active {
+    transform: scale(0.97);
+  }
+  .icon-toggle.active {
+    background: var(--color-surface);
+    color: var(--color-accent);
+    box-shadow: var(--shadow-card);
+  }
+
   .input {
     @apply rounded-[var(--radius)] border px-3.5 py-2 text-sm transition duration-150;
     background: var(--color-surface);
@@ -1415,8 +1440,14 @@
   }
   .gallery-controls .view-toggle,
   .gallery-controls .layout-toggle,
+  .gallery-controls .icon-toggle,
   .gallery-controls .btn {
     height: var(--tb-control-h);
+  }
+  /* Square icon toggles (sort flip, mobile panel) track the shared control
+     height on both axes so they read as the same size as the pill toggles. */
+  .gallery-controls .icon-toggle {
+    width: var(--tb-control-h);
   }
   /* Drop the inner vertical padding so the icon/text centre within the shared
      height instead of dictating it. */
@@ -2202,6 +2233,10 @@
     padding-bottom: max(6px, env(safe-area-inset-bottom));
     border-right: 0;
     border-top: 1px solid var(--color-border);
+    /* Sit above the slide-in filter panel (z-30) and its backdrop (z-29) so the
+       bottom bar's top border reads as a clean seam where the panel meets it,
+       instead of the panel bleeding over the nav. */
+    z-index: 40;
   }
   .rail-brand {
     display: none;
@@ -2214,14 +2249,39 @@
     flex: 1;
     padding: 6px 4px;
   }
+  /* Reserve the bottom bar's height — including the safe-area inset on notched
+     phones — so scrollable content (and the slide-in panel, which stops at the
+     content edge) clears the rail instead of tucking under it. */
   .root-main {
-    padding-bottom: 66px;
+    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Keep the Library header on one line: the tabs and the (compact) media
+     counter share a row rather than stacking, which both saves vertical space
+     and keeps the counter pinned to the right edge so its popover opens on
+     screen instead of off the left side. */
+  .shell-head {
+    @apply px-3 pt-4;
+  }
+  .shell-head-row {
+    @apply flex-nowrap gap-2 pb-0;
+  }
+  .tabs {
+    @apply gap-0.5 p-0.5;
+  }
+  .tab {
+    @apply px-2.5 py-1;
+  }
+  .stats-strip {
+    @apply flex-shrink-0;
   }
 
   /* Stats collapse to a single summary chip; detail opens in a popover so the
-     bento never eats the screen height on a phone. */
+     bento never eats the screen height on a phone. Trim its padding/gap so the
+     "88K media ▾" chip stays narrow enough to share the row with the tabs. */
   .stats-summary {
     display: inline-flex;
+    @apply gap-1 px-2.5 py-1;
   }
   .stats-chips {
     position: absolute;

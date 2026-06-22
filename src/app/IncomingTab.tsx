@@ -71,7 +71,7 @@ export default function IncomingTab({ view }: { view: string }) {
     controls: (
       <>
         <button
-          className="btn"
+          className="icon-toggle"
           onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
           aria-label={
             sortDir === "desc" ? "Newest first (tap for oldest)" : "Oldest first (tap for newest)"
@@ -79,7 +79,6 @@ export default function IncomingTab({ view }: { view: string }) {
           title={sortDir === "desc" ? "Newest first" : "Oldest first"}
         >
           {sortDir === "desc" ? Icons.arrowDown : Icons.arrowUp}
-          <span className="max-sm:hidden">{sortDir === "desc" ? "Newest" : "Oldest"}</span>
         </button>
         <div className="layout-toggle" role="group" aria-label="Session layout">
           <button
