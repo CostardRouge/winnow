@@ -31,6 +31,29 @@ export function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
+// ISO timestamp -> compact relative age: "just now" / "5m ago" / "3h ago" /
+// "2d ago" / "4w ago", falling back to a short date past ~a year. Used where the
+// exact time matters less than "how recently did I touch this" (the Sift page).
+export function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  const t = d.getTime();
+  if (Number.isNaN(t)) return "never";
+  const sec = Math.round((Date.now() - t) / 1000);
+  if (sec < 45) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const wk = Math.round(day / 7);
+  if (wk < 5) return `${wk}w ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short" });
+}
+
 // Seconds -> "0:42" / "1:23" / "1:02:05".
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";

@@ -17,6 +17,7 @@ import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
+import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
 import { Icons } from "@/app/ui";
 import { formatBadge } from "@/lib/format";
@@ -580,8 +581,6 @@ function SessionHeader({
   const picks = Number(s.pick_count) || 0;
   const rejects = Number(s.reject_count) || 0;
   const unrated = Number(s.unrated_count) || 0;
-  const triaged = picks + rejects;
-  const pct = total ? Math.round((triaged / total) * 100) : 0;
   const cullable = s.root_kind === "source" || s.root_kind === "inbox";
 
   return (
@@ -633,19 +632,13 @@ function SessionHeader({
         </div>
       </div>
 
-      <div className="session-progress" title={`${triaged} of ${total} triaged`}>
-        <div className="session-progress-track">
-          <span
-            className="session-progress-fill is-pick"
-            style={{ width: `${total ? (picks / total) * 100 : 0}%` }}
-          />
-          <span
-            className="session-progress-fill is-reject"
-            style={{ width: `${total ? (rejects / total) * 100 : 0}%` }}
-          />
-        </div>
-        <span className="session-progress-label">{pct}% triaged</span>
-      </div>
+      <SessionProgress picks={picks} rejects={rejects} total={total} />
+
+      {cullable && total > 0 && unrated > 0 && (
+        <Link href={`/sift/${s.id}`} className="btn btn-primary session-detail-sift">
+          {Icons.sift} Sift {unrated} unrated
+        </Link>
+      )}
     </section>
   );
 }

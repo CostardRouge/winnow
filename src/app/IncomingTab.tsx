@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import GalleryShell from "./gallery/GalleryShell";
 import { decodeFilters, encodeFilters } from "./gallery/filterParams";
@@ -20,6 +21,15 @@ import { Icons } from "./ui";
 
 const LAYOUT_KEY = "winnow.sessions.layout";
 
+// Triage-progress filter shown on the Sessions toolbar — maps to the API's
+// `progress` param. "To sort" (incomplete = untouched + partially done) is the
+// fast path to everything still needing a verdict.
+const PROGRESS_FILTERS: { key: string; label: string; title: string }[] = [
+  { key: "", label: "All", title: "Every session" },
+  { key: "incomplete", label: "To sort", title: "Not fully triaged yet" },
+  { key: "complete", label: "Done", title: "Fully triaged" },
+];
+
 export default function IncomingTab({ view }: { view: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,6 +37,8 @@ export default function IncomingTab({ view }: { view: string }) {
   const [layout, setLayout] = useState<Layout>("list");
   // Newest-first by default; the toggle flips to oldest-first.
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Triage-progress filter — quickly isolate what's left to cull vs. finished.
+  const [progress, setProgress] = useState("");
 
   // Filters are seeded from the URL once (deep links / reloads restore them);
   // GalleryShell owns them thereafter and notifies us to mirror them back.
@@ -83,6 +95,23 @@ export default function IncomingTab({ view }: { view: string }) {
     usesFilters: true,
     controls: (
       <>
+        <div className="view-toggle" role="group" aria-label="Triage progress filter">
+          {PROGRESS_FILTERS.map((p) => (
+            <button
+              key={p.key}
+              className={`view-btn${progress === p.key ? " active" : ""}`}
+              onClick={() => setProgress(p.key)}
+              aria-pressed={progress === p.key}
+              title={p.title}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <Link href="/sift" className="btn btn-primary incoming-sift-link" title="Open Sift — fast swipe triage">
+          {Icons.sift}
+          <span className="max-sm:hidden">Sift</span>
+        </Link>
         <button
           className="icon-toggle"
           onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
@@ -114,7 +143,12 @@ export default function IncomingTab({ view }: { view: string }) {
       </>
     ),
     render: (ctx) => (
-      <SessionsPane layout={layout} query={ctx.query} sortDir={sortDir} />
+      <SessionsPane
+        layout={layout}
+        query={ctx.query}
+        sortDir={sortDir}
+        progress={progress}
+      />
     ),
   };
 
