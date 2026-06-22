@@ -56,14 +56,19 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     const { conditions, params } = buildFilter(filter, 1);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // RAW+JPEG pairing: the picks selected in the (collapsed) gallery are the
-    // JPEG primaries, but the keeper is the RAW. So for every matched PAIR we
-    // export its RAW companion, and the JPEG too only when include_jpeg is set.
-    // Standalone (unpaired) matches export as-is. Cf. lib/pairing.ts.
+    // Pairing: the picks selected in the (collapsed) gallery are the primaries,
+    // but which file is the keeper depends on the group kind (cf. lib/pairing.ts):
+    //   raw_jpeg   → keeper is the RAW companion; the JPEG primary tags along
+    //                only when include_jpeg is set.
+    //   live_photo → keeper is the still primary; the .mov companion (the motion)
+    //                tags along only when include_live_video is set.
+    // Standalone (unpaired) matches export as-is.
     const includeJpeg = job.params?.include_jpeg === true;
+    const includeLiveVideo = job.params?.include_live_video === true;
     const jpegIdx = params.length + 1;
+    const liveIdx = params.length + 2;
 
-    const assets = await many<Asset>(
+    const assets = await many<Asset & { group_kind: string | null }>(
       `WITH matched AS (
          SELECT a.id, a.group_id
          FROM assets a
@@ -71,16 +76,23 @@ export async function runExportJob(exportJobId: number): Promise<void> {
          ${where}
        ),
        grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
-       SELECT a.* FROM assets a
+       SELECT a.*, g.kind AS group_kind FROM assets a
+       LEFT JOIN asset_groups g ON g.id = a.group_id
        WHERE a.deleted_at IS NULL AND (
               a.id IN (SELECT id FROM matched WHERE group_id IS NULL)
-           OR (a.group_id IN (SELECT group_id FROM grp) AND a.group_role = 'companion')
-           OR ($${jpegIdx}::boolean
-               AND a.group_id IN (SELECT group_id FROM grp)
-               AND a.group_role = 'primary')
+           OR (a.group_id IN (SELECT group_id FROM grp) AND (
+                  -- keepers
+                  (g.kind = 'raw_jpeg'   AND a.group_role = 'companion')
+               OR (g.kind = 'live_photo' AND a.group_role = 'primary')
+                  -- optional extras
+               OR ($${jpegIdx}::boolean AND g.kind = 'raw_jpeg'
+                   AND a.group_role = 'primary')
+               OR ($${liveIdx}::boolean AND g.kind = 'live_photo'
+                   AND a.group_role = 'companion')
+              ))
        )
        ORDER BY a.captured_at, a.id`,
-      [...params, includeJpeg],
+      [...params, includeJpeg, includeLiveVideo],
     );
 
     const destDir = path.join(config.exportDir, sanitize(job.name));
@@ -93,14 +105,20 @@ export async function runExportJob(exportJobId: number): Promise<void> {
       const dest = path.join(destDir, asset.filename);
       try {
         await copyVerified(asset.abs_path, dest);
-        // Lineage role: 'raw' (the keeper) / 'jpeg' (companion) / 'single'
-        // (unpaired). `kind` stays 'raw_copy' — an original-file copy either way.
+        // Lineage role records which side of the pair this copy is, per group
+        // kind: RAW+JPEG → 'raw' (keeper) / 'jpeg'; Live Photo → 'still' (keeper)
+        // / 'live_video'; unpaired → 'single'. `kind` stays 'raw_copy' — an
+        // original-file copy either way.
         const role =
-          asset.group_role === "companion"
-            ? "raw"
-            : asset.group_role === "primary"
-              ? "jpeg"
-              : "single";
+          asset.group_role == null
+            ? "single"
+            : asset.group_kind === "live_photo"
+              ? asset.group_role === "primary"
+                ? "still"
+                : "live_video"
+              : asset.group_role === "companion"
+                ? "raw"
+                : "jpeg";
         await q(
           `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
            VALUES ($1, $2, 'raw_copy', $3, $4)`,

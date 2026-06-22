@@ -53,15 +53,18 @@ type Row = GalleryAsset & {
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
   rel_path?: string | null;
-  // RAW+JPEG pairing: the companion (RAW source) of this displayed primary, fed
-  // to the grid badge and the viewer's JPEG/RAW toggle (cf. lib/pairing.ts). The
-  // per-file stats let the viewer describe the RAW side when it's on screen.
+  // Pairing: the companion of this displayed primary, its group kind and the
+  // companion's per-file stats, fed to the grid badge and the viewer's segmented
+  // toggle (cf. lib/pairing.ts) — the stats let the viewer describe the companion
+  // side when it's on screen.
   companion_id?: number | null;
   companion_ext?: string | null;
+  companion_media_type?: "photo" | "video" | null;
   companion_filename?: string | null;
   companion_file_size?: number | null;
   companion_width?: number | null;
   companion_height?: number | null;
+  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 // Leaflet touches `window` on import, so the map is client-only (no SSR).
@@ -119,6 +122,7 @@ function toQuery(
   if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
+  if (f.group_kind) sp.set("group_kind", f.group_kind);
   // Session-grid status toggles (ignored/completed are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.show_completed) sp.set("show_completed", "true");

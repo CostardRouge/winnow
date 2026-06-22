@@ -20,13 +20,20 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { name, target, filter, params } = parsed.data;
 
-    // RAW+JPEG pairing: resolve whether to also copy the JPEG companion now, so
-    // the job is self-contained. An explicit params.include_jpeg wins; otherwise
-    // fall back to the persisted preference (cf. lib/export.ts, lib/settings.ts).
+    // Pairing: resolve whether to also copy the companion extras now, so the job
+    // is self-contained. An explicit params flag wins; otherwise fall back to the
+    // persisted preference (cf. lib/export.ts, lib/settings.ts). `include_jpeg`
+    // covers RAW+JPEG pairs (the JPEG next to the RAW keeper); `include_live_video`
+    // covers iPhone Live Photos (the .mov motion next to the still keeper).
+    const settings = await getSettings();
     const includeJpeg =
       typeof params.include_jpeg === "boolean"
         ? params.include_jpeg
-        : (await getSettings()).exportIncludeJpeg;
+        : settings.exportIncludeJpeg;
+    const includeLiveVideo =
+      typeof params.include_live_video === "boolean"
+        ? params.include_live_video
+        : settings.exportIncludeLiveVideo;
 
     const job = await one<{ id: number }>(
       `INSERT INTO export_jobs (name, target, filter_query, params, status)
@@ -35,7 +42,11 @@ export async function POST(req: NextRequest) {
         name,
         target,
         JSON.stringify(filter),
-        JSON.stringify({ ...params, include_jpeg: includeJpeg }),
+        JSON.stringify({
+          ...params,
+          include_jpeg: includeJpeg,
+          include_live_video: includeLiveVideo,
+        }),
       ],
     );
     await enqueueExport(job!.id);

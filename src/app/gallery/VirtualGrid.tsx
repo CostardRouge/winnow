@@ -12,10 +12,13 @@ export type GalleryAsset = {
   file_size: number | null;
   verdict: "pick" | "reject" | "unrated";
   star: number;
-  // RAW+JPEG pairing: the companion (RAW source) of this displayed primary, if
-  // any (cf. lib/pairing.ts). Drives the "RAW+…" badge.
+  // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, if
+  // any, plus the group kind. Drives the corner badge — "RAW+…" for a RAW+JPEG
+  // pair, "LIVE" for an iPhone Live Photo.
   companion_id?: number | null;
   companion_ext?: string | null;
+  companion_media_type?: "photo" | "video" | null;
+  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 const TARGET = 175; // target cell width (px)
@@ -109,9 +112,11 @@ export default function VirtualGrid({
               )}
               {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
               <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
-                {a.companion_ext
-                  ? `RAW+${a.ext.replace(".", "")}`
-                  : a.ext.replace(".", "")}
+                {a.group_kind === "live_photo"
+                  ? "LIVE"
+                  : a.companion_ext
+                    ? `RAW+${a.ext.replace(".", "")}`
+                    : a.ext.replace(".", "")}
               </span>
               {sel && <span className="select-check">✓</span>}
             </div>

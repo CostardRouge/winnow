@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
     const [
       total,
       paired,
+      livePhotos,
       ranges,
       years,
       months,
@@ -80,6 +81,16 @@ export async function GET(req: NextRequest) {
       // "RAW+JPEG" filter toggle → ?paired=1). See lib/pairing.ts.
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a WHERE a.group_id IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
+      // Live Photos: counts the still primaries (one per pair, so this is the
+      // number of items the "Live Photos" filter surfaces in the collapsed
+      // gallery). Drives the filter toggle → ?group_kind=live_photo. See
+      // lib/pairing.ts.
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         WHERE a.group_role = 'primary'
+           AND a.group_id IN (SELECT id FROM asset_groups WHERE kind = 'live_photo')${scope}`,
         params,
       ).catch(() => null),
       one<{
@@ -135,6 +146,7 @@ export async function GET(req: NextRequest) {
     return json({
       total: total?.count ?? 0,
       paired: paired?.count ?? 0,
+      live_photos: livePhotos?.count ?? 0,
       ranges: ranges ?? {},
       years,
       months,

@@ -22,18 +22,22 @@ export type ViewerItem = AssetMetaInput & {
   filename: string;
   media_type?: "photo" | "video";
   derivative_status?: string;
-  // RAW+JPEG pairing (cf. lib/pairing.ts). When the item has a companion, the
-  // viewer offers a segmented toggle to swap the displayed source between this
-  // file (the JPEG/HEIF primary) and its RAW companion. `ext`/`companion_ext`
-  // label the two segments; the companion's own filename/size/dimensions let the
-  // panel describe the RAW side while it's the one on screen.
+  // Pairing (cf. lib/pairing.ts). When the item has a companion, the viewer
+  // offers a segmented toggle to swap the displayed source between this primary
+  // and its companion: the RAW source of a RAW+JPEG pair (shown as an image), or
+  // the .mov motion of an iPhone Live Photo (played as a video). `ext`/
+  // `companion_ext` label the two segments; `group_kind`/`companion_media_type`
+  // pick how the companion is rendered; the companion's own filename/size/
+  // dimensions let the panel describe that side while it's the one on screen.
   ext?: string;
   companion_id?: number | null;
   companion_ext?: string | null;
+  companion_media_type?: "photo" | "video" | null;
   companion_filename?: string | null;
   companion_file_size?: number | null;
   companion_width?: number | null;
   companion_height?: number | null;
+  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 // "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
@@ -221,11 +225,15 @@ export default function MediaViewer<T extends ViewerItem>({
   // assumed displayable; otherwise we only show it once the derivative is ready.
   const ready = item.derivative_status ? item.derivative_status === "ready" : true;
 
-  // RAW+JPEG pairing: a paired photo can be viewed as its primary (JPEG/HEIF) or
-  // its RAW companion. When showing the companion, source its proxy directly
-  // (custom mediaSrc overrides don't apply to the companion asset).
+  // Pairing: a paired asset can be viewed as its primary or its companion. When
+  // showing the companion, source its proxy directly (custom mediaSrc overrides
+  // don't apply to the companion asset). A Live Photo's companion is its .mov
+  // motion → rendered as a <video>; a RAW companion is rendered as an image.
   const hasCompanion = item.companion_id != null && !!item.companion_ext;
   const companionShown = hasCompanion && showCompanion;
+  const companionIsVideo =
+    item.companion_media_type === "video" ||
+    item.group_kind === "live_photo";
   const currentSrc = companionShown
     ? `/api/assets/${item.companion_id}/proxy`
     : mediaSrc(item);
@@ -284,7 +292,20 @@ export default function MediaViewer<T extends ViewerItem>({
           onContextMenu={onContextMenu ? (e) => onContextMenu(e, item) : undefined}
         >
           {ready ? (
-            item.media_type === "video" ? (
+            companionShown && companionIsVideo ? (
+              // Live Photo motion: play the companion .mov proxy in place.
+              <video
+                key={`c${item.companion_id}`}
+                src={currentSrc}
+                poster={posterSrc(item)}
+                controls
+                playsInline
+                autoPlay
+                muted
+                loop
+                style={transform}
+              />
+            ) : item.media_type === "video" ? (
               <video
                 key={item.id}
                 src={mediaSrc(item)}
@@ -324,12 +345,17 @@ export default function MediaViewer<T extends ViewerItem>({
             </div>
             <AssetMeta asset={displayed} />
             {hasCompanion && (
-              // Group info: a RAW+JPEG pair is one logical media made of two
-              // files. Surface both members so the relationship is explicit, and
-              // let either be selected straight from here (mirrors the format
-              // toggle in the controls bar). The active side is the one on screen.
+              // Group info: a pair is one logical media made of two files —
+              // RAW+JPEG, or an iPhone Live Photo (still + .mov motion). Surface
+              // both members so the relationship is explicit, and let either be
+              // selected straight from here (mirrors the format toggle in the
+              // controls bar). The active side is the one on screen.
               <div className="viewer-pair">
-                <div className="viewer-pair-label">RAW + JPEG pair</div>
+                <div className="viewer-pair-label">
+                  {item.group_kind === "live_photo"
+                    ? "Live Photo"
+                    : "RAW + JPEG pair"}
+                </div>
                 <button
                   type="button"
                   className={`viewer-pair-member${!companionShown ? " active" : ""}`}
@@ -350,11 +376,17 @@ export default function MediaViewer<T extends ViewerItem>({
                   type="button"
                   className={`viewer-pair-member${companionShown ? " active" : ""}`}
                   aria-pressed={companionShown}
-                  title="Show the RAW source"
+                  title={
+                    item.group_kind === "live_photo"
+                      ? "Play the Live Photo motion"
+                      : "Show the RAW source"
+                  }
                   onClick={() => setShowCompanion(true)}
                 >
                   <span className="viewer-pair-ext">
-                    {fmtExt(item.companion_ext)}
+                    {item.group_kind === "live_photo"
+                      ? "LIVE"
+                      : fmtExt(item.companion_ext)}
                   </span>
                   <span className="viewer-pair-stat">
                     {memberStats(
@@ -390,10 +422,16 @@ export default function MediaViewer<T extends ViewerItem>({
               type="button"
               className={`vbar-btn${companionShown ? " active" : ""}`}
               aria-pressed={companionShown}
-              title="Show the RAW source"
+              title={
+                item.group_kind === "live_photo"
+                  ? "Play the Live Photo motion"
+                  : "Show the RAW source"
+              }
               onClick={() => setShowCompanion(true)}
             >
-              {fmtExt(item.companion_ext)}
+              {item.group_kind === "live_photo"
+                ? "LIVE"
+                : fmtExt(item.companion_ext)}
             </button>
           </div>
         )}

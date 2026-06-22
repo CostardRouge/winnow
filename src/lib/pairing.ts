@@ -1,10 +1,13 @@
-// RAW + JPEG pairing (cf. migration 0013, §Phase 1).
+// Media pairing — two files for one capture tied into one `asset_groups` row so
+// the app counts, displays, rates and exports the pair as a single logical media
+// (cf. migrations 0013 / 0014, §Phase 1). Two kinds:
 //
-// Cameras that shoot RAW+JPEG write two files for one shot, sharing a basename
-// (Sony A7C II → DSC00123.ARW + DSC00123.HIF, DJI → DJI_0001.DNG + DJI_0001.JPG).
-// We tie them into one `asset_groups` row so the app counts, displays, rates and
-// exports the pair as a single logical media. The direct (JPEG/HEIF) file is the
-// displayed `primary`; the RAW is the `companion` ("source brute").
+//   raw_jpeg   — cameras that shoot RAW+JPEG, sharing a basename (Sony A7C II →
+//                DSC00123.ARW + .HIF, DJI → DJI_0001.DNG + .JPG). The direct
+//                (JPEG/HEIF) file is `primary`; the RAW is the `companion`.
+//   live_photo — iPhone Live Photos (still + .mov), linked by Apple's Content
+//                Identifier. The still is `primary`; the .mov is the `companion`
+//                (see reconcileLivePhotosForSession below).
 //
 // This runs after indexing a session and is idempotent: a pair is only created
 // when a basename has EXACTLY one RAW and one direct photo and NEITHER is grouped
@@ -54,6 +57,65 @@ export async function reconcileGroupsForSession(
     await q(
       `UPDATE assets SET group_id = $1, group_role = 'companion' WHERE id = $2`,
       [gid, raw_id],
+    );
+    created++;
+  }
+  return created;
+}
+
+// iPhone Live Photos: a still and its companion .mov written for one capture,
+// linked by Apple's Content Identifier (the `content_id` column, extracted from
+// EXIF/QuickTime — cf. lib/extract.ts). We tie them into one `asset_groups` row
+// of kind 'live_photo' so the app counts, displays, rates and exports the pair
+// as a single logical media. The still is the displayed `primary` (and the
+// export keeper); the .mov is the `companion` — the motion reachable from the
+// viewer's segmented toggle.
+//
+// Runs after RAW+JPEG pairing on each scan, and is idempotent: a pair is only
+// created when a content_id is shared by EXACTLY one photo and one video and
+// NEITHER is grouped yet, so the .mov can arrive in a later scan and still be
+// paired without disturbing an existing group. Matching on the UUID (not the
+// basename) keeps it robust to renamed exports and avoids ever pairing two
+// unrelated files that merely share a name.
+export async function reconcileLivePhotosForSession(
+  sessionId: number,
+): Promise<number> {
+  const pairs = await many<{ photo_id: number; video_id: number }>(
+    `WITH media AS (
+       SELECT id, group_id, media_type, content_id
+       FROM assets
+       WHERE session_id = $1
+         AND content_id IS NOT NULL AND content_id <> ''
+         AND media_type IN ('photo', 'video')
+         AND deleted_at IS NULL
+     )
+     SELECT (array_agg(id) FILTER (WHERE media_type = 'photo'))[1] AS photo_id,
+            (array_agg(id) FILTER (WHERE media_type = 'video'))[1] AS video_id
+     FROM media
+     GROUP BY content_id
+     HAVING count(*) FILTER (WHERE media_type = 'photo') = 1
+        AND count(*) FILTER (WHERE media_type = 'video') = 1
+        AND bool_and(group_id IS NULL)`,
+    [sessionId],
+  );
+
+  let created = 0;
+  for (const { photo_id, video_id } of pairs) {
+    // Three statements (not a CTE) so a transient failure on one pair never
+    // aborts the whole session. The still is the keeper → 'primary'.
+    const { rows } = await q<{ id: number }>(
+      `INSERT INTO asset_groups (session_id, kind)
+       VALUES ($1, 'live_photo') RETURNING id`,
+      [sessionId],
+    );
+    const gid = rows[0].id;
+    await q(
+      `UPDATE assets SET group_id = $1, group_role = 'primary'   WHERE id = $2`,
+      [gid, photo_id],
+    );
+    await q(
+      `UPDATE assets SET group_id = $1, group_role = 'companion' WHERE id = $2`,
+      [gid, video_id],
     );
     created++;
   }

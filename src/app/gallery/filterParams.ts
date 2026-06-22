@@ -49,6 +49,7 @@ export function encodeFilters(f: Filters): URLSearchParams {
   }
   for (const k of BOOLS) if (f[k]) sp.set(k, "1");
   if (f.verdict) sp.set("verdict", f.verdict);
+  if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
   return sp;
 }
@@ -87,6 +88,10 @@ export function decodeFilters(params: URLSearchParams): Filters {
   const verdict = params.get("verdict");
   if (verdict === "pick" || verdict === "reject" || verdict === "unrated")
     f.verdict = verdict;
+
+  const groupKind = params.get("group_kind");
+  if (groupKind === "raw_jpeg" || groupKind === "live_photo")
+    f.group_kind = groupKind;
 
   const bbox = csv(params.get("bbox")).map(Number);
   if (bbox.length === 4 && bbox.every((n) => !Number.isNaN(n)))

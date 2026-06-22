@@ -89,9 +89,11 @@ export const FilterSchema = z
     // Type / format
     media_type: csv, // photo | video (multi)
     ext: csv, // .arw, .jpg... (multi)
-    // RAW+JPEG pairing: true → only paired assets, false → only standalone ones
-    // (cf. lib/pairing.ts). The "RAW+JPEG" facet toggle maps to `paired=1`.
+    // Pairing (cf. lib/pairing.ts): true → only paired assets, false → only
+    // standalone ones. `group_kind` narrows to one kind of pair — the "Live
+    // Photos" filter toggle maps to `group_kind=live_photo`.
     paired: boolish,
+    group_kind: z.enum(["raw_jpeg", "live_photo"]).optional(),
 
     // Device / EXIF (multi)
     device: csv,
@@ -225,6 +227,14 @@ export function buildFilter(
   if (filter.ext) inAny("a.ext", filter.ext);
   if (filter.paired === true) conditions.push("a.group_id IS NOT NULL");
   else if (filter.paired === false) conditions.push("a.group_id IS NULL");
+  if (filter.group_kind != null) {
+    // Restrict to assets belonging to a group of this kind (live_photo /
+    // raw_jpeg). Subquery on asset_groups so callers need no extra JOIN.
+    conditions.push(
+      `a.group_id IN (SELECT id FROM asset_groups WHERE kind = $${i++})`,
+    );
+    params.push(filter.group_kind);
+  }
 
   // Collapse RAW+JPEG pairs to one row: hide the companion, keep the displayed
   // primary. Opt-in (gallery/session grid) so exports and per-file triage still
@@ -322,6 +332,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "media_type",
     "ext",
     "paired",
+    "group_kind",
     "device",
     "camera_model",
     "lens",

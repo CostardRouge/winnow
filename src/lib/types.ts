@@ -64,6 +64,9 @@ export type Asset = {
   width: number | null;
   height: number | null;
   duration_s: number | null;
+  // iPhone Live Photo link: Apple's Content Identifier, written on both the
+  // still and its companion .mov. Used to tie the pair (cf. lib/pairing.ts).
+  content_id: string | null;
   derivative_status: DerivativeStatus;
   derivative_error: string | null;
   processing_state: ProcessingState;
@@ -77,22 +80,24 @@ export type Asset = {
   // last failure (e.g. a read-only mount) when a purge couldn't free the bytes.
   purged_at: string | null;
   purge_error: string | null;
-  // RAW+JPEG pairing (cf. lib/pairing.ts). `group_id` ties a RAW and its direct
-  // JPEG/HEIF companion together; `group_role` says which side this file is.
-  // The `primary` (direct file) is shown by default; the `companion` (RAW) is
-  // the reachable "source brute". Both null when the file is not paired.
+  // Media pairing (cf. lib/pairing.ts). `group_id` ties a pair together;
+  // `group_role` says which side this file is. The `primary` is shown by default
+  // (RAW+JPEG → the direct file; Live Photo → the still); the `companion` is the
+  // reachable other half (the RAW "source brute", or the Live Photo .mov motion).
+  // Both null when the file is not paired.
   group_id: number | null;
   group_role: "primary" | "companion" | null;
   created_at: string;
   updated_at: string;
 };
 
-// A media group: the link between a RAW "source" and its direct JPEG/HEIF
-// companion shot together by the camera. One row per logical pair.
+// A media group: the link between the two files of one capture. `raw_jpeg` ties
+// a RAW "source" to its direct JPEG/HEIF companion; `live_photo` ties an iPhone
+// still to its companion .mov motion. One row per logical pair (cf. lib/pairing.ts).
 export type AssetGroup = {
   id: number;
   session_id: number;
-  kind: "raw_jpeg";
+  kind: "raw_jpeg" | "live_photo";
   created_at: string;
 };
 
@@ -116,14 +121,17 @@ export type AssetGridRow = Asset & {
   star: number;
   color_label: string | null;
   tags: string[];
-  // RAW+JPEG pairing: the other member of this asset's group (cf. lib/pairing.ts).
-  // Null when the asset is not paired. Lets the viewer offer the JPEG/RAW toggle,
-  // describe whichever side is on screen, and the grid badge the pair — all
-  // without a second round-trip.
+  // Pairing (cf. lib/pairing.ts): the other member of this asset's group and the
+  // group's kind. Null when the asset is not paired. Lets the viewer offer the
+  // segmented toggle (describing whichever side is on screen, and playing the
+  // .mov when the companion is a Live Photo's motion) and the grid badge the
+  // pair — all without a second round-trip.
   companion_id: number | null;
   companion_ext: string | null;
+  companion_media_type: "photo" | "video" | null;
   companion_filename: string | null;
   companion_file_size: number | null;
   companion_width: number | null;
   companion_height: number | null;
+  group_kind: "raw_jpeg" | "live_photo" | null;
 };

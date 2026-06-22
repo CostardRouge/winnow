@@ -119,20 +119,23 @@ export async function skipAssets(ids: number[]): Promise<number> {
 }
 
 // Queues a RAW-copy export job scoped to exactly these asset ids (reuses the
-// existing export pipeline via the new `ids` filter). For RAW+JPEG pairs the
-// worker exports the RAW keeper by default; pass `includeJpeg` to also copy the
-// JPEG companion (omitted → the server falls back to the persisted preference).
-// Returns the job id, or throws on a non-2xx response.
+// existing export pipeline via the new `ids` filter). The worker exports each
+// pair's keeper by default (RAW+JPEG → the RAW; Live Photo → the still); pass
+// `includeJpeg` / `includeLiveVideo` to also copy the companion extra (omitted →
+// the server falls back to the persisted preference). Returns the job id, or
+// throws on a non-2xx response.
 export async function exportAssets(
   ids: number[],
-  opts: { includeJpeg?: boolean } = {},
+  opts: { includeJpeg?: boolean; includeLiveVideo?: boolean } = {},
 ): Promise<number> {
   if (!ids.length) throw new Error("No assets to export");
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
   const name =
     ids.length === 1 ? `Export ${stamp}` : `Selection ${ids.length} · ${stamp}`;
-  const params =
-    opts.includeJpeg === undefined ? {} : { include_jpeg: opts.includeJpeg };
+  const params: Record<string, boolean> = {};
+  if (opts.includeJpeg !== undefined) params.include_jpeg = opts.includeJpeg;
+  if (opts.includeLiveVideo !== undefined)
+    params.include_live_video = opts.includeLiveVideo;
   const res = await fetch("/api/export", {
     method: "POST",
     headers: HEADERS,
