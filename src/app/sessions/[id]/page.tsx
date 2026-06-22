@@ -15,6 +15,7 @@ import AssetActionMenu, {
 } from "@/app/gallery/AssetActionMenu";
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
+import BulkActionBar from "@/app/BulkActionBar";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
 import SessionProgress from "@/app/sessions/SessionProgress";
@@ -25,6 +26,7 @@ import {
   deleteAssets,
   downloadAssetOriginal,
   exportAssets,
+  rateAssets,
   regenerateAssets,
   sessionDownloadFiles,
   tagAssets,
@@ -129,6 +131,10 @@ export default function SessionGrid({
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Bulk selection (mirrors the library grid): a toggleable select mode plus the
+  // chosen ids. Tapping a cell toggles instead of opening the viewer while on.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const sentinel = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -238,6 +244,39 @@ export default function SessionGrid({
     [loadSession],
   );
 
+  const toggleSelect = useCallback((id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
+  const rateMany = useCallback(
+    async (ids: number[], patch: { verdict?: Verdict; star?: number }) => {
+      if (!ids.length) return;
+      const idset = new Set(ids);
+      setAssets((prev) =>
+        prev.map((a) => (idset.has(a.id) ? { ...a, ...patch } : a)),
+      );
+      await rateAssets(ids, patch);
+      void loadSession();
+    },
+    [loadSession],
+  );
+
+  // Add/remove a tag across the selection. Session cells don't render tags, so
+  // there's no local state to patch — just hit the API and confirm.
+  const tagSelection = useCallback(
+    async (ids: number[], name: string, add: boolean) => {
+      if (!ids.length || !name.trim()) return;
+      await tagAssets(ids, name, add);
+      setNotice(`${add ? "Tagged" : "Untagged"} “${name.trim()}”`);
+    },
+    [],
+  );
+
   // Soft delete (hidden from the library, original untouched). Returns whether
   // it ran (false if the confirm was dismissed).
   const removeAssets = useCallback(
@@ -250,6 +289,11 @@ export default function SessionGrid({
       if (!window.confirm(msg)) return false;
       const idset = new Set(ids);
       setAssets((prev) => prev.filter((a) => !idset.has(a.id)));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((i) => next.delete(i));
+        return next;
+      });
       await deleteAssets(ids);
       setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
       void loadSession();
@@ -427,11 +471,35 @@ export default function SessionGrid({
               {f.label}
             </button>
           ))}
+          <button
+            className={`btn${selectMode ? " btn-primary" : ""}`}
+            onClick={() => {
+              setSelectMode((m) => !m);
+              setSelected(new Set());
+            }}
+          >
+            {selectMode ? "Done" : "Select"}
+          </button>
           <span className="spacer" />
           <span className="hint">
             Keyboard: P pick · X reject · U clear · 1-5 stars · ←/→
           </span>
         </div>
+
+        {selectMode && (
+          <BulkActionBar
+            count={selected.size}
+            onSelectAll={() => setSelected(new Set(assets.map((a) => a.id)))}
+            onClear={() => setSelected(new Set())}
+            onPick={() => rateMany([...selected], { verdict: "pick" })}
+            onReject={() => rateMany([...selected], { verdict: "reject" })}
+            onStar={(n) => rateMany([...selected], { star: n })}
+            onTag={(name, add) => tagSelection([...selected], name, add)}
+            onExport={() => exportSelection([...selected])}
+            onRegenerate={() => regenerate([...selected])}
+            onDelete={() => removeAssets([...selected])}
+          />
+        )}
 
         {error && (
           <div className="error-box">
@@ -445,11 +513,13 @@ export default function SessionGrid({
           <div className="empty">No assets for this filter.</div>
         ) : (
           <div className="grid">
-            {assets.map((a, i) => (
+            {assets.map((a, i) => {
+              const sel = selectMode && selected.has(a.id);
+              return (
               <div
                 key={a.id}
-                className={`cell ${a.verdict}`}
-                onClick={() => setViewer(i)}
+                className={`cell ${a.verdict}${sel ? " selected" : ""}`}
+                onClick={() => (selectMode ? toggleSelect(a.id) : setViewer(i))}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, id: a.id });
@@ -486,8 +556,10 @@ export default function SessionGrid({
                 <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
                   {formatBadge(a.ext, a.companion_ext, a.group_kind)}
                 </span>
+                {sel && <span className="select-check">✓</span>}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
