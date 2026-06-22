@@ -688,9 +688,18 @@
     background: var(--color-surface-2);
     overflow: hidden;
   }
+  /* The track fills the whole footer band — flush to the edges, no pill, no
+     hairline — so the green/red verdict bands read as one solid progress block
+     that spans the band's full height. The unfilled remainder is a faint sage
+     wash of the pick colour: a quiet "still to triage" ground that lets the
+     saturated fills read as "done" at a glance. */
   .session-card.is-stacked .session-progress.is-footer .session-progress-track {
-    align-self: center;
-    margin: 0 0.875rem;
+    align-self: stretch;
+    margin: 0;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--color-pick) 9%, var(--color-surface-2));
   }
   .session-card.is-stacked .session-progress.is-footer .session-progress-label {
     @apply inline-flex items-center;
