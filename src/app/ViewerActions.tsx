@@ -10,8 +10,8 @@ import type { Verdict } from "@/lib/types";
 //    back to "unrated" (so a pick/reject is reversible without a separate
 //    "clear" button). Stars toggle the same way — clicking the current rating
 //    drops it to 0.
-//  - Secondary, lower-frequency actions (tag, export, regenerate, delete) move
-//    into an overflow menu so the bar stays calm.
+//  - Secondary, lower-frequency actions (tag, export, download, regenerate,
+//    delete) move into an overflow menu so the bar stays calm.
 //
 // Shared by every full-screen viewer (the gallery lightbox and the session
 // triage viewer) so the culling controls read identically everywhere.
@@ -21,6 +21,7 @@ export default function ViewerActions({
   onVerdict,
   onStar,
   onExport,
+  onDownload,
   onRegenerate,
   onDelete,
   onTag,
@@ -30,6 +31,8 @@ export default function ViewerActions({
   onVerdict: (v: Verdict) => void;
   onStar: (n: number) => void;
   onExport: () => void;
+  /** Optional: pull the original file down to inspect it (works pre-derivative). */
+  onDownload?: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
   /** Optional: when provided, the overflow menu offers a quick tag input. */
@@ -166,6 +169,19 @@ export default function ViewerActions({
             >
               <span className="vbar-menu-ic">⤓</span> Export
             </button>
+            {onDownload && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                onClick={() => {
+                  onDownload();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">⇩</span> Download original
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"

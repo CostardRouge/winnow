@@ -25,6 +25,7 @@ import {
   downloadAssetOriginal,
   exportAssets,
   regenerateAssets,
+  sessionDownloadFiles,
   tagAssets,
 } from "@/lib/assetActions";
 
@@ -411,6 +412,7 @@ export default function SessionGrid({
             onIgnore={toggleIgnore}
             onExportPicks={exportPicks}
             onDelete={() => setConfirming(true)}
+            onMessage={setNotice}
           />
         )}
 
@@ -511,6 +513,7 @@ export default function SessionGrid({
               onStar={(star) => rate(a.id, { star })}
               onTag={(name) => addTag(a.id, name)}
               onExport={() => exportSelection([a.id])}
+              onDownload={() => downloadAssetOriginal(a.id)}
               onRegenerate={() => regenerate([a.id])}
               onDelete={async () => {
                 if (await removeAssets([a.id])) {
@@ -566,12 +569,15 @@ function SessionHeader({
   onIgnore,
   onExportPicks,
   onDelete,
+  onMessage,
 }: {
   s: SessionInfo;
   onComplete: () => void;
   onIgnore: () => void;
   onExportPicks: () => void;
   onDelete: () => void;
+  /** Surface the Download menu's transient status to the page notice. */
+  onMessage: (msg: string | null) => void;
 }) {
   const total = Number(s.live_count) || 0;
   const ready = Number(s.ready_count) || 0;
@@ -611,6 +617,12 @@ function SessionHeader({
           onIgnore={onIgnore}
           onExportPicks={onExportPicks}
           onDelete={onDelete}
+          download={{
+            zipHref: `/api/sessions/${s.id}/download`,
+            zipName: `${s.name}.zip`,
+            listFiles: () => sessionDownloadFiles(s.id),
+            onMessage,
+          }}
           deleteTitle={
             cullable
               ? "Remove this session (optionally delete its files)"

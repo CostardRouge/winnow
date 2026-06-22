@@ -8,49 +8,11 @@ import {
 } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { formatBytes, formatDimensions, formatDuration } from "@/lib/format";
+import type { DownloadFile } from "@/lib/assetActions";
 import { LazyImage, Icons } from "../ui";
 import ThumbStrip, { type StripItem } from "../ThumbStrip";
 import MediaViewer, { type ViewerItem } from "../MediaViewer";
-import { type MenuItem } from "../ActionMenu";
 import ExportActions from "./ExportActions";
-
-// Minimal typing for the File System Access API (Chromium). Lets us save an
-// export's files straight into a folder the user picks, instead of going through
-// the browser's download tray.
-type FsWritable = {
-  write: (data: Blob | BufferSource) => Promise<void>;
-  close: () => Promise<void>;
-};
-type FsFileHandle = { createWritable: () => Promise<FsWritable> };
-type FsDirHandle = {
-  getFileHandle: (
-    name: string,
-    opts?: { create?: boolean },
-  ) => Promise<FsFileHandle>;
-};
-type DirPickerWindow = Window & {
-  showDirectoryPicker?: (opts?: {
-    mode?: "read" | "readwrite";
-    id?: string;
-  }) => Promise<FsDirHandle>;
-};
-
-// "IMG_1234.ARW" → "IMG_1234 (2).ARW" — disambiguate identical names on save.
-function numberedName(filename: string, n: number): string {
-  const dot = filename.lastIndexOf(".");
-  const base = dot > 0 ? filename.slice(0, dot) : filename;
-  const ext = dot > 0 ? filename.slice(dot) : "";
-  return `${base} (${n + 1})${ext}`;
-}
-
-function triggerDownload(href: string, filename?: string) {
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = filename ?? "";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
 
 // One export job rendered as a card. Beyond the summary + actions, the card can:
 //   - download the whole export as a ZIP (header button);
@@ -199,7 +161,6 @@ export default function ExportCard({
 
   // --- Downloads -----------------------------------------------------------
   const [dlMsg, setDlMsg] = useState<string | null>(null);
-  const [dlBusy, setDlBusy] = useState(false);
   // Auto-clear the transient download status.
   useEffect(() => {
     if (!dlMsg) return;
@@ -221,113 +182,20 @@ export default function ExportCard({
     return list;
   }, [items, job.id]);
 
-  // One .zip of everything (server-streamed).
-  const downloadZip = useCallback(() => {
-    triggerDownload(`/api/exports/${job.id}/download`, `${job.name}.zip`);
-  }, [job.id, job.name]);
-
-  // Each original as its own download (the browser asks once to allow several).
-  const downloadEach = useCallback(async () => {
-    setDlBusy(true);
-    setDlMsg(null);
-    try {
-      const list = (await ensureItems()).filter((it) => it.downloadable);
-      if (!list.length) {
-        setDlMsg("No downloadable files.");
-        return;
-      }
-      for (let i = 0; i < list.length; i++) {
-        triggerDownload(
-          `/api/exports/${job.id}/items/${list[i].id}`,
-          list[i].filename,
-        );
-        // Stagger so the browser doesn't drop rapid-fire downloads.
-        if (i < list.length - 1) await new Promise((r) => setTimeout(r, 350));
-      }
-      setDlMsg(`Started ${list.length} download${list.length > 1 ? "s" : ""}.`);
-    } catch (e) {
-      setDlMsg((e as Error).message);
-    } finally {
-      setDlBusy(false);
-    }
-  }, [ensureItems, job.id]);
-
-  // Save straight into a folder the user picks (File System Access API).
-  const saveToFolder = useCallback(async () => {
-    const picker = (window as DirPickerWindow).showDirectoryPicker;
-    if (!picker) return;
-    let dir: FsDirHandle;
-    try {
-      dir = await picker({ mode: "readwrite", id: "winnow-export" });
-    } catch {
-      return; // user dismissed the picker
-    }
-    setDlBusy(true);
-    setDlMsg(null);
-    try {
-      const list = (await ensureItems()).filter((it) => it.downloadable);
-      const seen = new Map<string, number>();
-      let saved = 0;
-      for (const it of list) {
-        const res = await fetch(`/api/exports/${job.id}/items/${it.id}`);
-        if (!res.ok) continue;
-        const blob = await res.blob();
-        const n = seen.get(it.filename) ?? 0;
-        seen.set(it.filename, n + 1);
-        const name = n === 0 ? it.filename : numberedName(it.filename, n);
-        const handle = await dir.getFileHandle(name, { create: true });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        saved++;
-        setDlMsg(`Saving… ${saved}/${list.length}`);
-      }
-      setDlMsg(`Saved ${saved} file${saved > 1 ? "s" : ""} to the folder.`);
-    } catch (e) {
-      setDlMsg(`Save failed: ${(e as Error).message}`);
-    } finally {
-      setDlBusy(false);
-    }
-  }, [ensureItems, job.id]);
-
-  const canSaveToFolder =
-    typeof window !== "undefined" && "showDirectoryPicker" in window;
-
-  const downloadMenu: MenuItem[] = [
-    {
-      key: "zip",
-      label: "Download as ZIP",
-      hint: "One .zip archive",
-      icon: Icons.archive,
-      disabled: dlBusy,
-      onSelect: downloadZip,
-    },
-    {
-      key: "each",
-      label: "Download each file",
-      hint: "Separate downloads",
-      icon: Icons.download,
-      disabled: dlBusy,
-      onSelect: () => void downloadEach(),
-    },
-    ...(canSaveToFolder
-      ? [
-          {
-            key: "folder",
-            label: "Save to folder…",
-            hint: "Pick a destination on disk",
-            icon: Icons.folder,
-            disabled: dlBusy,
-            onSelect: () => void saveToFolder(),
-          } as MenuItem,
-        ]
-      : []),
-  ];
-
   const count = items?.length ?? job.export_count;
 
   const fileUrl = (it: ExportItem) =>
     `/api/exports/${job.id}/items/${it.id}`;
+
+  // The DownloadMenu's per-file source: the export's copied output, one
+  // /items/:id endpoint per downloadable file (skipping any whose copy is gone).
+  const listDownloadFiles = useCallback(async (): Promise<DownloadFile[]> => {
+    const list = (await ensureItems()).filter((it) => it.downloadable);
+    return list.map((it) => ({
+      filename: it.filename,
+      href: `/api/exports/${job.id}/items/${it.id}`,
+    }));
+  }, [ensureItems, job.id]);
 
   // Map the export's files onto the shared strip's tile shape: a ready
   // derivative carries a thumbnail (and a per-file download href); everything
@@ -425,9 +293,11 @@ export default function ExportCard({
         </div>
         <div className="card-side">
           <ExportActions
-            downloadItems={downloadMenu}
-            downloadBusy={dlBusy}
+            zipHref={`/api/exports/${job.id}/download`}
+            zipName={`${job.name}.zip`}
+            listFiles={listDownloadFiles}
             canDownload={count > 0}
+            onMessage={setDlMsg}
             onDelete={del}
             deleteBusy={busy}
           />

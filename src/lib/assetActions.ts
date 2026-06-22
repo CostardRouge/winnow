@@ -34,6 +34,32 @@ export function downloadAssetOriginal(id: number): void {
   a.remove();
 }
 
+// One file the Download menu can pull: the name to save it under and the URL the
+// browser hits to fetch the bytes (a per-file download endpoint). Shared by the
+// session media download (originals) and the export download (copied output) so
+// the same dropdown drives both even though the sources differ.
+export type DownloadFile = { filename: string; href: string };
+
+// The flat manifest of a session's downloadable originals, mapped to the shape
+// the Download menu consumes: each non-deleted asset pulled through its own
+// /download endpoint (which streams the original even with no derivative yet).
+export async function sessionDownloadFiles(
+  sessionId: number,
+): Promise<DownloadFile[]> {
+  const res = await fetch(`/api/sessions/${sessionId}/files`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Couldn’t list files (${res.status})`);
+  }
+  const body = (await res.json()) as {
+    files?: { id: number; filename: string }[];
+  };
+  return (body.files ?? []).map((f) => ({
+    filename: f.filename,
+    href: `/api/assets/${f.id}/download`,
+  }));
+}
+
 // Add (or remove) a single tag by name across the given assets.
 export async function tagAssets(
   ids: number[],
