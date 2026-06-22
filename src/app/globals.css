@@ -468,8 +468,15 @@
     border-color: var(--color-border);
   }
   .tab {
-    @apply inline-flex items-center justify-center rounded-[var(--radius)] border-0 bg-transparent px-4 py-1.5 text-sm font-semibold leading-none transition duration-150;
+    @apply inline-flex items-center justify-center rounded-[var(--radius)] border-0 bg-transparent px-4 text-sm font-semibold leading-none transition duration-150;
     color: var(--color-muted);
+    /* Optically center the label. Space Grotesk reserves ~0.28em of space
+       above its caps (ascent 0.98em vs cap height 0.70em) while its descenders
+       sit close to the baseline, so plain metric-box centering leaves the text
+       riding low in the pill. Trim that bias off the top padding and add it
+       back to the bottom: net vertical padding (py-1.5 → 0.75rem) and the pill
+       height are unchanged, so the active tab's background stays put. */
+    padding-block: calc(0.375rem - 0.05em) calc(0.375rem + 0.05em);
   }
   .tab:hover {
     color: var(--color-text);
@@ -2415,7 +2422,9 @@
     @apply gap-0.5 p-0.5;
   }
   .tab {
-    @apply px-2.5 py-1;
+    @apply px-2.5;
+    /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
+    padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
   }
   .stats-strip {
     @apply flex-shrink-0;
