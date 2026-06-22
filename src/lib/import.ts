@@ -15,7 +15,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
-import { config, classifyExt } from "./config";
+import { config, classifyExt, isIgnoredEntry } from "./config";
 import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueIndex, PRIORITY } from "./queue";
@@ -56,7 +56,9 @@ async function* walk(dir: string): AsyncGenerator<string> {
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    // Hidden entries (incl. the inbox's .uploads/.failed) + NAS junk trees
+    // (Synology @eaDir, #recycle) — same noise the indexer prunes.
+    if (isIgnoredEntry(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
     else if (entry.isFile()) yield full;

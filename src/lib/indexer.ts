@@ -5,7 +5,7 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one } from "./db";
-import { classifyExt, config } from "./config";
+import { classifyExt, config, isIgnoredEntry } from "./config";
 import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { enqueueDerivative, PRIORITY } from "./queue";
@@ -35,7 +35,9 @@ async function* walk(dir: string): AsyncGenerator<string> {
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue; // .DS_Store, hidden folders
+    // .DS_Store / hidden folders + NAS junk trees (Synology @eaDir, #recycle):
+    // skipping the directory prunes its whole subtree (e.g. every SYNOFILE_THUMB).
+    if (isIgnoredEntry(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       yield* walk(full);

@@ -492,7 +492,10 @@ menu. iOS Safari → Share → "Add to Home Screen".
 
 ## Scope & next steps
 
-**Implemented (MVP)**: incremental indexing (mtime+size), EXIF + hash + dedup,
+**Implemented (MVP)**: incremental indexing (mtime+size) that **skips NAS
+sidecar/junk folders** (Synology `@eaDir` thumbnail trees and the `#recycle`
+bin — see [`isIgnoredEntry`](src/lib/config.ts), shared by the indexer, the
+import feeder and the folder picker), EXIF + hash + dedup,
 RAW preview extraction (ARW/DNG…) without demosaicing, **HEIF/HEVC decode**
 (`.heic`/`.heif`/`.hif` — iPhone & Sony A7C II/Canon — embedded preview first,
 otherwise libheif, since sharp's prebuilt libvips only ships the AVIF decoder;

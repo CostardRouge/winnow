@@ -327,3 +327,22 @@ export function classifyExt(
   if (VIDEO_EXTS.has(e)) return { mediaType: "video", raw: false };
   return null;
 }
+
+// Directory/file names that are never our media and must never be walked into,
+// indexed, or shown in the folder picker. Beyond the usual hidden entries
+// (.DS_Store, dot-folders), a NAS litters the tree with sidecar/junk folders
+// sitting right next to the real files — most notably Synology's per-file
+// thumbnail trees (`@eaDir/<file>/SYNOFILE_THUMB_*.jpg`) and its recycle bin
+// (`#recycle`). Skipping the *folder* prunes its whole subtree in one go, so the
+// thumbnails inside an `@eaDir` are never even seen (cf. the walk in indexer.ts).
+export const IGNORED_ENTRY_NAMES = new Set([
+  "@eaDir", // Synology — per-file thumbnail/metadata folders
+  "#recycle", // Synology — recycle bin
+]);
+
+// True for any directory entry the walk must skip (and the picker must hide):
+// hidden dotfiles plus the NAS junk folders above. Centralized so the indexer,
+// the import feeder and the folder picker all prune the same noise identically.
+export function isIgnoredEntry(name: string): boolean {
+  return name.startsWith(".") || IGNORED_ENTRY_NAMES.has(name);
+}
