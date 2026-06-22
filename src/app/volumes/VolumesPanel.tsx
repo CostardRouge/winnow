@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { EmptyState, Icons } from "../ui";
+import PullToRefresh from "../PullToRefresh";
 import {
   VOLUME_TYPES,
   typeForKind,
@@ -104,7 +105,11 @@ export default function VolumesPanel() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 1100, padding: 0 }}>
+    <PullToRefresh
+      className="container"
+      style={{ maxWidth: 1100, padding: 0 }}
+      onRefresh={load}
+    >
       <div className="filterbar">
         <p className="hint" style={{ margin: 0, flex: 1, minWidth: 200 }}>
           Every directory Winnow indexes or tracks. Pick a type per folder; the
@@ -229,7 +234,7 @@ export default function VolumesPanel() {
           }}
         />
       )}
-    </div>
+    </PullToRefresh>
   );
 }
 

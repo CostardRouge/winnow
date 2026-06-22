@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { EmptyState, Icons } from "../../ui";
+import PullToRefresh from "../../PullToRefresh";
 
 type ScanJob = {
   job_id: string;
@@ -76,7 +77,7 @@ export default function ScanningPage() {
   );
 
   return (
-    <section className="pl-section">
+    <PullToRefresh className="pl-section" onRefresh={load}>
       <div className="filterbar">
         <span className="hint">
           Folders currently being indexed or waiting in the scan queue. Remove one
@@ -145,6 +146,6 @@ export default function ScanningPage() {
           ))}
         </div>
       )}
-    </section>
+    </PullToRefresh>
   );
 }

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons, LazyImage } from "../../ui";
+import PullToRefresh from "../../PullToRefresh";
 
 type DerivItem = {
   asset_id: number;
@@ -151,7 +152,7 @@ export default function FailuresPage() {
   }));
 
   return (
-    <section className="pl-section">
+    <PullToRefresh className="pl-section" onRefresh={load}>
       <div className="filterbar">
         <span className="hint">
           Everything that failed (scan · analyze · import), in one place. Fix the
@@ -222,7 +223,7 @@ export default function FailuresPage() {
         onChanged={load}
         setMsg={setMsg}
       />
-    </section>
+    </PullToRefresh>
   );
 }
 

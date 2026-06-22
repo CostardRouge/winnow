@@ -9,6 +9,7 @@ import {
 } from "@/lib/assetActions";
 import { formatBytes } from "@/lib/format";
 import { SkeletonCards, EmptyState, LazyImage, ConfirmDialog } from "./ui";
+import PullToRefresh from "./PullToRefresh";
 
 // 40px trash glyph for the empty state (the shared Icons.trash is a 16px inline
 // action icon — too small here, where it sits beside 40px empty-state glyphs).
@@ -177,7 +178,7 @@ export default function TrashTab() {
   const purgeEnabled = summary?.enabled ?? true;
 
   return (
-    <div className="tab-pane sessions-pane">
+    <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
       {error && (
         <div className="error-box">
           <span>Couldn’t load the trash: {error}</span>
@@ -321,6 +322,6 @@ export default function TrashTab() {
         onConfirm={emptyTrash}
         onCancel={() => setConfirmPurge(false)}
       />
-    </div>
+    </PullToRefresh>
   );
 }

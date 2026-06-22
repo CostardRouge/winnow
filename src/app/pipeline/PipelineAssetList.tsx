@@ -22,6 +22,7 @@ import {
 import type { AssetGridRow } from "@/lib/types";
 import { EmptyState, Icons } from "../ui";
 import MediaViewer from "../MediaViewer";
+import PullToRefresh from "../PullToRefresh";
 
 export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
 
@@ -181,7 +182,7 @@ export default function PipelineAssetList({
   );
 
   return (
-    <section className="pl-section">
+    <PullToRefresh className="pl-section" onRefresh={loadFirst}>
       <div className="filterbar">
         {hint && <span className="hint">{hint}</span>}
         <span className="spacer" />
@@ -260,7 +261,7 @@ export default function PipelineAssetList({
           )}
         />
       )}
-    </section>
+    </PullToRefresh>
   );
 }
 
