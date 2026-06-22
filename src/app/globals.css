@@ -1143,15 +1143,25 @@
     color: #ece7da;
     touch-action: pan-y;
   }
+  /* Pinned at the top of the scrollable panel so the filename and the close
+     affordance stay put as the metadata scrolls under it — on mobile the panel
+     is a short bottom sheet, and the × was scrolling out of reach. The negative
+     margins bleed the head over the panel's padding so its backdrop masks the
+     content sliding beneath. */
   .viewer-panel-head {
-    @apply mb-1 flex items-start justify-between gap-2;
+    @apply sticky top-0 z-10 flex items-start justify-between gap-2;
+    margin: -0.625rem -0.875rem 0.375rem;
+    padding: 0.625rem 0.875rem 0.5rem;
+    background: rgba(16, 15, 13, 0.82);
+    backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
   .viewer-panel-name {
     @apply break-words;
   }
   .viewer-panel-toggle {
-    @apply flex h-7 w-7 flex-none items-center justify-center rounded-full border-0 text-base text-white transition duration-150;
-    background: rgba(255, 255, 255, 0.08);
+    @apply flex h-8 w-8 flex-none items-center justify-center rounded-full border-0 text-lg text-white transition duration-150;
+    background: rgba(255, 255, 255, 0.14);
   }
   .viewer-panel-toggle:hover {
     background: rgba(255, 255, 255, 0.18);

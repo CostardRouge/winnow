@@ -404,7 +404,11 @@ export default function MediaViewer<T extends ViewerItem>({
         )}
       </div>
       <div className="controls">
-        {hasCompanion && (
+        {/* The pair switcher lives in the info panel (viewer-pair) whenever it's
+            open; only surface the format toggle down here when the panel is
+            hidden, so the two never duplicate and the action bar stays on one
+            line in the default (panel-open) layout. */}
+        {hasCompanion && !panelOpen && (
           <div
             className="vbar-verdict vbar-format"
             role="group"

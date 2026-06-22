@@ -43,6 +43,20 @@ export function formatDuration(seconds: number | null | undefined): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+// Compact corner badge for a grid tile. A RAW+JPEG pair reads "<direct>/RAW" —
+// the lighter direct file (JPEG/HEIF) first, then its RAW companion — so a
+// glance shows it's one logical media made of two files; an iPhone Live Photo
+// reads "LIVE"; a lone file is just its extension. The badge CSS uppercases it.
+export function formatBadge(
+  ext: string,
+  companionExt?: string | null,
+  groupKind?: "raw_jpeg" | "live_photo" | null,
+): string {
+  if (groupKind === "live_photo") return "LIVE";
+  const e = ext.replace(".", "");
+  return companionExt ? `${e}/RAW` : e;
+}
+
 // Width × height -> "6000 × 4000 (24 MP)". Megapixels omitted when tiny.
 export function formatDimensions(
   width: number | null | undefined,
