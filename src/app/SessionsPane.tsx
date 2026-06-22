@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
+import { sessionDownloadFiles } from "@/lib/assetActions";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import SessionActions from "./sessions/SessionActions";
@@ -222,6 +223,12 @@ export default function SessionsPane({
         onIgnore={() => toggleIgnore(s)}
         onExportPicks={() => exportPicks(s)}
         onDelete={() => setConfirming(s)}
+        download={{
+          zipHref: `/api/sessions/${s.id}/download`,
+          zipName: `${s.name}.zip`,
+          listFiles: () => sessionDownloadFiles(s.id),
+          onMessage: setNotice,
+        }}
       />
     );
   }

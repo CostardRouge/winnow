@@ -865,6 +865,7 @@ export default function GalleryShell({
                     onStar={(star) => rate(it.id, { star })}
                     onTag={(name) => assignTags([it.id], name, true)}
                     onExport={() => exportSelection([it.id])}
+                    onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onDelete={async () => {
                       if (await removeAssets([it.id])) {

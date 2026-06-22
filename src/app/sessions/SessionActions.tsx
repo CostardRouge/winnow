@@ -1,14 +1,21 @@
 "use client";
 
 import { Icons } from "@/app/ui";
+import DownloadMenu from "@/app/DownloadMenu";
+import type { DownloadFile } from "@/lib/assetActions";
 
 /**
  * The per-session action bar — one segmented control
- * (Complete · Ignore · Export Pics · Delete) shared by the incoming Sessions
- * list and the session detail header so the two stay identical. Icons carry the
- * meaning; the text labels show on wider screens and collapse to icon-only on
- * small viewports and in the compact card layout (tooltips keep every action
- * discoverable). Stays on a single line in every layout.
+ * (Complete · Ignore · Export Pics · Download · Delete) shared by the incoming
+ * Sessions list and the session detail header so the two stay identical. Icons
+ * carry the meaning; the text labels show on wider screens and collapse to
+ * icon-only on small viewports and in the compact card layout (tooltips keep
+ * every action discoverable). Stays on a single line in every layout.
+ *
+ * "Export Pics" copies the RAW picks to the Capture One folder server-side;
+ * "Download" (the shared DownloadMenu) pulls *all* of the session's originals
+ * down to the browser — ZIP, file-by-file or save-to-folder — without ever
+ * running an export. The download segment only appears when `download` is given.
  */
 export default function SessionActions({
   completed,
@@ -18,6 +25,7 @@ export default function SessionActions({
   onIgnore,
   onExportPicks,
   onDelete,
+  download,
   deleteTitle = "Remove this session (optionally delete its files from disk)",
 }: {
   completed: boolean;
@@ -28,6 +36,13 @@ export default function SessionActions({
   onIgnore: () => void;
   onExportPicks: () => void;
   onDelete: () => void;
+  /** When provided, adds a Download segment for the session's original files. */
+  download?: {
+    zipHref: string;
+    zipName: string;
+    listFiles: () => Promise<DownloadFile[]>;
+    onMessage?: (msg: string | null) => void;
+  };
   /** Context-specific tooltip for the destructive (delete) segment. */
   deleteTitle?: string;
 }) {
@@ -65,6 +80,15 @@ export default function SessionActions({
         {Icons.upload}
         <span className="seg-label">Export Pics</span>
       </button>
+      {download && (
+        <DownloadMenu
+          zipHref={download.zipHref}
+          zipName={download.zipName}
+          listFiles={download.listFiles}
+          onMessage={download.onMessage}
+          triggerClassName="seg-btn"
+        />
+      )}
       <button
         className="seg-btn is-danger"
         onClick={onDelete}
