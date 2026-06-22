@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Winnow">
+  <!-- Winnow app mark: warm paper tile with the vermillion winnowing arc -->
+  <rect width="512" height="512" rx="112" fill="#f4f0e7"/>
+  <g transform="translate(96 96) scale(13.333)" fill="none" stroke="#d9442a" stroke-linecap="round">
+    <path d="M4 20c8.5-1 14-6.5 16-16" stroke-width="2.1"/>
+    <path d="M5.5 18.5c5.5-.4 9.8-4.2 11.7-10.6M7.5 16.8c3.6-.3 6.6-2.9 8.2-7.3" stroke-width="1.7" opacity="0.5"/>
+    <circle cx="4" cy="20" r="1.7" fill="#d9442a" stroke="none"/>
+  </g>
+</svg>

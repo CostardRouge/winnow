@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offline — Winnow</title>
+    <meta name="theme-color" content="#f4f0e7" />
+    <style>
+      :root {
+        --bg: #f4f0e7;
+        --surface: #fbf8f1;
+        --border: #e2dac9;
+        --text: #1b1813;
+        --muted: #7c7464;
+        --accent: #d9442a;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 40px 32px;
+        max-width: 380px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 10px 30px -14px rgba(27, 24, 19, 0.18);
+      }
+      .mark { width: 56px; height: 56px; margin: 0 auto 20px; display: block; }
+      h1 {
+        font-family: Georgia, "Times New Roman", serif;
+        font-weight: 400;
+        font-size: 28px;
+        margin: 0 0 8px;
+      }
+      p { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
+      button {
+        appearance: none;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        padding: 11px 22px;
+        border-radius: 11px;
+        cursor: pointer;
+      }
+      button:hover { background: #b2331e; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 20c8.5-1 14-6.5 16-16" stroke="#d9442a" stroke-width="1.6" stroke-linecap="round" />
+        <path d="M5.5 18.5c5.5-.4 9.8-4.2 11.7-10.6M7.5 16.8c3.6-.3 6.6-2.9 8.2-7.3" stroke="#d9442a" stroke-width="1.3" stroke-linecap="round" opacity="0.55" />
+        <circle cx="4" cy="20" r="1.4" fill="#d9442a" />
+      </svg>
+      <h1>You're offline</h1>
+      <p>
+        Winnow needs a connection to your NAS to index, triage and export media.
+        Reconnect and try again.
+      </p>
+      <button onclick="location.reload()">Retry</button>
+    </div>
+  </body>
+</html>
