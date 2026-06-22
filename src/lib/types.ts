@@ -117,8 +117,13 @@ export type AssetGridRow = Asset & {
   color_label: string | null;
   tags: string[];
   // RAW+JPEG pairing: the other member of this asset's group (cf. lib/pairing.ts).
-  // Null when the asset is not paired. Lets the viewer offer the JPEG/RAW toggle
-  // and the grid badge the pair without a second round-trip.
+  // Null when the asset is not paired. Lets the viewer offer the JPEG/RAW toggle,
+  // describe whichever side is on screen, and the grid badge the pair — all
+  // without a second round-trip.
   companion_id: number | null;
   companion_ext: string | null;
+  companion_filename: string | null;
+  companion_file_size: number | null;
+  companion_width: number | null;
+  companion_height: number | null;
 };

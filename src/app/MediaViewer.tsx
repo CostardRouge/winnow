@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
+import { formatBytes, formatDimensions } from "@/lib/format";
 
 export type ViewerItem = AssetMetaInput & {
   id: number;
@@ -24,15 +25,39 @@ export type ViewerItem = AssetMetaInput & {
   // RAW+JPEG pairing (cf. lib/pairing.ts). When the item has a companion, the
   // viewer offers a segmented toggle to swap the displayed source between this
   // file (the JPEG/HEIF primary) and its RAW companion. `ext`/`companion_ext`
-  // label the two segments.
+  // label the two segments; the companion's own filename/size/dimensions let the
+  // panel describe the RAW side while it's the one on screen.
   ext?: string;
   companion_id?: number | null;
   companion_ext?: string | null;
+  companion_filename?: string | null;
+  companion_file_size?: number | null;
+  companion_width?: number | null;
+  companion_height?: number | null;
 };
 
 // "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
 const fmtExt = (ext?: string | null) =>
   (ext ?? "").replace(".", "").toUpperCase();
+
+// One member of a RAW+JPEG group, summarised for the at-a-glance pair block:
+// its format badge plus the per-file stats (dimensions, size) that differ
+// between the two sides. `null` stats are simply omitted.
+const memberStats = (
+  ext?: string | null,
+  width?: number | null,
+  height?: number | null,
+  size?: number | null,
+) =>
+  [formatDimensions(width, height), size != null ? formatBytes(size) : null]
+    .filter(Boolean)
+    .join(" · ");
+
+// Swap the extension on a path/filename so the companion's location can be shown
+// from the primary's — a pair shares its basename and directory by construction
+// (cf. lib/pairing.ts), only the extension differs.
+const swapExt = (path: string, ext: string) =>
+  path.replace(/\.[^./]+$/, ext);
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
@@ -205,6 +230,25 @@ export default function MediaViewer<T extends ViewerItem>({
     ? `/api/assets/${item.companion_id}/proxy`
     : mediaSrc(item);
 
+  // The file actually on screen. EXIF (date/camera/exposure/GPS) is shared
+  // across a pair, so only the file-level fields — name, type, size, dimensions
+  // and path — switch to the companion's when the RAW side is displayed. This
+  // keeps the header and metadata panel describing what you're looking at rather
+  // than always the primary.
+  const displayed: AssetMetaInput & { filename: string } = companionShown
+    ? {
+        ...item,
+        filename: item.companion_filename ?? item.filename,
+        ext: item.companion_ext ?? item.ext,
+        file_size: item.companion_file_size ?? item.file_size,
+        width: item.companion_width ?? item.width,
+        height: item.companion_height ?? item.height,
+        rel_path: item.rel_path
+          ? swapExt(item.rel_path, item.companion_ext ?? "")
+          : null,
+      }
+    : item;
+
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
     cursor: scale > MIN_SCALE ? "grab" : undefined,
@@ -257,7 +301,7 @@ export default function MediaViewer<T extends ViewerItem>({
               <img
                 key={companionShown ? `c${item.companion_id}` : item.id}
                 src={currentSrc}
-                alt={item.filename}
+                alt={displayed.filename}
                 style={transform}
               />
             )
@@ -268,7 +312,7 @@ export default function MediaViewer<T extends ViewerItem>({
         {panelOpen && (
           <aside className="viewer-panel">
             <div className="viewer-panel-head">
-              <strong className="viewer-panel-name">{item.filename}</strong>
+              <strong className="viewer-panel-name">{displayed.filename}</strong>
               <button
                 className="viewer-panel-toggle"
                 onClick={() => setPanelOpen(false)}
@@ -278,7 +322,51 @@ export default function MediaViewer<T extends ViewerItem>({
                 ×
               </button>
             </div>
-            <AssetMeta asset={item} />
+            <AssetMeta asset={displayed} />
+            {hasCompanion && (
+              // Group info: a RAW+JPEG pair is one logical media made of two
+              // files. Surface both members so the relationship is explicit, and
+              // let either be selected straight from here (mirrors the format
+              // toggle in the controls bar). The active side is the one on screen.
+              <div className="viewer-pair">
+                <div className="viewer-pair-label">RAW + JPEG pair</div>
+                <button
+                  type="button"
+                  className={`viewer-pair-member${!companionShown ? " active" : ""}`}
+                  aria-pressed={!companionShown}
+                  onClick={() => setShowCompanion(false)}
+                >
+                  <span className="viewer-pair-ext">{fmtExt(item.ext)}</span>
+                  <span className="viewer-pair-stat">
+                    {memberStats(
+                      item.ext,
+                      item.width,
+                      item.height,
+                      item.file_size,
+                    )}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`viewer-pair-member${companionShown ? " active" : ""}`}
+                  aria-pressed={companionShown}
+                  title="Show the RAW source"
+                  onClick={() => setShowCompanion(true)}
+                >
+                  <span className="viewer-pair-ext">
+                    {fmtExt(item.companion_ext)}
+                  </span>
+                  <span className="viewer-pair-stat">
+                    {memberStats(
+                      item.companion_ext,
+                      item.companion_width,
+                      item.companion_height,
+                      item.companion_file_size,
+                    )}
+                  </span>
+                </button>
+              </div>
+            )}
             {renderInfo?.(item)}
           </aside>
         )}
