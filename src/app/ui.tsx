@@ -9,11 +9,40 @@ import {
   type ReactNode,
 } from "react";
 
+// One IntersectionObserver shared by every LazyImage with the same rootMargin,
+// instead of one observer per image. A long list (hundreds of session/export
+// thumbnails) then costs a single observer rather than hundreds — a large win
+// on mobile, where many live observers are the main source of jank. Each
+// element registers a one-shot callback fired the first time it intersects.
+const lazyCallbacks = new WeakMap<Element, () => void>();
+const lazyObservers = new Map<string, IntersectionObserver>();
+
+function lazyObserverFor(rootMargin: string): IntersectionObserver {
+  let obs = lazyObservers.get(rootMargin);
+  if (!obs) {
+    obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const cb = lazyCallbacks.get(e.target);
+          obs!.unobserve(e.target);
+          lazyCallbacks.delete(e.target);
+          cb?.();
+        }
+      },
+      { rootMargin },
+    );
+    lazyObservers.set(rootMargin, obs);
+  }
+  return obs;
+}
+
 /**
- * `<img>` that only fetches once it scrolls into view. An IntersectionObserver
- * watches the element and swaps in the real `src` on sight (with a small
- * rootMargin so the image is ready just before it's revealed). Falls back to an
- * eager load where IntersectionObserver is unavailable. Fades in on decode.
+ * `<img>` that only fetches once it scrolls into view. A shared
+ * IntersectionObserver watches the element and swaps in the real `src` on sight
+ * (with a small rootMargin so the image is ready just before it's revealed).
+ * Falls back to an eager load where IntersectionObserver is unavailable. Fades
+ * in on decode.
  */
 export function LazyImage({
   src,
@@ -40,17 +69,13 @@ export function LazyImage({
       setVisible(true);
       return;
     }
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setVisible(true);
-          obs.disconnect();
-        }
-      },
-      { rootMargin },
-    );
+    const obs = lazyObserverFor(rootMargin);
+    lazyCallbacks.set(el, () => setVisible(true));
     obs.observe(el);
-    return () => obs.disconnect();
+    return () => {
+      obs.unobserve(el);
+      lazyCallbacks.delete(el);
+    };
   }, [visible, rootMargin]);
 
   return (
