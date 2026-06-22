@@ -45,7 +45,11 @@ export type Filters = {
   q?: string;
   media_type: string[];
   ext: string[];
+  // Derivative lifecycle filter. Exactly one side is ever populated: the panel's
+  // Include/Exclude toggle decides whether the picked statuses are kept
+  // (derivative_status, IN) or hidden (not_derivative_status, NOT IN).
   derivative_status: string[];
+  not_derivative_status: string[];
   device: string[];
   camera_model: string[];
   lens: string[];
@@ -81,6 +85,7 @@ export const EMPTY_FILTERS: Filters = {
   media_type: [],
   ext: [],
   derivative_status: [],
+  not_derivative_status: [],
   device: [],
   camera_model: [],
   lens: [],
@@ -184,6 +189,97 @@ function Chips<T extends string | number>({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// Derivative-status facet with an Include/Exclude mode toggle. The same chip
+// row drives two opposite filters: in "Include only" mode the picked statuses
+// become `derivative_status` (show only these); in "Exclude" mode they become
+// `not_derivative_status` (hide these). Only one side is ever populated, so
+// flipping the toggle simply re-reads the current picks the other way.
+function DerivativeFacet({
+  options,
+  include,
+  exclude,
+  onChange,
+}: {
+  options: VC[];
+  include: string[];
+  exclude: string[];
+  onChange: (next: { include: string[]; exclude: string[] }) => void;
+}) {
+  const [mode, setMode] = useState<"include" | "exclude">(
+    exclude.length ? "exclude" : "include",
+  );
+
+  // Keep the toggle honest when filters change from outside (deep link / Reset):
+  // a populated side wins; with both empty we leave the user's chosen mode.
+  useEffect(() => {
+    if (exclude.length) setMode("exclude");
+    else if (include.length) setMode("include");
+  }, [include.length, exclude.length]);
+
+  if (!options || options.length === 0) return null;
+
+  const selected = mode === "exclude" ? exclude : include;
+  const emit = (next: string[]) =>
+    onChange(
+      mode === "exclude"
+        ? { include: [], exclude: next }
+        : { include: next, exclude: [] },
+    );
+
+  const switchMode = (next: "include" | "exclude") => {
+    if (next === mode) return;
+    setMode(next);
+    // Carry the current picks across so "show only these" ↔ "hide these".
+    onChange(
+      next === "exclude"
+        ? { include: [], exclude: selected }
+        : { include: selected, exclude: [] },
+    );
+  };
+
+  return (
+    <div className="facet">
+      <div className="facet-head">
+        <div className="facet-title">Derivative</div>
+        <div className="view-toggle" role="group" aria-label="Derivative filter mode">
+          {(["include", "exclude"] as const).map((m) => (
+            <button
+              key={m}
+              className={`view-btn${mode === m ? " active" : ""}`}
+              onClick={() => switchMode(m)}
+              aria-pressed={mode === m}
+            >
+              {m === "include" ? "Include only" : "Exclude"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="chips">
+        {options.map((o) => {
+          const value = String(o.value);
+          const active = selected.includes(value);
+          return (
+            <button
+              key={value}
+              className={`chip${active ? (mode === "exclude" ? " active exclude" : " active") : ""}`}
+              onClick={() => emit(toggle(selected, value))}
+            >
+              {mode === "exclude" && active ? "✕ " : ""}
+              {DERIVATIVE_LABELS[value] ?? value}
+              <span className="chip-count">{o.count}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="hint" style={{ marginTop: 4 }}>
+        {mode === "exclude"
+          ? "Hides assets with the selected statuses."
+          : "Shows only assets with the selected statuses."}
       </div>
     </div>
   );
@@ -328,14 +424,13 @@ export default function FilterPanel({
         selected={filters.ext}
         onToggle={(v) => u({ ext: toggle(filters.ext, String(v)) })}
       />
-      <Chips
-        title="Derivative"
+      <DerivativeFacet
         options={facets.derivative_statuses}
-        selected={filters.derivative_status}
-        onToggle={(v) =>
-          u({ derivative_status: toggle(filters.derivative_status, String(v)) })
+        include={filters.derivative_status}
+        exclude={filters.not_derivative_status}
+        onChange={({ include, exclude }) =>
+          u({ derivative_status: include, not_derivative_status: exclude })
         }
-        label={(v) => DERIVATIVE_LABELS[String(v)] ?? String(v)}
       />
       <Chips
         title="Device"

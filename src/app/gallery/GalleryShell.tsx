@@ -96,6 +96,7 @@ function toQuery(
   arr("media_type", f.media_type);
   arr("ext", f.ext);
   arr("derivative_status", f.derivative_status);
+  arr("not_derivative_status", f.not_derivative_status);
   arr("device", f.device);
   arr("camera_model", f.camera_model);
   arr("lens", f.lens);
