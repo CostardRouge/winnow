@@ -226,12 +226,16 @@
     @apply flex flex-col overflow-hidden;
     height: 100%;
   }
+  /* Symmetric vertical padding so the tabs row sits centered in the band
+     between the topbar and the controls toolbar below it (rather than hugging
+     the toolbar). The padding-block stays on .shell-head — not the row — so
+     the row's own box height tracks its content and centering is clean. */
   .shell-head {
-    @apply px-5 pt-5;
+    @apply px-5 py-3;
   }
   /* Tabs on the left, compact stats strip pushed to the right edge. */
   .shell-head-row {
-    @apply flex flex-wrap items-center gap-3 pb-1;
+    @apply flex flex-wrap items-center gap-3;
   }
   /* Dedicated /pipeline page: the full control card in a padded scroll area. */
   .pipeline-body {
@@ -2285,10 +2289,10 @@
      and keeps the counter pinned to the right edge so its popover opens on
      screen instead of off the left side. */
   .shell-head {
-    @apply px-3 pt-4;
+    @apply px-3 py-2;
   }
   .shell-head-row {
-    @apply flex-nowrap gap-2 pb-0;
+    @apply flex-nowrap gap-2;
   }
   .tabs {
     @apply gap-0.5 p-0.5;
