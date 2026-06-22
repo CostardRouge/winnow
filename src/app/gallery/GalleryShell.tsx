@@ -14,6 +14,7 @@ import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
 import MediaViewer from "../MediaViewer";
 import ViewerActions from "../ViewerActions";
+import BulkActionBar from "../BulkActionBar";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -202,7 +203,6 @@ export default function GalleryShell({
   const [treeKey, setTreeKey] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [tagInput, setTagInput] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [facetsError, setFacetsError] = useState<string | null>(null);
@@ -716,91 +716,18 @@ export default function GalleryShell({
       </div>
 
       {!readOnly && selectMode && view === "grid" && (
-        <div className="selectbar">
-          <span className="hint">{selected.size} selected</span>
-          <button
-            className="btn"
-            onClick={() => setSelected(new Set(items.map((i) => i.id)))}
-          >
-            Select all loaded
-          </button>
-          <button className="btn" onClick={() => setSelected(new Set())}>
-            Clear
-          </button>
-          <span className="ctx-sep-v" />
-          <button
-            className="btn btn-pick"
-            disabled={!selected.size}
-            onClick={() => rateMany([...selected], { verdict: "pick" })}
-          >
-            ✓ Pick
-          </button>
-          <button
-            className="btn btn-reject"
-            disabled={!selected.size}
-            onClick={() => rateMany([...selected], { verdict: "reject" })}
-          >
-            ✕ Reject
-          </button>
-          <span className="bulk-stars" role="group" aria-label="Rate selection">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                className="btn bulk-star"
-                disabled={!selected.size}
-                title={`${n} star${n > 1 ? "s" : ""}`}
-                onClick={() => rateMany([...selected], { star: n })}
-              >
-                ★
-              </button>
-            ))}
-          </span>
-          <span className="spacer" />
-          <input
-            className="input"
-            placeholder="tag name"
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            style={{ minWidth: 120 }}
-          />
-          <button
-            className="btn"
-            disabled={!selected.size || !tagInput.trim()}
-            onClick={() => assignTags([...selected], tagInput, true)}
-          >
-            + Tag
-          </button>
-          <button
-            className="btn"
-            disabled={!selected.size || !tagInput.trim()}
-            onClick={() => assignTags([...selected], tagInput, false)}
-          >
-            − Tag
-          </button>
-          <span className="ctx-sep-v" />
-          <button
-            className="btn"
-            disabled={!selected.size}
-            onClick={() => exportSelection([...selected])}
-          >
-            ⤓ Export
-          </button>
-          <button
-            className="btn"
-            disabled={!selected.size}
-            title="Rebuild thumbnail + proxy"
-            onClick={() => regenerateSelection([...selected])}
-          >
-            ↻ Regenerate
-          </button>
-          <button
-            className="btn btn-reject"
-            disabled={!selected.size}
-            onClick={() => removeAssets([...selected])}
-          >
-            🗑 Delete
-          </button>
-        </div>
+        <BulkActionBar
+          count={selected.size}
+          onSelectAll={() => setSelected(new Set(items.map((i) => i.id)))}
+          onClear={() => setSelected(new Set())}
+          onPick={() => rateMany([...selected], { verdict: "pick" })}
+          onReject={() => rateMany([...selected], { verdict: "reject" })}
+          onStar={(n) => rateMany([...selected], { star: n })}
+          onTag={(name, add) => assignTags([...selected], name, add)}
+          onExport={() => exportSelection([...selected])}
+          onRegenerate={() => regenerateSelection([...selected])}
+          onDelete={() => removeAssets([...selected])}
+        />
       )}
 
       {showAside ? (
