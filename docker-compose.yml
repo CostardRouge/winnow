@@ -148,6 +148,12 @@ services:
     env_file: .env
     init: true
     restart: unless-stopped
+    # The worker's own footprint is small (~130 MB anonymous), but decoding media
+    # off the NAS to build derivatives fills the kernel page cache, which the
+    # cgroup attributes to the container — so `docker stats` shows multiple GB of
+    # reclaimable cache, not a leak. Capping the cgroup keeps that cache bounded
+    # (the kernel evicts it under the limit) without starving the actual work.
+    mem_limit: 4g
     # Hardware video encoding (VAAPI): uncomment to share the iGPU, then
     # set VIDEO_HWACCEL=vaapi in .env. Otherwise ffmpeg encodes in software.
     # devices:
