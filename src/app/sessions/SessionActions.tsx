@@ -6,11 +6,15 @@ import type { DownloadFile } from "@/lib/assetActions";
 
 /**
  * The per-session action bar — one segmented control
- * (Complete · Ignore · Export Pics · Download · Delete) shared by the incoming
- * Sessions list and the session detail header so the two stay identical. Icons
- * carry the meaning; the text labels show on wider screens and collapse to
- * icon-only on small viewports and in the compact card layout (tooltips keep
- * every action discoverable). Stays on a single line in every layout.
+ * (Ignore · Export Pics · Download · Delete) shared by the incoming Sessions
+ * list and the session detail header so the two stay identical. Icons carry the
+ * meaning; the text labels show on wider screens and collapse to icon-only on
+ * small viewports and in the compact card layout (tooltips keep every action
+ * discoverable). Stays on a single line in every layout.
+ *
+ * There is no "complete" button: whether a session is done is computed from its
+ * verdict coverage, not hand-set. "Ignore" is the lone manual flag — "skip this
+ * whole session" — which cascades the assets to ignored.
  *
  * "Export Pics" copies the RAW picks to the Capture One folder server-side;
  * "Download" (the shared DownloadMenu) pulls *all* of the session's originals
@@ -18,21 +22,17 @@ import type { DownloadFile } from "@/lib/assetActions";
  * running an export. The download segment only appears when `download` is given.
  */
 export default function SessionActions({
-  completed,
   ignored,
   canExport,
-  onComplete,
   onIgnore,
   onExportPicks,
   onDelete,
   download,
   deleteTitle = "Remove this session (optionally delete its files from disk)",
 }: {
-  completed: boolean;
   ignored: boolean;
   /** Whether the session has any picks to export (disables the export segment). */
   canExport: boolean;
-  onComplete: () => void;
   onIgnore: () => void;
   onExportPicks: () => void;
   onDelete: () => void;
@@ -48,15 +48,6 @@ export default function SessionActions({
 }) {
   return (
     <div className="seg-actions" role="group" aria-label="Session actions">
-      <button
-        className={`seg-btn${completed ? " is-on" : ""}`}
-        onClick={onComplete}
-        aria-label={completed ? "Mark as not complete" : "Mark complete"}
-        title={completed ? "Mark as not complete" : "Mark complete"}
-      >
-        {Icons.keep}
-        <span className="seg-label">{completed ? "Completed" : "Complete"}</span>
-      </button>
       <button
         className="seg-btn"
         onClick={onIgnore}

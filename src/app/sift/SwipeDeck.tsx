@@ -6,7 +6,11 @@
 //
 //   swipe RIGHT  → Pick   (accept)
 //   swipe LEFT   → Reject
-//   swipe UP     → Skip   (move on, no verdict)
+//   swipe UP     → Skip   (reviewed, neither kept nor culled)
+//
+// Skip is a real verdict, not a "deal with it later": it's a deliberate "pass"
+// that counts toward the session being done, so a swiped-up card drops out of
+// the to-sort deck just like a pick or reject.
 //
 // Tap buttons mirror the gestures for desktop / accessibility, and arrow keys
 // drive it too (←/→ verdict, ↑/space skip, Backspace/U undo). Each acted card
@@ -56,11 +60,11 @@ export default function SwipeDeck({
   emptyState,
 }: {
   cards: DeckCard[];
-  /** Persist a verdict for a swiped card (pick = right, reject = left). */
-  onRate: (card: DeckCard, verdict: "pick" | "reject") => void;
+  /** Persist a verdict for a swiped card (right = pick, left = reject, up = skip). */
+  onRate: (card: DeckCard, verdict: "pick" | "reject" | "skip") => void;
   /** Revert the verdict of a card brought back by Undo (→ unrated). Carries the
    *  verdict being undone so the caller can keep its counts in step. */
-  onUndo?: (card: DeckCard, undone: "pick" | "reject") => void;
+  onUndo?: (card: DeckCard, undone: "pick" | "reject" | "skip") => void;
   /** Fired once when the last card has been dealt with. */
   onEmpty?: () => void;
   /** Shown in place of the deck once every card is done. */
@@ -98,8 +102,7 @@ export default function SwipeDeck({
       if (flying || done) return;
       const card = cards[pos];
       if (!card) return;
-      const verdict = verdictOf(dir);
-      if (verdict !== "skip") onRate(card, verdict);
+      onRate(card, verdictOf(dir));
       historyRef.current.push(dir);
       setFlying(dir);
       window.setTimeout(() => {
@@ -122,7 +125,7 @@ export default function SwipeDeck({
       return;
     }
     const card = cards[target];
-    if (last !== "up" && card) onUndo?.(card, verdictOf(last) as "pick" | "reject");
+    if (card) onUndo?.(card, verdictOf(last));
     setDrag({ x: 0, y: 0, active: false });
     setPos(target);
   }, [flying, pos, cards, onUndo]);

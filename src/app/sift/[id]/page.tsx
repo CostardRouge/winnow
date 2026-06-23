@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useState, use as usePromise } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons } from "@/app/ui";
 import SessionProgress from "@/app/sessions/SessionProgress";
@@ -20,6 +19,7 @@ type SessionInfo = {
   root_kind: string;
   pick_count: number | string;
   reject_count: number | string;
+  skip_count: number | string;
   unrated_count: number | string;
 };
 
@@ -33,7 +33,7 @@ type SessionRow = {
 
 // Each verdict is mirrored locally so the progress bar / counter move with every
 // swipe without a round-trip to refetch the session.
-type Counts = { picks: number; rejects: number; total: number };
+type Counts = { picks: number; rejects: number; skips: number; total: number };
 
 export default function SiftSessionPage({
   params,
@@ -41,11 +41,10 @@ export default function SiftSessionPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = usePromise(params);
-  const router = useRouter();
 
   const [name, setName] = useState<string>("");
   const [cards, setCards] = useState<DeckCard[] | null>(null);
-  const [counts, setCounts] = useState<Counts>({ picks: 0, rejects: 0, total: 0 });
+  const [counts, setCounts] = useState<Counts>({ picks: 0, rejects: 0, skips: 0, total: 0 });
   const [swiped, setSwiped] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
@@ -58,14 +57,11 @@ export default function SiftSessionPage({
       .then((d) => {
         if (off) return;
         setName(d.session.name);
-        setCounts({
-          picks: Number(d.session.pick_count) || 0,
-          rejects: Number(d.session.reject_count) || 0,
-          total:
-            (Number(d.session.pick_count) || 0) +
-            (Number(d.session.reject_count) || 0) +
-            (Number(d.session.unrated_count) || 0),
-        });
+        const picks = Number(d.session.pick_count) || 0;
+        const rejects = Number(d.session.reject_count) || 0;
+        const skips = Number(d.session.skip_count) || 0;
+        const unrated = Number(d.session.unrated_count) || 0;
+        setCounts({ picks, rejects, skips, total: picks + rejects + skips + unrated });
       })
       .catch((e) => !off && setError((e as Error).message));
     return () => {
@@ -125,12 +121,13 @@ export default function SiftSessionPage({
   }, [id]);
 
   const rate = useCallback(
-    (card: DeckCard, verdict: "pick" | "reject") => {
+    (card: DeckCard, verdict: "pick" | "reject" | "skip") => {
       setSwiped((n) => n + 1);
       setCounts((c) => ({
         ...c,
         picks: c.picks + (verdict === "pick" ? 1 : 0),
         rejects: c.rejects + (verdict === "reject" ? 1 : 0),
+        skips: c.skips + (verdict === "skip" ? 1 : 0),
       }));
       void fetch(`/api/assets/${card.id}/rating`, {
         method: "PATCH",
@@ -141,13 +138,14 @@ export default function SiftSessionPage({
     [],
   );
 
-  const undo = useCallback((card: DeckCard, undone: "pick" | "reject") => {
+  const undo = useCallback((card: DeckCard, undone: "pick" | "reject" | "skip") => {
     setSwiped((n) => Math.max(0, n - 1));
     setFinished(false);
     setCounts((c) => ({
       ...c,
       picks: c.picks - (undone === "pick" ? 1 : 0),
       rejects: c.rejects - (undone === "reject" ? 1 : 0),
+      skips: c.skips - (undone === "skip" ? 1 : 0),
     }));
     void fetch(`/api/assets/${card.id}/rating`, {
       method: "PATCH",
@@ -155,15 +153,6 @@ export default function SiftSessionPage({
       body: JSON.stringify({ verdict: "unrated" }),
     });
   }, []);
-
-  const markComplete = useCallback(async () => {
-    await fetch(`/api/sessions/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed: true }),
-    });
-    router.push("/sift");
-  }, [id, router]);
 
   const total = cards?.length ?? 0;
   const left = Math.max(0, total - swiped);
@@ -184,7 +173,12 @@ export default function SiftSessionPage({
       </div>
 
       <div className="sift-deck-progress">
-        <SessionProgress picks={counts.picks} rejects={counts.rejects} total={counts.total} />
+        <SessionProgress
+          picks={counts.picks}
+          rejects={counts.rejects}
+          skips={counts.skips}
+          total={counts.total}
+        />
       </div>
 
       <div className="sift-deck-body">
@@ -199,7 +193,6 @@ export default function SiftSessionPage({
             title="Nothing left to sort here"
             subtitle="Every ready file in this session already has a verdict."
             nextId={nextId}
-            onComplete={markComplete}
           />
         ) : (
           <SwipeDeck
@@ -210,9 +203,10 @@ export default function SiftSessionPage({
             emptyState={
               <CompletionPanel
                 title="Session sorted! 🎉"
-                subtitle={`${counts.picks} kept · ${counts.rejects} rejected`}
+                subtitle={`${counts.picks} kept · ${counts.rejects} rejected${
+                  counts.skips > 0 ? ` · ${counts.skips} skipped` : ""
+                }`}
                 nextId={nextId}
-                onComplete={markComplete}
               />
             }
           />
@@ -222,19 +216,17 @@ export default function SiftSessionPage({
   );
 }
 
-// Shown when the deck runs dry: celebrate, then hand off to the next session
-// that still needs triage (or back to the Sift hub), and offer to flag this one
-// done so it drops out of the "to sort" lists.
+// Shown when the deck runs dry: every card now carries a verdict, so the session
+// is automatically "done" — no flag to set. Celebrate, then hand off to the next
+// session that still needs triage (or back to the Sift hub).
 function CompletionPanel({
   title,
   subtitle,
   nextId,
-  onComplete,
 }: {
   title: string;
   subtitle: string;
   nextId: number | null;
-  onComplete: () => void;
 }) {
   return (
     <div className="sift-done">
@@ -244,9 +236,6 @@ function CompletionPanel({
       <h2>{title}</h2>
       <p>{subtitle}</p>
       <div className="sift-done-actions">
-        <button className="btn" onClick={onComplete}>
-          {Icons.keep} Mark complete
-        </button>
         {nextId != null ? (
           <Link href={`/sift/${nextId}`} className="btn btn-primary">
             {Icons.skipFwd} Next session

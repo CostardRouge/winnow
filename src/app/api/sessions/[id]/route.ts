@@ -1,10 +1,12 @@
 // GET    /api/sessions/:id -> one session + its root (kind/path) + the full
-//    status breakdown (ready/pending/error derivatives, pick/reject/unrated
-//    verdicts). Feeds the session detail page header.
-// PATCH  /api/sessions/:id { ignored?, completed? } -> updates the folder.
-//  - ignored : marks as processed; cascades processing_state=ignored and stops
-//    derivatives (§5). Inverse: resets to `unprocessed` and re-enqueues the missing ones.
-//  - completed : simple visual flag (badge), no cascade or processing.
+//    status breakdown (ready/pending/error derivatives, pick/reject/skip/unrated
+//    verdicts) and the computed lifecycle `status` (empty/to_sort/done). Feeds
+//    the session detail page header.
+// PATCH  /api/sessions/:id { ignored } -> updates the folder.
+//  - ignored : the lone manual flag — "skip this whole session". Cascades
+//    processing_state=ignored and stops derivatives (§5). Inverse: resets to
+//    `unprocessed` and re-enqueues the missing ones. (Whether a session is
+//    "done" is computed from its verdicts, never hand-set.)
 // DELETE /api/sessions/:id[?files=true] -> removes the session entirely.
 //  - always: drops the DB row (cascade: assets/ratings/tags/exports) + the
 //    derivative cache (thumb/proxy) — neither of which is an original.
@@ -49,7 +51,15 @@ export async function GET(
          COALESCE(d.live, 0)     AS live_count,
          COALESCE(d.picks, 0)    AS pick_count,
          COALESCE(d.rejects, 0)  AS reject_count,
-         COALESCE(d.unrated, 0)  AS unrated_count
+         COALESCE(d.skips, 0)    AS skip_count,
+         COALESCE(d.unrated, 0)  AS unrated_count,
+         -- Computed lifecycle: empty (no live media) · done (every media has a
+         -- verdict) · to_sort (some still unrated). Orthogonal to s.ignored.
+         CASE
+           WHEN COALESCE(d.live, 0) = 0     THEN 'empty'
+           WHEN COALESCE(d.unrated, 0) = 0  THEN 'done'
+           ELSE 'to_sort'
+         END AS status
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (
@@ -61,6 +71,7 @@ export async function GET(
            count(*) FILTER (WHERE a.derivative_status = 'error')                      AS error,
            count(*) FILTER (WHERE r.verdict = 'pick')                                 AS picks,
            count(*) FILTER (WHERE r.verdict = 'reject')                               AS rejects,
+           count(*) FILTER (WHERE r.verdict = 'skip')                                 AS skips,
            count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')         AS unrated
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
@@ -77,14 +88,9 @@ export async function GET(
   }
 }
 
-const Body = z
-  .object({
-    ignored: z.boolean().optional(),
-    completed: z.boolean().optional(),
-  })
-  .refine((b) => b.ignored !== undefined || b.completed !== undefined, {
-    message: "ignored or completed required",
-  });
+const Body = z.object({
+  ignored: z.boolean(),
+});
 
 export async function PATCH(
   req: NextRequest,
@@ -94,25 +100,10 @@ export async function PATCH(
     const { id } = await params;
     const sessionId = Number.parseInt(id, 10);
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return badRequest("ignored or completed required");
-    const { ignored, completed } = parsed.data;
+    if (!parsed.success) return badRequest("ignored required");
+    const { ignored } = parsed.data;
 
-    let session: Session | null = null;
-
-    // "completed" flag: pure flip, without touching the assets.
-    if (completed !== undefined) {
-      session = await one<Session>(
-        "UPDATE sessions SET completed = $2 WHERE id = $1 RETURNING *",
-        [sessionId, completed],
-      );
-      if (!session) return notFound("Session not found");
-    }
-
-    if (ignored === undefined) {
-      return json({ session });
-    }
-
-    session = await one<Session>(
+    const session = await one<Session>(
       "UPDATE sessions SET ignored = $2 WHERE id = $1 RETURNING *",
       [sessionId, ignored],
     );

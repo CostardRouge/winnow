@@ -30,7 +30,7 @@ export type Facets = {
   // the "Live Photos" filter toggle. Cf. lib/pairing.ts.
   live_photos?: number;
   // Session-level counts for the Sessions grid's status toggles.
-  session_status?: { active: number; ignored: number; completed: number };
+  session_status?: { active: number; ignored: number };
 };
 type VC = { value: string | number; count: number };
 
@@ -79,9 +79,9 @@ export type Filters = {
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
   group_kind?: "raw_jpeg" | "live_photo";
-  // Session grid only: ignored / completed sessions are hidden until opted in.
+  // Session grid only: ignored sessions are hidden until opted in. (Done is the
+  // progress toolbar's job, not a hidden flag.)
   show_ignored?: boolean;
-  show_completed?: boolean;
   // Map zone: [west, south, east, north]. Set by the map view, applied as a
   // cumulative filter to the grid and to bulk actions.
   bbox?: [number, number, number, number];
@@ -341,7 +341,7 @@ export default function FilterPanel({
   facets: Facets | null;
   filters: Filters;
   set: (f: Filters) => void;
-  /** Show the Sessions-only status toggles (ignored / completed). */
+  /** Show the Sessions-only status toggle (ignored). */
   showSessionStatus?: boolean;
 }) {
   if (!facets) return <div className="spinner">Loading filters…</div>;
@@ -367,17 +367,9 @@ export default function FilterPanel({
             >
               Ignored<span className="chip-count">{status.ignored}</span>
             </button>
-            <button
-              className={`chip${filters.show_completed ? " active" : ""}`}
-              onClick={() =>
-                u({ show_completed: filters.show_completed ? undefined : true })
-              }
-            >
-              Completed<span className="chip-count">{status.completed}</span>
-            </button>
           </div>
           <div className="hint" style={{ marginTop: 4 }}>
-            Ignored and completed sessions are hidden until selected.
+            Ignored sessions are hidden until selected.
           </div>
         </div>
       )}

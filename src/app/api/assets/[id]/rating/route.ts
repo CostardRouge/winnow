@@ -8,7 +8,7 @@ import { json, badRequest, serverError } from "@/lib/api";
 import type { Rating } from "@/lib/types";
 
 const Body = z.object({
-  verdict: z.enum(["pick", "reject", "unrated"]).optional(),
+  verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
   star: z.number().int().min(0).max(5).optional(),
   color: z.string().nullable().optional(),
 });

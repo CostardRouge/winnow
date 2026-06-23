@@ -11,7 +11,7 @@ export type GalleryAsset = {
   media_type: "photo" | "video";
   derivative_status: string;
   file_size: number | null;
-  verdict: "pick" | "reject" | "unrated";
+  verdict: "pick" | "reject" | "skip" | "unrated";
   star: number;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, if
   // any, plus the group kind. Drives the corner badge — "RAW+…" for a RAW+JPEG
@@ -109,7 +109,9 @@ export default function VirtualGrid({
                 <span className="play-badge">▶</span>
               )}
               {a.verdict !== "unrated" && (
-                <span className="badge">{a.verdict === "pick" ? "✓" : "✕"}</span>
+                <span className="badge">
+                  {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
+                </span>
               )}
               {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
               <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>

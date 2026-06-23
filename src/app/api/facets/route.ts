@@ -130,13 +130,14 @@ export async function GET(req: NextRequest) {
           params,
         ),
       ),
-      // Session-status facet: counts feed the Sessions grid's hide-by-default
-      // toggles. Session-level (not asset-level), so scoped on roots, by role.
-      one<{ active: number; ignored: number; completed: number }>(
+      // Session-status facet: counts feed the Sessions grid's "Ignored" toggle.
+      // Session-level (not asset-level), so scoped on roots, by role. "Done" is
+      // not a hidden flag (it's the progress filter's job), so it isn't counted
+      // here — only the manual ignored split.
+      one<{ active: number; ignored: number }>(
         `SELECT
-           count(*) FILTER (WHERE NOT s.ignored AND NOT s.completed)::int AS active,
-           count(*) FILTER (WHERE s.ignored)::int                        AS ignored,
-           count(*) FILTER (WHERE s.completed)::int                      AS completed
+           count(*) FILTER (WHERE NOT s.ignored)::int AS active,
+           count(*) FILTER (WHERE s.ignored)::int     AS ignored
          FROM sessions s JOIN roots rt ON rt.id = s.root_id
          ${kind ? "WHERE rt.kind = ANY($1)" : ""}`,
         kind ? [kindsForRole(kind)] : [],
@@ -158,7 +159,7 @@ export async function GET(req: NextRequest) {
       media_types: mediaTypes,
       derivative_statuses: derivativeStatuses,
       tags,
-      session_status: sessionStatus ?? { active: 0, ignored: 0, completed: 0 },
+      session_status: sessionStatus ?? { active: 0, ignored: 0 },
     });
   } catch (err) {
     return serverError(err);

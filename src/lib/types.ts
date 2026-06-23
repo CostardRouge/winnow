@@ -21,10 +21,18 @@ export type Session = {
   captured_at_max: string | null;
   asset_count: number;
   indexed_at: string | null;
+  // The lone manual flag: "skip this whole session". Cascades the assets to
+  // processing_state='ignored'. Everything else about a session's lifecycle
+  // ("to sort" / "done" / "empty") is COMPUTED from verdict coverage, never
+  // hand-set (cf. SessionStatus / api/sessions).
   ignored: boolean;
-  // Visual "done" flag (Incoming tab). Does not affect processing.
-  completed: boolean;
 };
+
+// Computed session lifecycle, derived from the verdict coverage of its live
+// (non-deleted) media — never stored. `empty` has no media to sort; `to_sort`
+// still has unrated media; `done` means every media has a verdict (pick /
+// reject / skip). Orthogonal to the manual `ignored` flag.
+export type SessionStatus = "empty" | "to_sort" | "done";
 
 export type DerivativeStatus =
   | "pending"
@@ -39,7 +47,10 @@ export type ProcessingState =
   | "triaged"
   | "exported";
 
-export type Verdict = "pick" | "reject" | "unrated";
+// A media's culling decision. `unrated` is the only "not yet decided" state;
+// `pick`, `reject` and `skip` are all deliberate verdicts that count toward a
+// session being "done". `skip` = reviewed but neither kept nor culled.
+export type Verdict = "pick" | "reject" | "skip" | "unrated";
 
 export type Asset = {
   id: number;

@@ -83,7 +83,7 @@ export const FilterSchema = z
     not_derivative_status: csv,
 
     // Culling
-    verdict: z.enum(["pick", "reject", "unrated"]).optional(),
+    verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
     star_min: z.coerce.number().int().min(0).max(5).optional(),
 
     // Type / format

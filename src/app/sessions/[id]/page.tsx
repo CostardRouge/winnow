@@ -31,8 +31,9 @@ import {
   sessionDownloadFiles,
   tagAssets,
 } from "@/lib/assetActions";
+import type { SessionStatus } from "@/lib/types";
 
-type Verdict = "pick" | "reject" | "unrated";
+type Verdict = "pick" | "reject" | "skip" | "unrated";
 type AssetRow = {
   id: number;
   filename: string;
@@ -80,7 +81,7 @@ type SessionInfo = {
   captured_at_max: string | null;
   asset_count: number;
   ignored: boolean;
-  completed: boolean;
+  status: SessionStatus;
   root_kind: "source" | "finals" | "inbox" | "export";
   root_path: string;
   ready_count: number | string;
@@ -89,6 +90,7 @@ type SessionInfo = {
   live_count: number | string;
   pick_count: number | string;
   reject_count: number | string;
+  skip_count: number | string;
   unrated_count: number | string;
 };
 
@@ -97,6 +99,7 @@ const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
   { key: "unrated", label: "Unrated" },
   { key: "pick", label: "Picks" },
   { key: "reject", label: "Rejects" },
+  { key: "skip", label: "Skipped" },
 ];
 
 function fmtDate(s: string | null): string {
@@ -337,17 +340,6 @@ export default function SessionGrid({
   }, []);
 
   // --- Session-level actions (mirror the sessions list) --------------------
-  const toggleComplete = useCallback(async () => {
-    if (!session) return;
-    await fetch(`/api/sessions/${session.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed: !session.completed }),
-    });
-    setNotice(session.completed ? "Marked active" : "Marked complete");
-    void loadSession();
-  }, [session, loadSession]);
-
   const toggleIgnore = useCallback(async () => {
     if (!session) return;
     await fetch(`/api/sessions/${session.id}`, {
@@ -458,7 +450,6 @@ export default function SessionGrid({
         {session && (
           <SessionHeader
             s={session}
-            onComplete={toggleComplete}
             onIgnore={toggleIgnore}
             onExportPicks={exportPicks}
             onDelete={() => setConfirming(true)}
@@ -643,14 +634,12 @@ export default function SessionGrid({
 // triage progress) and the session-level actions found everywhere else.
 function SessionHeader({
   s,
-  onComplete,
   onIgnore,
   onExportPicks,
   onDelete,
   onMessage,
 }: {
   s: SessionInfo;
-  onComplete: () => void;
   onIgnore: () => void;
   onExportPicks: () => void;
   onDelete: () => void;
@@ -663,6 +652,7 @@ function SessionHeader({
   const errors = Number(s.error_count) || 0;
   const picks = Number(s.pick_count) || 0;
   const rejects = Number(s.reject_count) || 0;
+  const skips = Number(s.skip_count) || 0;
   const unrated = Number(s.unrated_count) || 0;
   const cullable = s.root_kind === "source" || s.root_kind === "inbox";
 
@@ -674,7 +664,7 @@ function SessionHeader({
             {Icons.folder}
             <span className="session-detail-path">{s.source_path}</span>
             <span className="chip session-detail-kind">{roleLabel(s.root_kind)}</span>
-            {s.completed && <span className="pill done">✓ done</span>}
+            {s.status === "done" && <span className="pill done">✓ done</span>}
             {s.ignored && <span className="pill">ignored</span>}
           </div>
           <div className="session-detail-meta">
@@ -686,10 +676,8 @@ function SessionHeader({
         </div>
 
         <SessionActions
-          completed={s.completed}
           ignored={s.ignored}
           canExport={picks > 0}
-          onComplete={onComplete}
           onIgnore={onIgnore}
           onExportPicks={onExportPicks}
           onDelete={onDelete}
@@ -717,11 +705,12 @@ function SessionHeader({
         <div className="session-stat-group" aria-label="Triage">
           <span className="pill picks">{picks} picks</span>
           <span className="pill rejects">{rejects} rejects</span>
+          {skips > 0 && <span className="pill skips">{skips} skipped</span>}
           <span className="pill unrated">{unrated} unrated</span>
         </div>
       </div>
 
-      <SessionProgress picks={picks} rejects={rejects} total={total} />
+      <SessionProgress picks={picks} rejects={rejects} skips={skips} total={total} />
 
       {cullable && total > 0 && unrated > 0 && (
         <Link href={`/sift/${s.id}`} className="btn btn-primary session-detail-sift">
