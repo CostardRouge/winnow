@@ -230,6 +230,12 @@ services:
     environment: *winnow-env
     init: true
     restart: unless-stopped
+    # The worker's own footprint is small (~130 MB anonymous), but decoding media
+    # off the NAS to build derivatives fills the kernel page cache, which the
+    # cgroup attributes to the container — so `docker stats` shows multiple GB of
+    # reclaimable cache, not a leak. Capping the cgroup keeps that cache bounded
+    # (the kernel evicts it under the limit) without starving the actual work.
+    mem_limit: 4g
     # Shares the Intel iGPU for hardware video encoding (VAAPI). The worker
     # runs as root → access to device nodes without group_add. If the host has
     # no /dev/dri (no iGPU), REMOVE this block and keep VIDEO_HWACCEL=none.
