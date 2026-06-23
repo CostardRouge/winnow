@@ -508,12 +508,16 @@ export default function GalleryShell({
   );
 
   // Rating shortcuts inside the viewer (p/x/u + 0–5). Navigation and
-  // Escape-to-close are handled by MediaViewer itself.
+  // Escape-to-close are handled by MediaViewer itself. P/X mirror the action
+  // bar's toggle: re-pressing the active verdict clears it back to unrated
+  // (same as clicking the lit button). Stars keep explicit set/clear (1–5/0).
   const onViewerKey = useCallback(
     (e: KeyboardEvent, it: Row) => {
       if (readOnly) return;
-      if (e.key.toLowerCase() === "p") return void rate(it.id, { verdict: "pick" });
-      if (e.key.toLowerCase() === "x") return void rate(it.id, { verdict: "reject" });
+      if (e.key.toLowerCase() === "p")
+        return void rate(it.id, { verdict: it.verdict === "pick" ? "unrated" : "pick" });
+      if (e.key.toLowerCase() === "x")
+        return void rate(it.id, { verdict: it.verdict === "reject" ? "unrated" : "reject" });
       if (e.key.toLowerCase() === "u") return void rate(it.id, { verdict: "unrated" });
       if (/^[0-5]$/.test(e.key)) return void rate(it.id, { star: Number(e.key) });
     },

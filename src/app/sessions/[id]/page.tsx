@@ -427,10 +427,15 @@ export default function SessionGrid({
   // Keyboard navigation in the viewer (desktop).
   // Rating shortcuts inside the viewer. Escape/arrow navigation is owned by
   // MediaViewer; this only adds the verdict (p/x/u) and star (0–5) keys.
+  // P/X mirror the action bar's toggle: re-pressing the active verdict clears
+  // it back to unrated (same as clicking the lit button). Stars keep explicit
+  // set/clear (1–5/0).
   const onViewerKey = useCallback(
     (e: KeyboardEvent, a: AssetRow) => {
-      if (e.key.toLowerCase() === "p") return void rate(a.id, { verdict: "pick" });
-      if (e.key.toLowerCase() === "x") return void rate(a.id, { verdict: "reject" });
+      if (e.key.toLowerCase() === "p")
+        return void rate(a.id, { verdict: a.verdict === "pick" ? "unrated" : "pick" });
+      if (e.key.toLowerCase() === "x")
+        return void rate(a.id, { verdict: a.verdict === "reject" ? "unrated" : "reject" });
       if (e.key.toLowerCase() === "u") return void rate(a.id, { verdict: "unrated" });
       if (/^[0-5]$/.test(e.key)) return void rate(a.id, { star: Number.parseInt(e.key, 10) });
     },
