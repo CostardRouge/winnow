@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons, LazyImage } from "../../ui";
+import MediaViewer from "../../MediaViewer";
 
 type Item = {
   id: number;
@@ -57,6 +58,9 @@ export default function HeicRotationPage() {
   // Key of the in-flight fix ("all" or "one:<id>") + ids already re-queued.
   const [busy, setBusy] = useState<string | null>(null);
   const [fixed, setFixed] = useState<Set<number>>(new Set());
+  // Index (within the affected list) of the item open in the full-screen
+  // preview — the current (still-wrong) derivative, so the rotation is visible.
+  const [viewer, setViewer] = useState<number | null>(null);
 
   const ACTIVE = useMemo(
     () => new Set(["waiting", "prioritized", "delayed", "active"]),
@@ -266,15 +270,21 @@ export default function HeicRotationPage() {
                 re-queues generation with the corrected orientation handling.
               </p>
               <div className="fail-list">
-                {result.items.map((it) => {
+                {result.items.map((it, idx) => {
                   const done = fixed.has(it.id);
                   const oneKey = `one:${it.id}`;
                   return (
                     <div className="fail-row" key={it.id}>
                       <div className="fail-head">
-                        <div className="pl-thumb" aria-hidden>
+                        <button
+                          type="button"
+                          className="pl-thumb"
+                          onClick={() => setViewer(idx)}
+                          title="Preview the current (wrong) derivative"
+                          aria-label={`Preview ${it.filename}`}
+                        >
                           <LazyImage src={`/api/assets/${it.id}/thumb`} alt="" />
-                        </div>
+                        </button>
                         <strong className="fail-title">
                           #{it.id} · {it.filename}
                         </strong>
@@ -321,6 +331,43 @@ export default function HeicRotationPage() {
         <div className="empty" style={{ padding: 16 }}>
           Run a scan to check your HEIC/HEIF derivatives for double rotation.
         </div>
+      )}
+
+      {viewer != null && result?.items[viewer] && (
+        <MediaViewer
+          items={result.items.map((it) => ({
+            id: it.id,
+            filename: it.filename,
+            ext: it.ext,
+            media_type: "photo" as const,
+            derivative_status: "ready",
+            rel_path: it.abs_path,
+          }))}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          renderActions={(it) => {
+            const done = fixed.has(it.id);
+            return (
+              <>
+                <a
+                  className="btn"
+                  href={`/api/assets/${it.id}/download`}
+                  download
+                >
+                  Download
+                </a>
+                <button
+                  className="btn"
+                  disabled={busy !== null || done}
+                  onClick={() => fix([it.id], `one:${it.id}`)}
+                >
+                  {busy === `one:${it.id}` ? "…" : done ? "Queued ✓" : "Fix"}
+                </button>
+              </>
+            );
+          }}
+        />
       )}
     </section>
   );

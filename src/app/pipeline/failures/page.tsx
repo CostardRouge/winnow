@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons, LazyImage } from "../../ui";
 import PullToRefresh from "../../PullToRefresh";
+import MediaViewer from "../../MediaViewer";
 
 type DerivItem = {
   asset_id: number;
@@ -815,17 +816,32 @@ function DupGroupCard({
   const thumb = existing?.has_thumb ? `/api/assets/${existing.id}/thumb` : null;
   const size = copies.find((c) => c.file_size != null)?.file_size ?? null;
   const total = (existing ? 1 : 0) + copies.length;
+  // The identical copies share their bytes, so the library copy's preview stands
+  // in for the whole group — open it full-size to eyeball before deciding.
+  const [preview, setPreview] = useState(false);
 
   return (
     <div className="dup-group">
       <div className="dup-group-head">
-        <div className="pl-thumb" aria-hidden>
-          {thumb ? (
+        {thumb && existing ? (
+          <button
+            type="button"
+            className="pl-thumb"
+            onClick={() => setPreview(true)}
+            title="Preview"
+            aria-label="Preview the kept copy"
+          >
             <LazyImage src={thumb} alt="" />
-          ) : (
-            <span className="pl-thumb-empty">{Icons.photos}</span>
-          )}
-        </div>
+          </button>
+        ) : (
+          <div className="pl-thumb" aria-hidden>
+            {thumb ? (
+              <LazyImage src={thumb} alt="" />
+            ) : (
+              <span className="pl-thumb-empty">{Icons.photos}</span>
+            )}
+          </div>
+        )}
         <div className="dup-main">
           <div className="dup-path">
             {total} identical {total === 1 ? "copy" : "copies"}
@@ -875,6 +891,31 @@ function DupGroupCard({
           />
         ))}
       </div>
+
+      {preview && existing && (
+        <MediaViewer
+          items={[
+            {
+              id: existing.id,
+              filename: existing.filename ?? existing.abs_path ?? `#${existing.id}`,
+              media_type: existing.media_type === "video" ? "video" : "photo",
+              rel_path: existing.abs_path,
+            },
+          ]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => setPreview(false)}
+          renderActions={() => (
+            <a
+              className="btn"
+              href={`/api/assets/${existing.id}/download`}
+              download
+            >
+              Download
+            </a>
+          )}
+        />
+      )}
     </div>
   );
 }
