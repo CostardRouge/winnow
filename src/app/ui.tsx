@@ -489,12 +489,16 @@ export const Icons = {
       <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   ),
-  // Sift — a deck of cards with a swipe flick: the fast, mobile triage page.
+  // Sift — a fanned deck of cards: one upright in front, two behind splaying
+  // toward the bottom. The fast, mobile triage page.
   sift: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="6.5" y="5" width="11" height="14" rx="2" />
-      <path d="M9.5 2.8 17 4.2a2 2 0 0 1 1.6 2.3l-1 6.5" opacity="0.55" />
-      <path d="m3.5 12 2.5 2.5M3.5 12l2.5-2.5M3.5 12H1" />
+      {/* Back left */}
+      <rect x="7" y="5.5" width="8" height="13" rx="1.8" transform="rotate(-12 11 18)" />
+      {/* Back right */}
+      <rect x="9" y="5.5" width="8" height="13" rx="1.8" transform="rotate(12 13 18)" />
+      {/* Front */}
+      <rect x="8" y="5" width="8" height="13" rx="1.8" fill="white" />
     </svg>
   ),
   // Check / X / forward — the swipe-deck verdict buttons (pick / reject / skip).
