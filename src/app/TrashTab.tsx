@@ -10,6 +10,7 @@ import {
 import { formatBytes } from "@/lib/format";
 import { SkeletonCards, EmptyState, LazyImage, ConfirmDialog } from "./ui";
 import PullToRefresh from "./PullToRefresh";
+import MediaViewer from "./MediaViewer";
 
 // 40px trash glyph for the empty state (the shared Icons.trash is a 16px inline
 // action icon — too small here, where it sits beside 40px empty-state glyphs).
@@ -81,6 +82,8 @@ export default function TrashTab() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  // Index (within `viewable`) of the item open in the full-screen preview, or null.
+  const [viewer, setViewer] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -177,6 +180,14 @@ export default function TrashTab() {
   const rejectCount = summary?.rejects.count ?? 0;
   const purgeEnabled = summary?.enabled ?? true;
 
+  // Soft-deleted items whose derivative is ready can be previewed full-size; the
+  // viewer pages through exactly those (placeholders for not-yet-ready ones are
+  // never opened), so the index it reports lines up with this list.
+  const viewable = useMemo(
+    () => items.filter((a) => a.derivative_status === "ready"),
+    [items],
+  );
+
   return (
     <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
       {error && (
@@ -253,7 +264,17 @@ export default function TrashTab() {
               {items.map((a) => (
                 <div key={a.id} className="trash-cell">
                   {a.derivative_status === "ready" ? (
-                    <LazyImage src={`/api/assets/${a.id}/thumb`} alt={a.filename} />
+                    <button
+                      type="button"
+                      className="trash-cell-view"
+                      onClick={() =>
+                        setViewer(viewable.findIndex((v) => v.id === a.id))
+                      }
+                      title="Preview"
+                      aria-label={`Preview ${a.filename}`}
+                    >
+                      <LazyImage src={`/api/assets/${a.id}/thumb`} alt={a.filename} />
+                    </button>
                   ) : (
                     <div className="trash-cell-ph">{a.ext.replace(".", "")}</div>
                   )}
@@ -302,6 +323,32 @@ export default function TrashTab() {
             </div>
           )}
         </>
+      )}
+
+      {viewer != null && viewable[viewer] && (
+        <MediaViewer
+          items={viewable}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          renderActions={(it) => (
+            <>
+              <a className="btn" href={`/api/assets/${it.id}/download`} download>
+                Download
+              </a>
+              <button
+                className="btn"
+                onClick={() => {
+                  restoreOne(it.id);
+                  setViewer(null);
+                }}
+                title="Restore to the library"
+              >
+                ↺ Restore
+              </button>
+            </>
+          )}
+        />
       )}
 
       <ConfirmDialog

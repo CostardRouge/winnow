@@ -2372,6 +2372,13 @@
     @apply block h-full w-full object-cover;
     opacity: 0.62;
   }
+  .trash-cell-view {
+    @apply block h-full w-full cursor-pointer border-0 p-0;
+    background: none;
+  }
+  .trash-cell-view:hover img {
+    opacity: 0.9;
+  }
   .trash-cell-ph {
     @apply flex h-full items-center justify-center text-[11px] uppercase;
     color: var(--color-faint);
