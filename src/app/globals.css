@@ -3061,13 +3061,47 @@
     pointer-events: none;
   }
   .deck-card-play {
-    @apply absolute flex items-center justify-center rounded-full;
+    @apply absolute flex items-center justify-center rounded-full border-0;
     width: 56px;
     height: 56px;
     background: color-mix(in srgb, #000 45%, transparent);
     color: #fff;
     font-size: 22px;
     backdrop-filter: blur(2px);
+    cursor: pointer;
+    transition:
+      background 0.15s var(--ease-out),
+      transform 0.15s var(--ease-out);
+  }
+  .deck-card-play:hover {
+    background: color-mix(in srgb, #000 62%, transparent);
+  }
+  .deck-card-play:active {
+    transform: scale(0.94);
+  }
+  /* Peek button — a closer look at the top card (top-right, opposite the
+     format badge). Opens the full-screen viewer over the deck. */
+  .deck-card-view {
+    @apply absolute right-2.5 top-2.5 flex items-center justify-center rounded-full border-0;
+    width: 32px;
+    height: 32px;
+    background: color-mix(in srgb, #000 45%, transparent);
+    color: #fff;
+    backdrop-filter: blur(2px);
+    cursor: pointer;
+    transition:
+      background 0.15s var(--ease-out),
+      transform 0.15s var(--ease-out);
+  }
+  .deck-card-view:hover {
+    background: color-mix(in srgb, #000 62%, transparent);
+  }
+  .deck-card-view:active {
+    transform: scale(0.92);
+  }
+  .deck-card-view svg {
+    width: 16px;
+    height: 16px;
   }
   .deck-card-badge {
     @apply absolute left-2.5 top-2.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase;

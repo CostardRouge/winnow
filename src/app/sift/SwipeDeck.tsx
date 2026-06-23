@@ -24,14 +24,17 @@ import {
 } from "react";
 import { Icons } from "@/app/ui";
 import { formatBadge } from "@/lib/format";
+import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
 
-export type DeckCard = {
-  id: number;
+// A deck card carries everything the swipe surface needs (id, name, format
+// badge) plus the full asset metadata the peek viewer renders (date, camera,
+// dimensions, GPS, the RAW/Live-Photo companion…). The session assets endpoint
+// already returns all of these on every row, so opening a card in the viewer
+// costs no extra round-trip.
+export type DeckCard = ViewerItem & {
   filename: string;
   ext: string;
   media_type: "photo" | "video";
-  companion_ext?: string | null;
-  group_kind?: "raw_jpeg" | "live_photo" | null;
 };
 
 type Dir = "left" | "right" | "up";
@@ -66,12 +69,19 @@ export default function SwipeDeck({
   const [pos, setPos] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [flying, setFlying] = useState<Dir | null>(null);
+  // Peek: open the current (and upcoming) cards in the full-screen MediaViewer
+  // overlay — a closer look + video playback without leaving the deck. Holds an
+  // index into the *remaining* stack (`cards.slice(pos)`); null when closed.
+  // The verdict stays a swipe gesture: the viewer is intentionally read-only so
+  // the deck never loses its one-thumb purpose.
+  const [peek, setPeek] = useState<number | null>(null);
   const startRef = useRef({ x: 0, y: 0 });
   const widthRef = useRef(360);
   const historyRef = useRef<Dir[]>([]);
   const emptiedRef = useRef(false);
 
   const done = pos >= cards.length;
+  const openPeek = useCallback(() => setPeek(0), []);
 
   // Signal "deck cleared" to the parent exactly once.
   useEffect(() => {
@@ -117,11 +127,14 @@ export default function SwipeDeck({
     setPos(target);
   }, [flying, pos, cards, onUndo]);
 
-  // Keyboard: arrows / space / undo. Ignored while typing in a field.
+  // Keyboard: arrows / space / undo, plus Enter/I to peek. Ignored while typing
+  // in a field, and while the viewer is open it owns the keyboard (Esc/arrows)
+  // so swipes don't fire behind the overlay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (peek !== null) return;
       if (e.key === "ArrowRight") return commit("right");
       if (e.key === "ArrowLeft") return commit("left");
       if (e.key === "ArrowUp" || e.key === " ") {
@@ -132,10 +145,14 @@ export default function SwipeDeck({
         e.preventDefault();
         return undo();
       }
+      if (e.key === "Enter" || e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        return openPeek();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commit, undo]);
+  }, [commit, undo, peek, openPeek]);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (flying || done) return;
@@ -234,9 +251,22 @@ export default function SwipeDeck({
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt={card.filename} draggable={false} />
-              {card.media_type === "video" && (
-                <span className="deck-card-play" aria-hidden>▶</span>
-              )}
+              {card.media_type === "video" &&
+                (isTop ? (
+                  // On the top card the play badge is live: tap it to open the
+                  // viewer, which streams the video proxy with full controls.
+                  <button
+                    type="button"
+                    className="deck-card-play"
+                    aria-label="Play video"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={openPeek}
+                  >
+                    ▶
+                  </button>
+                ) : (
+                  <span className="deck-card-play" aria-hidden>▶</span>
+                ))}
               <span className="deck-card-badge">
                 {formatBadge(card.ext, card.companion_ext, card.group_kind)}
               </span>
@@ -244,6 +274,18 @@ export default function SwipeDeck({
 
               {isTop && (
                 <>
+                  {/* Peek — a closer look (zoom, metadata, video) without
+                      leaving the deck. Stops the pointer from starting a drag. */}
+                  <button
+                    type="button"
+                    className="deck-card-view"
+                    aria-label="Take a closer look"
+                    title="View (Enter)"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={openPeek}
+                  >
+                    {Icons.view}
+                  </button>
                   <span
                     className="deck-stamp is-pick"
                     style={{ opacity: lean.dir === "right" ? lean.strength : 0 }}
@@ -304,6 +346,20 @@ export default function SwipeDeck({
           {Icons.pick}
         </button>
       </div>
+
+      {/* The peek overlay. It renders over the deck (a portal on <body>) rather
+          than navigating away, so the deck keeps its place underneath and a
+          close drops you straight back into swiping. Items are the cards still
+          to sort, opened on the current one; browsing here never moves the
+          deck — only swipes/buttons cast a verdict. */}
+      {peek !== null && !done && (
+        <MediaViewer
+          items={cards.slice(pos)}
+          index={Math.min(peek, cards.length - pos - 1)}
+          onIndexChange={setPeek}
+          onClose={() => setPeek(null)}
+        />
+      )}
     </div>
   );
 }
