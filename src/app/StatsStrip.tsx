@@ -1,9 +1,9 @@
 "use client";
 
 // Compact pipeline counters for the Library header — sits on the same row as
-// the Incoming / Final / Exports tabs. On desktop it's a row of value+label
-// chips; on phones it collapses to a single summary chip that opens the detail
-// in a small popover (so the bento no longer eats half the screen). Tapping a
+// the Incoming / Final / Exports tabs. At every width it's a single summary
+// chip ("88K media ▾") that opens the full value+label breakdown in a small
+// popover, so the header stays tight on desktop as well as on phones. Tapping a
 // counter jumps to its dedicated /pipeline triage page.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";

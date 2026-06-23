@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import StatsStrip from "../StatsStrip";
-import { Icons } from "../ui";
 
 // Library chrome shared by every tab/view under /library. The tabs and the
 // active view are now real URL segments:
@@ -47,13 +46,6 @@ export default function LibraryLayout({ children }: { children: ReactNode }) {
       <div className="topbar">
         <h1>Library</h1>
         <span className="hint max-sm:hidden">media triage — NAS</span>
-        <span className="spacer" />
-        <Link href="/volumes" className="btn">
-          {Icons.folderPlus} Add folder
-        </Link>
-        <Link href="/import" className="btn btn-primary">
-          {Icons.upload} Import
-        </Link>
       </div>
 
       <div className="shell-head">

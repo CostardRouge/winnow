@@ -143,13 +143,6 @@ export default function Tree({
           </button>
         ))}
       </div>
-      <button
-        className="btn"
-        style={{ width: "100%", marginBottom: 8 }}
-        onClick={() => onScope([])}
-      >
-        ↺ All (clear scope)
-      </button>
       {error ? (
         <div className="hint">Couldn’t load tree: {error}</div>
       ) : !roots ? (
