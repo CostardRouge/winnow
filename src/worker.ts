@@ -14,11 +14,9 @@ import {
   type ExportJob,
   type ImportJob,
   type PurgeJob,
-  type MaintenanceJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
-import { scanHeicRotation, buildHeicRotationResult } from "./lib/heicRotation";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
@@ -148,36 +146,12 @@ const purgeWorker = new Worker(
   { connection, concurrency: config.purgeConcurrency },
 );
 
-// Maintenance: one task at a time. Currently the HEIC double-rotation scan,
-// which walks every HEIC original's metadata and reports progress as it goes.
-const maintenanceWorker = new Worker(
-  QUEUES.maintenance,
-  async (job) => {
-    const data = job.data as MaintenanceJob;
-    if (data.kind === "heic-rotation-scan") {
-      console.log("[maintenance] HEIC rotation scan…");
-      const report = await scanHeicRotation({
-        onProgress: (processed, total) => {
-          void job.updateProgress({ processed, total });
-        },
-      });
-      const result = buildHeicRotationResult(report);
-      console.log(
-        `[maintenance] HEIC rotation scan done: ${result.affectedCount} affected / ${result.scanned} scanned`,
-      );
-      return result;
-    }
-  },
-  { connection, concurrency: 1 },
-);
-
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
   ["export", exportWorker],
   ["import", importWorker],
   ["purge", purgeWorker],
-  ["maintenance", maintenanceWorker],
 ] as const) {
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
@@ -214,7 +188,6 @@ async function shutdown() {
     exportWorker.close(),
     importWorker.close(),
     purgeWorker.close(),
-    maintenanceWorker.close(),
   ]);
   await closeExiftool();
   process.exit(0);
