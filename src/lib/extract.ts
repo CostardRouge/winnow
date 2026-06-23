@@ -263,25 +263,82 @@ async function longestEdge(jpegPath: string): Promise<number> {
 //     regardless of DERIVATIVE_CONCURRENCY; the cheap preview path is never gated.
 let heicGate: Promise<unknown> = Promise.resolve();
 function decodeHeicToJpeg(absPath: string): Promise<Buffer> {
-  const run = heicGate.then(async () => {
-    const { default: heicConvert } = await import("heic-convert");
-    const input = await readFile(absPath);
-    // heic-decode sniffs the brand with `String.fromCharCode(...buf.slice(8,12))`
-    // (needs an iterable byte view) and libheif wants a Uint8Array: the Node
-    // Buffer from readFile satisfies both. The published @types claim
-    // ArrayBufferLike, which is wrong for the runtime — hence the cast.
-    const jpeg = await heicConvert({
-      buffer: input as unknown as ArrayBufferLike,
-      format: "JPEG",
-    });
-    return Buffer.from(jpeg);
-  });
-  // Keep the gate chained even when a decode throws, without leaking rejections.
+  const run = heicGate.then(() => decodeHeicGated(absPath));
+  // Keep the gate chained even when a decode throws/settles, without leaking
+  // rejections. Critically, decodeHeicGated ALWAYS settles (see below), so this
+  // chain can never stall — a single bad file can't jam the gate for the rest.
   heicGate = run.then(
     () => undefined,
     () => undefined,
   );
   return run;
+}
+
+// One decode, run strictly one-at-a-time (serialized by heicGate), wrapped so
+// the returned promise ALWAYS settles. libheif fails two ways in practice:
+//   1. a normal rejection from heic-convert — caught by the `.then(onRej)` arm;
+//   2. an ASYNCHRONOUS throw from inside the WASM, surfacing as a process-level
+//      'uncaughtException'/'unhandledRejection' on a timer callback (seen:
+//      "RangeError: offset is out of bounds" on a malformed HEIF). That throw
+//      escapes the await, so heic-convert's promise NEVER settles — and without
+//      this guard the serialized gate would jam every later HEIF forever.
+// Because exactly one decode is ever in flight and libheif is the only thing on
+// this path that touches WASM, a libheif-stack async error during this window
+// belongs to THIS decode: we adopt it as a rejection so the gate frees. A hard
+// timeout backstops any other hang. Whichever fires first wins; the rest are
+// ignored. The global guards in worker.ts still log the stray throw and keep the
+// process alive — they just no longer leave the decode dangling.
+async function decodeHeicGated(absPath: string): Promise<Buffer> {
+  const { default: heicConvert } = await import("heic-convert");
+  const input = await readFile(absPath);
+  const timeoutMs = config.heicDecodeTimeoutMs;
+
+  return await new Promise<Buffer>((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      process.off("uncaughtException", onAsyncThrow);
+      process.off("unhandledRejection", onAsyncThrow);
+      action();
+    };
+    // Only claim an async error that came through libheif's WASM; anything else
+    // (a concurrent video/index job throwing) is left untouched for the global
+    // guard, so we never mis-attribute an unrelated failure to this decode.
+    const onAsyncThrow = (err: unknown): void => {
+      const trace = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      if (!/libheif/i.test(trace)) return;
+      finish(() =>
+        reject(err instanceof Error ? err : new Error(String(err))),
+      );
+    };
+    process.on("uncaughtException", onAsyncThrow);
+    process.on("unhandledRejection", onAsyncThrow);
+    if (timeoutMs > 0) {
+      timer = setTimeout(
+        () =>
+          finish(() =>
+            reject(new Error(`HEIF decode timed out after ${timeoutMs} ms`)),
+          ),
+        timeoutMs,
+      );
+      timer.unref();
+    }
+
+    // heic-decode sniffs the brand with `String.fromCharCode(...buf.slice(8,12))`
+    // (needs an iterable byte view) and libheif wants a Uint8Array: the Node
+    // Buffer from readFile satisfies both. The published @types claim
+    // ArrayBufferLike, which is wrong for the runtime — hence the cast.
+    heicConvert({
+      buffer: input as unknown as ArrayBufferLike,
+      format: "JPEG",
+    }).then(
+      (jpeg) => finish(() => resolve(Buffer.from(jpeg))),
+      (err) => finish(() => reject(err)),
+    );
+  });
 }
 
 export async function closeExiftool(): Promise<void> {

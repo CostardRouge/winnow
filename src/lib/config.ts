@@ -182,6 +182,18 @@ const EnvSchema = z
     PROXY_SIZE: intEnv(2048, { min: 1 }),
     THUMB_QUALITY: intEnv(70, { min: 1, max: 100 }),
     PROXY_QUALITY: intEnv(80, { min: 1, max: 100 }),
+
+    // --- HEIF/HEVC decode (libheif) --------------------------------------
+    // A malformed HEIF can make libheif throw ASYNCHRONOUSLY from inside its
+    // WASM (seen in the wild: "RangeError: offset is out of bounds" on a timer
+    // callback) — the throw escapes the await, so heic-convert's promise never
+    // settles. Decodes are serialized through a single gate, so one dangling
+    // decode would jam EVERY later HEIF forever. We bound each decode: past this
+    // many ms it is abandoned (the asset falls back to its embedded preview, or
+    // is marked 'error') and the gate is freed. 0 disables the time cap (the
+    // async-throw guard still frees the gate). Generous by default so a slow
+    // 60 MP decode on a busy box is never cut short.
+    HEIC_DECODE_TIMEOUT_MS: intEnv(120000, { min: 0 }),
   })
   .superRefine((_env, ctx) => {
     // Coherence: selecting the s3 driver but leaving the dev defaults in place
@@ -273,6 +285,8 @@ function loadConfig() {
     proxySize: e.PROXY_SIZE,
     thumbQuality: e.THUMB_QUALITY,
     proxyQuality: e.PROXY_QUALITY,
+
+    heicDecodeTimeoutMs: e.HEIC_DECODE_TIMEOUT_MS,
   };
 }
 
