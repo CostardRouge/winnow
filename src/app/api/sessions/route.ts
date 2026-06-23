@@ -9,13 +9,15 @@
 // filter beyond the role, every active session of that role shows (including
 // empty ones).
 //
-// Session STATUS (ignored / completed) is a session-level flag, not an asset
-// filter: both are HIDDEN by default. `show_ignored=true` / `show_completed=true`
-// opt those sessions back into the list (additively).
+// Each session carries its computed lifecycle `status` (empty/to_sort/done) and
+// the manual `ignored` flag. Ignored folders are HIDDEN by default;
+// `show_ignored=true` opts them back into the list. "Done" is not a hidden flag
+// — completeness visibility is governed by the `progress` filter below.
 //
-// TRIAGE progress: each session carries pick/reject/unrated counts plus a
+// TRIAGE progress: each session carries pick/reject/skip/unrated counts plus a
 // `frac` (triaged ÷ total) so the UI can draw the progress bar and the Sift page
-// can rank / filter by completeness:
+// can rank / filter by completeness. "Triaged" = picks + rejects + skips (every
+// deliberate verdict); only `unrated` media are still "to sort":
 //   - `progress` filter: untouched (nothing triaged) · partial (some, not all) ·
 //     incomplete (untouched+partial — "still to sort") · complete (all triaged).
 //   - `sort`: captured (capture date, default) · touched (most recent verdict) ·
@@ -42,20 +44,21 @@ export async function GET(req: NextRequest) {
       clauses.push(`rt.kind = ANY($${params.length})`);
     }
 
-    // Session status: ignored and completed sessions drop out of the list
-    // unless explicitly opted back in. Each toggle relaxes its own exclusion,
-    // so the two are independent (and additive when both are on).
+    // Ignored folders drop out of the list unless explicitly opted back in.
+    // "Done" sessions are NOT hidden here: completeness visibility is the job of
+    // the `progress` filter below (All / "to sort" / Done), so the two never
+    // disagree.
     const showIgnored = sp.get("show_ignored") === "true";
-    const showCompleted = sp.get("show_completed") === "true";
     params.push(showIgnored);
     clauses.push(`(s.ignored = false OR $${params.length})`);
-    params.push(showCompleted);
-    clauses.push(`(s.completed = false OR $${params.length})`);
 
     // Triage-progress filter, expressed against the counters in the `d`
     // subquery below (LEFT JOIN → COALESCE the NULLs of an empty session to 0).
     // No user input is interpolated, so these fixed fragments are injection-safe.
-    const triaged = "(COALESCE(d.picks,0) + COALESCE(d.rejects,0))";
+    // "Triaged" counts every deliberate verdict (pick + reject + skip); the only
+    // bucket that keeps a session "to sort" is `unrated`.
+    const triaged =
+      "(COALESCE(d.picks,0) + COALESCE(d.rejects,0) + COALESCE(d.skips,0))";
     const total = `(${triaged} + COALESCE(d.unrated,0))`;
     switch (sp.get("progress")) {
       case "untouched":
@@ -115,7 +118,15 @@ export async function GET(req: NextRequest) {
          COALESCE(d.error, 0)   AS error_count,
          COALESCE(d.picks, 0)   AS pick_count,
          COALESCE(d.rejects, 0) AS reject_count,
+         COALESCE(d.skips, 0)   AS skip_count,
          COALESCE(d.unrated, 0) AS unrated_count,
+         -- Computed lifecycle: empty (no live media) · done (every media has a
+         -- verdict) · to_sort (some still unrated). Orthogonal to s.ignored.
+         CASE
+           WHEN COALESCE(d.live, 0) = 0     THEN 'empty'
+           WHEN COALESCE(d.unrated, 0) = 0  THEN 'done'
+           ELSE 'to_sort'
+         END                    AS status,
          d.last_reviewed        AS last_reviewed_at,
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
@@ -123,19 +134,22 @@ export async function GET(req: NextRequest) {
        LEFT JOIN (
          SELECT
            a.session_id,
+           count(*)                                                                    AS live,
            count(*) FILTER (WHERE a.derivative_status = 'ready')                       AS ready,
            count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))     AS pending,
            count(*) FILTER (WHERE a.derivative_status = 'error')                       AS error,
            count(*) FILTER (WHERE r.verdict = 'pick')                                  AS picks,
            count(*) FILTER (WHERE r.verdict = 'reject')                                AS rejects,
+           count(*) FILTER (WHERE r.verdict = 'skip')                                  AS skips,
            count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')          AS unrated,
            max(r.reviewed_at)                                                          AS last_reviewed,
-           -- Fraction triaged (picks+rejects ÷ all media); NULL for an empty
+           -- Fraction triaged (every verdict ÷ all media); NULL for an empty
            -- session so NULLS LAST parks it at the end of a progress sort.
-           (count(*) FILTER (WHERE r.verdict IN ('pick','reject')))::float
+           (count(*) FILTER (WHERE r.verdict IN ('pick','reject','skip')))::float
              / NULLIF(count(*), 0)                                                     AS frac
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
+         WHERE a.deleted_at IS NULL
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
        -- A handful of ready thumbnails (earliest first) to preview the session,
@@ -148,6 +162,7 @@ export async function GET(req: NextRequest) {
            SELECT a.id, a.ext, a.media_type
            FROM assets a
            WHERE a.session_id = s.id AND a.derivative_status = 'ready'
+             AND a.deleted_at IS NULL
            ORDER BY a.captured_at ASC NULLS LAST, a.id ASC
            LIMIT 8
          ) x

@@ -7,7 +7,7 @@ import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z.object({
   ids: z.array(z.number().int()).min(1),
-  verdict: z.enum(["pick", "reject", "unrated"]).optional(),
+  verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
   star: z.number().int().min(0).max(5).optional(),
 });
 

@@ -784,6 +784,11 @@
     border-color: color-mix(in srgb, var(--color-reject) 35%, var(--color-border));
     background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
   }
+  .pill.skips {
+    color: var(--color-star);
+    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
+  }
   .pill.unrated {
     color: var(--color-muted);
     border-color: var(--color-border-strong);
@@ -1031,6 +1036,10 @@
   .session-progress-fill.is-reject {
     background: var(--color-reject);
   }
+  /* Skips (reviewed, neither kept nor culled) — amber, matching the deck stamp. */
+  .session-progress-fill.is-skip {
+    background: var(--color-star);
+  }
   .session-progress-label {
     @apply text-xs font-medium;
     font-variant-numeric: tabular-nums;
@@ -1149,6 +1158,14 @@
     opacity: 0.5;
   }
   .cell.reject:hover {
+    opacity: 1;
+  }
+  /* Skip: reviewed but neither kept nor culled — amber edge, gently dimmed. */
+  .cell.skip {
+    border-color: var(--color-star);
+    opacity: 0.72;
+  }
+  .cell.skip:hover {
     opacity: 1;
   }
   .cell.selected {

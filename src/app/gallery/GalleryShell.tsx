@@ -126,9 +126,8 @@ function toQuery(
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
   if (f.group_kind) sp.set("group_kind", f.group_kind);
-  // Session-grid status toggles (ignored/completed are hidden by default).
+  // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
-  if (f.show_completed) sp.set("show_completed", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
   if (cursor) sp.set("cursor", cursor);
   return sp.toString();

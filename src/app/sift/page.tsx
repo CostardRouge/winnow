@@ -22,9 +22,9 @@ type SessionRow = {
   device_hint: string | null;
   asset_count: number;
   ignored: boolean;
-  completed: boolean;
   pick_count: number | string;
   reject_count: number | string;
+  skip_count: number | string;
   unrated_count: number | string;
   ready_count: number | string;
   last_reviewed_at: string | null;
@@ -33,7 +33,7 @@ type SessionRow = {
 
 const num = (v: number | string | null | undefined) => Number(v) || 0;
 const triageTotal = (s: SessionRow) =>
-  num(s.pick_count) + num(s.reject_count) + num(s.unrated_count);
+  num(s.pick_count) + num(s.reject_count) + num(s.skip_count) + num(s.unrated_count);
 
 // Sort keys exposed in the toolbar → the API's `sort` param.
 const SORTS: { key: string; label: string }[] = [
@@ -136,6 +136,7 @@ export default function SiftHub() {
               <SessionProgress
                 picks={num(resume.pick_count)}
                 rejects={num(resume.reject_count)}
+                skips={num(resume.skip_count)}
                 total={triageTotal(resume)}
               />
             </div>
@@ -234,6 +235,7 @@ export default function SiftHub() {
                     <SessionProgress
                       picks={num(s.pick_count)}
                       rejects={num(s.reject_count)}
+                      skips={num(s.skip_count)}
                       total={triageTotal(s)}
                       compact
                     />

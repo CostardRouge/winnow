@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import { sessionDownloadFiles } from "@/lib/assetActions";
+import type { SessionStatus } from "@/lib/types";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import SessionActions from "./sessions/SessionActions";
@@ -13,7 +14,8 @@ import ThumbStrip, { type StripItem } from "./ThumbStrip";
 import PullToRefresh from "./PullToRefresh";
 
 // The incoming "Sessions" view: the work queue of scanned NAS folders.
-//  - counters + actions per session (ignore, mark done, export picks to C1);
+//  - counters + actions per session (ignore, export picks to C1); a session's
+//    "done" badge is computed from its verdict coverage, not hand-set;
 //  - an indexing bar to scan a new path into the queue.
 //
 // Renders in one of two layouts (chosen from the section toolbar): a "list"
@@ -40,21 +42,27 @@ type SessionRow = {
   captured_at_min: string | null;
   captured_at_max: string | null;
   ignored: boolean;
-  completed: boolean;
+  status: SessionStatus;
   ready_count: number;
   pending_count: number;
   error_count: number;
   pick_count: number;
   reject_count: number;
+  skip_count: number;
   unrated_count: number;
   last_reviewed_at: string | null;
   sample_assets: SampleAsset[];
 };
 
-// Picks + rejects vs the whole session (picks + rejects + unrated): every asset
-// falls in exactly one bucket, so the three counts sum to the cullable total.
+// Every verdict (pick + reject + skip) plus the still-unrated media: every asset
+// falls in exactly one bucket, so the counts sum to the cullable total.
 function triageTotal(s: SessionRow): number {
-  return Number(s.pick_count) + Number(s.reject_count) + Number(s.unrated_count);
+  return (
+    Number(s.pick_count) +
+    Number(s.reject_count) +
+    Number(s.skip_count) +
+    Number(s.unrated_count)
+  );
 }
 
 function fmtDate(s: string | null): string {
@@ -85,7 +93,7 @@ function SessionCounters({ s }: { s: SessionRow }) {
         <span className="pill error">{s.error_count} errors</span>
       )}
       <span className="pill picks">{s.pick_count} picks</span>
-      {s.completed && <span className="pill done">✓ done</span>}
+      {s.status === "done" && <span className="pill done">✓ done</span>}
     </div>
   );
 }
@@ -194,15 +202,6 @@ export default function SessionsPane({
     await load();
   }
 
-  async function toggleComplete(s: SessionRow) {
-    await fetch(`/api/sessions/${s.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ completed: !s.completed }),
-    });
-    await load();
-  }
-
   async function exportPicks(s: SessionRow) {
     const name = prompt(
       "Export name (RAW copy of picks to the C1 export folder):",
@@ -229,10 +228,8 @@ export default function SessionsPane({
   function sessionActions(s: SessionRow) {
     return (
       <SessionActions
-        completed={s.completed}
         ignored={s.ignored}
         canExport={s.pick_count > 0}
-        onComplete={() => toggleComplete(s)}
         onIgnore={() => toggleIgnore(s)}
         onExportPicks={() => exportPicks(s)}
         onDelete={() => setConfirming(s)}
@@ -313,6 +310,7 @@ export default function SessionsPane({
                 <SessionProgress
                   picks={Number(s.pick_count)}
                   rejects={Number(s.reject_count)}
+                  skips={Number(s.skip_count)}
                   total={triageTotal(s)}
                   compact
                 />
@@ -349,6 +347,7 @@ export default function SessionsPane({
               <SessionProgress
                 picks={Number(s.pick_count)}
                 rejects={Number(s.reject_count)}
+                skips={Number(s.skip_count)}
                 total={triageTotal(s)}
                 compact
                 className="is-footer"
