@@ -659,23 +659,25 @@ export default function GalleryShell({
           {sortDir === "desc" ? Icons.arrowDown : Icons.arrowUp}
         </button>
         <button
-          className="btn"
+          className="icon-toggle"
           onClick={() => setGridSize((s) => (s + 1) % GRID_SIZES.length)}
           aria-label={`Thumbnail size: ${GRID_SIZES[gridSize].label} (tap to change)`}
           title={`Thumbnail size: ${GRID_SIZES[gridSize].label}`}
         >
           {Icons.gridSize}
-          <span className="max-sm:hidden">{GRID_SIZES[gridSize].label}</span>
         </button>
         {!readOnly && (
           <button
-            className={`btn${selectMode ? " btn-primary" : ""}`}
+            className={`icon-toggle${selectMode ? " active" : ""}`}
             onClick={() => {
               setSelectMode((m) => !m);
               setSelected(new Set());
             }}
+            aria-label={selectMode ? "Done selecting" : "Select multiple"}
+            aria-pressed={selectMode}
+            title={selectMode ? "Done selecting" : "Select multiple"}
           >
-            {selectMode ? "Done" : "Select"}
+            {Icons.select}
           </button>
         )}
       </>

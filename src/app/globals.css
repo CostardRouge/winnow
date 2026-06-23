@@ -2868,12 +2868,6 @@
     font-weight: 600;
   }
 
-  /* The Sift entry button on the Sessions toolbar carries an icon at the shared
-     toolbar height; keep its glyph from inflating the row. */
-  .incoming-sift-link svg {
-    width: 18px;
-    height: 18px;
-  }
   /* "Sift N unrated" CTA under the session detail progress bar. */
   .session-detail-sift {
     @apply mt-1 inline-flex w-fit items-center gap-1.5;

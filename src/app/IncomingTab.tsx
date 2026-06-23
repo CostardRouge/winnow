@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import GalleryShell from "./gallery/GalleryShell";
 import { decodeFilters, encodeFilters } from "./gallery/filterParams";
@@ -108,10 +107,6 @@ export default function IncomingTab({ view }: { view: string }) {
             </button>
           ))}
         </div>
-        <Link href="/sift" className="btn btn-primary incoming-sift-link" title="Open Sift — fast swipe triage">
-          {Icons.sift}
-          <span className="max-sm:hidden">Sift</span>
-        </Link>
         <button
           className="icon-toggle"
           onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
