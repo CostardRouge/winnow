@@ -11,6 +11,11 @@ import type { Asset } from "./types";
 
 // sharp reads large previews: we allow very wide images.
 sharp.cache(false);
+// Cap libvips' per-operation thread pool (defaults to the CPU count). Parallelism
+// is already bounded at the job level (DERIVATIVE_CONCURRENCY), so a smaller pool
+// avoids dozens of native threads — each with its own glibc malloc arena — from
+// fragmenting and pinning the worker's RSS. See SHARP_CONCURRENCY in config.ts.
+sharp.concurrency(config.sharpConcurrency);
 
 // Rotation angle (clockwise degrees) for non-mirror EXIF orientations.
 // 2/4/5/7 (mirrors) are almost nonexistent in RAW photos -> ignored (0 deg).

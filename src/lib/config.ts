@@ -168,6 +168,14 @@ const EnvSchema = z
     EXPORT_CONCURRENCY: intEnv(2, { min: 1 }),
     PURGE_CONCURRENCY: intEnv(1, { min: 1 }),
 
+    // libvips threads PER sharp operation. Defaults to the CPU count, which —
+    // multiplied by DERIVATIVE_CONCURRENCY jobs each decoding a large RAW
+    // preview — spins up dozens of native threads, and under glibc each carries
+    // its own malloc arena that fragments and pins RSS. We already bound
+    // parallelism at the job level, so 1 thread per op keeps memory flat without
+    // hurting throughput. Raise it only if derivative latency matters more than RAM.
+    SHARP_CONCURRENCY: intEnv(1, { min: 1 }),
+
     // --- Purge (reclaim space) -------------------------------------------
     // The end of the "winnowing": soft-delete is the recycle bin (recoverable),
     // purge physically removes the trashed originals + their derivatives to free
@@ -275,6 +283,7 @@ function loadConfig() {
     derivativeConcurrency: e.DERIVATIVE_CONCURRENCY,
     exportConcurrency: e.EXPORT_CONCURRENCY,
     purgeConcurrency: e.PURGE_CONCURRENCY,
+    sharpConcurrency: e.SHARP_CONCURRENCY,
 
     // Reclaim-space (purge) capability. `enabled=false` makes /api/purge 403.
     purge: {
