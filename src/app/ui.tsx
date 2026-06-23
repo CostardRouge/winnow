@@ -493,9 +493,12 @@ export const Icons = {
   // toward the bottom. The fast, mobile triage page.
   sift: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="8.5" y="5" width="7" height="14" rx="1.6" transform="rotate(-15 12 6)" opacity="0.5" />
-      <rect x="8.5" y="5" width="7" height="14" rx="1.6" transform="rotate(15 12 6)" opacity="0.5" />
-      <rect x="8.5" y="5" width="7" height="14" rx="1.6" />
+      {/* Back left */}
+      <rect x="7" y="5.5" width="8" height="13" rx="1.8" transform="rotate(-12 11 18)" />
+      {/* Back right */}
+      <rect x="9" y="5.5" width="8" height="13" rx="1.8" transform="rotate(12 13 18)" />
+      {/* Front */}
+      <rect x="8" y="5" width="8" height="13" rx="1.8" fill="white" />
     </svg>
   ),
   // Check / X / forward — the swipe-deck verdict buttons (pick / reject / skip).
