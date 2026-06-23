@@ -497,14 +497,39 @@
 
   /* ---- Compact stats strip (Library header) ----------------------------- */
   .stats-strip {
-    @apply relative flex items-center;
+    @apply relative flex flex-shrink-0 items-center;
   }
-  /* Summary chip is mobile-only; desktop shows the full chip row. */
-  .stats-summary {
-    display: none;
-  }
+  /* Compact everywhere: a single summary chip ("88K media ▾") that opens the
+     full breakdown in a popover — on desktop as well as on phones, so the
+     Library header stays tight instead of spreading into a wide chip row. */
   .stats-chips {
-    @apply flex flex-wrap items-center gap-2;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 184px;
+    gap: 2px;
+    padding: 6px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-pop);
+  }
+  .stats-strip.open .stats-chips {
+    display: flex;
+  }
+  .stats-chips .stat-chip {
+    justify-content: space-between;
+    border: 0;
+    background: transparent;
+    padding: 8px 10px;
+  }
+  .stats-chips .stat-chip:hover {
+    transform: none;
+    background: var(--color-surface-2);
   }
   .stat-chip {
     @apply inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1;
@@ -544,7 +569,7 @@
     color: var(--color-reject);
   }
   .stats-summary {
-    @apply items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5;
+    @apply inline-flex items-center gap-1 rounded-[var(--radius)] border px-2.5 py-1;
     background: var(--color-surface-2);
     border-color: var(--color-border);
     color: var(--color-text);
@@ -1672,12 +1697,14 @@
   /* A day cell: a thumbnail backdrop with the day number + count overlaid.
      Empty days are flat and non-interactive; days with media lift on hover. */
   .cal-day {
-    @apply relative flex items-start justify-start overflow-hidden p-1.5;
+    @apply relative flex min-h-0 items-start justify-start overflow-hidden p-1.5;
     border-radius: var(--radius);
     border: 1px solid var(--color-border);
     background: var(--color-surface);
     color: var(--color-muted);
-    aspect-ratio: 1 / 1;
+    /* Fill the grid row (grid-auto-rows: minmax(56px, 1fr)) rather than forcing
+       a square via aspect-ratio: a square cell can be taller than its 1fr track,
+       overflowing downward and overlapping the row beneath it. */
     transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
   }
   .cal-day.is-outside {
@@ -2433,46 +2460,9 @@
     /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
     padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
   }
-  .stats-strip {
-    @apply flex-shrink-0;
-  }
-
-  /* Stats collapse to a single summary chip; detail opens in a popover so the
-     bento never eats the screen height on a phone. Trim its padding/gap so the
-     "88K media ▾" chip stays narrow enough to share the row with the tabs. */
-  .stats-summary {
-    display: inline-flex;
-    @apply gap-1 px-2.5 py-1;
-  }
-  .stats-chips {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    z-index: 30;
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    min-width: 184px;
-    gap: 2px;
-    padding: 6px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-pop);
-  }
-  .stats-strip.open .stats-chips {
-    display: flex;
-  }
-  .stats-chips .stat-chip {
-    justify-content: space-between;
-    border: 0;
-    background: transparent;
-    padding: 8px 10px;
-  }
-  .stats-chips .stat-chip:hover {
-    transform: none;
-    background: var(--color-surface-2);
-  }
+  /* The compact summary chip + popover is now the default at every width (see
+     the base .stats-strip rules), so the header needs no phone-specific stats
+     overrides here. */
 }
 
 @media (max-width: 760px) {

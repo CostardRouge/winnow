@@ -243,7 +243,11 @@ export default function CalendarView({
                         rootMargin="200px"
                       />
                     )}
-                    <span className="cal-day-num">{cell.getUTCDate()}</span>
+                    <span className="cal-day-num">
+                      {outside
+                        ? `${MONTHS[cell.getUTCMonth()].slice(0, 3)} ${cell.getUTCDate()}`
+                        : cell.getUTCDate()}
+                    </span>
                     {info && <span className="cal-day-count">{info.count}</span>}
                   </button>
                 );
