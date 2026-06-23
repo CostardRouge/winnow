@@ -62,7 +62,41 @@ export async function bootstrapRoots(): Promise<void> {
     }
   }
 
+  await recoverStuckProcessing();
   await backfillVideoDerivatives();
+}
+
+// Self-heal: derivative jobs that were interrupted mid-flight leave their asset
+// stranded at derivative_status='processing'. The flag is written to Postgres at
+// the very start of generateDerivative and only cleared when the job reaches
+// 'ready'/'error', so a worker killed or restarted in between (a compose
+// restart, an OOM, dev hot-reload) leaves an orphan: incremental indexing never
+// revisits an unchanged file, and nothing else re-enqueues a 'processing' row,
+// so it would sit there forever. On a fresh worker no derivative job is running
+// yet, so every 'processing' row is necessarily a leftover — we reset it to
+// 'pending' and re-enqueue. Idempotent (a clean start matches nothing) and safe
+// even if a duplicate job lingered: generateDerivative re-reads the status and
+// is a no-op on a skipped/deleted asset. (Assumes the single worker the deploy
+// runs; with multiple replicas this could re-enqueue another's in-flight item,
+// which is merely wasted, idempotent work.)
+async function recoverStuckProcessing(): Promise<void> {
+  try {
+    const stuck = await many<{ id: number }>(
+      `UPDATE assets
+         SET derivative_status = 'pending', updated_at = now()
+       WHERE derivative_status = 'processing'
+         AND processing_state <> 'ignored'
+         AND deleted_at IS NULL
+       RETURNING id`,
+    );
+    if (stuck.length === 0) return;
+    for (const a of stuck) await enqueueDerivative(a.id);
+    console.log(
+      `[bootstrap] re-enqueued ${stuck.length} stuck 'processing' derivative(s)`,
+    );
+  } catch (err) {
+    console.error("[bootstrap] stuck-processing recovery failed:", err);
+  }
 }
 
 // Retroactive fix: videos used to be indexed with derivative_status='skipped'
