@@ -38,6 +38,10 @@ export async function GET() {
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
       // number of such RAW+JPEG groups. See lib/pairing.ts.
+      // Scoped to the live library (deleted_at IS NULL) so these counters match
+      // what the triage pages list — they all filter soft-deleted assets out
+      // (cf. lib/filter.ts). Otherwise a soft-deleted pending/error item would
+      // keep inflating a nav badge for a row no page ever shows.
       `SELECT
          count(*)                                                            AS total,
          count(*) FILTER (WHERE group_role IS DISTINCT FROM 'companion')     AS media,
@@ -48,7 +52,8 @@ export async function GET() {
          count(*) FILTER (WHERE derivative_status IN ('pending','processing')) AS pending,
          count(*) FILTER (WHERE derivative_status = 'error')                 AS errors,
          count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped
-       FROM assets a`,
+       FROM assets a
+       WHERE a.deleted_at IS NULL`,
     );
 
     // BullMQ queues + settings: tolerant of a Redis outage (null values rather
