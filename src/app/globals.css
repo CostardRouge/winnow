@@ -690,8 +690,11 @@
     gap: 0;
     min-height: 1em;
     border-top: 1px solid var(--color-border);
-    border-bottom-left-radius: var(--radius-lg);
-    border-bottom-right-radius: var(--radius-lg);
+    /* Inner radius = card radius − the card's 1px border, so the band's bottom
+       corners stay concentric with the card's rounded border instead of leaving
+       a sliver of surface peeking through (worst at the bottom-left). */
+    border-bottom-left-radius: calc(var(--radius-lg) - 1px);
+    border-bottom-right-radius: calc(var(--radius-lg) - 1px);
     background: var(--color-surface-2);
     overflow: hidden;
   }
