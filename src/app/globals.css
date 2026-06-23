@@ -1235,7 +1235,7 @@
   .viewer-panel-head {
     @apply sticky top-0 z-10 flex items-center justify-between gap-2;
     margin: -0.625rem -0.875rem 0.5rem;
-    padding: 0.875rem 0.875rem 0.625rem;
+    padding: 0.625rem 0.875rem;
     background: rgba(16, 15, 13, 0.82);
     backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -1431,7 +1431,7 @@
 
   /* Structured metadata list inside the viewer */
   .asset-meta {
-    @apply mt-2 grid gap-x-3 gap-y-0.5;
+    @apply mt-3 grid gap-x-3 gap-y-0.5;
     grid-template-columns: auto 1fr;
   }
   .asset-meta-row {
