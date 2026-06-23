@@ -2021,11 +2021,15 @@
     @apply h-4 w-4 shrink-0 cursor-pointer;
     accent-color: var(--color-accent);
   }
+  /* flex-wrap so the date + download/retry actions drop to a new line instead
+     of pushing the card past the viewport on narrow/mobile widths. */
   .fail-head {
-    @apply flex items-center gap-2;
+    @apply flex flex-wrap items-center gap-2;
   }
+  /* min-w-0 lets the (break-all) title shrink within the flex row rather than
+     forcing the head — and the whole card — wider than the available space. */
   .fail-title {
-    @apply break-all text-[13px] font-medium;
+    @apply min-w-0 break-all text-[13px] font-medium;
   }
   .fail-when {
     @apply whitespace-nowrap text-[11px];
