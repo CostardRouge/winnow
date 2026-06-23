@@ -1217,9 +1217,11 @@
     will-change: transform;
   }
   /* Metadata side panel (replaces the old floating .exif box). Bottom sheet on
-     mobile, fixed-width sidebar on desktop. */
+     mobile, fixed-width sidebar on desktop. No top padding: the sticky header
+     owns the top edge so it can sit flush and stay opaque as content scrolls
+     under it (see .viewer-panel-head). */
   .viewer-panel {
-    @apply overflow-y-auto px-3.5 py-2.5 text-xs leading-relaxed;
+    @apply overflow-y-auto px-3.5 pb-3 text-xs leading-relaxed;
     max-height: 38vh;
     background: rgba(16, 15, 13, 0.6);
     backdrop-filter: blur(14px) saturate(1.4);
@@ -1229,22 +1231,29 @@
   }
   /* Pinned at the top of the scrollable panel so the filename and the close
      affordance stay put as the metadata scrolls under it — on mobile the panel
-     is a short bottom sheet, and the × was scrolling out of reach. The negative
-     margins bleed the head over the panel's padding so its backdrop masks the
-     content sliding beneath. */
+     is a short bottom sheet, and the × was scrolling out of reach. The panel
+     has no top padding, so the head sits flush at the top with no negative top
+     margin (a top bleed would fight `top: 0` and get clamped back down, eating
+     the gap below it). Only the sides bleed (negative inline margins) so the
+     frosted backdrop spans edge-to-edge; the bottom margin sets the gap to the
+     specs list. */
   .viewer-panel-head {
     @apply sticky top-0 z-10 flex items-center justify-between gap-2;
-    margin: -0.625rem -0.875rem 0.5rem;
-    padding: 0.625rem 0.875rem;
+    margin: 0 -0.875rem 0.75rem;
+    padding: 0.5rem 0.875rem;
     background: rgba(16, 15, 13, 0.82);
     backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
+  /* The filename reads as the panel's title: a touch larger than the metadata
+     so the header doesn't look like small text floating in an empty band, and
+     truncated rather than wrapped (the full path is repeated in the FILE row,
+     with the complete name available on hover via the title attribute). */
   .viewer-panel-name {
-    @apply break-words;
+    @apply min-w-0 flex-1 truncate text-sm;
   }
   .viewer-panel-toggle {
-    @apply flex h-8 w-8 flex-none items-center justify-center rounded-full border-0 text-lg leading-none text-white transition duration-150;
+    @apply flex h-7 w-7 flex-none items-center justify-center rounded-full border-0 text-lg leading-none text-white transition duration-150;
     background: rgba(255, 255, 255, 0.14);
   }
   .viewer-panel-toggle:hover {
@@ -1429,9 +1438,10 @@
     }
   }
 
-  /* Structured metadata list inside the viewer */
+  /* Structured metadata list inside the viewer. The gap above it is owned by
+     the header's margin-bottom, so no top margin here. */
   .asset-meta {
-    @apply mt-3 grid gap-x-3 gap-y-0.5;
+    @apply grid gap-x-3 gap-y-0.5;
     grid-template-columns: auto 1fr;
   }
   .asset-meta-row {

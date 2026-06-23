@@ -394,7 +394,9 @@ export default function MediaViewer<T extends ViewerItem>({
         {panelOpen && (
           <aside className="viewer-panel">
             <div className="viewer-panel-head">
-              <strong className="viewer-panel-name">{displayed.filename}</strong>
+              <strong className="viewer-panel-name" title={displayed.filename}>
+                {displayed.filename}
+              </strong>
               <button
                 className="viewer-panel-toggle"
                 onClick={() => setPanelOpen(false)}
