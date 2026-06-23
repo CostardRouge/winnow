@@ -2,9 +2,11 @@
 // We NEVER decode the RAW sensor: we extract the embedded JPEG preview.
 import { exiftool, type Tags } from "exiftool-vendored";
 import sharp from "sharp";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { config, HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
 import { readHeicOrientation, readOrientation } from "./orientation";
 
@@ -185,7 +187,7 @@ export async function extractSourceJpeg(
       //    transform — otherwise the worker would rotate the pixels a 2nd time.
       try {
         const dest = path.join(dir, "decoded.jpg");
-        await writeFile(dest, await decodeHeicToJpeg(absPath));
+        await decodeHeicToJpegFile(absPath, dest);
         const orientation = containerRotated ? undefined : exif;
         return { jpegPath: dest, cleanupDir: dir, orientation };
       } catch (decodeErr) {
@@ -252,21 +254,42 @@ async function longestEdge(jpegPath: string): Promise<number> {
   }
 }
 
-// Full libheif decode of a HEIF/HEVC still to JPEG bytes. The decoder is:
-//   - lazy-loaded: heic-convert pulls in a libheif WASM bundle. Importing it at
-//     module top-level would mean any load hiccup takes down extract.ts — and
-//     with it derivatives.ts and the whole worker (no photo, RAW OR video
-//     thumbnails). Loaded on demand, a failure stays a per-asset error.
+// Resolved relative to this module so it works identically under tsx (the dev
+// server and the worker both run via tsx) and from wherever the worker is
+// launched. We deliberately avoid `new URL("…", import.meta.url)` here: webpack
+// special-cases that exact form as a static asset reference and the Next build
+// (which transitively bundles this module) crashes collecting it. Splitting the
+// path keeps that pattern away from the bundler while staying correct at the only
+// place this constant is ever *used* — the worker, run via tsx.
+const HEIC_DECODER = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "scripts",
+  "heicDecode.ts",
+);
+
+// Full libheif decode of a HEIF/HEVC still to a JPEG file on disk. The decoder is:
+//   - out-of-process: heic-convert pulls in a libheif WASM bundle whose linear
+//     heap only ever GROWS (never returned to the OS), and libheif-js leaks
+//     decoder handles across conversions — so decoding it in the long-lived
+//     worker walks RSS up into multiple GB and never releases it. We run each
+//     decode in a throwaway child (src/scripts/heicDecode.ts) whose whole
+//     address space — WASM heap included — the OS reclaims the moment it exits.
+//     This also keeps any load hiccup or hard crash inside libheif a per-asset
+//     error instead of taking down extract.ts and the whole worker.
 //   - serialized: a 33–61 MP HEIF decodes to a full width*height*4 RGBA bitmap
-//     and is re-encoded by a pure-JS JPEG encoder, so several at once can
-//     exhaust memory and OOM-kill the worker. We cap it to one in-flight decode
-//     regardless of DERIVATIVE_CONCURRENCY; the cheap preview path is never gated.
+//     re-encoded by a pure-JS JPEG encoder, so several at once can exhaust
+//     memory even across processes. We cap it to one in-flight decode regardless
+//     of DERIVATIVE_CONCURRENCY; the cheap preview path is never gated.
+//   - file-out: the child writes the JPEG directly to `destPath`, so the decoded
+//     bytes never transit the worker's heap.
 let heicGate: Promise<unknown> = Promise.resolve();
-function decodeHeicToJpeg(absPath: string): Promise<Buffer> {
-  const run = heicGate.then(() => decodeHeicGated(absPath));
-  // Keep the gate chained even when a decode throws/settles, without leaking
-  // rejections. Critically, decodeHeicGated ALWAYS settles (see below), so this
-  // chain can never stall — a single bad file can't jam the gate for the rest.
+function decodeHeicToJpegFile(absPath: string, destPath: string): Promise<void> {
+  const run = heicGate.then(() => decodeHeicChild(absPath, destPath));
+  // Keep the gate chained even when a decode throws, without leaking rejections.
+  // decodeHeicChild ALWAYS settles (the child's `close` event always fires, and a
+  // hung child is killed by the timeout below), so this chain can never stall —
+  // one bad file can't jam the gate for every later HEIF.
   heicGate = run.then(
     () => undefined,
     () => undefined,
@@ -274,70 +297,61 @@ function decodeHeicToJpeg(absPath: string): Promise<Buffer> {
   return run;
 }
 
-// One decode, run strictly one-at-a-time (serialized by heicGate), wrapped so
-// the returned promise ALWAYS settles. libheif fails two ways in practice:
-//   1. a normal rejection from heic-convert — caught by the `.then(onRej)` arm;
-//   2. an ASYNCHRONOUS throw from inside the WASM, surfacing as a process-level
-//      'uncaughtException'/'unhandledRejection' on a timer callback (seen:
-//      "RangeError: offset is out of bounds" on a malformed HEIF). That throw
-//      escapes the await, so heic-convert's promise NEVER settles — and without
-//      this guard the serialized gate would jam every later HEIF forever.
-// Because exactly one decode is ever in flight and libheif is the only thing on
-// this path that touches WASM, a libheif-stack async error during this window
-// belongs to THIS decode: we adopt it as a rejection so the gate frees. A hard
-// timeout backstops any other hang. Whichever fires first wins; the rest are
-// ignored. The global guards in worker.ts still log the stray throw and keep the
-// process alive — they just no longer leave the decode dangling.
-async function decodeHeicGated(absPath: string): Promise<Buffer> {
-  const { default: heicConvert } = await import("heic-convert");
-  const input = await readFile(absPath);
-  const timeoutMs = config.heicDecodeTimeoutMs;
-
-  return await new Promise<Buffer>((resolve, reject) => {
+// One decode, run strictly one-at-a-time (serialized by heicGate) in a throwaway
+// child process. Running it out-of-process is what subsumes libheif's two real
+// failure modes that previously needed in-process guard rails:
+//   1. a normal heic-convert rejection, and
+//   2. an ASYNCHRONOUS throw from inside the WASM ("RangeError: offset is out of
+//      bounds" on a malformed HEIF) that escapes the await — in-process this left
+//      the decode dangling and jammed the serialized gate for every later HEIF.
+// Both now just fail (or crash) the child, whose `close` event ALWAYS fires, so
+// the gate is freed and the asset falls back to its embedded preview. The only
+// remaining hang mode is a child that neither throws nor exits (libheif spinning):
+// HEIC_DECODE_TIMEOUT_MS backstops it — we SIGKILL the child and the OS reclaims
+// its whole wedged address space, WASM heap included. 0 disables the time cap.
+function decodeHeicChild(absPath: string, destPath: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    // `node --import tsx` registers the tsx loader in the child (ESM loaders
+    // aren't inherited across spawns); tsx is a runtime dependency, present both
+    // in dev and in the production image.
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", HEIC_DECODER, absPath, destPath],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (action: () => void): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      process.off("uncaughtException", onAsyncThrow);
-      process.off("unhandledRejection", onAsyncThrow);
       action();
     };
-    // Only claim an async error that came through libheif's WASM; anything else
-    // (a concurrent video/index job throwing) is left untouched for the global
-    // guard, so we never mis-attribute an unrelated failure to this decode.
-    const onAsyncThrow = (err: unknown): void => {
-      const trace = err instanceof Error ? (err.stack ?? err.message) : String(err);
-      if (!/libheif/i.test(trace)) return;
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+      if (stderr.length > 4000) stderr = stderr.slice(-4000);
+    });
+    child.on("error", (err) => finish(() => reject(err)));
+    child.on("close", (code) =>
       finish(() =>
-        reject(err instanceof Error ? err : new Error(String(err))),
-      );
-    };
-    process.on("uncaughtException", onAsyncThrow);
-    process.on("unhandledRejection", onAsyncThrow);
+        code === 0
+          ? resolve()
+          : reject(
+              new Error(`heic decode failed (code ${code}): ${stderr.trim()}`),
+            ),
+      ),
+    );
+    const timeoutMs = config.heicDecodeTimeoutMs;
     if (timeoutMs > 0) {
-      timer = setTimeout(
-        () =>
-          finish(() =>
-            reject(new Error(`HEIF decode timed out after ${timeoutMs} ms`)),
-          ),
-        timeoutMs,
-      );
+      timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish(() =>
+          reject(new Error(`HEIF decode timed out after ${timeoutMs} ms`)),
+        );
+      }, timeoutMs);
       timer.unref();
     }
-
-    // heic-decode sniffs the brand with `String.fromCharCode(...buf.slice(8,12))`
-    // (needs an iterable byte view) and libheif wants a Uint8Array: the Node
-    // Buffer from readFile satisfies both. The published @types claim
-    // ArrayBufferLike, which is wrong for the runtime — hence the cast.
-    heicConvert({
-      buffer: input as unknown as ArrayBufferLike,
-      format: "JPEG",
-    }).then(
-      (jpeg) => finish(() => resolve(Buffer.from(jpeg))),
-      (err) => finish(() => reject(err)),
-    );
   });
 }
 
