@@ -390,6 +390,13 @@ export const Icons = {
       <path d="M9 4v16" />
     </svg>
   ),
+  // Ticked checkbox — toggle the grid's multi-select mode.
+  select: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3.5" />
+      <path d="m8 12 3 3 5-6" />
+    </svg>
+  ),
   // Magnifier — the filename/folder text search field.
   search: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
