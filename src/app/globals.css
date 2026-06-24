@@ -3256,6 +3256,174 @@
     width: 18px;
     height: 18px;
   }
+
+  /* =======================================================================
+     Import (/import) — the media intake page. Lives in the shared .pipeline-body
+     (same p-5 page margin as Library / Sift / Pipeline / Volumes). A big
+     drag-and-drop hero up top, then the live job status, then the secondary
+     server-side sources.
+     ======================================================================= */
+  /* Fills the .pipeline-body width, so the left/right page gutter matches
+     Pipeline / Volumes exactly (the "same margin" everywhere). Content inside
+     each card sets its own comfortable measure. */
+  .import-page {
+    @apply flex w-full flex-col gap-5;
+  }
+
+  /* The hero drop zone: dashed well that lights up on drag, file/folder pickers
+     inside it. The whole card is a drop target. */
+  .import-drop {
+    @apply flex flex-col items-center gap-3 rounded-[var(--radius-xl)] border-2 border-dashed px-6 py-10 text-center;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    transition: border-color 0.18s var(--ease-out), background 0.18s var(--ease-out),
+      box-shadow 0.18s var(--ease-out);
+  }
+  .import-drop.is-dragging {
+    border-color: var(--color-accent);
+    background: var(--color-accent-wash);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 14%, transparent);
+  }
+  .import-drop.is-busy {
+    border-style: solid;
+    border-color: var(--color-border);
+  }
+  .import-drop-ic {
+    @apply flex items-center justify-center rounded-[var(--radius-lg)];
+    width: 64px;
+    height: 64px;
+    color: var(--color-accent);
+    background: var(--color-accent-wash);
+  }
+  .import-drop.is-dragging .import-drop-ic {
+    background: var(--color-surface);
+  }
+  .import-drop h2 {
+    @apply text-2xl;
+  }
+  .import-drop-sub {
+    @apply text-sm;
+    max-width: 46ch;
+    color: var(--color-muted);
+  }
+  .import-drop-actions {
+    @apply mt-1 flex flex-wrap items-center justify-center gap-2;
+  }
+  .import-formats {
+    @apply mt-1 text-[11px] uppercase;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    color: var(--color-faint);
+  }
+
+  /* Upload progress bar, shown inside the drop zone while bytes are in flight. */
+  .import-progress {
+    @apply mt-2 flex w-full items-center gap-3;
+    max-width: 420px;
+  }
+  .import-progress-track {
+    @apply h-2 flex-1 overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+  }
+  .import-progress-fill {
+    @apply h-full;
+    background: var(--color-accent);
+    transition: width 0.2s var(--ease-out);
+  }
+  .import-progress-pct {
+    @apply text-xs font-semibold;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+
+  /* Status line + the most-recent batch result card. */
+  .import-status {
+    @apply flex flex-col gap-3;
+  }
+  .import-msg {
+    @apply m-0 text-sm;
+    color: var(--color-text);
+  }
+  .import-msg.is-error {
+    color: var(--color-reject);
+  }
+  .import-batch {
+    @apply flex flex-col gap-2.5 rounded-[var(--radius-lg)] border p-4;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .import-batch-head {
+    @apply flex flex-wrap items-center gap-2 text-sm;
+  }
+  .import-batch-origin {
+    @apply text-xs;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .import-batch-state {
+    @apply ml-auto rounded-full px-2.5 py-1 text-xs font-semibold capitalize;
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .import-batch-state.is-done {
+    color: var(--color-pick);
+    background: color-mix(in srgb, var(--color-pick) 12%, var(--color-surface));
+  }
+  .import-batch-state.is-error {
+    color: var(--color-reject);
+    background: color-mix(in srgb, var(--color-reject) 12%, var(--color-surface));
+  }
+  .import-batch-state.is-running,
+  .import-batch-state.is-queued {
+    color: color-mix(in srgb, var(--color-star) 80%, #000);
+    background: color-mix(in srgb, var(--color-star) 14%, var(--color-surface));
+  }
+
+  /* Secondary sources: two equal cards, stacking on narrow viewports. */
+  .import-sources {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .import-source {
+    @apply flex flex-col gap-2.5 rounded-[var(--radius-lg)] border p-4;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .import-source-head {
+    @apply flex items-center gap-2.5;
+  }
+  .import-source-ic {
+    @apply flex flex-shrink-0 items-center justify-center rounded-[var(--radius)];
+    width: 36px;
+    height: 36px;
+    color: var(--color-text);
+    background: var(--color-surface-2);
+  }
+  .import-source-head h3 {
+    @apply text-[15px] font-semibold;
+  }
+  .import-source .hint {
+    @apply flex-1;
+  }
+  .import-offload {
+    @apply flex gap-2;
+  }
+  .import-offload .input {
+    @apply flex-1;
+    min-width: 0;
+  }
+  .import-source-foot {
+    @apply inline-flex items-center gap-2 text-[13px];
+    color: var(--color-muted);
+  }
+  .import-watch-dot {
+    @apply inline-block h-2 w-2 flex-shrink-0 rounded-full;
+    background: var(--color-pick);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-pick) 22%, transparent);
+  }
 }
 
 /* On phones the Sessions/Grid toolbar gains a progress filter; let it wrap to a

@@ -1,27 +1,32 @@
-// Sony video sidecars (cf. migration 0014).
+// Video sidecars (cf. migrations 0015 Sony XML/THM, 0017 DJI SRT).
 //
 // Sony cameras (A7C II / XAVC-S) write a small metadata companion next to every
 // video clip — C0001.MP4 → C0001M01.XML — the "NRT" (non-real-time) metadata:
 // real capture time, GPS, recording mode, codec… Other cameras instead drop a
-// per-clip thumbnail (C0001.THM) or a plain <base>.XML. These satellites are
-// NOT media: we never index them as their own assets and never build
-// derivatives for them. Instead we keep each one TIED to its video so it travels
-// with the clip through import, export and purge (the same "carry the companion"
+// per-clip thumbnail (C0001.THM) or a plain <base>.XML, and DJI drones drop a
+// per-clip telemetry/subtitle track (DJI_0001.SRT). These satellites are NOT
+// media: we never index them as their own assets and never build derivatives
+// for them. Instead we keep each one TIED to its video so it travels with the
+// clip through import, export and purge (the same "carry the companion"
 // philosophy as RAW+JPEG pairing in lib/pairing.ts).
 //
 // Detection is purely by NAME, relative to a video file in the same directory:
 //   <base>.MP4   ⇒   <base>M01.XML   (Sony NRT metadata; M01/M02… reels)
 //                    <base>.XML
 //                    <base>.THM
+//                    <base>.SRT      (DJI flight-log subtitles)
 import path from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { q } from "./db";
 
-export type SidecarKind = "xml" | "thm";
+export type SidecarKind = "xml" | "thm" | "srt";
 
 const SIDECAR_EXTS: Record<string, SidecarKind> = {
   ".xml": "xml",
   ".thm": "thm",
+  // DJI drones drop a per-clip telemetry/subtitle file (DJI_0001.SRT) next to
+  // the video — the exact-base form `sidecarSuffix` already matches.
+  ".srt": "srt",
 };
 
 export type SidecarMatch = {
