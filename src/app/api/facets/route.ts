@@ -72,6 +72,8 @@ export async function GET(req: NextRequest) {
       derivativeStatuses,
       tags,
       sessionStatus,
+      nearDup,
+      sharpRange,
     ] = await Promise.all([
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a WHERE true${scope}`,
@@ -142,13 +144,29 @@ export async function GET(req: NextRequest) {
          ${kind ? "WHERE rt.kind = ANY($1)" : ""}`,
         kind ? [kindsForRole(kind)] : [],
       ).catch(() => null),
+      // ML-assisted culling (asset_analysis, cf. lib/analyze.ts): how many photos
+      // landed in a near-duplicate cluster (drives the "Near-duplicates" toggle),
+      // and the sharpness span to scale the range filter.
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         JOIN asset_analysis aa ON aa.asset_id = a.id
+         WHERE aa.near_dup_cluster_id IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
+      one<{ sharp_min: number | null; sharp_max: number | null }>(
+        `SELECT min(aa.sharpness) sharp_min, max(aa.sharpness) sharp_max
+         FROM assets a JOIN asset_analysis aa ON aa.asset_id = a.id
+         WHERE aa.sharpness IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
     ]);
 
     return json({
       total: total?.count ?? 0,
       paired: paired?.count ?? 0,
       live_photos: livePhotos?.count ?? 0,
-      ranges: ranges ?? {},
+      near_dup: nearDup?.count ?? 0,
+      ranges: { ...(ranges ?? {}), ...(sharpRange ?? {}) },
       years,
       months,
       days,

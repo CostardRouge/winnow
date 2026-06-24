@@ -23,6 +23,9 @@ export const GRID_SELECT = `a.*,
         comp.width      AS companion_width,
         comp.height     AS companion_height,
         g.kind          AS group_kind,
+        aa.sharpness           AS sharpness,
+        aa.near_dup_cluster_id AS near_dup_cluster_id,
+        aa.ml_status           AS ml_status,
         (SELECT count(*)::int FROM asset_sidecars sc
           WHERE sc.asset_id = a.id) AS sidecar_count,
         (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
@@ -35,6 +38,7 @@ export const GRID_SELECT = `a.*,
 export const GRID_FROM = `FROM assets a
         LEFT JOIN ratings r ON r.asset_id = a.id
         LEFT JOIN asset_groups g ON g.id = a.group_id
+        LEFT JOIN asset_analysis aa ON aa.asset_id = a.id
         LEFT JOIN LATERAL (
           SELECT c.id, c.ext, c.media_type, c.filename, c.file_size,
                  c.width, c.height

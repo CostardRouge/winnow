@@ -15,6 +15,8 @@ export type Facets = {
     focal_max?: number | null;
     aperture_min?: number | null;
     aperture_max?: number | null;
+    sharp_min?: number | null;
+    sharp_max?: number | null;
   };
   years: VC[];
   months: VC[];
@@ -29,6 +31,9 @@ export type Facets = {
   // iPhone Live Photos available in scope (still primaries, one per pair). Drives
   // the "Live Photos" filter toggle. Cf. lib/pairing.ts.
   live_photos?: number;
+  // Photos in scope that landed in a near-duplicate cluster. Drives the
+  // "Near-duplicates" toggle. Cf. lib/analyze.ts / lib/neardup.ts.
+  near_dup?: number;
   // Session-level counts for the Sessions grid's status toggles.
   session_status?: { active: number; ignored: number };
 };
@@ -75,6 +80,12 @@ export type Filters = {
   aperture_max?: number;
   size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
+  // ML-assisted culling (cf. lib/analyze.ts). Sharpness = variance-of-Laplacian
+  // score (higher = sharper); the range surfaces the softest shots. `near_dup`
+  // keeps only the photos that have look-alikes.
+  sharp_min?: number;
+  sharp_max?: number;
+  near_dup?: boolean;
   has_gps?: boolean;
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
@@ -523,6 +534,16 @@ export default function FilterPanel({
         onMax={(v) => u({ size_max: v })}
       />
 
+      {(facets.ranges.sharp_max ?? 0) > 0 && (
+        <Range
+          title="Sharpness"
+          min={filters.sharp_min}
+          max={filters.sharp_max}
+          onMin={(v) => u({ sharp_min: v })}
+          onMax={(v) => u({ sharp_max: v })}
+        />
+      )}
+
       <div className="facet">
         <label className="hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
@@ -549,6 +570,23 @@ export default function FilterPanel({
             />
             Live Photos
             <span className="chip-count">{facets.live_photos}</span>
+          </label>
+        </div>
+      )}
+
+      {!!facets.near_dup && (
+        <div className="facet">
+          <label
+            className="hint"
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              type="checkbox"
+              checked={!!filters.near_dup}
+              onChange={(e) => u({ near_dup: e.target.checked || undefined })}
+            />
+            Near-duplicates
+            <span className="chip-count">{facets.near_dup}</span>
           </label>
         </div>
       )}

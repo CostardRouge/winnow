@@ -22,11 +22,12 @@ export type Stats = {
   queues: {
     scan: QueueCounts;
     analyze: QueueCounts;
+    ml: QueueCounts;
     import: QueueCounts;
     paused: boolean;
   } | null;
   paused: boolean;
-  settings: { scanPerHour: number; analyzePerHour: number };
+  settings: { scanPerHour: number; analyzePerHour: number; mlPerHour: number };
   failures?: { derivative: number; scan: number; import: number };
 };
 

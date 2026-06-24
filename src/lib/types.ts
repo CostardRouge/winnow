@@ -159,6 +159,14 @@ export type AssetGridRow = Asset & {
   companion_width: number | null;
   companion_height: number | null;
   group_kind: "raw_jpeg" | "live_photo" | null;
+  // ML-assisted culling (asset_analysis, cf. lib/analyze.ts). All null until the
+  // ML pass has run on this photo. `sharpness` is the variance-of-Laplacian
+  // score (higher = sharper); `near_dup_cluster_id` ties the photo to its
+  // look-alikes (null = no near-duplicate found); `ml_status` is the analysis
+  // lifecycle.
+  sharpness: number | null;
+  near_dup_cluster_id: number | null;
+  ml_status: "pending" | "processing" | "ready" | "error" | null;
   // Number of Sony sidecar files (XML/THM) tied to this asset (0 for most).
   // Lets the viewer note that a clip carries its camera metadata companion.
   sidecar_count: number;

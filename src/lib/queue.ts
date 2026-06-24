@@ -40,6 +40,7 @@ export async function pingRedis(timeoutMs = 3000): Promise<boolean> {
 
 export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };
+export type MlJob = { assetId: number };
 export type ExportJob = { exportJobId: number };
 export type PurgeJob = { purgeJobId: number };
 export type ImportJob = {
@@ -51,6 +52,7 @@ export type ImportJob = {
 export const QUEUES = {
   index: "winnow-index",
   derivatives: "winnow-derivatives",
+  ml: "winnow-ml",
   export: "winnow-export",
   import: "winnow-import",
   purge: "winnow-purge",
@@ -62,6 +64,7 @@ declare global {
     | {
         index: Queue;
         derivatives: Queue;
+        ml: Queue;
         export: Queue;
         import: Queue;
         purge: Queue;
@@ -73,6 +76,7 @@ function build() {
   return {
     index: new Queue(QUEUES.index, { connection }),
     derivatives: new Queue(QUEUES.derivatives, { connection }),
+    ml: new Queue(QUEUES.ml, { connection }),
     export: new Queue(QUEUES.export, { connection }),
     import: new Queue(QUEUES.import, { connection }),
     purge: new Queue(QUEUES.purge, { connection }),
@@ -199,14 +203,27 @@ export async function enqueueDerivative(
   );
 }
 
+// Enqueue the ML-analysis pass for an asset (sharpness + perceptual hash +
+// near-duplicate clustering). Runs after the derivative is ready, off the proxy.
+export async function enqueueMl(
+  assetId: number,
+  opts: { priority?: number } = {},
+) {
+  return getQueues().ml.add("analyze", { assetId } satisfies MlJob, {
+    ...defaultJobOpts,
+    priority: opts.priority ?? PRIORITY.normal,
+  });
+}
+
 // --- Scan/analyze pipeline control ------------------------------------------
 
 // Global pause/resume (persisted in Redis: workers of all processes
 // respect it). We suspend indexing AND derivative generation.
 export async function setScanPaused(paused: boolean): Promise<void> {
-  const { index, derivatives } = getQueues();
-  if (paused) await Promise.all([index.pause(), derivatives.pause()]);
-  else await Promise.all([index.resume(), derivatives.resume()]);
+  const { index, derivatives, ml } = getQueues();
+  if (paused)
+    await Promise.all([index.pause(), derivatives.pause(), ml.pause()]);
+  else await Promise.all([index.resume(), derivatives.resume(), ml.resume()]);
 }
 
 // Priority of the next pending scan (smaller = higher priority), or null
@@ -221,18 +238,20 @@ export type QueueCounts = Record<string, number>;
 export async function getQueueStats(): Promise<{
   scan: QueueCounts;
   analyze: QueueCounts;
+  ml: QueueCounts;
   import: QueueCounts;
   paused: boolean;
 }> {
-  const { index, derivatives, import: imp } = getQueues();
+  const { index, derivatives, ml, import: imp } = getQueues();
   const states = ["waiting", "active", "prioritized", "delayed", "failed"] as const;
-  const [scan, analyze, importCounts, paused] = await Promise.all([
+  const [scan, analyze, mlCounts, importCounts, paused] = await Promise.all([
     index.getJobCounts(...states),
     derivatives.getJobCounts(...states),
+    ml.getJobCounts(...states),
     imp.getJobCounts("waiting", "active", "delayed", "failed"),
     index.isPaused(),
   ]);
-  return { scan, analyze, import: importCounts, paused };
+  return { scan, analyze, ml: mlCounts, import: importCounts, paused };
 }
 
 // --- Queue introspection / triage (Pipeline pages) --------------------------
