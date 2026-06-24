@@ -11,6 +11,10 @@ export type AppSettings = {
   scanPaused: boolean;
   scanPerHour: number;
   analyzePerHour: number;
+  // Max number of ML-analysis jobs (sharpness + perceptual hash) run per hour
+  // (0 = unlimited). Separate from analyzePerHour because the ML pass is a
+  // distinct, heavier CPU cost than thumbnail generation.
+  mlPerHour: number;
   // RAW+JPEG pairing: when exporting a pair, also copy the JPEG companion next
   // to the RAW keeper. Default false (RAW only). Cf. lib/export.ts, lib/pairing.ts.
   exportIncludeJpeg: boolean;
@@ -23,6 +27,7 @@ const DEFAULTS: AppSettings = {
   scanPaused: false,
   scanPerHour: 0,
   analyzePerHour: 0,
+  mlPerHour: 0,
   exportIncludeJpeg: false,
   exportIncludeLiveVideo: false,
 };
@@ -43,6 +48,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.scanPerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "analyze_per_hour")
         value.analyzePerHour = Math.max(0, Number(r.value) || 0);
+      else if (r.key === "ml_per_hour")
+        value.mlPerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "export_include_jpeg")
         value.exportIncludeJpeg = r.value === true;
       else if (r.key === "export_include_live_video")
@@ -64,6 +71,8 @@ export async function setSettings(
     entries.push(["scan_per_hour", JSON.stringify(Math.max(0, Math.floor(patch.scanPerHour)))]);
   if (patch.analyzePerHour !== undefined)
     entries.push(["analyze_per_hour", JSON.stringify(Math.max(0, Math.floor(patch.analyzePerHour)))]);
+  if (patch.mlPerHour !== undefined)
+    entries.push(["ml_per_hour", JSON.stringify(Math.max(0, Math.floor(patch.mlPerHour)))]);
   if (patch.scanPaused !== undefined)
     entries.push(["scan_paused", JSON.stringify(Boolean(patch.scanPaused))]);
   if (patch.exportIncludeJpeg !== undefined)

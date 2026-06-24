@@ -7,7 +7,12 @@
 import { stat } from "node:fs/promises";
 import { many, one } from "./db";
 import { config } from "./config";
-import { coalescePendingIndexJobs, enqueueDerivative, enqueueIndex } from "./queue";
+import {
+  coalescePendingIndexJobs,
+  enqueueDerivative,
+  enqueueIndex,
+  enqueueMl,
+} from "./queue";
 import { isWalkable } from "./volumes";
 import type { Root } from "./types";
 
@@ -64,6 +69,7 @@ export async function bootstrapRoots(): Promise<void> {
 
   await recoverStuckProcessing();
   await backfillVideoDerivatives();
+  await backfillMlAnalysis();
 }
 
 // Self-heal: derivative jobs that were interrupted mid-flight leave their asset
@@ -123,5 +129,34 @@ async function backfillVideoDerivatives(): Promise<void> {
     );
   } catch (err) {
     console.error("[bootstrap] video derivative backfill failed:", err);
+  }
+}
+
+// Back-fill the ML-analysis pass over an existing library: every ready photo
+// that has no asset_analysis row yet (or whose row never completed) is enqueued.
+// It reads the proxy, never the RAW, so this is safe to run on every startup —
+// once a photo is analysed it stops matching, so a later boot finds nothing.
+// Bounded to a cap per boot so a fresh 30k library doesn't flood the queue in
+// one go (the per-hour ML rate further drip-feeds it).
+async function backfillMlAnalysis(): Promise<void> {
+  if (!config.ml.enabled) return;
+  try {
+    const todo = await many<{ id: number }>(
+      `SELECT a.id
+         FROM assets a
+         LEFT JOIN asset_analysis aa ON aa.asset_id = a.id
+        WHERE a.media_type = 'photo'
+          AND a.derivative_status = 'ready'
+          AND a.processing_state <> 'ignored'
+          AND a.deleted_at IS NULL
+          AND (aa.asset_id IS NULL OR aa.ml_status NOT IN ('ready','processing'))
+        ORDER BY a.id
+        LIMIT 20000`,
+    );
+    if (todo.length === 0) return;
+    for (const a of todo) await enqueueMl(a.id);
+    console.log(`[bootstrap] enqueued ${todo.length} photo(s) for ML analysis (backfill)`);
+  } catch (err) {
+    console.error("[bootstrap] ML analysis backfill failed:", err);
   }
 }

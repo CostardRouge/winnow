@@ -84,6 +84,7 @@ export async function GET() {
       settings: {
         scanPerHour: settings.scanPerHour,
         analyzePerHour: settings.analyzePerHour,
+        mlPerHour: settings.mlPerHour,
       },
       failures: {
         derivative: Number(counts?.errors ?? 0),

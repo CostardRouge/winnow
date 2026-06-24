@@ -11,12 +11,14 @@ import {
   nextWaitingIndexPriority,
   type IndexJob,
   type DerivativeJob,
+  type MlJob,
   type ExportJob,
   type ImportJob,
   type PurgeJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
+import { runMlAnalysis } from "./lib/analyze";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
@@ -112,6 +114,29 @@ const derivativeWorker: Worker = new Worker(
   { connection, concurrency: config.derivativeConcurrency },
 );
 
+// ML-assisted culling: sharpness + perceptual hash + near-dup clustering, run
+// off the proxy after the derivative is ready. Decoupled queue so it can be
+// paused / rate-limited / retried on its own and back-filled over an existing
+// library. Same drip-feed rate-limit pattern as the derivative worker. The whole
+// pass is gated by ML_ENABLED (no worker created when off).
+const mlWorker: Worker | null = config.ml.enabled
+  ? new Worker(
+      QUEUES.ml,
+      async (job) => {
+        const { mlPerHour } = await getSettings();
+        if (mlPerHour > 0) {
+          const wait = await reserveSlot("ml", mlPerHour);
+          if (wait > 0) {
+            await mlWorker!.rateLimit(wait);
+            throw Worker.RateLimitError();
+          }
+        }
+        await runMlAnalysis((job.data as MlJob).assetId);
+      },
+      { connection, concurrency: config.ml.concurrency },
+    )
+  : null;
+
 const exportWorker = new Worker(
   QUEUES.export,
   async (job) => {
@@ -149,10 +174,12 @@ const purgeWorker = new Worker(
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
+  ["ml", mlWorker],
   ["export", exportWorker],
   ["import", importWorker],
   ["purge", purgeWorker],
 ] as const) {
+  if (!w) continue;
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
   );
@@ -185,6 +212,7 @@ async function shutdown() {
   await Promise.allSettled([
     indexWorker.close(),
     derivativeWorker.close(),
+    mlWorker?.close(),
     exportWorker.close(),
     importWorker.close(),
     purgeWorker.close(),

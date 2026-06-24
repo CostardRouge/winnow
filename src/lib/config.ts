@@ -168,6 +168,19 @@ const EnvSchema = z
     EXPORT_CONCURRENCY: intEnv(2, { min: 1 }),
     PURGE_CONCURRENCY: intEnv(1, { min: 1 }),
 
+    // --- ML-assisted culling (analysis pass over the proxies) ------------
+    // A separate, decoupled pass that scores each photo's sharpness and computes
+    // a perceptual hash for near-duplicate grouping (Phase 1). It reads the
+    // proxy, never the RAW. Disable the whole pass with ML_ENABLED=false (no jobs
+    // enqueued, the worker skips the queue). Concurrency is bounded like the
+    // others; the per-hour rate is tunable live (Pipeline page → ML rate).
+    ML_ENABLED: boolEnv(true),
+    ML_CONCURRENCY: intEnv(2, { min: 1 }),
+    // pHash Hamming distance (0-64) at/below which two photos count as
+    // near-duplicates. Lower = stricter (only near-identical frames); higher
+    // = looser. 10 is a sensible default for catching bursts and re-frames.
+    NEAR_DUP_THRESHOLD: intEnv(10, { min: 0, max: 64 }),
+
     // libvips threads PER sharp operation. Defaults to the CPU count, which —
     // multiplied by DERIVATIVE_CONCURRENCY jobs each decoding a large RAW
     // preview — spins up dozens of native threads, and under glibc each carries
@@ -284,6 +297,12 @@ function loadConfig() {
     exportConcurrency: e.EXPORT_CONCURRENCY,
     purgeConcurrency: e.PURGE_CONCURRENCY,
     sharpConcurrency: e.SHARP_CONCURRENCY,
+
+    ml: {
+      enabled: e.ML_ENABLED,
+      concurrency: e.ML_CONCURRENCY,
+      nearDupThreshold: e.NEAR_DUP_THRESHOLD,
+    },
 
     // Reclaim-space (purge) capability. `enabled=false` makes /api/purge 403.
     purge: {

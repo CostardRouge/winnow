@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   scanPerHour: z.number().int().min(0).max(1_000_000).optional(),
   analyzePerHour: z.number().int().min(0).max(1_000_000).optional(),
+  mlPerHour: z.number().int().min(0).max(1_000_000).optional(),
   exportIncludeJpeg: z.boolean().optional(),
   exportIncludeLiveVideo: z.boolean().optional(),
 });

@@ -7,6 +7,7 @@ import { config } from "./config";
 import { extractSourceJpeg } from "./extract";
 import { ffmpegAvailable, makeVideoThumb, makeVideoProxy } from "./video";
 import { getStorage } from "./storage/index";
+import { enqueueMl } from "./queue";
 import type { Asset } from "./types";
 
 // sharp reads large previews: we allow very wide images.
@@ -100,6 +101,19 @@ export async function generateDerivative(assetId: number): Promise<void> {
        WHERE id=$1`,
       [assetId, thumbKey, proxyKey, meta.width ?? null, meta.height ?? null],
     );
+
+    // Hand off to the ML-analysis pass (sharpness + perceptual hash +
+    // near-duplicate clustering), which reads the proxy we just wrote — never the
+    // RAW. Decoupled queue, gated by ML_ENABLED. Best-effort: a failure to
+    // enqueue must not fail the (successful) derivative; bootstrap back-fills any
+    // ready photo that ended up without an analysis row.
+    if (config.ml.enabled) {
+      try {
+        await enqueueMl(assetId);
+      } catch (err) {
+        console.warn(`[derivatives] ml enqueue failed for ${assetId}:`, (err as Error).message);
+      }
+    }
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",

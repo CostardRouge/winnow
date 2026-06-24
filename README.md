@@ -388,6 +388,30 @@ dedicated Pipeline triage page:
   reconciles any leftover duplicates at startup. This stops the same folder from
   piling up several times in the scan queue.
 
+## ML-assisted culling (sharpness + near-duplicates)
+
+A separate analysis pass scores each photo to help you cull faster — it
+**suggests**, it never rates or deletes. It runs on the lightweight **proxy**
+(never the RAW), as its own rate-limitable queue (`winnow-ml`), and **back-fills**
+over an existing library on worker boot. Phase 1 is pure classic computer vision
+— no model download, no GPU — so it runs on the same worker image as everything
+else. Full design + roadmap: [`docs/ML_CULLING.md`](docs/ML_CULLING.md).
+
+- **Sharpness** (variance of the Laplacian, higher = sharper): a **relative**
+  score per shot — an intentional bokeh/motion blur legitimately scores low, so
+  it surfaces soft frames for review rather than auto-rejecting them.
+- **Near-duplicates** (64-bit DCT perceptual hash + Hamming distance): groups
+  bursts / re-frames / near-identical retries into **clusters**, scoped per
+  session. This is distinct from the byte-exact dedup (`content_hash`): near-dups
+  are *different* files that merely *look* alike. They get their own structure
+  (`near_dup_clusters`), never the `asset_groups` pairing machinery — a cluster is
+  shots to **choose between**, not a unit to rate/collapse as one.
+
+Both land in the `asset_analysis` side table (migration `0017`) and become
+**indexed gallery filters**: a *Sharpness* range and a *Near-duplicates* toggle in
+the filter panel. The **Pipeline** page gains an **ML rate** slider (photos/hour).
+Tunable via `ML_ENABLED` / `ML_CONCURRENCY` / `NEAR_DUP_THRESHOLD` (see `.env.dist`).
+
 ## Video derivatives (ffmpeg)
 
 Videos get derivatives like photos: **WebP poster** (grid thumbnail) + **H.264
@@ -529,12 +553,14 @@ incoming/inbox priority, adjustable scan/analyze rates, real-time counters — s
 below), **video derivatives** (poster + ffmpeg mp4 proxy, optional VAAPI hardware
 acceleration), **failure list/retry** (page `/pipeline/failures`), **scheduled
 Postgres backups** (compressed `pg_dump` sidecar + retention + documented
-restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
-(typecheck + migrations + build).
+restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), **ML-assisted culling phase 1**
+(sharpness scoring + perceptual near-duplicate clustering on the proxies, as
+indexed gallery filters — see [`docs/ML_CULLING.md`](docs/ML_CULLING.md)),
+GitHub Actions **CI** (typecheck + migrations + build).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
-automatic C1 finals reconciliation, adaptive throttling, agent-on-NAS, n8n
-automations.
+automatic C1 finals reconciliation, adaptive throttling, **ML culling phases 2-3**
+(aesthetic scoring, face / closed-eye detection), agent-on-NAS, n8n automations.
 
 ---
 

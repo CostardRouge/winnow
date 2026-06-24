@@ -86,6 +86,14 @@ export const FilterSchema = z
     verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
     star_min: z.coerce.number().int().min(0).max(5).optional(),
 
+    // ML-assisted culling (asset_analysis side table, cf. lib/analyze.ts).
+    // Sharpness is the variance-of-Laplacian score (higher = sharper); the range
+    // surfaces the softest shots for review. `near_dup` keeps only (true) or
+    // hides (false) photos that landed in a near-duplicate cluster.
+    sharp_min: z.coerce.number().optional(),
+    sharp_max: z.coerce.number().optional(),
+    near_dup: boolish,
+
     // Type / format
     media_type: csv, // photo | video (multi)
     ext: csv, // .arw, .jpg... (multi)
@@ -223,6 +231,31 @@ export function buildFilter(
     params.push(filter.star_min);
   }
 
+  // ML scores live in the asset_analysis side table; an EXISTS subquery keeps
+  // buildFilter usable by callers that don't join it (the facets route only has
+  // `assets a` in scope). The partial indexes on asset_analysis serve these.
+  if (filter.sharp_min != null) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM asset_analysis aa WHERE aa.asset_id = a.id AND aa.sharpness >= $${i++})`,
+    );
+    params.push(filter.sharp_min);
+  }
+  if (filter.sharp_max != null) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM asset_analysis aa WHERE aa.asset_id = a.id AND aa.sharpness <= $${i++})`,
+    );
+    params.push(filter.sharp_max);
+  }
+  if (filter.near_dup === true) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM asset_analysis aa WHERE aa.asset_id = a.id AND aa.near_dup_cluster_id IS NOT NULL)`,
+    );
+  } else if (filter.near_dup === false) {
+    conditions.push(
+      `NOT EXISTS (SELECT 1 FROM asset_analysis aa WHERE aa.asset_id = a.id AND aa.near_dup_cluster_id IS NOT NULL)`,
+    );
+  }
+
   if (filter.media_type) inAny("a.media_type", filter.media_type);
   if (filter.ext) inAny("a.ext", filter.ext);
   if (filter.paired === true) conditions.push("a.group_id IS NOT NULL");
@@ -329,6 +362,9 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "not_tags",
     "verdict",
     "star_min",
+    "sharp_min",
+    "sharp_max",
+    "near_dup",
     "media_type",
     "ext",
     "paired",
