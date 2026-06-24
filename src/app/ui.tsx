@@ -526,4 +526,43 @@ export const Icons = {
       <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
     </svg>
   ),
+  // Cloud + up-arrow — the Import drop zone hero glyph.
+  uploadCloud: (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6.5 19a4.5 4.5 0 0 1-.42-8.98 6 6 0 0 1 11.65-1.06A4 4 0 0 1 17.5 19" />
+      <path d="M12 13v6" />
+      <path d="m9 15.5 3-3 3 3" />
+    </svg>
+  ),
+  // Phone — "from this device" upload source.
+  device: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6.5" y="3" width="11" height="18" rx="2.5" />
+      <path d="M10.5 18h3" />
+    </svg>
+  ),
+  // SD card — the "import a folder / card" source.
+  sdCard: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3h6.2L18 6.8V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+      <path d="M10 6.5v2M12.5 6.5v2M15 7.5v1" />
+    </svg>
+  ),
+  // Disk platter — a card/drive mounted on the server.
+  hardDrive: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="6" width="18" height="12" rx="2.5" />
+      <circle cx="8" cy="12" r="2.2" />
+      <path d="M13.5 11h4.5M13.5 14h4.5" />
+    </svg>
+  ),
+  // Network nodes — the watched SMB / FTP share.
+  share: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="6" r="2.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="m8.2 10.9 7.4-3.6M8.2 13.1l7.4 3.6" />
+    </svg>
+  ),
 };

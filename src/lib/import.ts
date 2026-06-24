@@ -10,7 +10,6 @@ import {
   copyFile,
   rename,
   rm,
-  rmdir,
   access,
 } from "node:fs/promises";
 import path from "node:path";
@@ -269,8 +268,9 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       }
       await rename(tmp, dest);
 
-      // Sony writes a metadata sidecar next to each video clip — carry it along
-      // so the clip and its companion stay together in the incoming archive.
+      // Cameras drop companion files next to a clip (Sony XML/THM, DJI SRT) —
+      // carry them along so the clip and its sidecars stay together in the
+      // incoming archive.
       if (classifyExt(ext)?.mediaType === "video") {
         await carrySidecars(src, dest, args.removeAfter);
       }
@@ -300,10 +300,13 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
     }
   }
 
-  // Upload staging area emptied after import: we remove the batch folder (rmdir
-  // only deletes if it is empty — any failures are already in quarantine).
+  // Upload staging area emptied after import: drop the whole batch folder. A
+  // web upload can now carry a nested folder tree (an SD card), so a plain
+  // rmdir (empty-only, single level) would leave the sub-directories behind;
+  // recursive removal clears the ephemeral staging tree and any non-media
+  // leftovers in one go. Any failed media is already quarantined out of it.
   if (args.removeAfter && args.sourceDir.startsWith(uploadStagingDir)) {
-    await rmdir(args.sourceDir).catch(() => {});
+    await rm(args.sourceDir, { recursive: true, force: true }).catch(() => {});
   }
 
   // The incoming is a "source" root: we register it and enqueue indexing

@@ -105,11 +105,10 @@ export default function VolumesPanel() {
   }
 
   return (
-    <PullToRefresh
-      className="container"
-      style={{ maxWidth: 1100, padding: 0 }}
-      onRefresh={load}
-    >
+    // The page's .pipeline-body owns the scroll + the standard p-5 page margin
+    // (shared with Library / Sift / Pipeline / Import); this wrapper just fills
+    // it, so the registry lines up flush with every other section.
+    <PullToRefresh onRefresh={load}>
       <div className="filterbar">
         <p className="hint" style={{ margin: 0, flex: 1, minWidth: 200 }}>
           Every directory Winnow indexes or tracks. Pick a type per folder; the
