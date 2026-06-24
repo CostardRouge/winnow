@@ -172,6 +172,16 @@ services:
       - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports
+    # Override the image's HTTP probe (made for the web app): the worker serves
+    # no HTTP, so the inherited /api/health fetch always fails and shows the
+    # container "unhealthy" while it's actually fine. This probe instead checks
+    # the worker can reach Redis + Postgres — the backends it needs to do work.
+    healthcheck:
+      test: ["CMD", "npx", "tsx", "src/scripts/healthcheck-worker.ts"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
 
   # --- Optional ingest feeders (write into the inbox) -----------------------
   # SMB share: drop cards/files from any machine on the LAN.
