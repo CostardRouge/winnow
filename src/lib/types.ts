@@ -87,8 +87,29 @@ export type Asset = {
   // Both null when the file is not paired.
   group_id: number | null;
   group_role: "primary" | "companion" | null;
+  // Burst/bracket stack (cf. lib/bursts.ts). `burst_id` ties N distinct frames
+  // shot in one quick run into a collapsible pile; `burst_seq` is this frame's
+  // 1-based order within it. Orthogonal to the pairing above — a frame can be
+  // both a RAW+JPEG pair and a stack member. Both null when not stacked.
+  burst_id: number | null;
+  burst_seq: number | null;
   created_at: string;
   updated_at: string;
+};
+
+// A burst/bracket stack (cf. lib/bursts.ts): N distinct frames captured in one
+// quick run (same device, small temporal gap) grouped so the culling grid can
+// collapse the pile to its `cover_asset_id` and cull it as a unit. Unlike an
+// `asset_groups` pair, the members are separate shots and keep per-frame ratings.
+export type Burst = {
+  id: number;
+  session_id: number;
+  device: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  cover_asset_id: number | null;
+  member_count: number;
+  created_at: string;
 };
 
 // A media group: the link between the two files of one capture. `raw_jpeg` ties
