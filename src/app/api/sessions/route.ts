@@ -21,7 +21,9 @@
 //   - `progress` filter: untouched (nothing triaged) · partial (some, not all) ·
 //     incomplete (untouched+partial — "still to sort") · complete (all triaged).
 //   - `sort`: captured (capture date, default) · touched (most recent verdict) ·
-//     progress (most/least complete). `sort_dir` flips each ordering.
+//     progress (most/least complete) · count (number of live media in the
+//     session — "least first" surfaces the shortest backlogs). `sort_dir` flips
+//     each ordering.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { json, serverError, badRequest } from "@/lib/api";
@@ -99,15 +101,19 @@ export async function GET(req: NextRequest) {
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
-    // Ordering: capture timeline (default), last-touched (most recent verdict)
-    // or triage completeness. `dir` flips each. NULLS LAST keeps never-touched /
-    // empty sessions at the tail whichever direction is chosen.
+    // Ordering: capture timeline (default), last-touched (most recent verdict),
+    // triage completeness, or media count. `dir` flips each. NULLS LAST keeps
+    // never-touched / empty sessions at the tail whichever direction is chosen.
+    // `count` ranks by the live-media tally (COALESCE'd to 0), so flipping the
+    // direction to "least first" puts the shortest sessions on top.
     const orderBy =
       sp.get("sort") === "touched"
         ? `d.last_reviewed ${dir} NULLS LAST, s.id ${dir}`
         : sp.get("sort") === "progress"
           ? `d.frac ${dir} NULLS LAST, s.id ${dir}`
-          : `s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`;
+          : sp.get("sort") === "count"
+            ? `COALESCE(d.live, 0) ${dir}, s.id ${dir}`
+            : `s.captured_at_max ${dir} NULLS LAST, s.id ${dir}`;
 
     const sessions = await many(
       `SELECT

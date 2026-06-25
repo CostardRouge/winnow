@@ -40,6 +40,10 @@ const SORTS: { key: string; label: string }[] = [
   { key: "touched", label: "Recent edits" },
   { key: "captured", label: "Capture date" },
   { key: "progress", label: "Completion" },
+  // Rank by how many media live in the session — with the direction flipped to
+  // "least first", the shortest sessions float up so they can be knocked out
+  // back-to-back.
+  { key: "count", label: "Item count" },
 ];
 
 // Progress shortcuts → the API's `progress` param.

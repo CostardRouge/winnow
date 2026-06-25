@@ -1401,6 +1401,14 @@
   .vbar-pick.active:hover {
     background: color-mix(in srgb, var(--color-pick) 88%, #000);
   }
+  /* Skip verdict (amber) — the third segment in the Sift viewer's verdict bar. */
+  .vbar-skip.active {
+    background: var(--color-star);
+    color: #fff;
+  }
+  .vbar-skip.active:hover {
+    background: color-mix(in srgb, var(--color-star) 88%, #000);
+  }
   /* RAW+JPEG format toggle: a neutral segmented control (reuses .vbar-verdict
      framing). The active side reads as a lit segment. */
   .vbar-format .vbar-btn {
@@ -3056,7 +3064,12 @@
     @apply px-4 pt-2;
   }
   .sift-deck-body {
-    @apply flex min-h-0 flex-1 flex-col items-center justify-center p-4;
+    @apply flex min-h-0 flex-1 flex-col items-center p-4;
+    /* Centred when it fits, but "safe" so a tall layout (deck + buttons + the
+       recent strip on a small phone) falls back to top-aligned and scrolls
+       instead of clipping the ends. */
+    justify-content: safe center;
+    overflow-y: auto;
   }
   .deck {
     @apply flex w-full flex-col items-center gap-5;
@@ -3067,6 +3080,11 @@
     aspect-ratio: 3 / 4;
     max-height: min(64vh, 560px);
     touch-action: pan-y;
+  }
+  /* With the recent strip in play, hand some vertical space back to it so the
+     deck + buttons + strip still fit a phone screen without scrolling. */
+  .deck.has-recent .deck-stack {
+    max-height: min(50vh, 480px);
   }
   .deck-card {
     @apply absolute inset-0 flex items-center justify-center overflow-hidden
@@ -3088,8 +3106,19 @@
     @apply h-full w-full object-contain;
     pointer-events: none;
   }
+  /* Inline video preview: the clip plays in place over the poster. Pointer
+     events stay off so the whole card is still draggable while it runs. */
+  .deck-card-video {
+    @apply absolute inset-0 h-full w-full object-contain;
+    pointer-events: none;
+    background: var(--color-frame);
+  }
   .deck-card-play {
     @apply absolute flex items-center justify-center rounded-full border-0;
+    /* centred on the card */
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     width: 56px;
     height: 56px;
     background: color-mix(in srgb, #000 45%, transparent);
@@ -3099,13 +3128,26 @@
     cursor: pointer;
     transition:
       background 0.15s var(--ease-out),
+      opacity 0.15s var(--ease-out),
       transform 0.15s var(--ease-out);
   }
   .deck-card-play:hover {
     background: color-mix(in srgb, #000 62%, transparent);
+    transform: translate(-50%, -50%) scale(1.04);
   }
   .deck-card-play:active {
-    transform: scale(0.94);
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  /* While playing, the toggle fades back so it doesn't sit over the footage;
+     it lifts to full on hover so pausing stays one tap away. */
+  .deck-card-play.is-playing {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+    opacity: 0.35;
+  }
+  .deck-card-play.is-playing:hover {
+    opacity: 1;
   }
   /* Peek button — a closer look at the top card (top-right, opposite the
      format badge). Opens the full-screen viewer over the deck. */
@@ -3223,6 +3265,94 @@
     background: var(--color-star);
     border-color: var(--color-star);
     color: #fff;
+  }
+
+  /* Recent decisions strip — a virtual, scrollable history of just-sorted cards
+     sitting under the verdict buttons. Each tile is a thumbnail (tap to open it
+     big) plus the three verdicts with the current call lit, so a decision can be
+     re-cast at a glance. Full-width within the deck; react-window only renders
+     the tiles on screen. */
+  .sift-recent {
+    @apply flex w-full flex-col gap-1.5;
+  }
+  .sift-recent-head {
+    @apply flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  .sift-recent-count {
+    @apply inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold;
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .sift-recent-track {
+    @apply w-full;
+  }
+  /* react-window owns each tile's outer width; the inner card leaves a gutter on
+     the right so the row reads as separated tiles. */
+  .sift-recent-card {
+    @apply flex flex-col gap-1 overflow-hidden rounded-[var(--radius)] border;
+    width: 80px;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .sift-recent-card.is-pick {
+    border-color: color-mix(in srgb, var(--color-pick) 55%, var(--color-border));
+  }
+  .sift-recent-card.is-reject {
+    border-color: color-mix(in srgb, var(--color-reject) 55%, var(--color-border));
+  }
+  .sift-recent-card.is-skip {
+    border-color: color-mix(in srgb, var(--color-star) 55%, var(--color-border));
+  }
+  .sift-recent-thumb {
+    @apply relative flex items-center justify-center overflow-hidden border-0 p-0;
+    width: 80px;
+    height: 62px;
+    background: var(--color-surface-2);
+    cursor: pointer;
+  }
+  .sift-recent-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .sift-recent-play {
+    @apply absolute flex items-center justify-center rounded-full;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+    background: color-mix(in srgb, #000 45%, transparent);
+    color: #fff;
+  }
+  .sift-recent-acts {
+    @apply flex items-stretch;
+    border-top: 1px solid var(--color-border);
+  }
+  .sift-recent-btn {
+    @apply flex flex-1 items-center justify-center border-0 py-1 text-xs leading-none;
+    background: var(--color-surface);
+    color: var(--color-faint);
+    cursor: pointer;
+    transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+  }
+  .sift-recent-btn + .sift-recent-btn {
+    border-left: 1px solid var(--color-border);
+  }
+  .sift-recent-btn:hover {
+    background: var(--color-surface-2);
+  }
+  .sift-recent-btn.is-reject.on {
+    background: var(--color-reject);
+    color: var(--color-reject-fg);
+  }
+  .sift-recent-btn.is-skip.on {
+    background: var(--color-star);
+    color: #fff;
+  }
+  .sift-recent-btn.is-pick.on {
+    background: var(--color-pick);
+    color: var(--color-pick-fg);
   }
 
   /* Completion panel shown when the deck runs dry. */
