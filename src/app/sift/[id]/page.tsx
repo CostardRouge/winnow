@@ -120,14 +120,23 @@ export default function SiftSessionPage({
     };
   }, [id]);
 
+  // Persist a verdict. `prev` is the verdict the card already carried — null for
+  // a fresh swipe (which advances the "swiped" counter), or a real verdict when
+  // a card is re-cast from the viewer / recent strip (counters shift but the
+  // card was already off the deck, so "swiped" holds steady).
   const rate = useCallback(
-    (card: DeckCard, verdict: "pick" | "reject" | "skip") => {
-      setSwiped((n) => n + 1);
+    (
+      card: DeckCard,
+      verdict: "pick" | "reject" | "skip",
+      prev: "pick" | "reject" | "skip" | null,
+    ) => {
+      if (!prev) setSwiped((n) => n + 1);
       setCounts((c) => ({
         ...c,
-        picks: c.picks + (verdict === "pick" ? 1 : 0),
-        rejects: c.rejects + (verdict === "reject" ? 1 : 0),
-        skips: c.skips + (verdict === "skip" ? 1 : 0),
+        picks: c.picks + (verdict === "pick" ? 1 : 0) - (prev === "pick" ? 1 : 0),
+        rejects:
+          c.rejects + (verdict === "reject" ? 1 : 0) - (prev === "reject" ? 1 : 0),
+        skips: c.skips + (verdict === "skip" ? 1 : 0) - (prev === "skip" ? 1 : 0),
       }));
       void fetch(`/api/assets/${card.id}/rating`, {
         method: "PATCH",
@@ -192,6 +201,7 @@ export default function SiftSessionPage({
           <CompletionPanel
             title="Nothing left to sort here"
             subtitle="Every ready file in this session already has a verdict."
+            sessionId={id}
             nextId={nextId}
           />
         ) : (
@@ -206,6 +216,7 @@ export default function SiftSessionPage({
                 subtitle={`${counts.picks} kept · ${counts.rejects} rejected${
                   counts.skips > 0 ? ` · ${counts.skips} skipped` : ""
                 }`}
+                sessionId={id}
                 nextId={nextId}
               />
             }
@@ -217,15 +228,18 @@ export default function SiftSessionPage({
 }
 
 // Shown when the deck runs dry: every card now carries a verdict, so the session
-// is automatically "done" — no flag to set. Celebrate, then hand off to the next
-// session that still needs triage (or back to the Sift hub).
+// is automatically "done" — no flag to set. Celebrate (with the run's tally),
+// then offer two ways onward: straight into the next session that still needs
+// triage, or back into the one just sorted to review the picks before exporting.
 function CompletionPanel({
   title,
   subtitle,
+  sessionId,
   nextId,
 }: {
   title: string;
   subtitle: string;
+  sessionId: string;
   nextId: number | null;
 }) {
   return (
@@ -242,9 +256,14 @@ function CompletionPanel({
           </Link>
         ) : (
           <Link href="/sift" className="btn btn-primary">
-            Back to Sift
+            {Icons.sift} Back to Sift
           </Link>
         )}
+        {/* The lighter, secondary path: reopen the session just triaged to look
+            over the picks and export them when happy. */}
+        <Link href={`/sessions/${sessionId}`} className="btn">
+          {Icons.view} Open sorted session
+        </Link>
       </div>
     </div>
   );

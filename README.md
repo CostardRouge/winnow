@@ -145,7 +145,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
-| `GET /api/sessions` `?kind&sort=captured\|touched\|progress&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched or triage completeness; `progress` filters by how far each session has been triaged |
+| `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
 | `DELETE /api/sessions/:id` `?files=true` | Deletes the session (cascade: assets/ratings/picks) + its derivative cache. `files=true` also removes the originals from disk (incoming only, confined to the session folder) — to clear an orphaned import |
 | `GET /api/sessions/:id/assets?cursor&verdict&…` | Paginated grid (cursor-based) |
@@ -193,16 +193,32 @@ PWA shortcut), and answers "what's left to sort?" at a glance:
 - **Resume card**: the session you triaged most recently that still has work,
   surfaced at the top — tap to dive straight back into its deck.
 - **Rank & filter**: order by *Recent edits* (most recent verdict), *Capture
-  date* or *Completion*, in either direction; filter to *To sort* / *Untouched*
-  / *Done* / *All*.
+  date*, *Completion* or *Item count* (number of live media — flip the direction
+  to "least first" to surface the shortest sessions and knock them out
+  back-to-back), in either direction; filter to *To sort* / *Untouched* / *Done*
+  / *All*.
 - **The deck** (`/sift/[id]`): a "Tinder for photos" stack — **swipe right =
   pick**, **left = reject**, **up = skip**. Tap buttons mirror the gestures and
   arrow keys drive it on desktop (`←`/`→` verdict, `↑`/space skip,
   `Backspace`/`U` undo). Each verdict flies the card off and reveals the next;
-  **Undo** walks back and reverts the rating. When the deck empties the session
-  is offered up as **done** and the **next session still needing triage** is one
-  tap away — culling becomes a continuous flow. Verdicts hit the same
+  **Undo** walks back and reverts the rating. Verdicts hit the same
   `PATCH /api/assets/:id/rating` as everywhere else (so a pair rates as one).
+  - **Video plays inline**: tapping a clip's ▶ badge plays a muted preview right
+    on the card (the whole card stays swipeable); the **eye** button is what
+    opens the full-screen viewer.
+  - **Sift from the viewer**: the peek viewer carries the same verdict buttons
+    (**Back/undo · Reject · Skip · Pick**, plus `P`/`X`/`S`/`U` keys that don't
+    clash with `←`/`→` navigation), so you can cull on the big image — and it
+    spans the whole card list, already-sorted cards included, for a second look.
+  - **Recent decisions strip**: a virtual, horizontally-scrollable history of
+    just-sorted cards (latest first) sits under the buttons, so you can see what
+    you decided and **re-cast** a verdict at a glance. Width-aware (a
+    `ResizeObserver` feeds `react-window`) so a session of thousands only renders
+    the tiles on screen.
+  - **On completion**: the session is offered up as **done** with the run's tally
+    and two ways onward — **Next session** still needing triage (one tap to keep
+    the flow going) or **Open sorted session** to reopen the one just culled and
+    review the picks before exporting.
 
 ### Image actions (delete · tag · export · regenerate · pick · reject · rate)
 
