@@ -15,6 +15,7 @@ import {
   reconcileGroupsForSession,
   reconcileLivePhotosForSession,
 } from "./pairing";
+import { reconcileBurstsForSession } from "./bursts";
 import { recordSidecars } from "./sidecars";
 import type { Root, Session } from "./types";
 
@@ -80,6 +81,8 @@ export type IndexResult = {
   failed: number;
   // RAW+JPEG pairs newly tied together this scan (cf. lib/pairing.ts).
   paired: number;
+  // Burst/bracket stacks newly clustered this scan (cf. lib/bursts.ts).
+  stacked: number;
   // Video sidecars (Sony .XML / .THM) tied to their clip this scan (lib/sidecars.ts).
   sidecars: number;
   // true if the scan was interrupted (pause or preemption) before the end.
@@ -107,6 +110,7 @@ export async function indexRoot(
     enqueued: 0,
     failed: 0,
     paired: 0,
+    stacked: 0,
     sidecars: 0,
     stopped: false,
   };
@@ -357,6 +361,10 @@ export async function indexRoot(
     // practice: a RAW shares no content_id with a .mov).
     res.paired += await reconcileGroupsForSession(sid);
     res.paired += await reconcileLivePhotosForSession(sid);
+    // Then cluster bursts/brackets over the now-paired logical media: a stack is
+    // built from displayed primaries (companions skipped), so it composes with —
+    // rather than collides with — pairing (cf. lib/bursts.ts).
+    res.stacked += await reconcileBurstsForSession(sid);
   }
 
   return res;

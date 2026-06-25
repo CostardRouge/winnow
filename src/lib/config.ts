@@ -64,6 +64,42 @@ function intEnv(def: number, range: { min?: number; max?: number } = {}) {
     });
 }
 
+// Like intEnv but accepts a real number (e.g. a 1.5 s gap); a non-numeric or
+// out-of-range value fails instead of silently reverting to `def`.
+function numEnv(def: number, range: { min?: number; max?: number } = {}) {
+  const { min, max } = range;
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const v = raw?.trim();
+      if (!v) return def;
+      const n = Number(v);
+      if (!Number.isFinite(n)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be a number (got "${raw}")`,
+        });
+        return z.NEVER;
+      }
+      if (min !== undefined && n < min) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be >= ${min} (got ${n})`,
+        });
+        return z.NEVER;
+      }
+      if (max !== undefined && n > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be <= ${max} (got ${n})`,
+        });
+        return z.NEVER;
+      }
+      return n;
+    });
+}
+
 // Boolean from the usual truthy/falsy spellings; anything else fails (whereas
 // the old `=== "true"` quietly turned every typo into `false`).
 function boolEnv(def: boolean) {
@@ -185,6 +221,15 @@ const EnvSchema = z
     // on a read-only mount surface a per-file error and stay in the trash.
     PURGE_ENABLED: boolEnv(true),
 
+    // --- Burst / bracket stacks (culling grid) ---------------------------
+    // Group N distinct frames shot in one quick run (rafale / AEB bracket) into
+    // one collapsible "pile" the grid can cull as a unit (cf. lib/bursts.ts).
+    // A new pile starts when the gap to the previous frame exceeds
+    // BURST_GAP_SECONDS or the device changes; a run of >= BURST_MIN_FRAMES
+    // becomes a stack (shorter runs stay standalone).
+    BURST_GAP_SECONDS: numEnv(1.5, { min: 0 }),
+    BURST_MIN_FRAMES: intEnv(3, { min: 2 }),
+
     // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
     THUMB_SIZE: intEnv(400, { min: 1 }),
     PROXY_SIZE: intEnv(2048, { min: 1 }),
@@ -288,6 +333,12 @@ function loadConfig() {
     // Reclaim-space (purge) capability. `enabled=false` makes /api/purge 403.
     purge: {
       enabled: e.PURGE_ENABLED,
+    },
+
+    // Burst / bracket stacking thresholds (cf. lib/bursts.ts).
+    burst: {
+      gapSeconds: e.BURST_GAP_SECONDS,
+      minFrames: e.BURST_MIN_FRAMES,
     },
 
     thumbSize: e.THUMB_SIZE,
