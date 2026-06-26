@@ -328,9 +328,11 @@ export default function SwipeDeck({
   const stack = remaining.slice(0, 3);
 
   return (
-    // `has-recent` lets the stack give back some height to the recent strip so
-    // the whole surface keeps fitting a phone screen.
-    <div className={`deck${recent.length > 0 ? " has-recent" : ""}`}>
+    // The surface is a full-width column: a centred swipe deck up top, and the
+    // always-on recent strip spanning the whole width along the bottom.
+    <div className="sift-deck-wrap">
+      <div className="sift-deck-main">
+      <div className="deck">
       <div className="deck-stack">
         {stack.map((card, i) => {
           const isTop = i === 0;
@@ -489,16 +491,16 @@ export default function SwipeDeck({
           {Icons.pick}
         </button>
       </div>
+      </div>
+      </div>
 
-      {/* Recent decisions — a virtual, scrollable history so the last calls stay
-          visible and any of them can be re-cast at a glance. */}
-      {recent.length > 0 && (
-        <RecentStrip
-          items={recent}
-          onRate={(card, verdict) => applyVerdict(card, verdict)}
-          onOpen={openViewerAt}
-        />
-      )}
+      {/* Recent decisions — an always-on, full-width, virtual history so the last
+          calls stay visible and any of them can be re-cast at a glance. */}
+      <RecentStrip
+        items={recent}
+        onRate={(card, verdict) => applyVerdict(card, verdict)}
+        onOpen={openViewerAt}
+      />
 
       {/* The peek overlay (a portal on <body>) renders over the deck rather than
           navigating away, so a close drops you straight back into swiping. It
@@ -600,8 +602,8 @@ function RecentStrip({
     return () => ro.disconnect();
   }, []);
 
-  const ITEM = 88; // px per tile, gap included
-  const HEIGHT = 100; // tile height + room for the horizontal scrollbar
+  const ITEM = 104; // px per tile, gap included
+  const HEIGHT = 116; // tile height + room for the horizontal scrollbar
 
   const Tile = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const { card, verdict } = items[index];
@@ -657,20 +659,35 @@ function RecentStrip({
   return (
     <div className="sift-recent">
       <div className="sift-recent-head">
-        Recent decisions <span className="sift-recent-count">{items.length}</span>
+        Recent decisions
+        {items.length > 0 && (
+          <span className="sift-recent-count">{items.length}</span>
+        )}
       </div>
-      <div ref={trackRef} className="sift-recent-track">
-        {width > 0 && (
-          <FixedSizeList
-            layout="horizontal"
-            height={HEIGHT}
-            width={width}
-            itemCount={items.length}
-            itemSize={ITEM}
-            overscanCount={6}
-          >
-            {Tile}
-          </FixedSizeList>
+      <div
+        ref={trackRef}
+        className="sift-recent-track"
+        style={{ height: HEIGHT }}
+      >
+        {items.length === 0 ? (
+          // Always on, even before the first swipe — so the affordance (and the
+          // space it claims) never jumps in and out as you start sorting.
+          <div className="sift-recent-empty">
+            Sorted cards land here — tap one to revisit it or re-cast its verdict.
+          </div>
+        ) : (
+          width > 0 && (
+            <FixedSizeList
+              layout="horizontal"
+              height={HEIGHT}
+              width={width}
+              itemCount={items.length}
+              itemSize={ITEM}
+              overscanCount={6}
+            >
+              {Tile}
+            </FixedSizeList>
+          )
         )}
       </div>
     </div>
