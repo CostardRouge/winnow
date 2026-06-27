@@ -174,20 +174,39 @@ export default function SiftSessionPage({
         </Link>
         <h1 className="sift-deck-title">{name || `Session #${id}`}</h1>
         <span className="spacer" />
-        {cards && !finished && (
-          <span className="hint">
-            {left} left{total ? ` / ${total}` : ""}
-          </span>
-        )}
       </div>
 
-      <div className="sift-deck-progress">
+      {/* Status bar above the carousel: how much is left, the overall progress
+          bar, and a quick jump into the full session view — all in the dead
+          space that used to sit empty above the deck. */}
+      <div className="sift-deck-statusbar">
+        <span className="sift-deck-left" aria-live="polite">
+          {!cards ? (
+            "Loading…"
+          ) : !finished && total > 0 ? (
+            <>
+              <strong>{left}</strong> left
+              <span className="sift-deck-total"> / {total}</span>
+            </>
+          ) : (
+            "All sorted"
+          )}
+        </span>
         <SessionProgress
           picks={counts.picks}
           rejects={counts.rejects}
           skips={counts.skips}
           total={counts.total}
+          compact
+          className="sift-deck-statusbar-progress"
         />
+        <Link
+          href={`/sessions/${id}`}
+          className="btn btn-sm sift-deck-open"
+          title="Open the full session"
+        >
+          {Icons.view} <span className="max-sm:hidden">Open session</span>
+        </Link>
       </div>
 
       <div className="sift-deck-body">

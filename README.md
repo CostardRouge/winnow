@@ -203,6 +203,10 @@ PWA shortcut), and answers "what's left to sort?" at a glance:
   `Backspace`/`U` undo). Each verdict flies the card off and reveals the next;
   **Undo** walks back and reverts the rating. Verdicts hit the same
   `PATCH /api/assets/:id/rating` as everywhere else (so a pair rates as one).
+  - **Status bar above the deck**: the count still to go (`N left / total`), the
+    overall progress bar, and an **Open session** shortcut — so the live tally
+    and a jump into the full grid sit in the dead space above the carousel rather
+    than the header corner.
   - **Video plays inline**: tapping a clip's ▶ badge plays a muted preview right
     on the card (the whole card stays swipeable); the **eye** button is what
     opens the full-screen viewer.
@@ -210,11 +214,11 @@ PWA shortcut), and answers "what's left to sort?" at a glance:
     (**Back/undo · Reject · Skip · Pick**, plus `P`/`X`/`S`/`U` keys that don't
     clash with `←`/`→` navigation), so you can cull on the big image — and it
     spans the whole card list, already-sorted cards included, for a second look.
-  - **Recent decisions strip**: a virtual, horizontally-scrollable history of
-    just-sorted cards (latest first) sits under the buttons, so you can see what
-    you decided and **re-cast** a verdict at a glance. Width-aware (a
-    `ResizeObserver` feeds `react-window`) so a session of thousands only renders
-    the tiles on screen.
+  - **Recent decisions strip**: an **always-on, full-width** virtual history of
+    just-sorted cards (latest first, `object-contain` thumbnails) runs along the
+    bottom, so you can see what you decided and **re-cast** a verdict at a glance.
+    Width-aware (a `ResizeObserver` feeds `react-window`) so a session of
+    thousands only renders the tiles on screen.
   - **On completion**: the session is offered up as **done** with the run's tally
     and two ways onward — **Next session** still needing triage (one tap to keep
     the flow going) or **Open sorted session** to reopen the one just culled and

@@ -3060,16 +3060,46 @@
   .sift-deck-title {
     @apply truncate text-base font-semibold;
   }
-  .sift-deck-progress {
-    @apply px-4 pt-2;
+  /* Status bar above the carousel: "N left / total" · the overall progress bar
+     (grows to fill) · a quick jump into the full session. Reuses the dead space
+     that used to sit empty between the header and the deck. */
+  .sift-deck-statusbar {
+    @apply flex items-center gap-2.5 px-4 pt-2 sm:gap-3;
+  }
+  .sift-deck-left {
+    @apply flex-shrink-0 text-[13px] tabular-nums;
+    color: var(--color-muted);
+  }
+  .sift-deck-left strong {
+    @apply text-[17px] font-semibold;
+    color: var(--color-text);
+  }
+  .sift-deck-total {
+    color: var(--color-faint);
+  }
+  /* Let the shared SessionProgress bar take the slack between the count and the
+     button. */
+  .sift-deck-statusbar-progress {
+    @apply min-w-0 flex-1;
+  }
+  .sift-deck-open {
+    @apply flex-shrink-0;
   }
   .sift-deck-body {
     @apply flex min-h-0 flex-1 flex-col items-center p-4;
-    /* Centred when it fits, but "safe" so a tall layout (deck + buttons + the
-       recent strip on a small phone) falls back to top-aligned and scrolls
-       instead of clipping the ends. */
+    /* The deck fills this via a flex-1 wrap; keep "safe center" + scroll so the
+       non-deck states (spinner / completion / error) still centre and a very
+       short screen can scroll rather than clip. */
     justify-content: safe center;
     overflow-y: auto;
+  }
+  /* Full-width triage column: the centred deck up top, the always-on recent
+     strip spanning the whole width along the bottom. */
+  .sift-deck-wrap {
+    @apply flex min-h-0 w-full flex-1 flex-col gap-3;
+  }
+  .sift-deck-main {
+    @apply flex min-h-0 flex-1 flex-col items-center justify-center;
   }
   .deck {
     @apply flex w-full flex-col items-center gap-5;
@@ -3078,13 +3108,9 @@
   .deck-stack {
     @apply relative w-full;
     aspect-ratio: 3 / 4;
-    max-height: min(64vh, 560px);
+    /* Capped to leave room for the buttons + the always-on recent strip. */
+    max-height: min(46vh, 440px);
     touch-action: pan-y;
-  }
-  /* With the recent strip in play, hand some vertical space back to it so the
-     deck + buttons + strip still fit a phone screen without scrolling. */
-  .deck.has-recent .deck-stack {
-    max-height: min(50vh, 480px);
   }
   .deck-card {
     @apply absolute inset-0 flex items-center justify-center overflow-hidden
@@ -3267,13 +3293,15 @@
     color: #fff;
   }
 
-  /* Recent decisions strip — a virtual, scrollable history of just-sorted cards
-     sitting under the verdict buttons. Each tile is a thumbnail (tap to open it
-     big) plus the three verdicts with the current call lit, so a decision can be
-     re-cast at a glance. Full-width within the deck; react-window only renders
-     the tiles on screen. */
+  /* Recent decisions strip — an always-on, full-width, virtual history of the
+     just-sorted cards along the bottom of the triage surface. Each tile is a
+     thumbnail (tap to open it big) plus the three verdicts with the current call
+     lit, so a decision can be re-cast at a glance. Width-aware (a ResizeObserver
+     feeds react-window), so react-window only renders the tiles on screen. */
   .sift-recent {
-    @apply flex w-full flex-col gap-1.5;
+    @apply flex w-full flex-shrink-0 flex-col gap-1.5 rounded-[var(--radius-lg)] border p-2.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
   }
   .sift-recent-head {
     @apply flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide;
@@ -3287,32 +3315,40 @@
   .sift-recent-track {
     @apply w-full;
   }
+  /* Placeholder before the first decision — keeps the tray (and its footprint)
+     present so nothing shifts as you start sorting. */
+  .sift-recent-empty {
+    @apply flex h-full items-center justify-center px-3 text-center text-[13px];
+    color: var(--color-faint);
+  }
   /* react-window owns each tile's outer width; the inner card leaves a gutter on
      the right so the row reads as separated tiles. */
   .sift-recent-card {
-    @apply flex flex-col gap-1 overflow-hidden rounded-[var(--radius)] border;
-    width: 80px;
-    background: var(--color-surface);
+    @apply flex flex-col overflow-hidden rounded-[var(--radius)] border;
+    width: 96px;
+    background: var(--color-surface-2);
     border-color: var(--color-border);
   }
   .sift-recent-card.is-pick {
-    border-color: color-mix(in srgb, var(--color-pick) 55%, var(--color-border));
+    border-color: color-mix(in srgb, var(--color-pick) 60%, var(--color-border));
   }
   .sift-recent-card.is-reject {
-    border-color: color-mix(in srgb, var(--color-reject) 55%, var(--color-border));
+    border-color: color-mix(in srgb, var(--color-reject) 60%, var(--color-border));
   }
   .sift-recent-card.is-skip {
-    border-color: color-mix(in srgb, var(--color-star) 55%, var(--color-border));
+    border-color: color-mix(in srgb, var(--color-star) 60%, var(--color-border));
   }
   .sift-recent-thumb {
     @apply relative flex items-center justify-center overflow-hidden border-0 p-0;
-    width: 80px;
-    height: 62px;
-    background: var(--color-surface-2);
+    width: 96px;
+    height: 72px;
+    background: var(--color-frame);
     cursor: pointer;
   }
+  /* "contain" so the whole frame is visible (letterboxed) rather than cropped —
+     handy when the recent shots look alike and the edges are the difference. */
   .sift-recent-thumb img {
-    @apply h-full w-full object-cover;
+    @apply h-full w-full object-contain;
   }
   .sift-recent-play {
     @apply absolute flex items-center justify-center rounded-full;
