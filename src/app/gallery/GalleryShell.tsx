@@ -24,7 +24,7 @@ import {
   rateAssets,
   regenerateAssets,
 } from "@/lib/assetActions";
-import { EmptyState, Icons } from "../ui";
+import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
 
 // Reusable gallery shell, parameterized by a `scope` (folder role):
 //   - no scope          → the whole library (route /gallery, power-user);
@@ -620,32 +620,49 @@ export default function GalleryShell({
                 </button>
               </div>
             )}
-            {items.length === 0 && !loading && !error ? (
+            {items.length === 0 && loading ? (
+              // Filter change / first load: nothing to show yet, so surface the
+              // fetch with a centered loader instead of a blank zone.
+              <LoadingState label="Loading media…" />
+            ) : items.length === 0 && !error ? (
               <EmptyState
                 icon={Icons.photos}
                 title="No assets match these filters"
                 hint="Loosen or clear a filter in the panel to see more of the library."
               />
             ) : (
-              <VirtualGrid
-                items={items}
-                hasMore={hasMore}
-                loading={loading}
-                loadMore={() => fetchPage(cursor)}
-                targetWidth={GRID_SIZES[gridSize].w}
-                onOpen={setViewer}
-                selectMode={!readOnly && selectMode}
-                selectedIds={selected}
-                onToggleSelect={toggleSelect}
-                onContextMenu={
-                  readOnly
-                    ? undefined
-                    : (e, asset) => {
-                        e.preventDefault();
-                        setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
-                      }
-                }
-              />
+              <>
+                <VirtualGrid
+                  items={items}
+                  hasMore={hasMore}
+                  loading={loading}
+                  loadMore={() => fetchPage(cursor)}
+                  targetWidth={GRID_SIZES[gridSize].w}
+                  onOpen={setViewer}
+                  selectMode={!readOnly && selectMode}
+                  selectedIds={selected}
+                  onToggleSelect={toggleSelect}
+                  onContextMenu={
+                    readOnly
+                      ? undefined
+                      : (e, asset) => {
+                          e.preventDefault();
+                          setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
+                        }
+                  }
+                />
+                {/* Paging in the next page while the grid stays on screen. */}
+                {loading && items.length > 0 && (
+                  <div
+                    className="zone-loading-more"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <Spinner sm />
+                    Loading more…
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

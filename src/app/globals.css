@@ -1579,7 +1579,7 @@
     @apply -ml-0.5;
   }
   .gallery-main {
-    @apply flex min-w-0 flex-1 flex-col p-1.5;
+    @apply relative flex min-w-0 flex-1 flex-col p-1.5;
   }
   .gallery-filter-toggle {
     @apply hidden;
@@ -2289,6 +2289,53 @@
   .spinner {
     @apply px-6 py-6 text-center text-sm;
     color: var(--color-muted);
+  }
+
+  /* CSS-animated spinner ring (no asset). `.sm` shrinks it for pills/buttons. */
+  .spinner-ring {
+    @apply inline-block shrink-0;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 2.5px solid var(--color-border-strong);
+    border-top-color: var(--color-accent);
+    animation: ptr-spin 0.7s linear infinite;
+  }
+  .spinner-ring.sm {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+  }
+
+  /* Centered in-zone loader — fills a flex parent (e.g. the gallery grid) and
+     centers a spinner + label while a fetch is in flight. Mirrors EmptyState's
+     footprint so swapping between them doesn't shift the layout. */
+  .zone-loading {
+    @apply flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm;
+    color: var(--color-muted);
+    animation: fade-in 0.18s var(--ease-out);
+  }
+
+  /* Floating "loading more" pill, pinned to the bottom of the result zone while
+     the next page streams in (the grid stays visible behind it). */
+  .zone-loading-more {
+    @apply pointer-events-none absolute bottom-3 left-1/2 z-10 flex items-center
+      gap-2 rounded-[var(--radius-lg)] border px-3 py-1.5 text-xs;
+    transform: translateX(-50%);
+    color: var(--color-muted);
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(8px);
+    animation: fade-in 0.18s var(--ease-out);
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
   .error-box {
     @apply my-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-4 py-3 text-sm;
