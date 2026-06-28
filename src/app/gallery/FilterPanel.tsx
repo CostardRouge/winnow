@@ -79,6 +79,10 @@ export type Filters = {
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
   group_kind?: "raw_jpeg" | "live_photo";
+  // Finals → sources reconciliation (cf. lib/reconcile.ts). `has_edit` → sources
+  // that have a linked edit; `is_edit` → finals linked back to a source.
+  has_edit?: boolean;
+  is_edit?: boolean;
   // Session grid only: ignored sessions are hidden until opted in. (Done is the
   // progress toolbar's job, not a hidden flag.)
   show_ignored?: boolean;
@@ -532,6 +536,31 @@ export default function FilterPanel({
           />
           Has GPS
         </label>
+      </div>
+
+      <div className="facet">
+        <div className="facet-title">Edits (before / after)</div>
+        <div className="chips">
+          <button
+            className={`chip${filters.has_edit ? " active" : ""}`}
+            onClick={() =>
+              u({ has_edit: filters.has_edit ? undefined : true })
+            }
+            title="Source captures that have a linked edit"
+          >
+            Has edit
+          </button>
+          <button
+            className={`chip${filters.is_edit ? " active" : ""}`}
+            onClick={() => u({ is_edit: filters.is_edit ? undefined : true })}
+            title="Edited finals linked back to a source"
+          >
+            Is an edit
+          </button>
+        </div>
+        <div className="hint" style={{ marginTop: 4 }}>
+          Links edited finals to the source they came from.
+        </div>
       </div>
 
       {!!facets.live_photos && (

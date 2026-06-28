@@ -94,6 +94,11 @@ export const FilterSchema = z
     // Photos" filter toggle maps to `group_kind=live_photo`.
     paired: boolish,
     group_kind: z.enum(["raw_jpeg", "live_photo"]).optional(),
+    // Finals → sources reconciliation (cf. lib/reconcile.ts). `is_edit` → finals
+    // linked back to a source (true) / not an edit (false). `has_edit` → sources
+    // that have at least one linked edit (true) / none (false).
+    is_edit: boolish,
+    has_edit: boolish,
 
     // Device / EXIF (multi)
     device: csv,
@@ -236,6 +241,25 @@ export function buildFilter(
     params.push(filter.group_kind);
   }
 
+  // Finals → sources reconciliation. `is_edit` keys on the link column directly;
+  // `has_edit` on the existence of an edit pointing back at this asset (the
+  // reverse fan-out, served by assets_original_idx). No params: constant
+  // predicates.
+  if (filter.is_edit === true) conditions.push("a.original_asset_id IS NOT NULL");
+  else if (filter.is_edit === false)
+    conditions.push("a.original_asset_id IS NULL");
+  if (filter.has_edit === true) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM assets e
+                WHERE e.original_asset_id = a.id AND e.deleted_at IS NULL)`,
+    );
+  } else if (filter.has_edit === false) {
+    conditions.push(
+      `NOT EXISTS (SELECT 1 FROM assets e
+                    WHERE e.original_asset_id = a.id AND e.deleted_at IS NULL)`,
+    );
+  }
+
   // Collapse RAW+JPEG pairs to one row: hide the companion, keep the displayed
   // primary. Opt-in (gallery/session grid) so exports and per-file triage still
   // see every file. NULL group_role (unpaired) is always kept.
@@ -333,6 +357,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "ext",
     "paired",
     "group_kind",
+    "is_edit",
+    "has_edit",
     "device",
     "camera_model",
     "lens",

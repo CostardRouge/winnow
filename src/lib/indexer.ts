@@ -16,6 +16,7 @@ import {
   reconcileLivePhotosForSession,
 } from "./pairing";
 import { reconcileBurstsForSession } from "./bursts";
+import { reconcileEdits } from "./reconcile";
 import { recordSidecars } from "./sidecars";
 import type { Root, Session } from "./types";
 
@@ -85,6 +86,9 @@ export type IndexResult = {
   stacked: number;
   // Video sidecars (Sony .XML / .THM) tied to their clip this scan (lib/sidecars.ts).
   sidecars: number;
+  // Edited finals newly linked back to their source original this scan
+  // (finals → sources reconciliation, cf. lib/reconcile.ts).
+  editsLinked: number;
   // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
@@ -112,6 +116,7 @@ export async function indexRoot(
     paired: 0,
     stacked: 0,
     sidecars: 0,
+    editsLinked: 0,
     stopped: false,
   };
   const touchedSessions = new Set<number>();
@@ -365,6 +370,26 @@ export async function indexRoot(
     // built from displayed primaries (companions skipped), so it composes with —
     // rather than collides with — pairing (cf. lib/bursts.ts).
     res.stacked += await reconcileBurstsForSession(sid);
+  }
+
+  // Finals → sources: link freshly-indexed edits back to their originals. A
+  // finals scan only needs to match its own new finals; a source scan can light
+  // up finals across every finals root, so it sweeps globally. Skipped when the
+  // scan changed nothing (incremental no-op) and never fatal — a reconciliation
+  // hiccup must not fail the scan (cf. lib/reconcile.ts).
+  if (!res.stopped && res.inserted + res.updated > 0) {
+    try {
+      const out =
+        root.kind === "finals"
+          ? await reconcileEdits({ rootId: root.id })
+          : await reconcileEdits();
+      res.editsLinked = out.linked;
+    } catch (err) {
+      console.warn(
+        `Edit reconciliation failed for root ${root.id}:`,
+        (err as Error).message,
+      );
+    }
   }
 
   return res;

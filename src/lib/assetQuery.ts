@@ -9,6 +9,12 @@
 // side is on screen, and playing the .mov when the companion is a Live Photo's
 // motion) and the grid badge the pair (RAW+… or LIVE). The companion fields and
 // `group_kind` are NULL when the asset is not paired.
+//
+// It also carries the finals→sources counterpart (cf. lib/reconcile.ts): on an
+// edited final, its source original's name/ext (`original_*`); on a source, how
+// many edits link to it (`edit_count`) plus the first one's name/ext/id
+// (`first_edit_*`). These feed the viewer's before/after toggle and are
+// NULL/0 when the asset has no counterpart.
 
 // SELECT projection (assumes `assets a` + the joins in GRID_FROM are in scope).
 export const GRID_SELECT = `a.*,
@@ -25,6 +31,13 @@ export const GRID_SELECT = `a.*,
         g.kind          AS group_kind,
         (SELECT count(*)::int FROM asset_sidecars sc
           WHERE sc.asset_id = a.id) AS sidecar_count,
+        orig.filename   AS original_filename,
+        orig.ext        AS original_ext,
+        (SELECT count(*)::int FROM assets e
+          WHERE e.original_asset_id = a.id AND e.deleted_at IS NULL) AS edit_count,
+        ed.id           AS first_edit_id,
+        ed.filename     AS first_edit_filename,
+        ed.ext          AS first_edit_ext,
         (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
            FROM asset_tags at JOIN tags t ON t.id = at.tag_id
           WHERE at.asset_id = a.id) AS tags`;
@@ -44,4 +57,13 @@ export const GRID_FROM = `FROM assets a
             AND c.id <> a.id
             AND c.deleted_at IS NULL
           LIMIT 1
-        ) comp ON true`;
+        ) comp ON true
+        LEFT JOIN assets orig
+          ON orig.id = a.original_asset_id AND orig.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+          SELECT e.id, e.filename, e.ext
+          FROM assets e
+          WHERE e.original_asset_id = a.id AND e.deleted_at IS NULL
+          ORDER BY e.id
+          LIMIT 1
+        ) ed ON true`;

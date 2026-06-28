@@ -33,7 +33,7 @@ const NUMS = [
   "size_max",
 ] as const;
 const STRS = ["date_from", "date_to", "q"] as const;
-const BOOLS = ["has_gps", "show_ignored"] as const;
+const BOOLS = ["has_gps", "show_ignored", "has_edit", "is_edit"] as const;
 
 export function encodeFilters(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();
