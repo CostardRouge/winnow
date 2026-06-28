@@ -46,7 +46,7 @@ the internal network and trusts the reverse proxy; do not publish ports
 | 1 | Derivatives: MinIO or disk | **Disk cache**, behind an S3-style interface (`src/lib/storage`) → switch to **MinIO** via `STORAGE_DRIVER=s3` without touching the code. |
 | 2 | Mount vs NAS agent | **RO mount** for the MVP (decided by the specs). |
 | 3 | Hash-based deduplication | **Yes from the MVP**: partial `content_hash` (size + endpoints) + unique index. A suspected duplicate is **verified by full-content compare** before being dropped — a false partial-hash collision is indexed anyway (never lost), and every hit is logged in `duplicate_hits` for audit. |
-| 4 | Linking key for C1 finals → source | Deferred to V2 (reconciliation), `POST /reconcile` endpoint reserved. |
+| 4 | Linking key for finals → source | **Implemented**, tool-agnostic: basename + capture time (never Capture One specifics). See [Finals → sources](#finals--sources-beforeafter). |
 
 ---
 
@@ -141,7 +141,7 @@ offending variable — instead of silently degrading in production.
 | `POST /api/failures/duplicates/keep` `{ contentHash, keepPath }` | Collapses a group of byte-identical copies to the single survivor the user picked. Keeping an on-disk copy **relinks** the library asset onto it (id/rating/tags/derivatives preserved) and deletes the former original; keeping the indexed copy just removes the recorded extras. False collisions are never eligible |
 | `GET /api/pipeline/queue` `?name=scan\|analyze` | Live jobs of the scan/analyze queue, enriched with the root/asset they point at |
 | `POST /api/pipeline/queue/remove` `{ name, jobId }` | Removes one job from the scan/analyze queue (active jobs can't be removed mid-flight) |
-| `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status` and `q=` free-text path search; `sort=recent` orders by last update) |
+| `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status`, `q=` free-text path search, and `has_edit`/`is_edit` for the finals↔sources before/after link; `sort=recent` orders by last update) |
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
@@ -169,7 +169,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/roots` · `POST /api/roots` `{ path, type }` | Registered volumes (+ session/asset counts); `type` ∈ incoming·final·export, path-guarded |
 | `PATCH /api/roots/:id` `{ type?, watch?, reindex? }` · `DELETE /api/roots/:id` | Re-type / re-index / remove a volume (remove cascades to its index, files untouched) |
 | `GET /api/fs` `?path=<dir>` | Subdirectories of `<dir>` for the folder picker — confined to the browse roots (`BROWSE_ROOTS` + the volume dirs); omit `path` for the starting locations |
-| `POST /api/reconcile` | Finals→sources reconciliation (**V2**, 501) |
+| `POST /api/reconcile` `{ root_id? }` | Links edited **finals** back to their **source** original (before/after). Retroactive + idempotent; `root_id` scopes to one finals root, otherwise every finals root. Returns `{ considered, linked, ambiguous, unmatched }`. See [Finals → sources](#finals--sources-beforeafter) |
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
 front-end grid infinite-scroll-loads the thumbnails as they come.
@@ -442,6 +442,34 @@ recorded in `asset_sidecars` (migration 0015). Concretely:
 
 The viewer's info panel notes when a clip carries sidecar files.
 
+## Finals → sources (before/after)
+
+You cull your **sources** (the RAW captures) on one side, and keep your finished
+**edits** in the **Final** volumes on the other — one folder per shoot, exported
+from whatever editor you reached for (Capture One, Photomator, Lightroom…).
+Reconciliation **links each edit back to the source it came from**, so you can
+jump between *before* and *after* at a glance.
+
+- **Tool-agnostic key.** The match keys on what every editor preserves on export:
+  the **filename basename** (your exports keep the source name) plus the original
+  **capture time** (`DateTimeOriginal`). The capture time disambiguates a filename
+  a camera reuses across cards/years (a `DSC00123` in 2024 vs 2026) — no Capture
+  One specifics, no camera serial needed. A final that matches several captures is
+  left **unlinked** rather than guessed.
+- **Retroactive + automatic.** Both sides are already indexed as `assets` (Final
+  volumes are walked, view-only), so reconciliation is a pure DB pass over the
+  existing library — it works on everything already indexed. It also runs
+  **after each scan** (a Final scan matches its own new edits; a source scan
+  lights up finals that a freshly-indexed RAW now matches), and on demand via
+  `POST /api/reconcile { root_id? }`. Idempotent: an existing link is never
+  disturbed, and a file that arrives later is picked up on the next pass.
+- **Where it shows.** The viewer gains a **Before/After** toggle (swap the
+  on-screen media between the edit and its source, like the RAW/JPEG toggle), and
+  the gallery filters **Has edit** / **Is an edit** (`has_edit` / `is_edit`) let
+  you pull up exactly the shots you've published, or the edits themselves. The
+  link lives on `assets.original_asset_id` (`edit_match` records how it was made:
+  `name_date` / `name`).
+
 ## Failures: list + retry (page `/pipeline/failures`)
 
 Everything that failed is listed in one place, with the **error message** to
@@ -553,8 +581,7 @@ restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
 (typecheck + migrations + build).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
-automatic C1 finals reconciliation, adaptive throttling, agent-on-NAS, n8n
-automations.
+adaptive throttling, agent-on-NAS, n8n automations.
 
 ---
 

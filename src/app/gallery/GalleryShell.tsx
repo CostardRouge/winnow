@@ -68,6 +68,15 @@ type Row = GalleryAsset & {
   companion_width?: number | null;
   companion_height?: number | null;
   group_kind?: "raw_jpeg" | "live_photo" | null;
+  // Finals → sources counterpart (cf. lib/reconcile.ts), fed to the viewer's
+  // before/after toggle.
+  original_asset_id?: number | null;
+  original_filename?: string | null;
+  original_ext?: string | null;
+  edit_count?: number;
+  first_edit_id?: number | null;
+  first_edit_filename?: string | null;
+  first_edit_ext?: string | null;
 };
 
 // Leaflet touches `window` on import, so the map is client-only (no SSR).
@@ -126,6 +135,8 @@ function toQuery(
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
   if (f.group_kind) sp.set("group_kind", f.group_kind);
+  if (f.has_edit) sp.set("has_edit", "true");
+  if (f.is_edit) sp.set("is_edit", "true");
   // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));

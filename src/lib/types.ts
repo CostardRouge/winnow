@@ -104,6 +104,12 @@ export type Asset = {
   // both a RAW+JPEG pair and a stack member. Both null when not stacked.
   burst_id: number | null;
   burst_seq: number | null;
+  // Finals → sources reconciliation (cf. lib/reconcile.ts). On an edited "final",
+  // `original_asset_id` points at the source capture it was derived from; NULL on
+  // sources and on unmatched finals. `edit_match` records how the link was made:
+  // 'name_date' (basename + capture time), 'name' (basename only), 'manual'.
+  original_asset_id: number | null;
+  edit_match: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -183,4 +189,14 @@ export type AssetGridRow = Asset & {
   // Number of Sony sidecar files (XML/THM) tied to this asset (0 for most).
   // Lets the viewer note that a clip carries its camera metadata companion.
   sidecar_count: number;
+  // Finals → sources counterpart (cf. lib/reconcile.ts), joined for the viewer's
+  // before/after toggle. For an edited final: the source original's name/ext. For
+  // a source: how many edits link to it, plus the first one's name/ext to jump to.
+  // All NULL/0 when the asset has no counterpart.
+  original_filename: string | null;
+  original_ext: string | null;
+  edit_count: number;
+  first_edit_id: number | null;
+  first_edit_filename: string | null;
+  first_edit_ext: string | null;
 };

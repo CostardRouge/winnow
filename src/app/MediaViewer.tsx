@@ -39,6 +39,18 @@ export type ViewerItem = AssetMetaInput & {
   companion_width?: number | null;
   companion_height?: number | null;
   group_kind?: "raw_jpeg" | "live_photo" | null;
+  // Finals → sources counterpart (cf. lib/reconcile.ts). When present, the viewer
+  // offers a Before/After toggle that swaps the displayed media between this
+  // asset and its counterpart — the source original of an edited final, or the
+  // first edit of a source — sourcing the counterpart's proxy directly (no list
+  // navigation needed, just like the RAW/JPEG companion toggle).
+  original_asset_id?: number | null;
+  original_filename?: string | null;
+  original_ext?: string | null;
+  edit_count?: number;
+  first_edit_id?: number | null;
+  first_edit_filename?: string | null;
+  first_edit_ext?: string | null;
 };
 
 // "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
@@ -108,6 +120,10 @@ export default function MediaViewer<T extends ViewerItem>({
   // (JPEG/HEIF) whenever we move to another item.
   const [showCompanion, setShowCompanion] = useState(false);
 
+  // Finals → sources: whether the counterpart (before/after) is displayed instead
+  // of this asset. Mutually exclusive with the companion toggle below.
+  const [showCounterpart, setShowCounterpart] = useState(false);
+
   // Zoom/pan transform applied to the current media. Reset whenever we move to
   // another item so each photo/video starts fitted.
   const [scale, setScale] = useState(1);
@@ -121,6 +137,7 @@ export default function MediaViewer<T extends ViewerItem>({
     setTx(0);
     setTy(0);
     setShowCompanion(false);
+    setShowCounterpart(false);
   }, [index]);
 
   // Once back to fit, drop any leftover pan so the media re-centres.
@@ -286,28 +303,62 @@ export default function MediaViewer<T extends ViewerItem>({
   const companionIsVideo =
     item.companion_media_type === "video" ||
     item.group_kind === "live_photo";
-  const currentSrc = companionShown
-    ? `/api/assets/${item.companion_id}/proxy`
-    : mediaSrc(item);
+
+  // Finals → sources counterpart. An edited final points at its source original
+  // (`original_asset_id`); a source points at its first edit (`first_edit_id`).
+  // Either way the toggle swaps the on-screen media to the counterpart's proxy.
+  const isEdit = item.original_asset_id != null;
+  const counterpartId = isEdit
+    ? (item.original_asset_id ?? null)
+    : (item.first_edit_id ?? null);
+  const hasCounterpart = counterpartId != null;
+  const counterpartShown = hasCounterpart && showCounterpart;
+  const counterpartLabel = isEdit ? "Original" : "Edit";
+  const selfLabel = isEdit ? "Edit" : "Original";
+  const counterpartFilename = isEdit
+    ? item.original_filename
+    : item.first_edit_filename;
+  const counterpartExt = isEdit ? item.original_ext : item.first_edit_ext;
+
+  const currentSrc = counterpartShown
+    ? `/api/assets/${counterpartId}/proxy`
+    : companionShown
+      ? `/api/assets/${item.companion_id}/proxy`
+      : mediaSrc(item);
 
   // The file actually on screen. EXIF (date/camera/exposure/GPS) is shared
   // across a pair, so only the file-level fields — name, type, size, dimensions
   // and path — switch to the companion's when the RAW side is displayed. This
   // keeps the header and metadata panel describing what you're looking at rather
   // than always the primary.
-  const displayed: AssetMetaInput & { filename: string } = companionShown
+  const displayed: AssetMetaInput & { filename: string } = counterpartShown
     ? {
+        // The counterpart is a different file in another folder. EXIF (capture
+        // date, camera, exposure) is shared with this asset — that's *why* they
+        // pair — so keep it; only the file identity (name/ext) is the
+        // counterpart's. We don't carry its size/dimensions, so omit them rather
+        // than show this asset's.
         ...item,
-        filename: item.companion_filename ?? item.filename,
-        ext: item.companion_ext ?? item.ext,
-        file_size: item.companion_file_size ?? item.file_size,
-        width: item.companion_width ?? item.width,
-        height: item.companion_height ?? item.height,
-        rel_path: item.rel_path
-          ? swapExt(item.rel_path, item.companion_ext ?? "")
-          : null,
+        filename: counterpartFilename ?? item.filename,
+        ext: counterpartExt ?? item.ext,
+        file_size: null,
+        width: null,
+        height: null,
+        rel_path: null,
       }
-    : item;
+    : companionShown
+      ? {
+          ...item,
+          filename: item.companion_filename ?? item.filename,
+          ext: item.companion_ext ?? item.ext,
+          file_size: item.companion_file_size ?? item.file_size,
+          width: item.companion_width ?? item.width,
+          height: item.companion_height ?? item.height,
+          rel_path: item.rel_path
+            ? swapExt(item.rel_path, item.companion_ext ?? "")
+            : null,
+        }
+      : item;
 
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
@@ -381,7 +432,13 @@ export default function MediaViewer<T extends ViewerItem>({
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                key={companionShown ? `c${item.companion_id}` : item.id}
+                key={
+                  counterpartShown
+                    ? `e${counterpartId}`
+                    : companionShown
+                      ? `c${item.companion_id}`
+                      : item.id
+                }
                 src={currentSrc}
                 alt={displayed.filename}
                 style={transform}
@@ -444,7 +501,10 @@ export default function MediaViewer<T extends ViewerItem>({
                       ? "Play the Live Photo motion"
                       : "Show the RAW source"
                   }
-                  onClick={() => setShowCompanion(true)}
+                  onClick={() => {
+                    setShowCounterpart(false);
+                    setShowCompanion(true);
+                  }}
                 >
                   <span className="viewer-pair-ext">
                     {item.group_kind === "live_photo"
@@ -458,6 +518,52 @@ export default function MediaViewer<T extends ViewerItem>({
                       item.companion_height,
                       item.companion_file_size,
                     )}
+                  </span>
+                </button>
+              </div>
+            )}
+            {hasCounterpart && (
+              // Finals → sources: this asset paired with its before/after
+              // counterpart — the source original of an edited final, or the edit
+              // produced from a source. Selecting a side swaps the on-screen
+              // media, exactly like the RAW/JPEG format toggle above.
+              <div className="viewer-pair">
+                <div className="viewer-pair-label">
+                  {isEdit
+                    ? "Edited from source"
+                    : `Edit${(item.edit_count ?? 0) > 1 ? `s · ${item.edit_count}` : ""}`}
+                </div>
+                <button
+                  type="button"
+                  className={`viewer-pair-member${!counterpartShown ? " active" : ""}`}
+                  aria-pressed={!counterpartShown}
+                  onClick={() => setShowCounterpart(false)}
+                >
+                  <span className="viewer-pair-ext">{selfLabel}</span>
+                  <span className="viewer-pair-stat" title={item.filename}>
+                    {item.filename}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`viewer-pair-member${counterpartShown ? " active" : ""}`}
+                  aria-pressed={counterpartShown}
+                  title={
+                    isEdit
+                      ? "Show the source original"
+                      : "Show the edited version"
+                  }
+                  onClick={() => {
+                    setShowCompanion(false);
+                    setShowCounterpart(true);
+                  }}
+                >
+                  <span className="viewer-pair-ext">{counterpartLabel}</span>
+                  <span
+                    className="viewer-pair-stat"
+                    title={counterpartFilename ?? ""}
+                  >
+                    {counterpartFilename ?? "—"}
                   </span>
                 </button>
               </div>
