@@ -158,6 +158,27 @@ export function EmptyState({
   );
 }
 
+/** CSS-animated spinner ring (no asset). Pass `sm` for the compact variant used
+ *  inside pills/buttons. */
+export function Spinner({ sm = false }: { sm?: boolean }) {
+  return <span className={`spinner-ring${sm ? " sm" : ""}`} aria-hidden />;
+}
+
+/**
+ * In-zone loading state: a centered spinner + label that fills its flex parent,
+ * mirroring EmptyState's footprint so the zone doesn't jump when it resolves.
+ * Used while a fetch is in flight and there's nothing to show yet (e.g. the
+ * gallery grid right after a filter change).
+ */
+export function LoadingState({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div className="zone-loading" role="status" aria-live="polite">
+      <Spinner />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 /**
  * Brand lockup: a winnowing-fan / feather mark drawn as an SVG (no emoji), set
  * in the accent so it reads as the product's single signature colour, beside the
