@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FixedSizeList, type ListOnItemsRenderedProps } from "react-window";
 import { formatBadge } from "@/lib/format";
+import { isLivePhoto, LiveMotionVideo } from "../LivePhotoPreview";
 
 export type GalleryAsset = {
   id: number;
@@ -51,6 +52,10 @@ export default function VirtualGrid({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  // Live Photo: which tile is hovered, so its motion (.mov companion) plays in
+  // place over the still. One at a time; cleared on leave. No-op on touch (no
+  // hover) — there the viewer's LIVE toggle plays it.
+  const [liveHoverId, setLiveHoverId] = useState<number | null>(null);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -83,6 +88,7 @@ export default function VirtualGrid({
         {cells.map((a, j) => {
           const idx = start + j;
           const sel = selectMode && selectedIds?.has(a.id);
+          const live = isLivePhoto(a);
           return (
             <div
               key={a.id}
@@ -91,6 +97,8 @@ export default function VirtualGrid({
               onClick={() =>
                 selectMode ? onToggleSelect?.(a.id) : onOpen(idx)
               }
+              onMouseEnter={live ? () => setLiveHoverId(a.id) : undefined}
+              onMouseLeave={live ? () => setLiveHoverId((p) => (p === a.id ? null : p)) : undefined}
               onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
             >
               {a.derivative_status === "ready" ? (
@@ -104,6 +112,13 @@ export default function VirtualGrid({
                       ? "🎬 video"
                       : "⏳"}
                 </div>
+              )}
+              {live && a.derivative_status === "ready" && liveHoverId === a.id && (
+                <LiveMotionVideo
+                  companionId={a.companion_id!}
+                  poster={`/api/assets/${a.id}/thumb`}
+                  fit="cover"
+                />
               )}
               {a.media_type === "video" && a.derivative_status === "ready" && (
                 <span className="play-badge">▶</span>
