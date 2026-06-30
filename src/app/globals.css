@@ -1219,6 +1219,62 @@
     box-shadow: 0 1px 4px rgba(16, 15, 13, 0.5);
   }
 
+  /* iPhone Live Photo — motion preview + affordances -----------------------
+     The motion (the companion .mov) is laid over the still and plays muted +
+     looping on hover/tap. Pointer-events stay off so the host surface keeps its
+     click / drag behaviour; object-fit is set per surface to match the still. */
+  .live-video {
+    @apply absolute inset-0 h-full w-full;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--color-surface-2);
+  }
+  /* The concentric-ring dot of the Apple-style LIVE badge. */
+  .live-badge-dot {
+    @apply inline-block rounded-full;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid currentColor;
+    position: relative;
+  }
+  .live-badge-dot::after {
+    content: "";
+    @apply absolute rounded-full;
+    inset: 2px;
+    background: currentColor;
+  }
+  /* On-image LIVE toggle in the full-screen viewer (top-left of the stage). */
+  .viewer-live-badge {
+    @apply absolute left-3 top-3 z-10 inline-flex items-center gap-1.5
+      rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase;
+    letter-spacing: 0.04em;
+    background: color-mix(in srgb, #000 50%, transparent);
+    color: #fff;
+    backdrop-filter: blur(3px);
+    cursor: pointer;
+    transition: background 0.15s var(--ease-out), transform 0.12s var(--ease-out);
+  }
+  .viewer-live-badge:hover {
+    background: color-mix(in srgb, #000 66%, transparent);
+  }
+  .viewer-live-badge.active {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  /* Deck play badge in its Live Photo variant: smaller text than the ▶ glyph. */
+  .deck-card-play.is-live {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  /* Recent-strip LIVE marker (mirrors the ▶ video marker's placement). */
+  .sift-recent-live {
+    @apply absolute left-1 top-1 rounded px-1 text-[8px] font-bold uppercase;
+    letter-spacing: 0.04em;
+    background: color-mix(in srgb, #000 45%, transparent);
+    color: #fff;
+  }
+
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
   }

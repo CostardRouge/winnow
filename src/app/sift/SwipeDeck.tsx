@@ -41,6 +41,7 @@ import {
 import { FixedSizeList } from "react-window";
 import { Icons } from "@/app/ui";
 import { formatBadge } from "@/lib/format";
+import { isLivePhoto, liveMotionSrc, LiveMotionVideo } from "@/app/LivePhotoPreview";
 import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
 
 // A deck card carries everything the swipe surface needs (id, name, format
@@ -358,10 +359,19 @@ export default function SwipeDeck({
             transform = `translateY(${depth * 14}px) scale(${1 - depth * 0.05})`;
           }
           const isVideo = card.media_type === "video";
+          const live = isLivePhoto(card);
+          // Both a video clip and a Live Photo have motion to preview in place;
+          // the source differs (the clip itself vs the still's .mov companion).
+          const hasMotion = isVideo || live;
           const src = isVideo
             ? `/api/assets/${card.id}/thumb`
             : `/api/assets/${card.id}/proxy`;
-          const playing = isTop && isVideo && playingId === card.id;
+          const motionSrc = isVideo
+            ? `/api/assets/${card.id}/proxy`
+            : live
+              ? liveMotionSrc(card.companion_id!)
+              : src;
+          const playing = isTop && hasMotion && playingId === card.id;
           return (
             <div
               key={card.id}
@@ -376,16 +386,25 @@ export default function SwipeDeck({
               onPointerMove={isTop ? onPointerMove : undefined}
               onPointerUp={isTop ? endDrag : undefined}
               onPointerCancel={isTop ? endDrag : undefined}
+              // Desktop nicety: hovering the top Live Photo auto-plays its motion
+              // (Apple-style). Touch has no hover → the centre badge taps it on.
+              onMouseEnter={isTop && live ? () => setPlayingId(card.id) : undefined}
+              onMouseLeave={
+                isTop && live
+                  ? () => setPlayingId((p) => (p === card.id ? null : p))
+                  : undefined
+              }
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt={card.filename} draggable={false} />
               {playing && (
                 // Inline playback right in the carousel: a muted, looping preview
-                // over the poster. pointer-events stay off (see CSS) so the card
-                // is still draggable while the clip runs.
+                // over the poster — the clip itself for a video, the .mov motion
+                // for a Live Photo. pointer-events stay off (see CSS) so the card
+                // is still draggable while it runs.
                 <video
                   className="deck-card-video"
-                  src={`/api/assets/${card.id}/proxy`}
+                  src={motionSrc}
                   poster={src}
                   autoPlay
                   muted
@@ -393,24 +412,32 @@ export default function SwipeDeck({
                   playsInline
                 />
               )}
-              {isVideo &&
+              {hasMotion &&
                 (isTop ? (
                   // The play badge toggles the inline preview in place — it no
                   // longer hijacks the tap to open the viewer (the eye does that).
                   <button
                     type="button"
-                    className={`deck-card-play${playing ? " is-playing" : ""}`}
-                    aria-label={playing ? "Pause video" : "Play video"}
+                    className={`deck-card-play${playing ? " is-playing" : ""}${live ? " is-live" : ""}`}
+                    aria-label={
+                      playing
+                        ? "Pause"
+                        : live
+                          ? "Play Live Photo motion"
+                          : "Play video"
+                    }
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setPlayingId((p) => (p === card.id ? null : card.id));
                     }}
                   >
-                    {playing ? "❚❚" : "▶"}
+                    {playing ? "❚❚" : live ? "LIVE" : "▶"}
                   </button>
                 ) : (
-                  <span className="deck-card-play" aria-hidden>▶</span>
+                  <span className={`deck-card-play${live ? " is-live" : ""}`} aria-hidden>
+                    {live ? "LIVE" : "▶"}
+                  </span>
                 ))}
               <span className="deck-card-badge">
                 {formatBadge(card.ext, card.companion_ext, card.group_kind)}
@@ -591,6 +618,8 @@ function RecentStrip({
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  // Live Photo: which recent tile is hovered, so its motion plays in place.
+  const [liveHoverId, setLiveHoverId] = useState<number | null>(null);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -607,6 +636,7 @@ function RecentStrip({
 
   const Tile = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const { card, verdict } = items[index];
+    const live = isLivePhoto(card);
     return (
       <div style={style}>
         <div className={`sift-recent-card is-${verdict}`}>
@@ -614,13 +644,25 @@ function RecentStrip({
             type="button"
             className="sift-recent-thumb"
             onClick={() => onOpen(card)}
+            onMouseEnter={live ? () => setLiveHoverId(card.id) : undefined}
+            onMouseLeave={
+              live ? () => setLiveHoverId((p) => (p === card.id ? null : p)) : undefined
+            }
             title="Open in viewer"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`/api/assets/${card.id}/thumb`} alt={card.filename} loading="lazy" />
+            {live && liveHoverId === card.id && (
+              <LiveMotionVideo
+                companionId={card.companion_id!}
+                poster={`/api/assets/${card.id}/thumb`}
+                fit="contain"
+              />
+            )}
             {card.media_type === "video" && (
               <span className="sift-recent-play" aria-hidden>▶</span>
             )}
+            {live && <span className="sift-recent-live" aria-hidden>LIVE</span>}
           </button>
           <div className="sift-recent-acts" role="group" aria-label="Re-cast verdict">
             <button

@@ -303,6 +303,9 @@ export default function MediaViewer<T extends ViewerItem>({
   const companionIsVideo =
     item.companion_media_type === "video" ||
     item.group_kind === "live_photo";
+  // iPhone Live Photo: the still is on screen and its .mov motion is one tap away
+  // (the on-image LIVE badge below + the format toggle in the controls bar).
+  const isLive = item.group_kind === "live_photo" && hasCompanion;
 
   // Finals → sources counterpart. An edited final points at its source original
   // (`original_asset_id`); a source points at its first edit (`first_edit_id`).
@@ -446,6 +449,21 @@ export default function MediaViewer<T extends ViewerItem>({
             )
           ) : (
             <div className="placeholder">Derivative unavailable</div>
+          )}
+          {isLive && ready && !counterpartShown && (
+            // Apple-style LIVE badge sitting on the image: tap to swap between the
+            // still and its motion. Mirrors the format toggle in the controls bar.
+            <button
+              type="button"
+              className={`viewer-live-badge${companionShown ? " active" : ""}`}
+              aria-pressed={companionShown}
+              title={companionShown ? "Show the still" : "Play the Live Photo motion"}
+              onMouseDown={stopVideoMouse}
+              onClick={() => setShowCompanion((s) => !s)}
+            >
+              <span className="live-badge-dot" aria-hidden />
+              LIVE
+            </button>
           )}
         </div>
         {panelOpen && (
