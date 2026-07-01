@@ -1,4 +1,4 @@
-// GET /api/assets ?<cumulative filters>&cursor → paginated global gallery.
+// GET /api/assets ?<cumulative filters>&cursor&limit → paginated global gallery.
 // Keyset on (captured_at, id) DESC (most recent first). Never OFFSET.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
@@ -10,10 +10,9 @@ import {
   serverError,
   encodeCursor,
   decodeCursor,
+  pageSize,
 } from "@/lib/api";
 import type { AssetGridRow } from "@/lib/types";
-
-const PAGE = 200;
 
 export async function GET(req: NextRequest) {
   try {
@@ -57,6 +56,7 @@ export async function GET(req: NextRequest) {
       params.push(cur.capturedAt, cur.id);
     }
 
+    const limit = pageSize(sp);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = await many<AssetGridRow>(
       `SELECT ${GRID_SELECT}
@@ -64,11 +64,11 @@ export async function GET(req: NextRequest) {
        ${where}
        ORDER BY ${sortCol} ${dir}, a.id ${dir}
        LIMIT $${idx}`,
-      [...params, PAGE + 1],
+      [...params, limit + 1],
     );
 
-    const hasMore = rows.length > PAGE;
-    const page = hasMore ? rows.slice(0, PAGE) : rows;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const sortVal = recent ? last?.updated_at : last?.captured_at;
     const nextCursor =

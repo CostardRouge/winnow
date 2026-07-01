@@ -180,6 +180,9 @@ export default function SessionGrid({
         const sp = new URLSearchParams();
         if (cur) sp.set("cursor", cur);
         if (verdict) sp.set("verdict", verdict);
+        // Small first page for a fast first paint, big follow-ups so deep
+        // scrolling stays cheap in round-trips (mirrors GalleryShell).
+        sp.set("limit", cur ? "200" : "60");
         // collapse=1: a RAW+JPEG (or Live Photo) pair shows as one tile — the
         // lighter direct file (JPEG/HEIF) primary — with its companion riding
         // along on the row for the badge + the viewer's light↔RAW toggle. So

@@ -103,7 +103,12 @@ export default function VirtualGrid({
             >
               {a.derivative_status === "ready" ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/assets/${a.id}/thumb`} alt={a.filename} loading="lazy" />
+                <img
+                  src={`/api/assets/${a.id}/thumb`}
+                  alt={a.filename}
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="placeholder">
                   {a.derivative_status === "error"
