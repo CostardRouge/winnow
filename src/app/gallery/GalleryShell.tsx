@@ -87,6 +87,12 @@ const MapView = dynamic(() => import("./MapView"), {
 
 const MB = 1024 * 1024;
 
+// Feed page sizes. The first page is deliberately small so the grid paints
+// fast on a filter change / cold load (the heavy projection is per-row);
+// follow-up pages go big so deep scrolling stays cheap in round-trips.
+const FIRST_PAGE = 60;
+const NEXT_PAGE = 200;
+
 // Grid density presets (target cell width in px). Fewer/larger ↔ more/smaller
 // media per line. The responsive engine derives the actual column count from
 // the container width, so these stay sensible on both desktop and mobile.
@@ -281,7 +287,7 @@ export default function GalleryShell({
           assets?: Row[];
           next_cursor?: string | null;
         }>(
-          `/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1`,
+          `/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1&limit=${cur ? NEXT_PAGE : FIRST_PAGE}`,
         );
         setError(null);
         setItems((prev) => (cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? []));

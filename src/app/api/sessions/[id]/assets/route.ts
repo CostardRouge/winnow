@@ -1,4 +1,4 @@
-// GET /api/sessions/:id/assets ?cursor&filter... → paginated grid (cursor-based).
+// GET /api/sessions/:id/assets ?cursor&limit&filter... → paginated grid (cursor-based).
 // Never OFFSET: keyset on (captured_at, id). The front-end grid is virtualized.
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
@@ -10,10 +10,9 @@ import {
   serverError,
   encodeCursor,
   decodeCursor,
+  pageSize,
 } from "@/lib/api";
 import type { AssetGridRow } from "@/lib/types";
-
-const PAGE = 200;
 
 export async function GET(
   req: NextRequest,
@@ -44,6 +43,7 @@ export async function GET(
       fParams.push(cur.capturedAt, cur.id);
     }
 
+    const limit = pageSize(sp);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = await many<AssetGridRow>(
       `SELECT ${GRID_SELECT}
@@ -51,11 +51,11 @@ export async function GET(
        ${where}
        ORDER BY a.captured_at ASC, a.id ASC
        LIMIT $${idx}`,
-      [...fParams, PAGE + 1],
+      [...fParams, limit + 1],
     );
 
-    const hasMore = rows.length > PAGE;
-    const page = hasMore ? rows.slice(0, PAGE) : rows;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const nextCursor =
       hasMore && last?.captured_at

@@ -14,23 +14,52 @@ function contentType(key: string): string {
   return "application/octet-stream";
 }
 
+const CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export async function serveDerivative(
   req: Request,
   assetId: number,
   which: "thumb" | "proxy",
 ): Promise<NextResponse> {
   const col = which === "thumb" ? "thumb_key" : "proxy_key";
-  const row = await one<{ key: string | null }>(
-    `SELECT ${col} AS key FROM assets WHERE id = $1`,
+  const row = await one<{ key: string | null; updated_at: string | null }>(
+    `SELECT ${col} AS key, updated_at FROM assets WHERE id = $1`,
     [assetId],
   );
   if (!row?.key) {
     return NextResponse.json({ error: "Derivative not available" }, { status: 404 });
   }
 
+  // Validator: derivative keys are stable (`thumb/<id>.webp`), but updated_at
+  // is bumped whenever a derivative is (re)generated — so it identifies the
+  // current bytes. On revalidation (reload, evicted cache) we answer 304 here,
+  // before any storage round-trip. Guarded on the parse: a NaN would collapse
+  // every asset onto one shared tag and serve stale 304s.
+  const epoch = row.updated_at ? Date.parse(row.updated_at) : Number.NaN;
+  const etag = Number.isFinite(epoch) ? `W/"${which}-${epoch}"` : null;
+  const ifNoneMatch = req.headers.get("if-none-match");
+  if (
+    etag &&
+    ifNoneMatch &&
+    ifNoneMatch.split(",").some((t) => t.trim() === etag)
+  ) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: { ETag: etag, "Cache-Control": CACHE_CONTROL },
+    });
+  }
+
   const storage = await getStorage();
   const signed = await storage.signedUrl(row.key);
-  if (signed) return NextResponse.redirect(signed);
+  if (signed) {
+    // Let the browser reuse the redirect for a while instead of hitting this
+    // route (DB query + URL signing) once per tile on every scroll-back. Kept
+    // well under the signature's validity (1h) so a cached hop never lands on
+    // an expired URL.
+    return NextResponse.redirect(signed, {
+      headers: { "Cache-Control": "private, max-age=300" },
+    });
+  }
 
   // Disk backend: stream the requested byte window straight off disk. We only
   // need the file size here (stat), never the whole file in RAM — a seeking
@@ -46,7 +75,8 @@ export async function serveDerivative(
   const base: Record<string, string> = {
     "Content-Type": type,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=31536000, immutable",
+    "Cache-Control": CACHE_CONTROL,
+    ...(etag ? { ETag: etag } : {}),
   };
 
   // Partial request (video player): we respond 206 with the requested slice.
