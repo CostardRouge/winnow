@@ -117,6 +117,9 @@ See `.env.dist`. Main ones:
 - `EXPORT_DIR`: folder where the "RAW copy" export drops the originals
 - `*_CONCURRENCY`: bounded concurrency to spare the NAS's full HDD
 - `THUMB_SIZE` / `PROXY_SIZE` / qualities
+- `GEOCODE_*`: reverse geocoding (GPS → place names) — `GEOCODE_BASE_URL`
+  (Nominatim endpoint, self-hostable), `GEOCODE_USER_AGENT` (required by
+  Nominatim's policy), `GEOCODE_ENABLED`. See [Places](#places-reverse-geocoding-where-by-name)
 
 The whole environment is validated **once at startup** by a Zod schema in
 `src/lib/config.ts`. A missing/garbled/incoherent variable (a typo'd
@@ -132,7 +135,7 @@ offending variable — instead of silently degrading in production.
 |---|---|
 | `POST /api/index/scan` `{ path }` | Registers the root and enqueues an indexing run |
 | `GET /api/stats` | Counters (media / scan / analyzed / pending) + queue activity + pause + rates |
-| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour? }` | Hourly scan/analyze rates (0 = unlimited) |
+| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour?, geocodePerHour?, geocodePrecisionM? }` | Hourly scan/analyze/geocode rates (0 = unlimited) + geocode cell precision (metres) |
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
 | `GET /api/failures` | Everything that failed (scan / analyze / import) + the deduplication audit (each duplicate joined to its kept asset for thumbnail/compare) |
 | `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
@@ -158,6 +161,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/trash` | Trash summary: reclaimable count/bytes, rejects still in the library, recent purges |
 | `POST /api/purge` `{ filter?, dryRun? }` | **Reclaim space**: physically removes the trashed originals + derivatives (queued job). `dryRun` returns `{ count, bytes }` to free. Only ever touches soft-deleted assets |
 | `POST /api/assets/regenerate` `{ ids[] }` | Rebuilds the derivatives (thumb + proxy) of a selection — re-enqueues generation whatever the current status |
+| `POST /api/assets/geocode` `{ ids[], precise? }` | Reverse-geocodes a selection: resolves GPS → place names (country/région/département/city, + tourist POI when `precise`). Deduped by coordinate cell so nearby shots share one lookup. See [Places](#places-reverse-geocoding-where-by-name) |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
 | `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
@@ -224,21 +228,22 @@ PWA shortcut), and answers "what's left to sort?" at a glance:
     the flow going) or **Open sorted session** to reopen the one just culled and
     review the picks before exporting.
 
-### Image actions (delete · tag · export · regenerate · pick · reject · rate)
+### Image actions (delete · tag · export · regenerate · locate · pick · reject · rate)
 
 The same set of actions is reachable from three surfaces, all backed by the
 shared endpoints above (`AssetActionMenu` + `lib/assetActions.ts`):
 
 - **Right-click a thumbnail** (gallery + session grids) → context menu with the
   full set (pick / reject / clear · stars · tag · export · **regenerate
-  derivatives** · delete).
+  derivatives** · **resolve location** · delete).
 - **Detailed viewer** → pick / reject / stars / tag plus **export**,
-  **regenerate derivatives** and **delete** in the control bar. The info panel
-  surfaces the full metadata (date, size, dimensions + megapixels, duration for
-  video, device, GPS with a map link, derivative status, file path).
+  **regenerate derivatives**, **resolve location** and **delete** in the control
+  bar. The info panel surfaces the full metadata (date, size, dimensions +
+  megapixels, duration for video, device, GPS with a map link, **resolved
+  place**, derivative status, file path).
 - **Bulk selection** (gallery *Select* mode) → pick / reject / stars, add/remove
-  tag, export, **regenerate derivatives** and delete applied to the whole
-  selection.
+  tag, export, **regenerate derivatives**, **resolve location** and delete
+  applied to the whole selection.
 
 **Delete is a soft delete** — the **recycle bin**, not the end of the road. It
 sets `assets.deleted_at` so the file is hidden from every listing/export but the
@@ -249,7 +254,10 @@ original on the NAS is untouched and fully recoverable
 RAW-copy job scoped to exactly the chosen ids. **Regenerate derivatives**
 re-enqueues thumb/proxy generation for the selection (resets them to `pending`
 whatever the current status) — handy after a worker/codec upgrade or a bad
-preview; the RAW is read again but never modified.
+preview; the RAW is read again but never modified. **Resolve location**
+reverse-geocodes the selection on the spot (GPS → place names + the exact-spot
+tourist POI) instead of waiting on the batch — see
+[Places](#places-reverse-geocoding-where-by-name).
 
 ### Reclaiming space (the winnowing)
 
@@ -287,6 +295,8 @@ panel (combined with AND):
 - **Calendar**: year / month / day (multi-select) + date range
 - **Device / EXIF**: device, camera model, lens (multi); ISO, focal length,
   aperture ranges
+- **Location**: country, region, department, city, place (multi) — the
+  reverse-geocoded place names, see [Places](#places-reverse-geocoding-where-by-name)
 - **Type / format**: photo·video, extension (multi)
 - **Size** (MB range), **GPS** present, **verdict**, **min rating**
 - **Live Photos** (`group_kind=live_photo`): show only iPhone Live Photos (the
@@ -298,7 +308,9 @@ ext, media_type, file_size, camera_model, lens, iso, focal_length, aperture).
 The available values/counts come from `GET /api/facets`; filtering is therefore
 100% indexed SQL, with no on-the-fly computation. The `q=` text search matches
 `rel_path` (which carries both the folder and the filename) and stays fast on a
-large library via **trigram GIN indexes** (`pg_trgm`, migration 0010).
+large library via **trigram GIN indexes** (`pg_trgm`, migration 0010). The
+**Location** dimensions follow the same pattern — reverse-geocoded names
+denormalized onto indexed `place_*` columns (migration 0020).
 
 ### Calendar view (when the media were shot)
 
@@ -330,6 +342,40 @@ filter (`bbox=w,s,e,n`), materialized + indexed in the DB (migration 0010:
 `gps_lat`/`gps_lon` populated by trigger from the `gps` JSONB), so it stacks with
 every other filter and scopes the grid, the selection, and exports — the picks
 that drop into Capture One are exactly the media from that area.
+
+### Places (reverse geocoding: where, by name)
+
+The map answers *where* on a tile; **Places** answers it **by name**. A
+background job turns the GPS coordinates already indexed into place names —
+**country · région · département · city**, plus a **tourist POI** on demand — so
+you can filter the gallery by "Bretagne" or "Quimper" the same way you filter by
+device or lens. It's a **batch** feature: an existing library is backfilled
+**without re-scanning** the NAS (the coordinates are already there).
+
+- **Cell cache, not one lookup per photo.** Coordinates are snapped to a grid
+  cell (default ~5 km, `geocodePrecisionM`) and every asset in the same cell
+  shares a single reverse-geocode call, cached in the `places` table. A RAW+JPEG
+  pair (identical coordinates) or a whole trip therefore costs **one** call — a
+  ~90k-media library collapses to a few hundred/thousand cells, which is what
+  keeps a free, rate-limited provider viable.
+- **Provider is swappable.** Default is the OpenStreetMap **Nominatim** public
+  instance (free; ~1 req/s and no bulk — respected via the cell dedup + the
+  `geocodePerHour` drip-feed). Point `GEOCODE_BASE_URL` at a self-hosted
+  Nominatim or a compatible service (LocationIQ, Photon) for heavier use, no code
+  change. `GEOCODE_USER_AGENT` is required by Nominatim's policy.
+- **Filterable, indexed.** The names are denormalized onto `assets`
+  (`place_country/region/county/city` + `place_poi`) behind indexes (migration
+  0020), so the **Location** facets/filters are 100% indexed SQL like every other
+  dimension; the full provider payload is kept once in `places.raw`. The resolved
+  place also shows in the viewer's metadata panel.
+- **Batch, automatic, or on demand.** Backfill the existing library with
+  `npm run geocode-backfill` (`--force` re-resolves, e.g. after changing the
+  precision); new geotagged imports are geocoded automatically. Or run it now
+  from any media menu — the **Resolve location** action (context menu / viewer /
+  bulk) resolves the picked media immediately and, at the **exact coordinate**,
+  fills the tourist POI a 5 km cell can't. Runs off its own BullMQ queue +
+  worker; tunable live via `PATCH /api/settings` (`geocodePrecisionM`,
+  `geocodePerHour`), and the whole feature toggles with `GEOCODE_ENABLED`.
 
 ---
 
