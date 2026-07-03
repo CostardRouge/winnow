@@ -173,7 +173,6 @@ export default function SiftSessionPage({
           {Icons.back}
         </Link>
         <h1 className="sift-deck-title">{name || `Session #${id}`}</h1>
-        <span className="spacer" />
       </div>
 
       {/* Status bar above the carousel: how much is left, the overall progress
