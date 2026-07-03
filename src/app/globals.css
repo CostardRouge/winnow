@@ -3097,21 +3097,40 @@
     height: 22px;
   }
 
-  /* Toolbar: rank + direction + progress shortcut. Wraps on narrow phones. */
+  /* Toolbar: rank + direction + progress shortcut. On phones it stacks — the
+     sort pills + direction flip on one line, the progress filter on the next —
+     instead of wrapping mid-group; on desktop it's a single row with the
+     progress filter pushed to the right. */
   .sift-controls {
-    @apply flex flex-wrap items-center gap-2;
+    @apply flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center;
+  }
+  .sift-controls-sort {
+    @apply flex min-w-0 items-center gap-2;
+  }
+  /* Each pill group stretches to fill its line on mobile and splits evenly so
+     all four options fit; on desktop they size to their content. */
+  .sift-controls-sort .view-toggle {
+    @apply min-w-0 flex-1 sm:flex-none;
+  }
+  .sift-controls-filter {
+    @apply min-w-0 sm:ml-auto;
+  }
+  .sift-controls .view-btn {
+    @apply min-w-0 flex-1 truncate px-1.5 text-[11px] sm:flex-none sm:px-2.5 sm:text-xs;
   }
   .sift-count {
     @apply text-[13px] font-medium;
     color: var(--color-muted);
   }
 
-  /* The session list: cover · info (+ progress) · Sift button. */
+  /* The session list: cover · info (+ progress) · Sift button. The single
+     column is pinned to minmax(0,1fr) and each tile gets min-width:0 so a long
+     session name truncates instead of blowing the row past the screen edge. */
   .sift-list {
-    @apply grid gap-2.5;
+    @apply grid grid-cols-[minmax(0,1fr)] gap-2.5;
   }
   .sift-tile {
-    @apply flex items-center gap-3 rounded-[var(--radius-lg)] border p-2.5;
+    @apply flex min-w-0 items-center gap-3 rounded-[var(--radius-lg)] border p-2.5;
     background: var(--color-surface);
     border-color: var(--color-border);
     box-shadow: var(--shadow-card);
@@ -3140,7 +3159,7 @@
     @apply truncate text-sm font-semibold;
   }
   .sift-tile-meta {
-    @apply text-xs;
+    @apply truncate text-xs;
     color: var(--color-muted);
   }
   .sift-tile-go {
@@ -3160,8 +3179,8 @@
   .sift-deck-page {
     @apply flex h-full min-h-0 flex-col;
   }
-  .sift-deck-title {
-    @apply truncate text-base font-semibold;
+  .topbar .sift-deck-title {
+    @apply min-w-0 flex-1 truncate text-base font-semibold;
   }
   /* Status bar above the carousel: "N left / total" · the overall progress bar
      (grows to fill) · a quick jump into the full session. Reuses the dead space
@@ -3202,17 +3221,21 @@
     @apply flex min-h-0 w-full flex-1 flex-col gap-3;
   }
   .sift-deck-main {
-    @apply flex min-h-0 flex-1 flex-col items-center justify-center;
+    @apply flex min-h-0 w-full flex-1 flex-col items-center justify-center;
   }
+  /* The deck fills the space between the status bar and the recent strip: it's
+     a flex column that grows (so desktop uses the full height) while the card
+     stack shrinks with it (so a short phone never pushes the buttons down over
+     the recent strip). */
   .deck {
-    @apply flex w-full flex-col items-center gap-5;
-    max-width: 460px;
+    @apply flex min-h-0 w-full max-w-[460px] flex-1 flex-col items-center justify-center gap-3 sm:gap-5;
   }
   .deck-stack {
-    @apply relative w-full;
-    aspect-ratio: 3 / 4;
-    /* Capped to leave room for the buttons + the always-on recent strip. */
-    max-height: min(46vh, 440px);
+    @apply relative min-h-0 w-full flex-1;
+    /* Grows with the column but capped so a tall desktop screen doesn't stretch
+       a single card to absurd proportions. object-contain letterboxes whatever
+       the resulting box shape is, so the whole frame always stays visible. */
+    max-height: 640px;
     touch-action: pan-y;
   }
   .deck-card {

@@ -148,30 +148,37 @@ export default function SiftHub() {
           </Link>
         )}
 
-        {/* Controls: rank + direction + the progress shortcut. */}
+        {/* Controls: rank + direction + the progress shortcut. On phones the
+            sort pills and the direction flip share one line, and the progress
+            filter drops to the line below (rather than wrapping mid-group). */}
         <div className="sift-controls">
-          <div className="view-toggle" role="group" aria-label="Sort by">
-            {SORTS.map((s) => (
-              <button
-                key={s.key}
-                className={`view-btn${sort === s.key ? " active" : ""}`}
-                onClick={() => setSort(s.key)}
-                aria-pressed={sort === s.key}
-              >
-                {s.label}
-              </button>
-            ))}
+          <div className="sift-controls-sort">
+            <div className="view-toggle" role="group" aria-label="Sort by">
+              {SORTS.map((s) => (
+                <button
+                  key={s.key}
+                  className={`view-btn${sort === s.key ? " active" : ""}`}
+                  onClick={() => setSort(s.key)}
+                  aria-pressed={sort === s.key}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="icon-toggle"
+              onClick={() => setDir((d) => (d === "desc" ? "asc" : "desc"))}
+              title={dir === "desc" ? "Most first" : "Least first"}
+              aria-label="Flip sort direction"
+            >
+              {dir === "desc" ? Icons.arrowDown : Icons.arrowUp}
+            </button>
           </div>
-          <button
-            className="icon-toggle"
-            onClick={() => setDir((d) => (d === "desc" ? "asc" : "desc"))}
-            title={dir === "desc" ? "Most first" : "Least first"}
-            aria-label="Flip sort direction"
+          <div
+            className="view-toggle sift-controls-filter"
+            role="group"
+            aria-label="Progress filter"
           >
-            {dir === "desc" ? Icons.arrowDown : Icons.arrowUp}
-          </button>
-          <span className="spacer" />
-          <div className="view-toggle" role="group" aria-label="Progress filter">
             {FILTERS.map((f) => (
               <button
                 key={f.key || "all"}
