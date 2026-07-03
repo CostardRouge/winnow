@@ -22,6 +22,13 @@ export type Facets = {
   devices: VC[];
   camera_models: VC[];
   lenses: VC[];
+  // Reverse-geocoded place facets (cf. lib/geocode.ts). Optional so a facets
+  // payload predating the feature still typechecks.
+  place_countries?: VC[];
+  place_regions?: VC[];
+  place_counties?: VC[];
+  place_cities?: VC[];
+  place_pois?: VC[];
   extensions: VC[];
   media_types: VC[];
   derivative_statuses: VC[];
@@ -56,6 +63,12 @@ export type Filters = {
   device: string[];
   camera_model: string[];
   lens: string[];
+  // Reverse-geocoded place (cf. lib/geocode.ts): filter by where a photo was taken.
+  place_country: string[];
+  place_region: string[];
+  place_county: string[];
+  place_city: string[];
+  place_poi: string[];
   tags: string[];
   year: number[];
   month: number[];
@@ -99,6 +112,11 @@ export const EMPTY_FILTERS: Filters = {
   device: [],
   camera_model: [],
   lens: [],
+  place_country: [],
+  place_region: [],
+  place_county: [],
+  place_city: [],
+  place_poi: [],
   tags: [],
   year: [],
   month: [],
@@ -453,6 +471,39 @@ export default function FilterPanel({
         options={facets.lenses}
         selected={filters.lens}
         onToggle={(v) => u({ lens: toggle(filters.lens, String(v)) })}
+      />
+
+      {/* Reverse-geocoded location (cf. lib/geocode.ts). Country → POI, coarse to
+          fine. Each list is only shown when the facet has values in scope. */}
+      <Chips
+        title="Country"
+        options={facets.place_countries ?? []}
+        selected={filters.place_country}
+        onToggle={(v) => u({ place_country: toggle(filters.place_country, String(v)) })}
+      />
+      <Chips
+        title="Region"
+        options={facets.place_regions ?? []}
+        selected={filters.place_region}
+        onToggle={(v) => u({ place_region: toggle(filters.place_region, String(v)) })}
+      />
+      <Chips
+        title="Department"
+        options={facets.place_counties ?? []}
+        selected={filters.place_county}
+        onToggle={(v) => u({ place_county: toggle(filters.place_county, String(v)) })}
+      />
+      <Chips
+        title="City"
+        options={facets.place_cities ?? []}
+        selected={filters.place_city}
+        onToggle={(v) => u({ place_city: toggle(filters.place_city, String(v)) })}
+      />
+      <Chips
+        title="Place"
+        options={facets.place_pois ?? []}
+        selected={filters.place_poi}
+        onToggle={(v) => u({ place_poi: toggle(filters.place_poi, String(v)) })}
       />
 
       <Chips

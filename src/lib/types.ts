@@ -110,8 +110,40 @@ export type Asset = {
   // 'name_date' (basename + capture time), 'name' (basename only), 'manual'.
   original_asset_id: number | null;
   edit_match: string | null;
+  // Reverse-geocoded place (cf. lib/geocode.ts). `place_id` links to the shared
+  // per-cell `places` cache; the name columns are denormalized here for fast
+  // facet/filter (country / région / département / city), and `place_poi` holds
+  // the per-asset tourist/landmark name resolved at the exact coordinate.
+  // `geocode_status` mirrors derivative_status through the resolve lifecycle.
+  place_id: number | null;
+  geocode_status: "pending" | "processing" | "ready" | "error" | "skipped";
+  geocode_error: string | null;
+  place_country: string | null;
+  place_region: string | null;
+  place_county: string | null;
+  place_city: string | null;
+  place_poi: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// A reverse-geocoded location (cf. lib/geocode.ts), cached once per coordinate
+// cell and shared by every asset whose GPS falls in it.
+export type Place = {
+  id: number;
+  cell_lat: number;
+  cell_lon: number;
+  precision_m: number;
+  country: string | null;
+  country_code: string | null;
+  region: string | null;
+  county: string | null;
+  city: string | null;
+  display_name: string | null;
+  provider: string;
+  raw: unknown;
+  fetched_at: string;
+  created_at: string;
 };
 
 // A burst/bracket stack (cf. lib/bursts.ts): N distinct frames captured in one

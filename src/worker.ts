@@ -14,12 +14,14 @@ import {
   type ExportJob,
   type ImportJob,
   type PurgeJob,
+  type GeocodeJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
+import { runGeocodeJob } from "./lib/geocode";
 import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
@@ -146,12 +148,26 @@ const purgeWorker = new Worker(
   { connection, concurrency: config.purgeConcurrency },
 );
 
+// Reverse geocoding: resolves GPS coordinates to place names (cf. lib/geocode.ts).
+// Concurrency defaults to 1 and the network call is drip-fed by the per-hour rate
+// setting, so this stays within a free provider's limits. A cached cell makes no
+// call at all, so most jobs are pure DB writes.
+const geocodeWorker = new Worker(
+  QUEUES.geocode,
+  async (job) => {
+    const { assetId, precise } = job.data as GeocodeJob;
+    await runGeocodeJob(assetId, { precise });
+  },
+  { connection, concurrency: config.geocode.concurrency },
+);
+
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
   ["export", exportWorker],
   ["import", importWorker],
   ["purge", purgeWorker],
+  ["geocode", geocodeWorker],
 ] as const) {
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
@@ -188,6 +204,7 @@ async function shutdown() {
     exportWorker.close(),
     importWorker.close(),
     purgeWorker.close(),
+    geocodeWorker.close(),
   ]);
   await closeExiftool();
   process.exit(0);

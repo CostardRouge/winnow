@@ -13,6 +13,9 @@ const Body = z.object({
   analyzePerHour: z.number().int().min(0).max(1_000_000).optional(),
   exportIncludeJpeg: z.boolean().optional(),
   exportIncludeLiveVideo: z.boolean().optional(),
+  geocodePerHour: z.number().int().min(0).max(1_000_000).optional(),
+  // Cell size (metres): from 1 m (per-exact-coordinate, no dedup) up to 500 km.
+  geocodePrecisionM: z.number().int().min(1).max(500_000).optional(),
 });
 
 export async function GET() {

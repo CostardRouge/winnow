@@ -17,6 +17,7 @@ export default function BulkActionBar({
   onTag,
   onExport,
   onRegenerate,
+  onGeocode,
   onDelete,
 }: {
   /** How many assets are currently selected. */
@@ -32,6 +33,8 @@ export default function BulkActionBar({
   onTag: (name: string, add: boolean) => void;
   onExport: () => void;
   onRegenerate: () => void;
+  /** Resolve the GPS coordinates of the selection to place names. */
+  onGeocode: () => void;
   onDelete: () => void;
 }) {
   const [tagInput, setTagInput] = useState("");
@@ -100,6 +103,14 @@ export default function BulkActionBar({
         onClick={onRegenerate}
       >
         ↻ Regenerate
+      </button>
+      <button
+        className="btn"
+        disabled={none}
+        title="Resolve GPS coordinates to place names"
+        onClick={onGeocode}
+      >
+        📍 Locate
       </button>
       <button className="btn btn-reject" disabled={none} onClick={onDelete}>
         🗑 Delete

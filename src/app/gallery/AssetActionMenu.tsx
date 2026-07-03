@@ -13,6 +13,7 @@ export type AssetMenuAction =
   | { kind: "export" }
   | { kind: "download" }
   | { kind: "regenerate" }
+  | { kind: "geocode" }
   | { kind: "delete" };
 
 export default function AssetActionMenu({
@@ -141,6 +142,10 @@ export default function AssetActionMenu({
 
       <button className="ctx-item" onClick={() => fire({ kind: "regenerate" })}>
         <span className="ctx-ic">↻</span> Regenerate derivatives
+      </button>
+
+      <button className="ctx-item" onClick={() => fire({ kind: "geocode" })}>
+        <span className="ctx-ic">📍</span> Resolve location
       </button>
 
       <div className="ctx-sep" />

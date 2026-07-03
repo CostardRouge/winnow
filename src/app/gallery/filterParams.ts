@@ -16,6 +16,11 @@ const STR_ARRAYS = [
   "device",
   "camera_model",
   "lens",
+  "place_country",
+  "place_region",
+  "place_county",
+  "place_city",
+  "place_poi",
   "tags",
 ] as const;
 const NUM_ARRAYS = ["year", "month", "day"] as const;
@@ -63,6 +68,11 @@ export function decodeFilters(params: URLSearchParams): Filters {
     device: [],
     camera_model: [],
     lens: [],
+    place_country: [],
+    place_region: [],
+    place_county: [],
+    place_city: [],
+    place_poi: [],
     tags: [],
     year: [],
     month: [],

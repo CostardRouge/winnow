@@ -236,6 +236,32 @@ const EnvSchema = z
     THUMB_QUALITY: intEnv(70, { min: 1, max: 100 }),
     PROXY_QUALITY: intEnv(80, { min: 1, max: 100 }),
 
+    // --- Reverse geocoding (GPS → place names) ---------------------------
+    // Resolves the place names (country / région / département / city, plus a
+    // tourist POI on demand) behind the coordinates we already index. Off its own
+    // BullMQ queue + worker (cf. lib/geocode.ts). The runtime knobs — precision
+    // (cell size) and hourly rate — live in app_settings so they're tunable
+    // without a redeploy; only the provider endpoint/identity is env-level.
+    //
+    // Default provider is the OpenStreetMap Nominatim PUBLIC instance: free and
+    // rich, but ~1 req/s and no bulk. Point GEOCODE_BASE_URL at a self-hosted
+    // Nominatim or a compatible service (LocationIQ, Photon) for heavier use — no
+    // code change. GEOCODE_USER_AGENT is REQUIRED by Nominatim's usage policy.
+    GEOCODE_ENABLED: boolEnv(true),
+    GEOCODE_PROVIDER: enumEnv(["nominatim"], "nominatim"),
+    GEOCODE_BASE_URL: strEnv("https://nominatim.openstreetmap.org"),
+    GEOCODE_USER_AGENT: strEnv("winnow/0.1 (self-hosted media manager)"),
+    // Optional Nominatim etiquette: an email appended to each request so the
+    // operator can reach you before rate-limiting. Blank → omitted.
+    GEOCODE_EMAIL: strEnv(""),
+    // accept-language for the returned names. Blank → the provider's default
+    // (local/native names, e.g. "France", "Bretagne"). Set "en"/"fr"/… to force one.
+    GEOCODE_LANGUAGE: strEnv(""),
+    // Serialized by default (the public Nominatim is single-flight anyway). The
+    // per-hour rate (app_settings) is what actually paces it.
+    GEOCODE_CONCURRENCY: intEnv(1, { min: 1 }),
+    GEOCODE_TIMEOUT_MS: intEnv(15000, { min: 1000 }),
+
     // --- HEIF/HEVC decode (libheif) --------------------------------------
     // A malformed HEIF can make libheif throw ASYNCHRONOUSLY from inside its
     // WASM (seen in the wild: "RangeError: offset is out of bounds" on a timer
@@ -347,6 +373,17 @@ function loadConfig() {
     proxyQuality: e.PROXY_QUALITY,
 
     heicDecodeTimeoutMs: e.HEIC_DECODE_TIMEOUT_MS,
+
+    geocode: {
+      enabled: e.GEOCODE_ENABLED,
+      provider: e.GEOCODE_PROVIDER,
+      baseUrl: e.GEOCODE_BASE_URL,
+      userAgent: e.GEOCODE_USER_AGENT,
+      email: e.GEOCODE_EMAIL,
+      language: e.GEOCODE_LANGUAGE,
+      concurrency: e.GEOCODE_CONCURRENCY,
+      timeoutMs: e.GEOCODE_TIMEOUT_MS,
+    },
   };
 }
 

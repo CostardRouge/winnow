@@ -23,6 +23,7 @@ export default function ViewerActions({
   onExport,
   onDownload,
   onRegenerate,
+  onGeocode,
   onDelete,
   onTag,
 }: {
@@ -34,6 +35,8 @@ export default function ViewerActions({
   /** Optional: pull the original file down to inspect it (works pre-derivative). */
   onDownload?: () => void;
   onRegenerate: () => void;
+  /** Optional: resolve the GPS coordinates to place names (country/city/POI). */
+  onGeocode?: () => void;
   onDelete: () => void;
   /** Optional: when provided, the overflow menu offers a quick tag input. */
   onTag?: (name: string) => void;
@@ -193,6 +196,19 @@ export default function ViewerActions({
             >
               <span className="vbar-menu-ic">↻</span> Regenerate derivatives
             </button>
+            {onGeocode && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                onClick={() => {
+                  onGeocode();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">📍</span> Resolve location
+              </button>
+            )}
             <div className="vbar-menu-sep" />
             <button
               type="button"

@@ -105,6 +105,16 @@ export const FilterSchema = z
     camera_model: csv,
     lens: csv,
 
+    // Reverse-geocoded place (cf. lib/geocode.ts), all multi-value. Filter by
+    // where a photo was taken using the denormalized name columns on `assets`.
+    place_country: csv,
+    place_region: csv,
+    place_county: csv,
+    place_city: csv,
+    place_poi: csv,
+    // True → only assets with a resolved place; false → only those without.
+    has_place: boolish,
+
     // Calendar (multi-value) + date range
     year: intList,
     month: intList, // 1-12
@@ -270,6 +280,16 @@ export function buildFilter(
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
   if (filter.lens) inAny("a.lens", filter.lens);
 
+  // Reverse-geocoded place (cf. lib/geocode.ts): categorical, on the indexed
+  // denormalized columns — no JOIN to `places` needed.
+  if (filter.place_country) inAny("a.place_country", filter.place_country);
+  if (filter.place_region) inAny("a.place_region", filter.place_region);
+  if (filter.place_county) inAny("a.place_county", filter.place_county);
+  if (filter.place_city) inAny("a.place_city", filter.place_city);
+  if (filter.place_poi) inAny("a.place_poi", filter.place_poi);
+  if (filter.has_place === true) conditions.push("a.place_id IS NOT NULL");
+  else if (filter.has_place === false) conditions.push("a.place_id IS NULL");
+
   if (filter.year) inAny("a.capture_year", filter.year);
   if (filter.month) inAny("a.capture_month", filter.month);
   if (filter.day) inAny("a.capture_day", filter.day);
@@ -362,6 +382,12 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "device",
     "camera_model",
     "lens",
+    "place_country",
+    "place_region",
+    "place_county",
+    "place_city",
+    "place_poi",
+    "has_place",
     "year",
     "month",
     "day",
