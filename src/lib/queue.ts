@@ -42,6 +42,10 @@ export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };
 export type ExportJob = { exportJobId: number };
 export type PurgeJob = { purgeJobId: number };
+// Reverse-geocode one asset (cf. lib/geocode.ts). `precise` (the manual "Resolve
+// location" action) resolves at the exact coordinate and also fills the POI;
+// omitted/false is the cheap shared-cell mode used by the backfill + import.
+export type GeocodeJob = { assetId: number; precise?: boolean };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -54,6 +58,7 @@ export const QUEUES = {
   export: "winnow-export",
   import: "winnow-import",
   purge: "winnow-purge",
+  geocode: "winnow-geocode",
 } as const;
 
 declare global {
@@ -65,6 +70,7 @@ declare global {
         export: Queue;
         import: Queue;
         purge: Queue;
+        geocode: Queue;
       }
     | undefined;
 }
@@ -76,6 +82,7 @@ function build() {
     export: new Queue(QUEUES.export, { connection }),
     import: new Queue(QUEUES.import, { connection }),
     purge: new Queue(QUEUES.purge, { connection }),
+    geocode: new Queue(QUEUES.geocode, { connection }),
   };
 }
 
@@ -331,5 +338,18 @@ export async function enqueuePurge(purgeJobId: number) {
     "purge",
     { purgeJobId } satisfies PurgeJob,
     defaultJobOpts,
+  );
+}
+
+// Reverse-geocode one asset. Cheap and idempotent (a cached cell makes no
+// network call), so re-enqueuing a still-pending asset is harmless.
+export async function enqueueGeocode(
+  assetId: number,
+  opts: { priority?: number; precise?: boolean } = {},
+) {
+  return getQueues().geocode.add(
+    "geocode",
+    { assetId, precise: opts.precise } satisfies GeocodeJob,
+    { ...defaultJobOpts, priority: opts.priority ?? PRIORITY.normal },
   );
 }

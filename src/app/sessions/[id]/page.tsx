@@ -26,6 +26,7 @@ import {
   deleteAssets,
   downloadAssetOriginal,
   exportAssets,
+  geocodeAssets,
   rateAssets,
   regenerateAssets,
   sessionDownloadFiles,
@@ -55,6 +56,14 @@ type AssetRow = {
   device: string | null;
   gps: { lat: number; lon: number } | null;
   rel_path: string | null;
+  // Reverse-geocoded place (cf. lib/geocode.ts) — surfaced in the viewer's
+  // metadata panel; `geocode_status` flips optimistically during a resolve.
+  geocode_status?: string | null;
+  place_country?: string | null;
+  place_region?: string | null;
+  place_county?: string | null;
+  place_city?: string | null;
+  place_poi?: string | null;
   verdict: Verdict;
   star: number;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, its
@@ -336,6 +345,24 @@ export default function SessionGrid({
     }
   }, []);
 
+  // Resolve GPS coordinates to place names (precise: also fills the tourist POI).
+  const geocode = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setAssets((prev) =>
+      prev.map((a) =>
+        idset.has(a.id) ? { ...a, geocode_status: "pending" } : a,
+      ),
+    );
+    try {
+      const n = await geocodeAssets(ids, { precise: true });
+      if (n === 0) setNotice("No GPS coordinates to resolve");
+      else setNotice(n > 1 ? `Resolving ${n} locations` : "Resolving location");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   const addTag = useCallback(async (id: number, name: string) => {
     if (!name.trim()) return;
     await tagAssets([id], name, true);
@@ -412,11 +439,13 @@ export default function SessionGrid({
           return downloadAssetOriginal(id);
         case "regenerate":
           return void regenerate([id]);
+        case "geocode":
+          return void geocode([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, addTag, exportSelection, regenerate, removeAssets],
+    [rate, addTag, exportSelection, regenerate, geocode, removeAssets],
   );
 
   // Keyboard navigation in the viewer (desktop).
@@ -496,6 +525,7 @@ export default function SessionGrid({
             onTag={(name, add) => tagSelection([...selected], name, add)}
             onExport={() => exportSelection([...selected])}
             onRegenerate={() => regenerate([...selected])}
+            onGeocode={() => geocode([...selected])}
             onDelete={() => removeAssets([...selected])}
           />
         )}
@@ -587,6 +617,7 @@ export default function SessionGrid({
               onExport={() => exportSelection([a.id])}
               onDownload={() => downloadAssetOriginal(a.id)}
               onRegenerate={() => regenerate([a.id])}
+              onGeocode={() => geocode([a.id])}
               onDelete={async () => {
                 if (await removeAssets([a.id])) {
                   // Keep the viewer open on the previous item rather than

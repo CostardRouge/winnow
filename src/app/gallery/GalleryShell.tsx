@@ -21,6 +21,7 @@ import {
   deleteAssets,
   downloadAssetOriginal,
   exportAssets,
+  geocodeAssets,
   rateAssets,
   regenerateAssets,
 } from "@/lib/assetActions";
@@ -56,6 +57,14 @@ type Row = GalleryAsset & {
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
   rel_path?: string | null;
+  // Reverse-geocoded place (cf. lib/geocode.ts) — fed to the viewer's metadata
+  // panel and reflected optimistically while a "Resolve location" job runs.
+  geocode_status?: string | null;
+  place_country?: string | null;
+  place_region?: string | null;
+  place_county?: string | null;
+  place_city?: string | null;
+  place_poi?: string | null;
   // Pairing: the companion of this displayed primary, its group kind and the
   // companion's per-file stats, fed to the grid badge and the viewer's segmented
   // toggle (cf. lib/pairing.ts) — the stats let the viewer describe the companion
@@ -121,6 +130,11 @@ function toQuery(
   arr("device", f.device);
   arr("camera_model", f.camera_model);
   arr("lens", f.lens);
+  arr("place_country", f.place_country);
+  arr("place_region", f.place_region);
+  arr("place_county", f.place_county);
+  arr("place_city", f.place_city);
+  arr("place_poi", f.place_poi);
   arr("tags", f.tags);
   arr("year", f.year);
   arr("month", f.month);
@@ -455,6 +469,26 @@ export default function GalleryShell({
     }
   }, []);
 
+  // Resolves the GPS coordinates of these ids to place names (precise: also fills
+  // the tourist POI at the exact coordinate). Optimistically flags them so the
+  // status reads 'pending' until the worker writes the resolved place back.
+  const geocodeSelection = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setItems((prev) =>
+      prev.map((a) =>
+        idset.has(a.id) ? { ...a, geocode_status: "pending" } : a,
+      ),
+    );
+    try {
+      const n = await geocodeAssets(ids, { precise: true });
+      if (n === 0) setNotice("No GPS coordinates to resolve");
+      else setNotice(n > 1 ? `Resolving ${n} locations` : "Resolving location");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   // --- Map zone (bbox) actions ---------------------------------------------
   // The map hands back the ids inside the drawn/visible zone; pick & reject
   // reuse the bulk rating path, export reuses the selection export.
@@ -516,11 +550,13 @@ export default function GalleryShell({
           return downloadAssetOriginal(id);
         case "regenerate":
           return void regenerateSelection([id]);
+        case "geocode":
+          return void geocodeSelection([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, assignTags, exportSelection, regenerateSelection, removeAssets],
+    [rate, assignTags, exportSelection, regenerateSelection, geocodeSelection, removeAssets],
   );
 
   // Rating shortcuts inside the viewer (p/x/u + 0–5). Navigation and
@@ -789,6 +825,7 @@ export default function GalleryShell({
           onTag={(name, add) => assignTags([...selected], name, add)}
           onExport={() => exportSelection([...selected])}
           onRegenerate={() => regenerateSelection([...selected])}
+          onGeocode={() => geocodeSelection([...selected])}
           onDelete={() => removeAssets([...selected])}
         />
       )}
@@ -857,6 +894,7 @@ export default function GalleryShell({
                     onExport={() => exportSelection([it.id])}
                     onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
+                    onGeocode={() => geocodeSelection([it.id])}
                     onDelete={async () => {
                       if (await removeAssets([it.id])) {
                         // Keep the viewer open on the previous item rather than

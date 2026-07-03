@@ -142,6 +142,29 @@ export async function regenerateAssets(ids: number[]): Promise<number> {
   return body.queued;
 }
 
+// Resolves place names (country / région / département / city, plus a tourist
+// POI) for these assets from their GPS coordinates. Defaults to a precise,
+// exact-coordinate lookup (fills the POI) since it's hand-triggered. Works for
+// one (ids:[id]) or many. Returns how many were actually queued (assets without
+// coordinates are skipped), or throws on a non-2xx response.
+export async function geocodeAssets(
+  ids: number[],
+  opts: { precise?: boolean } = {},
+): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/geocode", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids, precise: opts.precise }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Resolve location failed (${res.status})`);
+  }
+  const body = (await res.json()) as { queued: number };
+  return body.queued;
+}
+
 // Takes assets out of the analyze pipeline (derivative_status -> 'skipped') so a
 // stuck/unwanted item stops being processed. Reversible via regenerateAssets.
 export async function skipAssets(ids: number[]): Promise<number> {

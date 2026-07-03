@@ -8,7 +8,7 @@ import { q, one } from "./db";
 import { classifyExt, config, isIgnoredEntry } from "./config";
 import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
-import { enqueueDerivative, PRIORITY } from "./queue";
+import { enqueueDerivative, enqueueGeocode, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
 import {
@@ -223,6 +223,12 @@ export async function indexRoot(
         await enqueueDerivative(existing.id, { priority: derivePriority });
         res.enqueued++;
       }
+      // Resolve place names for geotagged media (cf. lib/geocode.ts). Cheap: a
+      // shared cell makes no network call, so re-geocoding on every re-index is
+      // fine. The coordinates may have changed with the file, so we re-enqueue.
+      if (config.geocode.enabled && meta.gps) {
+        await enqueueGeocode(existing.id);
+      }
       if (cls.mediaType === "video") {
         res.sidecars += await recordSidecars({
           assetId: existing.id,
@@ -320,6 +326,11 @@ export async function indexRoot(
     if (willDerive) {
       await enqueueDerivative(inserted.id, { priority: derivePriority });
       res.enqueued++;
+    }
+    // Geotagged new media: resolve its place names in the background (cf.
+    // lib/geocode.ts). Deduped by cell, so a whole session costs ~one lookup.
+    if (config.geocode.enabled && meta.gps) {
+      await enqueueGeocode(inserted.id);
     }
     if (cls.mediaType === "video") {
       res.sidecars += await recordSidecars({

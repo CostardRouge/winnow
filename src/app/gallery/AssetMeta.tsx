@@ -31,10 +31,33 @@ export type AssetMetaInput = {
   aperture?: number | null;
   focal_length?: number | null;
   gps?: { lat: number; lon: number } | null;
+  // Reverse-geocoded place (cf. lib/geocode.ts). Surfaced as one "Location" line.
+  place_country?: string | null;
+  place_region?: string | null;
+  place_county?: string | null;
+  place_city?: string | null;
+  place_poi?: string | null;
   derivative_status?: string;
   rel_path?: string | null;
   sidecar_count?: number | null;
 };
+
+// Join the resolved place into one line, finest → coarsest ("Tour Eiffel · Paris
+// · France"), de-duplicating repeats (a city that equals its département).
+function locationLine(a: AssetMetaInput): string | null {
+  const parts: string[] = [];
+  for (const p of [
+    a.place_poi,
+    a.place_city,
+    a.place_county,
+    a.place_region,
+    a.place_country,
+  ]) {
+    const s = p?.trim();
+    if (s && !parts.includes(s)) parts.push(s);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
 
 // Joins the exposure triangle into one compact line ("50mm · f/2.8 · 1/200s · ISO 400").
 function exposureLine(a: AssetMetaInput): string | null {
@@ -82,6 +105,8 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
       </a>,
     ]);
   }
+  const location = locationLine(asset);
+  if (location) rows.push(["Location", location]);
   if (asset.derivative_status)
     rows.push(["Derivative", asset.derivative_status]);
   const sidecars = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;
