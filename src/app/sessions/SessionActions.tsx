@@ -69,7 +69,7 @@ export default function SessionActions({
         }
       >
         {Icons.upload}
-        <span className="seg-label">Export Pics</span>
+        <span className="seg-label">Export picks</span>
       </button>
       {download && (
         <DownloadMenu
