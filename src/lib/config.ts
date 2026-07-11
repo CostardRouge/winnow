@@ -262,6 +262,38 @@ const EnvSchema = z
     GEOCODE_CONCURRENCY: intEnv(1, { min: 1 }),
     GEOCODE_TIMEOUT_MS: intEnv(15000, { min: 1000 }),
 
+    // --- ML analysis (faces + OCR via a self-hosted container) -----------
+    // Sends each media's existing derivative (photo proxy / video poster) to an
+    // immich-machine-learning container over HTTP and stores the detected faces
+    // + the text read in the image (cf. lib/ml.ts). Off its own BullMQ queue +
+    // worker; the hourly rate lives in app_settings (mlPerHour) so the 80k-media
+    // backfill can be paced live from the Pipeline page without a redeploy.
+    //
+    // Disabled by default: there is no public endpoint to fall back to — point
+    // ML_BASE_URL at the container you already run (Immich's ML sidecar) and
+    // flip ML_ENABLED=true. The API is Immich-internal and unversioned: pin the
+    // container image tag and re-check after upgrading it.
+    ML_ENABLED: boolEnv(false),
+    ML_PROVIDER: enumEnv(["immich"], "immich"),
+    ML_BASE_URL: strEnv("http://immich-machine-learning:3003"),
+    // Face detection/recognition (InsightFace). buffalo_l is Immich's default;
+    // the container downloads the model on first use.
+    ML_FACES_ENABLED: boolEnv(true),
+    ML_FACE_MODEL: strEnv("buffalo_l"),
+    ML_FACE_MIN_SCORE: numEnv(0.7, { min: 0, max: 1 }),
+    // OCR (text in images) needs immich-machine-learning >= v2.2.0 (RapidOCR /
+    // PP-OCRv5). Set false against an older container so the whole job doesn't fail.
+    ML_OCR_ENABLED: boolEnv(true),
+    ML_OCR_MODEL: strEnv("PP-OCRv5_mobile"),
+    ML_OCR_MIN_SCORE: numEnv(0.8, { min: 0, max: 1 }),
+    // Serialized by default: the container queues requests without backpressure,
+    // so a small in-flight count is what protects a CPU-only box. The per-hour
+    // rate (app_settings) is what actually paces the backfill.
+    ML_CONCURRENCY: intEnv(1, { min: 1 }),
+    // Generous: the FIRST request after container start/idle pays the model
+    // download+load (can take minutes on first ever use).
+    ML_TIMEOUT_MS: intEnv(120000, { min: 1000 }),
+
     // --- HEIF/HEVC decode (libheif) --------------------------------------
     // A malformed HEIF can make libheif throw ASYNCHRONOUSLY from inside its
     // WASM (seen in the wild: "RangeError: offset is out of bounds" on a timer
@@ -383,6 +415,24 @@ function loadConfig() {
       language: e.GEOCODE_LANGUAGE,
       concurrency: e.GEOCODE_CONCURRENCY,
       timeoutMs: e.GEOCODE_TIMEOUT_MS,
+    },
+
+    ml: {
+      enabled: e.ML_ENABLED,
+      provider: e.ML_PROVIDER,
+      baseUrl: e.ML_BASE_URL,
+      faces: {
+        enabled: e.ML_FACES_ENABLED,
+        model: e.ML_FACE_MODEL,
+        minScore: e.ML_FACE_MIN_SCORE,
+      },
+      ocr: {
+        enabled: e.ML_OCR_ENABLED,
+        model: e.ML_OCR_MODEL,
+        minScore: e.ML_OCR_MIN_SCORE,
+      },
+      concurrency: e.ML_CONCURRENCY,
+      timeoutMs: e.ML_TIMEOUT_MS,
     },
   };
 }

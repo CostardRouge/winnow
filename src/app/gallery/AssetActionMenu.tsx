@@ -14,6 +14,7 @@ export type AssetMenuAction =
   | { kind: "download" }
   | { kind: "regenerate" }
   | { kind: "geocode" }
+  | { kind: "ml" }
   | { kind: "delete" };
 
 export default function AssetActionMenu({
@@ -146,6 +147,10 @@ export default function AssetActionMenu({
 
       <button className="ctx-item" onClick={() => fire({ kind: "geocode" })}>
         <span className="ctx-ic">📍</span> Resolve location
+      </button>
+
+      <button className="ctx-item" onClick={() => fire({ kind: "ml" })}>
+        <span className="ctx-ic">☻</span> Detect faces &amp; text
       </button>
 
       <div className="ctx-sep" />

@@ -120,6 +120,9 @@ See `.env.dist`. Main ones:
 - `GEOCODE_*`: reverse geocoding (GPS → place names) — `GEOCODE_BASE_URL`
   (Nominatim endpoint, self-hostable), `GEOCODE_USER_AGENT` (required by
   Nominatim's policy), `GEOCODE_ENABLED`. See [Places](#places-reverse-geocoding-where-by-name)
+- `ML_*`: ML analysis (faces + text-in-image) — `ML_ENABLED` (off by default),
+  `ML_BASE_URL` (your immich-machine-learning container), the per-task
+  model/threshold knobs. See [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)
 
 The whole environment is validated **once at startup** by a Zod schema in
 `src/lib/config.ts`. A missing/garbled/incoherent variable (a typo'd
@@ -162,6 +165,7 @@ offending variable — instead of silently degrading in production.
 | `POST /api/purge` `{ filter?, dryRun? }` | **Reclaim space**: physically removes the trashed originals + derivatives (queued job). `dryRun` returns `{ count, bytes }` to free. Only ever touches soft-deleted assets |
 | `POST /api/assets/regenerate` `{ ids[] }` | Rebuilds the derivatives (thumb + proxy) of a selection — re-enqueues generation whatever the current status |
 | `POST /api/assets/geocode` `{ ids[], precise? }` | Reverse-geocodes a selection: resolves GPS → place names (country/région/département/city, + tourist POI when `precise`). Deduped by coordinate cell so nearby shots share one lookup. See [Places](#places-reverse-geocoding-where-by-name) |
+| `POST /api/assets/ml` `{ ids[] }` | (Re)runs the ML analysis — face detection + OCR off the derivative — for a selection (e.g. after a container/model upgrade). See [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame) |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
 | `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
@@ -376,6 +380,49 @@ device or lens. It's a **batch** feature: an existing library is backfilled
   fills the tourist POI a 5 km cell can't. Runs off its own BullMQ queue +
   worker; tunable live via `PATCH /api/settings` (`geocodePrecisionM`,
   `geocodePerHour`), and the whole feature toggles with `GEOCODE_ENABLED`.
+
+### Faces & text (ML analysis: who and what is in frame)
+
+Places answers *where*; **Faces & text** answers *who is in frame* and *what the
+image says*. A background job sends each media's **existing derivative** (the
+photo proxy, or the poster frame for a video) to a self-hosted
+**machine-learning container** — the `immich-machine-learning` sidecar the NAS
+already runs for Immich — and stores what it sees: the **detected faces**
+(bounding box + recognition embedding) and the **text read in the image** (OCR).
+Like Places, it's a **batch** feature: the existing library is backfilled
+**without re-reading the RAWs** (the WebP proxies are already in the derivative
+cache, and that's all the models need — face detection looks at ~640 px, OCR at
+≤736 px).
+
+- **Reuses the container you already run.** No Python, no model management in
+  this stack: Winnow is a plain HTTP client of the container's `/predict`
+  endpoint (`ML_BASE_URL`, default port 3003). Faces and OCR ride **one**
+  request per media. Immich is AGPL-3.0, but consuming its HTTP API from a
+  separate process carries no license obligation — the container runs unmodified.
+  ⚠️ That API is **Immich-internal and unversioned**: pin the container image
+  tag and re-check after upgrades (`ML_OCR_ENABLED=false` against a pre-v2.2
+  image, which has no OCR).
+- **Paced like everything else.** Runs off its own BullMQ queue + worker
+  (`ML_CONCURRENCY`, default 1) and a **"Faces/OCR rate" slider** on the
+  Pipeline page (`mlPerHour`, default 1200/h — an 80k library drips through in
+  ~3 days without pinning the box; 0 = unlimited). New imports chain
+  automatically after derivative generation; the analysis lifecycle
+  (`ml_status`) mirrors the derivative one, errors included.
+- **Filterable, indexed.** `face_count` and `ocr_text` are denormalized onto
+  `assets` behind indexes (migration 0021), so the gallery gains a **Faces**
+  facet (has faces / no faces / exact count) and a **Has text (OCR)** toggle —
+  and the free-text **Search** (`q=`) now matches the text *read in the image*
+  as well as the file path (trigram-indexed, stays fast). The viewer's info
+  panel shows the face count and the text; the **Detect faces & text** action
+  (context menu / viewer / bulk bar) re-analyzes a selection on demand.
+- **Embeddings are kept** (`asset_faces.embedding`, 512-dim ArcFace, JSONB —
+  pgvector-ready). Grouping faces into named **persons** is a natural next step
+  and will need **no re-inference** over the library.
+- **Batch, automatic, or on demand.** Backfill with `npm run ml-backfill`
+  (`--force` re-analyzes everything, e.g. after a model upgrade); new media are
+  analyzed automatically once their derivative is ready. Toggle the whole
+  feature with `ML_ENABLED` (off by default — point `ML_BASE_URL` at your
+  container first).
 
 ---
 
@@ -627,8 +674,13 @@ Postgres backups** (compressed `pg_dump` sidecar + retention + documented
 restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
 (typecheck + migrations + build).
 
-**V2/V3 (not included)**: advanced ratings/colors/tags, web export + Immich push,
-adaptive throttling, agent-on-NAS, n8n automations.
+**Also implemented**: **ML analysis** (faces + text-in-image via the
+immich-machine-learning container, paced backfill, Faces facet + OCR search —
+see [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)).
+
+**V2/V3 (not included)**: advanced ratings/colors/tags, **person clustering**
+(grouping the stored face embeddings into named people), web export + Immich
+push, adaptive throttling, agent-on-NAS, n8n automations.
 
 ---
 

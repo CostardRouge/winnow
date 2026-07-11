@@ -15,6 +15,7 @@ import {
   type ImportJob,
   type PurgeJob,
   type GeocodeJob,
+  type MlJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { generateDerivative } from "./lib/derivatives";
@@ -22,6 +23,7 @@ import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
 import { runGeocodeJob } from "./lib/geocode";
+import { runMlJob } from "./lib/ml";
 import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
@@ -161,6 +163,18 @@ const geocodeWorker = new Worker(
   { connection, concurrency: config.geocode.concurrency },
 );
 
+// ML analysis (faces + OCR, cf. lib/ml.ts): sends the existing derivative to the
+// immich-machine-learning container. Concurrency defaults to 1 (the container
+// queues without backpressure) and the call is drip-fed by mlPerHour, so the
+// 80k backfill never pins the box.
+const mlWorker = new Worker(
+  QUEUES.ml,
+  async (job) => {
+    await runMlJob((job.data as MlJob).assetId);
+  },
+  { connection, concurrency: config.ml.concurrency },
+);
+
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
@@ -168,6 +182,7 @@ for (const [name, w] of [
   ["import", importWorker],
   ["purge", purgeWorker],
   ["geocode", geocodeWorker],
+  ["ml", mlWorker],
 ] as const) {
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
@@ -205,6 +220,7 @@ async function shutdown() {
     importWorker.close(),
     purgeWorker.close(),
     geocodeWorker.close(),
+    mlWorker.close(),
   ]);
   await closeExiftool();
   process.exit(0);

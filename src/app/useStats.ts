@@ -18,6 +18,10 @@ export type Stats = {
     pending: number;
     errors: number;
     skipped: number;
+    // ML analysis (faces + OCR, cf. lib/ml.ts).
+    ml_ready: number;
+    ml_pending: number;
+    ml_errors: number;
   };
   queues: {
     scan: QueueCounts;
@@ -26,8 +30,11 @@ export type Stats = {
     paused: boolean;
   } | null;
   paused: boolean;
-  settings: { scanPerHour: number; analyzePerHour: number };
-  failures?: { derivative: number; scan: number; import: number };
+  settings: { scanPerHour: number; analyzePerHour: number; mlPerHour: number };
+  // Whether the ML analysis feature is configured on the server (ML_ENABLED):
+  // gates the ML slider/counters so a stage that can't progress isn't shown.
+  mlEnabled?: boolean;
+  failures?: { derivative: number; scan: number; import: number; ml?: number };
 };
 
 // Active work in a queue = in progress + pending (prioritized included).
@@ -39,7 +46,7 @@ export function active(c: QueueCounts | undefined): number {
 // Sum of every failure family surfaced by /api/stats.
 export function totalFailures(s: Stats | null): number {
   const f = s?.failures;
-  return (f?.derivative ?? 0) + (f?.scan ?? 0) + (f?.import ?? 0);
+  return (f?.derivative ?? 0) + (f?.scan ?? 0) + (f?.import ?? 0) + (f?.ml ?? 0);
 }
 
 // Polls /api/stats on an interval (default 5 s). A transient fetch error keeps

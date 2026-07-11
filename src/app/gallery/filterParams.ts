@@ -23,7 +23,7 @@ const STR_ARRAYS = [
   "place_poi",
   "tags",
 ] as const;
-const NUM_ARRAYS = ["year", "month", "day"] as const;
+const NUM_ARRAYS = ["year", "month", "day", "face_count"] as const;
 const NUMS = [
   "root_id",
   "session_id",
@@ -38,7 +38,7 @@ const NUMS = [
   "size_max",
 ] as const;
 const STRS = ["date_from", "date_to", "q"] as const;
-const BOOLS = ["has_gps", "show_ignored", "has_edit", "is_edit"] as const;
+const BOOLS = ["has_gps", "show_ignored", "has_edit", "is_edit", "has_text"] as const;
 
 export function encodeFilters(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();
@@ -53,6 +53,8 @@ export function encodeFilters(f: Filters): URLSearchParams {
     if (v) sp.set(k, v);
   }
   for (const k of BOOLS) if (f[k]) sp.set(k, "1");
+  // Tri-state: true ("only with faces") and false ("only without") both encode.
+  if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "1" : "0");
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
@@ -73,6 +75,7 @@ export function decodeFilters(params: URLSearchParams): Filters {
     place_county: [],
     place_city: [],
     place_poi: [],
+    face_count: [],
     tags: [],
     year: [],
     month: [],
@@ -94,6 +97,10 @@ export function decodeFilters(params: URLSearchParams): Filters {
     if (v) f[k] = v;
   }
   for (const k of BOOLS) if (params.get(k)) f[k] = true;
+
+  const hasFaces = params.get("has_faces");
+  if (hasFaces === "1") f.has_faces = true;
+  else if (hasFaces === "0") f.has_faces = false;
 
   const verdict = params.get("verdict");
   if (verdict === "pick" || verdict === "reject" || verdict === "unrated")

@@ -2,6 +2,7 @@
 // queue activity (scan/analyze/import), pause state and configured rates.
 // Single source for the numbers banner + the dashboard control panel.
 import { one } from "@/lib/db";
+import { config } from "@/lib/config";
 import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
 import { json, serverError } from "@/lib/api";
@@ -34,6 +35,9 @@ export async function GET() {
       pending: number;
       errors: number;
       skipped: number;
+      ml_ready: number;
+      ml_pending: number;
+      ml_errors: number;
     }>(
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
@@ -51,7 +55,10 @@ export async function GET() {
          count(*) FILTER (WHERE derivative_status = 'ready')                 AS analyzed,
          count(*) FILTER (WHERE derivative_status IN ('pending','processing')) AS pending,
          count(*) FILTER (WHERE derivative_status = 'error')                 AS errors,
-         count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped
+         count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped,
+         count(*) FILTER (WHERE ml_status = 'ready')                         AS ml_ready,
+         count(*) FILTER (WHERE ml_status IN ('pending','processing'))       AS ml_pending,
+         count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors
        FROM assets a
        WHERE a.deleted_at IS NULL`,
     );
@@ -78,17 +85,25 @@ export async function GET() {
         pending: 0,
         errors: 0,
         skipped: 0,
+        ml_ready: 0,
+        ml_pending: 0,
+        ml_errors: 0,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,
       settings: {
         scanPerHour: settings.scanPerHour,
         analyzePerHour: settings.analyzePerHour,
+        mlPerHour: settings.mlPerHour,
       },
+      // ML is only surfaced when the feature is on: the sliders/counters would
+      // otherwise show a pipeline stage that can never progress.
+      mlEnabled: config.ml.enabled,
       failures: {
         derivative: Number(counts?.errors ?? 0),
         scan: fails.scan,
         import: fails.import,
+        ml: Number(counts?.ml_errors ?? 0),
       },
     });
   } catch (err) {

@@ -22,6 +22,7 @@ import {
   downloadAssetOriginal,
   exportAssets,
   geocodeAssets,
+  mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
 } from "@/lib/assetActions";
@@ -65,6 +66,11 @@ type Row = GalleryAsset & {
   place_county?: string | null;
   place_city?: string | null;
   place_poi?: string | null;
+  // ML analysis (faces + OCR, cf. lib/ml.ts) — fed to the viewer's metadata
+  // panel and reflected optimistically while a "Detect faces & text" job runs.
+  ml_status?: string | null;
+  face_count?: number | null;
+  ocr_text?: string | null;
   // Pairing: the companion of this displayed primary, its group kind and the
   // companion's per-file stats, fed to the grid badge and the viewer's segmented
   // toggle (cf. lib/pairing.ts) — the stats let the viewer describe the companion
@@ -157,6 +163,10 @@ function toQuery(
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.has_edit) sp.set("has_edit", "true");
   if (f.is_edit) sp.set("is_edit", "true");
+  // ML analysis (faces + OCR, cf. lib/ml.ts).
+  arr("face_count", f.face_count);
+  if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
+  if (f.has_text) sp.set("has_text", "true");
   // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
@@ -489,6 +499,23 @@ export default function GalleryShell({
     }
   }, []);
 
+  // (Re)runs the ML analysis (face detection + OCR, cf. lib/ml.ts) for these
+  // ids. Optimistically flags them 'pending' until the worker writes back.
+  const mlSelection = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setItems((prev) =>
+      prev.map((a) => (idset.has(a.id) ? { ...a, ml_status: "pending" } : a)),
+    );
+    try {
+      const n = await mlAnalyzeAssets(ids);
+      if (n === 0) setNotice("No derivative to analyze yet");
+      else setNotice(n > 1 ? `Analyzing ${n} media` : "Analyzing media");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   // --- Map zone (bbox) actions ---------------------------------------------
   // The map hands back the ids inside the drawn/visible zone; pick & reject
   // reuse the bulk rating path, export reuses the selection export.
@@ -552,11 +579,13 @@ export default function GalleryShell({
           return void regenerateSelection([id]);
         case "geocode":
           return void geocodeSelection([id]);
+        case "ml":
+          return void mlSelection([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, assignTags, exportSelection, regenerateSelection, geocodeSelection, removeAssets],
+    [rate, assignTags, exportSelection, regenerateSelection, geocodeSelection, mlSelection, removeAssets],
   );
 
   // Rating shortcuts inside the viewer (p/x/u + 0–5). Navigation and
@@ -826,6 +855,7 @@ export default function GalleryShell({
           onExport={() => exportSelection([...selected])}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
+          onMl={() => mlSelection([...selected])}
           onDelete={() => removeAssets([...selected])}
         />
       )}
@@ -895,6 +925,7 @@ export default function GalleryShell({
                     onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onGeocode={() => geocodeSelection([it.id])}
+                    onMl={() => mlSelection([it.id])}
                     onDelete={async () => {
                       if (await removeAssets([it.id])) {
                         // Keep the viewer open on the previous item rather than

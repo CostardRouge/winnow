@@ -18,6 +18,7 @@ export default function BulkActionBar({
   onExport,
   onRegenerate,
   onGeocode,
+  onMl,
   onDelete,
 }: {
   /** How many assets are currently selected. */
@@ -35,6 +36,9 @@ export default function BulkActionBar({
   onRegenerate: () => void;
   /** Resolve the GPS coordinates of the selection to place names. */
   onGeocode: () => void;
+  /** (Re)run the ML analysis (faces + OCR) on the selection. Omitted when the
+   * host surface doesn't offer it. */
+  onMl?: () => void;
   onDelete: () => void;
 }) {
   const [tagInput, setTagInput] = useState("");
@@ -112,6 +116,16 @@ export default function BulkActionBar({
       >
         📍 Locate
       </button>
+      {onMl && (
+        <button
+          className="btn"
+          disabled={none}
+          title="Detect faces and read the text in the image"
+          onClick={onMl}
+        >
+          ☻ Faces
+        </button>
+      )}
       <button className="btn btn-reject" disabled={none} onClick={onDelete}>
         🗑 Delete
       </button>

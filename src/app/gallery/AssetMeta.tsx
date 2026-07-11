@@ -37,6 +37,10 @@ export type AssetMetaInput = {
   place_county?: string | null;
   place_city?: string | null;
   place_poi?: string | null;
+  // ML analysis (cf. lib/ml.ts): detected faces + the text read in the image.
+  ml_status?: string | null;
+  face_count?: number | null;
+  ocr_text?: string | null;
   derivative_status?: string;
   rel_path?: string | null;
   sidecar_count?: number | null;
@@ -107,6 +111,22 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   }
   const location = locationLine(asset);
   if (location) rows.push(["Location", location]);
+  // ML analysis: only meaningful once analyzed (face_count stays null before).
+  if (asset.face_count != null)
+    rows.push([
+      "Faces",
+      asset.face_count === 0
+        ? "none detected"
+        : asset.face_count === 1
+          ? "1 face"
+          : `${asset.face_count} faces`,
+    ]);
+  if (asset.ocr_text) {
+    // The fragments are newline-joined; show them as one compact line, capped so
+    // a poster full of text can't swallow the panel.
+    const text = asset.ocr_text.split("\n").join(" · ");
+    rows.push(["Text", text.length > 160 ? `${text.slice(0, 160)}…` : text]);
+  }
   if (asset.derivative_status)
     rows.push(["Derivative", asset.derivative_status]);
   const sidecars = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;

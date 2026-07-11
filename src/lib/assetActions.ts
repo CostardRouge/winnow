@@ -165,6 +165,25 @@ export async function geocodeAssets(
   return body.queued;
 }
 
+// (Re)runs the ML analysis — face detection + OCR text read off the derivative
+// (cf. lib/ml.ts) — for these assets. Works for one (ids:[id]) or many. Returns
+// how many were actually queued (assets without a derivative yet are skipped),
+// or throws on a non-2xx response (e.g. ML_ENABLED=false).
+export async function mlAnalyzeAssets(ids: number[]): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/ml", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Detect faces & text failed (${res.status})`);
+  }
+  const body = (await res.json()) as { queued: number };
+  return body.queued;
+}
+
 // Takes assets out of the analyze pipeline (derivative_status -> 'skipped') so a
 // stuck/unwanted item stops being processed. Reversible via regenerateAssets.
 export async function skipAssets(ids: number[]): Promise<number> {

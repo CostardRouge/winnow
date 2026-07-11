@@ -29,6 +29,11 @@ export type Facets = {
   place_counties?: VC[];
   place_cities?: VC[];
   place_pois?: VC[];
+  // ML analysis facets (cf. lib/ml.ts). `faces` counts assets per detected-face
+  // count (0 = analyzed, nobody in frame); `with_text` counts assets whose OCR
+  // read some text. Optional so a facets payload predating the feature typechecks.
+  faces?: VC[];
+  with_text?: number;
   extensions: VC[];
   media_types: VC[];
   derivative_statuses: VC[];
@@ -69,6 +74,11 @@ export type Filters = {
   place_county: string[];
   place_city: string[];
   place_poi: string[];
+  // ML analysis (cf. lib/ml.ts): exact detected-face counts (multi) + the
+  // boolean shortcuts (at least one face / OCR text present).
+  face_count: number[];
+  has_faces?: boolean;
+  has_text?: boolean;
   tags: string[];
   year: number[];
   month: number[];
@@ -117,6 +127,7 @@ export const EMPTY_FILTERS: Filters = {
   place_county: [],
   place_city: [],
   place_poi: [],
+  face_count: [],
   tags: [],
   year: [],
   month: [],
@@ -505,6 +516,68 @@ export default function FilterPanel({
         selected={filters.place_poi}
         onToggle={(v) => u({ place_poi: toggle(filters.place_poi, String(v)) })}
       />
+
+      {/* ML analysis (cf. lib/ml.ts): filter by the people in frame + the text
+          read in the image. Only shown once some assets have been analyzed. */}
+      {!!facets.faces?.length && (
+        <div className="facet">
+          <div className="facet-title">Faces</div>
+          <div className="chips">
+            <button
+              className={`chip${filters.has_faces === true ? " active" : ""}`}
+              onClick={() =>
+                u({ has_faces: filters.has_faces === true ? undefined : true, face_count: [] })
+              }
+              title="Media with at least one detected face"
+            >
+              Has faces
+            </button>
+            <button
+              className={`chip${filters.has_faces === false ? " active" : ""}`}
+              onClick={() =>
+                u({ has_faces: filters.has_faces === false ? undefined : false, face_count: [] })
+              }
+              title="Media with no detected face"
+            >
+              No faces
+            </button>
+            {facets.faces
+              .filter((o) => Number(o.value) > 0)
+              .map((o) => {
+                const n = Number(o.value);
+                const active = filters.face_count.includes(n);
+                return (
+                  <button
+                    key={n}
+                    className={`chip${active ? " active" : ""}`}
+                    onClick={() =>
+                      u({ face_count: toggle(filters.face_count, n), has_faces: undefined })
+                    }
+                  >
+                    {n === 1 ? "1 face" : `${n} faces`}
+                    <span className="chip-count">{o.count}</span>
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+      {!!facets.with_text && (
+        <div className="facet">
+          <label
+            className="hint"
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              type="checkbox"
+              checked={!!filters.has_text}
+              onChange={(e) => u({ has_text: e.target.checked || undefined })}
+            />
+            Has text (OCR)
+            <span className="chip-count">{facets.with_text}</span>
+          </label>
+        </div>
+      )}
 
       <Chips
         title="Year"
