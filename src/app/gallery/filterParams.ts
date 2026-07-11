@@ -36,6 +36,8 @@ const NUMS = [
   "aperture_max",
   "size_min",
   "size_max",
+  "sharpness_min",
+  "sharpness_max",
 ] as const;
 const STRS = ["date_from", "date_to", "q"] as const;
 const BOOLS = ["has_gps", "show_ignored", "has_edit", "is_edit", "has_text"] as const;

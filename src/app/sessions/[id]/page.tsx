@@ -13,6 +13,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
+import SimilarStrip from "@/app/gallery/SimilarStrip";
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
@@ -70,6 +71,7 @@ type AssetRow = {
   ml_status?: string | null;
   face_count?: number | null;
   ocr_text?: string | null;
+  sharpness?: number | null;
   verdict: Verdict;
   star: number;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, its
@@ -632,6 +634,18 @@ export default function SessionGrid({
             e.preventDefault();
             setMenu({ x: e.clientX, y: e.clientY, id: a.id });
           }}
+          renderInfo={(a) => (
+            <SimilarStrip
+              assetId={a.id}
+              onOpen={(id) => {
+                // Jump the viewer when the similar shot belongs to this
+                // session's loaded grid; otherwise say why nothing happened.
+                const idx = assets.findIndex((x) => x.id === id);
+                if (idx >= 0) setViewer(idx);
+                else setNotice("Not in this session — find it from the Gallery");
+              }}
+            />
+          )}
           renderActions={(a) => (
             <ViewerActions
               verdict={a.verdict}

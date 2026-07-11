@@ -16,6 +16,7 @@
 // tag and re-check this contract when upgrading it. Reimplemented from the wire
 // format — no Immich (AGPL) source is copied; consuming the HTTP API from this
 // MIT app creates no license obligation (separate programs at arm's length).
+import sharp from "sharp";
 import { config } from "./config";
 import { getSettings } from "./settings";
 import { one, q } from "./db";
@@ -144,6 +145,75 @@ async function immichPredict(image: Buffer): Promise<MlResult> {
   };
 }
 
+// --- Local quality/similarity metrics (no container involved) ---------------
+// Computed by the same job because the derivative bytes are already in memory
+// here — both metrics are nearly free next to the inference HTTP call, and they
+// give the culling grid two more signals: blur and near-duplicates.
+
+// Size-normalize before the Laplacian so scores compare across resolutions.
+const SHARPNESS_MAX_DIM = 1024;
+
+export type ImageMetrics = {
+  // Variance of the Laplacian: the standard focus measure. LOW = flat/blurry,
+  // HIGH = crisp edges. Relative (rank/filter within the library), not absolute.
+  sharpness: number | null;
+  // 64-bit perceptual dHash, serialized as a SIGNED bigint string (Postgres
+  // BIGINT). Near-identical images land a few bits apart (Hamming distance).
+  phash: string | null;
+};
+
+async function computeImageMetrics(image: Buffer): Promise<ImageMetrics> {
+  try {
+    // Sharpness: greyscale → normalize size → 3x3 Laplacian → variance. sharp
+    // clamps the convolution to uint8 (negatives lost), which halves the signal
+    // but keeps the score monotonic — fine for a relative measure.
+    const { data } = await sharp(image, { failOn: "none" })
+      .greyscale()
+      .resize(SHARPNESS_MAX_DIM, SHARPNESS_MAX_DIM, {
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .convolve({ width: 3, height: 3, kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0] })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let sum = 0;
+    let sumSq = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i];
+      sum += v;
+      sumSq += v * v;
+    }
+    const mean = sum / data.length;
+    const variance = sumSq / data.length - mean * mean;
+
+    // dHash: 9x8 greyscale, one bit per horizontal neighbour comparison. The
+    // classic 64-bit difference hash — robust to resize/re-encode, cheap to
+    // compare (XOR + popcount).
+    const d = await sharp(image, { failOn: "none" })
+      .greyscale()
+      .resize(9, 8, { fit: "fill" })
+      .raw()
+      .toBuffer();
+    let bits = 0n;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        bits <<= 1n;
+        if (d[r * 9 + c] > d[r * 9 + c + 1]) bits |= 1n;
+      }
+    }
+
+    return {
+      sharpness: Math.round(variance * 10) / 10,
+      // Wrap to a SIGNED 64-bit value: Postgres BIGINT has no unsigned flavour.
+      phash: BigInt.asIntN(64, bits).toString(),
+    };
+  } catch {
+    // A metric failure must never fail the whole analysis (the faces/OCR side
+    // is independent); the columns just stay NULL for this asset.
+    return { sharpness: null, phash: null };
+  }
+}
+
 // Drip-feed throttle around the ONLY expensive part — the inference call. Same
 // shared limiter as scan/analyze/geocode: paces the backfill so the ML box (often
 // the same CPU as everything else) is never pinned. 0 = unlimited.
@@ -208,39 +278,68 @@ export async function runMlJob(assetId: number): Promise<void> {
     const image = await storage.get(key);
     if (!image) throw new Error(`derivative bytes missing: ${key}`);
 
-    await throttleMl();
-    if (config.ml.provider !== "immich") {
-      throw new Error(`Unsupported ml provider: ${config.ml.provider}`);
+    // Local metrics first (sharpness + perceptual hash): no container, no
+    // throttle — pure sharp work on the bytes already in hand.
+    const metrics = await computeImageMetrics(image);
+
+    // The container tasks, only when at least one is enabled. facesRan/ocrRan
+    // gate the writes below so a disabled task never overwrites a previous
+    // result with an empty one.
+    const facesRan = config.ml.faces.enabled;
+    const ocrRan = config.ml.ocr.enabled;
+    let result: MlResult = {
+      faces: [],
+      ocrText: null,
+      imgWidth: null,
+      imgHeight: null,
+    };
+    if (facesRan || ocrRan) {
+      await throttleMl();
+      if (config.ml.provider !== "immich") {
+        throw new Error(`Unsupported ml provider: ${config.ml.provider}`);
+      }
+      result = await immichPredict(image);
     }
-    const result = await immichPredict(image);
 
     // Replace wholesale: a re-analysis (new model, regenerated derivative) must
     // never accumulate stale faces next to fresh ones.
-    await q("DELETE FROM asset_faces WHERE asset_id=$1", [assetId]);
-    for (const f of result.faces) {
-      await q(
-        `INSERT INTO asset_faces
-           (asset_id, score, x1, y1, x2, y2, img_width, img_height, embedding)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
-        [
-          assetId,
-          f.score,
-          f.x1,
-          f.y1,
-          f.x2,
-          f.y2,
-          result.imgWidth,
-          result.imgHeight,
-          f.embedding ? JSON.stringify(f.embedding) : null,
-        ],
-      );
+    if (facesRan) {
+      await q("DELETE FROM asset_faces WHERE asset_id=$1", [assetId]);
+      for (const f of result.faces) {
+        await q(
+          `INSERT INTO asset_faces
+             (asset_id, score, x1, y1, x2, y2, img_width, img_height, embedding)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+          [
+            assetId,
+            f.score,
+            f.x1,
+            f.y1,
+            f.x2,
+            f.y2,
+            result.imgWidth,
+            result.imgHeight,
+            f.embedding ? JSON.stringify(f.embedding) : null,
+          ],
+        );
+      }
     }
     await q(
       `UPDATE assets SET
-         face_count=$2, ocr_text=$3,
+         face_count = CASE WHEN $2::boolean THEN $3::int  ELSE face_count END,
+         ocr_text   = CASE WHEN $4::boolean THEN $5::text ELSE ocr_text   END,
+         sharpness=$6, phash=$7::bigint,
          ml_status='ready', ml_error=NULL, updated_at=now()
        WHERE id=$1`,
-      [assetId, result.faces.length, result.ocrText],
+      [
+        assetId,
+        facesRan,
+        result.faces.length,
+        ocrRan,
+        result.ocrText,
+        metrics.sharpness,
+        metrics.phash,
+      ],
     );
   } catch (err) {
     await q(

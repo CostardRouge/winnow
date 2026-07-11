@@ -41,6 +41,7 @@ export type AssetMetaInput = {
   ml_status?: string | null;
   face_count?: number | null;
   ocr_text?: string | null;
+  sharpness?: number | null;
   derivative_status?: string;
   rel_path?: string | null;
   sidecar_count?: number | null;
@@ -127,6 +128,10 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
     const text = asset.ocr_text.split("\n").join(" · ");
     rows.push(["Text", text.length > 160 ? `${text.slice(0, 160)}…` : text]);
   }
+  // Relative focus score (variance of the Laplacian): shown so the Sharpness
+  // range filter has a readable reference ("this blurry shot scored 12").
+  if (asset.sharpness != null)
+    rows.push(["Sharpness", String(Math.round(asset.sharpness))]);
   if (asset.derivative_status)
     rows.push(["Derivative", asset.derivative_status]);
   const sidecars = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;

@@ -139,6 +139,10 @@ export const FilterSchema = z
     focal_max: z.coerce.number().optional(),
     size_min: z.coerce.number().optional(), // bytes
     size_max: z.coerce.number().optional(),
+    // Sharpness (variance of the Laplacian, cf. lib/ml.ts): low = blurry.
+    // `sharpness_max` alone is the "surface the soft/blurry shots" filter.
+    sharpness_min: z.coerce.number().optional(),
+    sharpness_max: z.coerce.number().optional(),
 
     // Tags (free-form): ANY inclusion / ANY exclusion
     tags: csv,
@@ -322,6 +326,8 @@ export function buildFilter(
   if (filter.focal_max != null) lte("a.focal_length", filter.focal_max);
   if (filter.size_min != null) gte("a.file_size", filter.size_min);
   if (filter.size_max != null) lte("a.file_size", filter.size_max);
+  if (filter.sharpness_min != null) gte("a.sharpness", filter.sharpness_min);
+  if (filter.sharpness_max != null) lte("a.sharpness", filter.sharpness_max);
 
   if (filter.tags) {
     conditions.push(
@@ -424,6 +430,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "focal_max",
     "size_min",
     "size_max",
+    "sharpness_min",
+    "sharpness_max",
     "has_gps",
     "bbox",
     "q",

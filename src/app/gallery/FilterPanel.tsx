@@ -98,6 +98,9 @@ export type Filters = {
   aperture_max?: number;
   size_min?: number; // MB (UI) — converted to bytes in the query
   size_max?: number;
+  // Sharpness (variance of the Laplacian, cf. lib/ml.ts): low = blurry.
+  sharpness_min?: number;
+  sharpness_max?: number;
   has_gps?: boolean;
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
@@ -650,6 +653,19 @@ export default function FilterPanel({
         onMin={(v) => u({ size_min: v })}
         onMax={(v) => u({ size_max: v })}
       />
+      <div>
+        <Range
+          title="Sharpness"
+          min={filters.sharpness_min}
+          max={filters.sharpness_max}
+          onMin={(v) => u({ sharpness_min: v })}
+          onMax={(v) => u({ sharpness_max: v })}
+        />
+        <div className="hint" style={{ marginTop: -4 }}>
+          Low = blurry. Set only a max to surface the soft shots; the score
+          shows in the viewer’s info panel.
+        </div>
+      </div>
 
       <div className="facet">
         <label className="hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>

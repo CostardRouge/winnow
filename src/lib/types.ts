@@ -131,6 +131,10 @@ export type Asset = {
   ml_error: string | null;
   face_count: number | null;
   ocr_text: string | null;
+  // Local quality/similarity metrics (cf. lib/ml.ts): variance-of-Laplacian
+  // focus score (low = blurry) + 64-bit perceptual dHash (pg BIGINT → string).
+  sharpness: number | null;
+  phash: string | null;
   created_at: string;
   updated_at: string;
 };

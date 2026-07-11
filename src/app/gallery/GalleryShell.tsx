@@ -13,6 +13,7 @@ import FilterPanel, {
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
 import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
+import SimilarStrip from "./SimilarStrip";
 import MediaViewer from "../MediaViewer";
 import ViewerActions from "../ViewerActions";
 import BulkActionBar from "../BulkActionBar";
@@ -71,6 +72,7 @@ type Row = GalleryAsset & {
   ml_status?: string | null;
   face_count?: number | null;
   ocr_text?: string | null;
+  sharpness?: number | null;
   // Pairing: the companion of this displayed primary, its group kind and the
   // companion's per-file stats, fed to the grid badge and the viewer's segmented
   // toggle (cf. lib/pairing.ts) — the stats let the viewer describe the companion
@@ -154,6 +156,7 @@ function toQuery(
   if (f.star_min) sp.set("star_min", String(f.star_min));
   for (const k of [
     "iso_min", "iso_max", "focal_min", "focal_max", "aperture_min", "aperture_max",
+    "sharpness_min", "sharpness_max",
   ] as const) {
     if (f[k] != null) sp.set(k, String(f[k]));
   }
@@ -892,25 +895,37 @@ export default function GalleryShell({
                   setMenu({ x: e.clientX, y: e.clientY, id: it.id });
                 }
           }
-          renderInfo={(it) =>
-            (it.tags ?? []).length || !readOnly ? (
-              <div className="viewer-tags">
-                {(it.tags ?? []).map((t) => (
-                  <span key={t} className="chip active">
-                    {t}
-                    {!readOnly && (
-                      <button
-                        className="chip-x"
-                        onClick={() => assignTags([it.id], t, false)}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            ) : null
-          }
+          renderInfo={(it) => (
+            <>
+              {((it.tags ?? []).length || !readOnly) && (
+                <div className="viewer-tags">
+                  {(it.tags ?? []).map((t) => (
+                    <span key={t} className="chip active">
+                      {t}
+                      {!readOnly && (
+                        <button
+                          className="chip-x"
+                          onClick={() => assignTags([it.id], t, false)}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <SimilarStrip
+                assetId={it.id}
+                onOpen={(id) => {
+                  // Jump the viewer when the similar shot is in the current
+                  // list; otherwise say why nothing happened.
+                  const idx = items.findIndex((x) => x.id === id);
+                  if (idx >= 0) setViewer(idx);
+                  else setNotice("Not in the current view — loosen the filters to reach it");
+                }}
+              />
+            </>
+          )}
           renderActions={
             readOnly
               ? undefined

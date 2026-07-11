@@ -165,7 +165,8 @@ offending variable — instead of silently degrading in production.
 | `POST /api/purge` `{ filter?, dryRun? }` | **Reclaim space**: physically removes the trashed originals + derivatives (queued job). `dryRun` returns `{ count, bytes }` to free. Only ever touches soft-deleted assets |
 | `POST /api/assets/regenerate` `{ ids[] }` | Rebuilds the derivatives (thumb + proxy) of a selection — re-enqueues generation whatever the current status |
 | `POST /api/assets/geocode` `{ ids[], precise? }` | Reverse-geocodes a selection: resolves GPS → place names (country/région/département/city, + tourist POI when `precise`). Deduped by coordinate cell so nearby shots share one lookup. See [Places](#places-reverse-geocoding-where-by-name) |
-| `POST /api/assets/ml` `{ ids[] }` | (Re)runs the ML analysis — face detection + OCR off the derivative — for a selection (e.g. after a container/model upgrade). See [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame) |
+| `POST /api/assets/ml` `{ ids[] }` | (Re)runs the ML analysis — face detection + OCR + sharpness/perceptual-hash — for a selection (e.g. after a container/model upgrade). See [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame) |
+| `GET /api/assets/:id/similar` `?limit&max_distance` | Visually closest media by perceptual-hash (Hamming) distance — the near-duplicates of a shot (feeds the viewer's **Similar** strip) |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
 | `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
@@ -415,9 +416,22 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
   as well as the file path (trigram-indexed, stays fast). The viewer's info
   panel shows the face count and the text; the **Detect faces & text** action
   (context menu / viewer / bulk bar) re-analyzes a selection on demand.
+- **Blur & near-duplicates come free.** The same job also computes two **local**
+  metrics with sharp (no container involved): a **sharpness score** (variance of
+  the Laplacian — low = blurry; a **Sharpness** range filter in the gallery
+  surfaces the soft shots, and the score shows in the viewer's info panel) and a
+  **64-bit perceptual hash** (dHash). Unlike the byte-identical `content_hash`
+  dedup, the perceptual hash catches **near**-duplicates — the same frame
+  re-exported/resized, burst neighbours, a slightly different crop: the viewer's
+  info panel gains a **Similar** strip (`GET /api/assets/:id/similar`, ranked by
+  Hamming distance) to answer "which of these do I keep" on the spot.
 - **Embeddings are kept** (`asset_faces.embedding`, 512-dim ArcFace, JSONB —
   pgvector-ready). Grouping faces into named **persons** is a natural next step
   and will need **no re-inference** over the library.
+- **Not covered (yet): closed eyes.** The container returns face boxes, scores
+  and embeddings but **no facial landmarks**, so an eyes-open/closed verdict
+  can't be derived from it — that would take a small dedicated landmarks model
+  (future work, noted in V2/V3).
 - **Batch, automatic, or on demand.** Backfill with `npm run ml-backfill`
   (`--force` re-analyzes everything, e.g. after a model upgrade); new media are
   analyzed automatically once their derivative is ready. Toggle the whole
@@ -679,8 +693,9 @@ immich-machine-learning container, paced backfill, Faces facet + OCR search —
 see [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)).
 
 **V2/V3 (not included)**: advanced ratings/colors/tags, **person clustering**
-(grouping the stored face embeddings into named people), web export + Immich
-push, adaptive throttling, agent-on-NAS, n8n automations.
+(grouping the stored face embeddings into named people), **closed-eyes
+detection** (needs a facial-landmarks model the ML container doesn't expose),
+web export + Immich push, adaptive throttling, agent-on-NAS, n8n automations.
 
 ---
 
