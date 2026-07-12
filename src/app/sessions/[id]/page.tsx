@@ -13,6 +13,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
+import SimilarStrip from "@/app/gallery/SimilarStrip";
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
@@ -27,6 +28,7 @@ import {
   downloadAssetOriginal,
   exportAssets,
   geocodeAssets,
+  mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
   sessionDownloadFiles,
@@ -64,6 +66,12 @@ type AssetRow = {
   place_county?: string | null;
   place_city?: string | null;
   place_poi?: string | null;
+  // ML analysis (faces + OCR, cf. lib/ml.ts) — surfaced in the viewer's
+  // metadata panel; `ml_status` flips optimistically during a re-analysis.
+  ml_status?: string | null;
+  face_count?: number | null;
+  ocr_text?: string | null;
+  sharpness?: number | null;
   verdict: Verdict;
   star: number;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, its
@@ -363,6 +371,22 @@ export default function SessionGrid({
     }
   }, []);
 
+  // (Re)run the ML analysis (face detection + OCR, cf. lib/ml.ts).
+  const mlAnalyze = useCallback(async (ids: number[]) => {
+    if (!ids.length) return;
+    const idset = new Set(ids);
+    setAssets((prev) =>
+      prev.map((a) => (idset.has(a.id) ? { ...a, ml_status: "pending" } : a)),
+    );
+    try {
+      const n = await mlAnalyzeAssets(ids);
+      if (n === 0) setNotice("No derivative to analyze yet");
+      else setNotice(n > 1 ? `Analyzing ${n} media` : "Analyzing media");
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
+
   const addTag = useCallback(async (id: number, name: string) => {
     if (!name.trim()) return;
     await tagAssets([id], name, true);
@@ -441,11 +465,13 @@ export default function SessionGrid({
           return void regenerate([id]);
         case "geocode":
           return void geocode([id]);
+        case "ml":
+          return void mlAnalyze([id]);
         case "delete":
           return void removeAssets([id]);
       }
     },
-    [rate, addTag, exportSelection, regenerate, geocode, removeAssets],
+    [rate, addTag, exportSelection, regenerate, geocode, mlAnalyze, removeAssets],
   );
 
   // Keyboard navigation in the viewer (desktop).
@@ -526,6 +552,7 @@ export default function SessionGrid({
             onExport={() => exportSelection([...selected])}
             onRegenerate={() => regenerate([...selected])}
             onGeocode={() => geocode([...selected])}
+            onMl={() => mlAnalyze([...selected])}
             onDelete={() => removeAssets([...selected])}
           />
         )}
@@ -607,6 +634,18 @@ export default function SessionGrid({
             e.preventDefault();
             setMenu({ x: e.clientX, y: e.clientY, id: a.id });
           }}
+          renderInfo={(a) => (
+            <SimilarStrip
+              assetId={a.id}
+              onOpen={(id) => {
+                // Jump the viewer when the similar shot belongs to this
+                // session's loaded grid; otherwise say why nothing happened.
+                const idx = assets.findIndex((x) => x.id === id);
+                if (idx >= 0) setViewer(idx);
+                else setNotice("Not in this session — find it from the Gallery");
+              }}
+            />
+          )}
           renderActions={(a) => (
             <ViewerActions
               verdict={a.verdict}
@@ -618,6 +657,7 @@ export default function SessionGrid({
               onDownload={() => downloadAssetOriginal(a.id)}
               onRegenerate={() => regenerate([a.id])}
               onGeocode={() => geocode([a.id])}
+              onMl={() => mlAnalyze([a.id])}
               onDelete={async () => {
                 if (await removeAssets([a.id])) {
                   // Keep the viewer open on the previous item rather than

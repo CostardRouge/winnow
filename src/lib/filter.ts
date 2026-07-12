@@ -115,6 +115,14 @@ export const FilterSchema = z
     // True → only assets with a resolved place; false → only those without.
     has_place: boolish,
 
+    // ML analysis (faces + OCR, cf. lib/ml.ts). `face_count` matches exact
+    // detected-face counts (multi, e.g. "2,3"); `has_faces` is the boolean
+    // shortcut (true → at least one face; false → none detected/analyzed yet).
+    // `has_text` keys on the OCR result the same way.
+    face_count: intList,
+    has_faces: boolish,
+    has_text: boolish,
+
     // Calendar (multi-value) + date range
     year: intList,
     month: intList, // 1-12
@@ -131,6 +139,10 @@ export const FilterSchema = z
     focal_max: z.coerce.number().optional(),
     size_min: z.coerce.number().optional(), // bytes
     size_max: z.coerce.number().optional(),
+    // Sharpness (variance of the Laplacian, cf. lib/ml.ts): low = blurry.
+    // `sharpness_max` alone is the "surface the soft/blurry shots" filter.
+    sharpness_min: z.coerce.number().optional(),
+    sharpness_max: z.coerce.number().optional(),
 
     // Tags (free-form): ANY inclusion / ANY exclusion
     tags: csv,
@@ -290,6 +302,16 @@ export function buildFilter(
   if (filter.has_place === true) conditions.push("a.place_id IS NOT NULL");
   else if (filter.has_place === false) conditions.push("a.place_id IS NULL");
 
+  // ML analysis (cf. lib/ml.ts), on the indexed denormalized columns. NULL
+  // face_count = not analyzed yet, so "no faces" includes the unanalyzed —
+  // mirroring has_place=false (which also lumps pending in with "without").
+  if (filter.face_count) inAny("a.face_count", filter.face_count);
+  if (filter.has_faces === true) conditions.push("a.face_count >= 1");
+  else if (filter.has_faces === false)
+    conditions.push("COALESCE(a.face_count, 0) = 0");
+  if (filter.has_text === true) conditions.push("a.ocr_text IS NOT NULL");
+  else if (filter.has_text === false) conditions.push("a.ocr_text IS NULL");
+
   if (filter.year) inAny("a.capture_year", filter.year);
   if (filter.month) inAny("a.capture_month", filter.month);
   if (filter.day) inAny("a.capture_day", filter.day);
@@ -304,6 +326,8 @@ export function buildFilter(
   if (filter.focal_max != null) lte("a.focal_length", filter.focal_max);
   if (filter.size_min != null) gte("a.file_size", filter.size_min);
   if (filter.size_max != null) lte("a.file_size", filter.size_max);
+  if (filter.sharpness_min != null) gte("a.sharpness", filter.sharpness_min);
+  if (filter.sharpness_max != null) lte("a.sharpness", filter.sharpness_max);
 
   if (filter.tags) {
     conditions.push(
@@ -321,14 +345,16 @@ export function buildFilter(
   }
 
   if (filter.q) {
-    // Free-text path search: every whitespace-separated token must appear
-    // somewhere in rel_path (folder + filename), case-insensitively. ANDed
-    // tokens narrow the result; each ILIKE rides the rel_path trigram index
-    // (migration 0010). Capped so a pathological query can't explode the SQL.
+    // Free-text search: every whitespace-separated token must appear in the
+    // file path (folder + filename) OR in the text the OCR read in the image,
+    // case-insensitively. ANDed tokens narrow the result; each ILIKE rides a
+    // trigram index (rel_path: migration 0010, ocr_text: migration 0021).
+    // Capped so a pathological query can't explode the SQL.
     const tokens = filter.q.split(/\s+/).filter(Boolean).slice(0, 10);
     for (const tok of tokens) {
-      conditions.push(`a.rel_path ILIKE $${i++}`);
+      conditions.push(`(a.rel_path ILIKE $${i} OR a.ocr_text ILIKE $${i})`);
       params.push(`%${escapeLike(tok)}%`);
+      i++;
     }
   }
 
@@ -388,6 +414,9 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "place_city",
     "place_poi",
     "has_place",
+    "face_count",
+    "has_faces",
+    "has_text",
     "year",
     "month",
     "day",
@@ -401,6 +430,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "focal_max",
     "size_min",
     "size_max",
+    "sharpness_min",
+    "sharpness_max",
     "has_gps",
     "bbox",
     "q",

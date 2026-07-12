@@ -46,6 +46,8 @@ export type PurgeJob = { purgeJobId: number };
 // location" action) resolves at the exact coordinate and also fills the POI;
 // omitted/false is the cheap shared-cell mode used by the backfill + import.
 export type GeocodeJob = { assetId: number; precise?: boolean };
+// ML-analyze one asset (cf. lib/ml.ts): faces + OCR read off its derivative.
+export type MlJob = { assetId: number };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -59,6 +61,7 @@ export const QUEUES = {
   import: "winnow-import",
   purge: "winnow-purge",
   geocode: "winnow-geocode",
+  ml: "winnow-ml",
 } as const;
 
 declare global {
@@ -71,6 +74,7 @@ declare global {
         import: Queue;
         purge: Queue;
         geocode: Queue;
+        ml: Queue;
       }
     | undefined;
 }
@@ -83,6 +87,7 @@ function build() {
     import: new Queue(QUEUES.import, { connection }),
     purge: new Queue(QUEUES.purge, { connection }),
     geocode: new Queue(QUEUES.geocode, { connection }),
+    ml: new Queue(QUEUES.ml, { connection }),
   };
 }
 
@@ -339,6 +344,18 @@ export async function enqueuePurge(purgeJobId: number) {
     { purgeJobId } satisfies PurgeJob,
     defaultJobOpts,
   );
+}
+
+// ML-analyze one asset (faces + OCR, cf. lib/ml.ts). Idempotent: the job
+// replaces the asset's previous results wholesale, so re-enqueuing is harmless.
+export async function enqueueMl(
+  assetId: number,
+  opts: { priority?: number } = {},
+) {
+  return getQueues().ml.add("ml", { assetId } satisfies MlJob, {
+    ...defaultJobOpts,
+    priority: opts.priority ?? PRIORITY.normal,
+  });
 }
 
 // Reverse-geocode one asset. Cheap and idempotent (a cached cell makes no

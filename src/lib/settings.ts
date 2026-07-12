@@ -25,6 +25,10 @@ export type AppSettings = {
   //     calls + coarser tags; 5 km groups a region under one place.
   geocodePerHour: number;
   geocodePrecisionM: number;
+  // ML analysis (faces + OCR, cf. lib/ml.ts): max /predict calls per hour
+  // (0 = unlimited). The default drips an 80k backfill over ~3 days instead of
+  // pinning the box's CPU for hours — raise it live from the Pipeline page.
+  mlPerHour: number;
 };
 
 const DEFAULTS: AppSettings = {
@@ -35,6 +39,7 @@ const DEFAULTS: AppSettings = {
   exportIncludeLiveVideo: false,
   geocodePerHour: 3600,
   geocodePrecisionM: 5000,
+  mlPerHour: 1200,
 };
 
 const TTL_MS = 1500;
@@ -61,6 +66,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.geocodePerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "geocode_precision_m")
         value.geocodePrecisionM = Math.max(1, Number(r.value) || DEFAULTS.geocodePrecisionM);
+      else if (r.key === "ml_per_hour")
+        value.mlPerHour = Math.max(0, Number(r.value) || 0);
     }
   } catch {
     // Table absent (before migration) or Postgres unavailable: we fall back
@@ -96,6 +103,11 @@ export async function setSettings(
     entries.push([
       "geocode_precision_m",
       JSON.stringify(Math.max(1, Math.floor(patch.geocodePrecisionM))),
+    ]);
+  if (patch.mlPerHour !== undefined)
+    entries.push([
+      "ml_per_hour",
+      JSON.stringify(Math.max(0, Math.floor(patch.mlPerHour))),
     ]);
 
   for (const [key, value] of entries) {

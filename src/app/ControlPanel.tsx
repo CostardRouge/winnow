@@ -20,9 +20,10 @@ export default function ControlPanel() {
   const { stats, reload } = useStats();
   const [scanRate, setScanRate] = useState(0);
   const [analyzeRate, setAnalyzeRate] = useState(0);
+  const [mlRate, setMlRate] = useState(0);
   const [busy, setBusy] = useState(false);
   // While dragging a slider, we don't let polling overwrite its value.
-  const dragging = useRef({ scan: false, analyze: false });
+  const dragging = useRef({ scan: false, analyze: false, ml: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Mirror the persisted rates into the sliders, but never clobber a value the
@@ -31,6 +32,7 @@ export default function ControlPanel() {
     if (!stats) return;
     if (!dragging.current.scan) setScanRate(stats.settings.scanPerHour);
     if (!dragging.current.analyze) setAnalyzeRate(stats.settings.analyzePerHour);
+    if (!dragging.current.ml) setMlRate(stats.settings.mlPerHour ?? 0);
   }, [stats]);
 
   async function togglePause() {
@@ -48,7 +50,11 @@ export default function ControlPanel() {
     }
   }
 
-  function commit(patch: { scanPerHour?: number; analyzePerHour?: number }) {
+  function commit(patch: {
+    scanPerHour?: number;
+    analyzePerHour?: number;
+    mlPerHour?: number;
+  }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       fetch("/api/settings", {
@@ -92,6 +98,20 @@ export default function ControlPanel() {
             tone="warn"
           />
         </Link>
+        {stats?.mlEnabled && (
+          <Link
+            href="/gallery?has_faces=1"
+            className="stat-link"
+            title="Faces & text detected off the derivatives — click to browse media with faces"
+          >
+            <Stat
+              label="Faces & text"
+              value={a?.ml_ready}
+              sub={`${(a?.ml_pending ?? 0).toLocaleString()} to analyze →`}
+              tone="accent"
+            />
+          </Link>
+        )}
         <Link href="/pipeline/failures" className="stat-link">
           <Stat
             label="Failures"
@@ -151,6 +171,28 @@ export default function ControlPanel() {
             }}
           />
         </div>
+
+        {stats?.mlEnabled && (
+          <div className="slider">
+            <label>
+              Faces/OCR rate <span className="hint">{rateLabel(mlRate)}</span>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={RATE_MAX}
+              step={RATE_STEP}
+              value={mlRate}
+              onPointerDown={() => (dragging.current.ml = true)}
+              onPointerUp={() => (dragging.current.ml = false)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setMlRate(v);
+                commit({ mlPerHour: v });
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="hint control-note">
         Photos/hour, 0 = unlimited. Incoming &amp; inbox folders are scanned and

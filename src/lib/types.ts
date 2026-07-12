@@ -123,8 +123,38 @@ export type Asset = {
   place_county: string | null;
   place_city: string | null;
   place_poi: string | null;
+  // ML analysis (faces + OCR, cf. lib/ml.ts). `face_count` is NULL until the
+  // asset is analyzed (0 = analyzed, none found); `ocr_text` carries the text
+  // read in the image (newline-joined fragments, searched by the gallery's q=).
+  // `ml_status` mirrors derivative_status through the analyze lifecycle.
+  ml_status: "pending" | "processing" | "ready" | "error" | "skipped";
+  ml_error: string | null;
+  face_count: number | null;
+  ocr_text: string | null;
+  // Local quality/similarity metrics (cf. lib/ml.ts): variance-of-Laplacian
+  // focus score (low = blurry) + 64-bit perceptual dHash (pg BIGINT → string).
+  sharpness: number | null;
+  phash: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// One face detected in an asset (cf. lib/ml.ts). The bounding box is in pixels
+// of the ANALYZED derivative (img_width/img_height carry its dimensions, so the
+// box scales to any rendition). `embedding` keeps the recognition vector for a
+// future person clustering — no re-inference needed.
+export type AssetFace = {
+  id: number;
+  asset_id: number;
+  score: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  img_width: number | null;
+  img_height: number | null;
+  embedding: number[] | null;
+  created_at: string;
 };
 
 // A reverse-geocoded location (cf. lib/geocode.ts), cached once per coordinate

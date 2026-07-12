@@ -72,6 +72,23 @@ x-winnow-env: &winnow-env
   GEOCODE_USER_AGENT: ${GEOCODE_USER_AGENT:-winnow/0.1 (self-hosted media manager)}
   GEOCODE_EMAIL: ${GEOCODE_EMAIL:-}
   GEOCODE_LANGUAGE: ${GEOCODE_LANGUAGE:-}
+  # ML analysis (faces + OCR, cf. lib/ml.ts). Reuses the immich-machine-learning
+  # container the box already runs for Immich: set ML_ENABLED=true and point
+  # ML_BASE_URL at it (from this stack's networks, e.g. http://<host-ip>:3003 or
+  # the container's name if both stacks share a network). The hourly rate is a
+  # runtime app setting (Pipeline page slider), not an env var. Backfill the
+  # existing library once with:  docker exec winnow_worker npm run ml-backfill
+  ML_ENABLED: ${ML_ENABLED:-false}
+  ML_BASE_URL: ${ML_BASE_URL:-http://immich-machine-learning:3003}
+  ML_FACES_ENABLED: ${ML_FACES_ENABLED:-true}
+  ML_FACE_MODEL: ${ML_FACE_MODEL:-buffalo_l}
+  ML_FACE_MIN_SCORE: "${ML_FACE_MIN_SCORE:-0.7}"
+  # OCR needs immich-machine-learning >= v2.2.0; set false against an older image.
+  ML_OCR_ENABLED: ${ML_OCR_ENABLED:-true}
+  ML_OCR_MODEL: ${ML_OCR_MODEL:-PP-OCRv5_mobile}
+  ML_OCR_MIN_SCORE: "${ML_OCR_MIN_SCORE:-0.8}"
+  ML_CONCURRENCY: "${ML_CONCURRENCY:-1}"
+  ML_TIMEOUT_MS: "${ML_TIMEOUT_MS:-120000}"
 
 services:
   postgres:

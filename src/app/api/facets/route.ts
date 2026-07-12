@@ -72,6 +72,8 @@ export async function GET(req: NextRequest) {
       counties,
       cities,
       pois,
+      faces,
+      withText,
       exts,
       mediaTypes,
       derivativeStatuses,
@@ -127,6 +129,15 @@ export async function GET(req: NextRequest) {
       settledArray(facet("place_county", scope, params)),
       settledArray(facet("place_city", scope, params)),
       settledArray(facet("place_poi", scope, params)),
+      // ML analysis facets (cf. lib/ml.ts): detected-face counts (0 included —
+      // "analyzed, nobody in frame" is a meaningful pick) + how many assets
+      // carry OCR-read text (drives the "Has text" toggle).
+      settledArray(facet("face_count", scope, params, "value ASC")),
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         WHERE a.ocr_text IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
       settledArray(facet("ext", scope, params)),
       settledArray(facet("media_type", scope, params, "value ASC")),
       settledArray(facet("derivative_status", scope, params, "value ASC")),
@@ -171,6 +182,8 @@ export async function GET(req: NextRequest) {
       place_counties: counties,
       place_cities: cities,
       place_pois: pois,
+      faces,
+      with_text: withText?.count ?? 0,
       extensions: exts,
       media_types: mediaTypes,
       derivative_statuses: derivativeStatuses,

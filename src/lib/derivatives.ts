@@ -7,6 +7,7 @@ import { config } from "./config";
 import { extractSourceJpeg } from "./extract";
 import { ffmpegAvailable, makeVideoThumb, makeVideoProxy } from "./video";
 import { getStorage } from "./storage/index";
+import { enqueueMl } from "./queue";
 import type { Asset } from "./types";
 
 // sharp reads large previews: we allow very wide images.
@@ -100,6 +101,9 @@ export async function generateDerivative(assetId: number): Promise<void> {
        WHERE id=$1`,
       [assetId, thumbKey, proxyKey, meta.width ?? null, meta.height ?? null],
     );
+    // The proxy the ML analysis feeds on now exists: chain the faces/OCR job
+    // (cf. lib/ml.ts). Runs off its own paced queue, so this costs nothing here.
+    if (config.ml.enabled) await enqueueMl(assetId);
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
@@ -153,6 +157,8 @@ async function generateVideoDerivative(asset: Asset): Promise<void> {
        WHERE id=$1`,
       [asset.id, thumbKey, proxyKey],
     );
+    // Same chaining for video: the ML job analyzes the poster frame.
+    if (config.ml.enabled) await enqueueMl(asset.id);
   } catch (err) {
     await q(
       "UPDATE assets SET derivative_status='error', derivative_error=$2, updated_at=now() WHERE id=$1",
