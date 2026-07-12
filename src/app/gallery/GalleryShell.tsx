@@ -164,6 +164,39 @@ function toQuery(
   return sp.toString();
 }
 
+// How many filter dimensions are narrowing the library right now. Feeds the
+// toolbar's "N filters" pill so a reduced view is never mistaken for the whole
+// library. Each dimension counts once however many values it holds ("3" should
+// read as "three panel sections touched"), and min/max pairs count as one.
+// `show_ignored` widens the Sessions grid rather than narrowing it — excluded.
+const FILTER_ARRAY_KEYS = [
+  "media_type", "ext", "derivative_status", "not_derivative_status",
+  "device", "camera_model", "lens",
+  "place_country", "place_region", "place_county", "place_city", "place_poi",
+  "tags", "year", "month", "day",
+] as const;
+
+function countActiveFilters(f: Filters): number {
+  let n = 0;
+  for (const k of FILTER_ARRAY_KEYS) if (f[k].length) n++;
+  if (f.q) n++;
+  if (f.root_id != null) n++;
+  if (f.session_id != null) n++;
+  if (f.date_from || f.date_to) n++;
+  if (f.verdict) n++;
+  if (f.star_min) n++;
+  if (f.iso_min != null || f.iso_max != null) n++;
+  if (f.focal_min != null || f.focal_max != null) n++;
+  if (f.aperture_min != null || f.aperture_max != null) n++;
+  if (f.size_min != null || f.size_max != null) n++;
+  if (f.has_gps) n++;
+  if (f.group_kind) n++;
+  if (f.has_edit) n++;
+  if (f.is_edit) n++;
+  if (f.bbox) n++;
+  return n;
+}
+
 // Applies a tree node's path as scope (resets the tree dimensions, keeps the
 // other filters: verdict, tags, type...).
 function applyScope(prev: Filters, path: PathSeg[]): Filters {
@@ -240,6 +273,15 @@ export default function GalleryShell({
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const filterKey = JSON.stringify(filters);
+  const activeFilterCount = countActiveFilters(filters);
+
+  // One reset for everything that narrows the view: the panel's filters and the
+  // Browse tree's highlighted scope. Shared by the aside's Reset button and the
+  // toolbar's "N filters ✕" pill.
+  const clearAllFilters = useCallback(() => {
+    setFilters(EMPTY_FILTERS);
+    setTreeKey("");
+  }, []);
 
   // Built-in views backed by the filter-driven dataset. Anything else (an
   // injected view such as Sessions) renders without touching the gallery feed.
@@ -599,10 +641,7 @@ export default function GalleryShell({
         </div>
         <button
           className="chip aside-reset"
-          onClick={() => {
-            setFilters(EMPTY_FILTERS);
-            setTreeKey("");
-          }}
+          onClick={clearAllFilters}
           title="Reset all filters"
         >
           {Icons.reset} Reset
@@ -769,7 +808,14 @@ export default function GalleryShell({
     id: "calendar",
     label: "Calendar",
     usesFilters: true,
-    render: (ctx) => <CalendarView query={ctx.query} onOpenDate={showDateInGrid} />,
+    render: (ctx) => (
+      <CalendarView
+        query={ctx.query}
+        onOpenDate={showDateInGrid}
+        filterCount={activeFilterCount}
+        onClearFilters={clearAllFilters}
+      />
+    ),
   };
   const views: SectionView[] = [
     ...(extraViews ?? []),
@@ -803,6 +849,33 @@ export default function GalleryShell({
           <button className="chip active" onClick={clearBbox} title="Clear the map zone filter">
             Zone ✕
           </button>
+        )}
+        {/* Filtered-view pill: whenever something narrows the library, say so in
+            every view (Grid, Calendar, Map, Sessions) and offer a one-tap clear.
+            The wording collapses to icon + count on phones (CSS). */}
+        {showAside && activeFilterCount > 0 && (
+          <span className="chip active filters-chip">
+            <button
+              className="filters-chip-open"
+              onClick={() => setPanelOpen(true)}
+              title={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"} — review in the panel`}
+              aria-label={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"} — open the filters panel`}
+            >
+              {Icons.filter}
+              {activeFilterCount}
+              <span className="filters-chip-text">
+                filter{activeFilterCount === 1 ? "" : "s"} on
+              </span>
+            </button>
+            <button
+              className="chip-x"
+              onClick={clearAllFilters}
+              aria-label="Clear all filters"
+              title="Clear all filters"
+            >
+              ×
+            </button>
+          </span>
         )}
         <span className="spacer" />
         {notice && <span className="notice">{notice}</span>}

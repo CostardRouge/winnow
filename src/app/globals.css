@@ -1640,6 +1640,18 @@
   .gallery-filter-toggle {
     @apply hidden;
   }
+  /* Active-filters pill: shown in the toolbar whenever filters narrow the
+     library, so a reduced view is never mistaken for the whole thing. The body
+     opens the panel; the × clears everything. On phones the wording collapses
+     to funnel + count (see the media query below). */
+  .filters-chip {
+    @apply gap-1 py-0 pl-2 pr-1.5;
+    height: var(--tb-control-h);
+  }
+  .filters-chip-open {
+    @apply inline-flex items-center gap-1 border-0 bg-transparent p-0 text-xs font-semibold;
+    color: inherit;
+  }
   /* Click-catcher behind the mobile filter panel (hidden on desktop). */
   .gallery-aside-backdrop {
     @apply hidden;
@@ -1745,7 +1757,7 @@
   .cal-wrap {
     @apply flex min-h-0 flex-1 flex-col gap-3 p-2;
   }
-  /* Month navigation header: year/month steppers, the month label, Today. */
+  /* Month navigation header: year/month steppers, the period pickers, Today. */
   .cal-head {
     @apply flex flex-wrap items-center gap-2;
   }
@@ -1755,9 +1767,21 @@
   .cal-nav .icon-toggle {
     @apply h-8 w-8 text-base leading-none;
   }
+  /* The title is two native selects (month + year) so any period is one tap
+     away — native so phones get the OS wheel picker for free. */
   .cal-title {
-    @apply min-w-[8.5rem] px-1 text-center text-sm font-semibold;
+    @apply flex items-center gap-0.5 px-0.5;
+  }
+  .cal-select {
+    @apply h-8 cursor-pointer rounded-[var(--radius)] border-0 bg-transparent px-1 text-sm font-semibold;
     color: var(--color-text);
+  }
+  .cal-select:hover {
+    background: var(--color-surface-3);
+  }
+  .cal-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
   }
   .cal-month-total {
     @apply text-xs;
@@ -1765,11 +1789,25 @@
   }
   /* The board fills the remaining height; the grid itself flexes to fit. */
   .cal-board {
-    @apply flex min-h-0 flex-1 flex-col gap-1.5;
+    @apply relative flex min-h-0 flex-1 flex-col gap-1.5;
     transition: opacity 150ms ease;
   }
   .cal-board.is-loading {
     opacity: 0.55;
+  }
+  /* Stale cells stay visible (dimmed) during a fetch but can't be clicked. */
+  .cal-board.is-loading .cal-grid {
+    pointer-events: none;
+  }
+  /* Floating "loading" pill centred over the dimmed board. */
+  .cal-loading {
+    @apply pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2
+      items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium;
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    backdrop-filter: blur(6px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-card);
+    color: var(--color-text);
   }
   .cal-weekdays,
   .cal-grid {
@@ -1852,7 +1890,7 @@
     backdrop-filter: none;
   }
   .cal-empty {
-    @apply py-3 text-center;
+    @apply flex flex-wrap items-center justify-center gap-2.5 py-3 text-center;
   }
 
   /* ---- Filter panel ----------------------------------------------------- */
@@ -2617,6 +2655,10 @@
 @media (max-width: 760px) {
   .gallery-filter-toggle {
     display: inline-flex;
+  }
+  /* Tight toolbar: the active-filters pill keeps only the funnel + count + ×. */
+  .filters-chip-text {
+    display: none;
   }
   /* The panel slides in over the content, confined to its parent (the gallery
      body): it starts below the controls and stops above the bottom rail, so it

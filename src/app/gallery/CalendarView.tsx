@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { LazyImage, Icons } from "../ui";
+import { LazyImage, Icons, Spinner } from "../ui";
 
 // Calendar view for the gallery: a month-at-a-glance wall calendar where every
 // day that holds media shows a cover thumbnail and a count. Picking a day drills
@@ -58,11 +58,19 @@ function nowMonth() {
 export default function CalendarView({
   query,
   onOpenDate,
+  filterCount = 0,
+  onClearFilters,
 }: {
   /** Active scope + filters, ready to append to the calendar API call. */
   query: string;
   /** Drill into a single day — the host applies it as a date filter + Grid. */
   onOpenDate: (date: string) => void;
+  /** How many filter dimensions currently narrow the library (0 = none). Lets
+   *  the calendar say when what it shows is a filtered subset, and explain an
+   *  empty month that the filters caused. */
+  filterCount?: number;
+  /** Clear every active filter (offered when a filtered month comes up empty). */
+  onClearFilters?: () => void;
 }) {
   const [month, setMonth] = useState(nowMonth);
   const [data, setData] = useState<CalendarData | null>(null);
@@ -143,6 +151,28 @@ export default function CalendarView({
       return { y: Math.floor(total / 12), m: ((total % 12) + 12) % 12 };
     });
 
+  // Direct jump from the month/year pickers, clamped to the filtered data span
+  // (picking the min/max year keeps the month inside the populated range).
+  const jumpTo = (y: number, m: number) => {
+    let idx = monthIndex(y, m);
+    if (minIdx != null) idx = Math.max(idx, minIdx);
+    if (maxIdx != null) idx = Math.min(idx, maxIdx);
+    setMonth({ y: Math.floor(idx / 12), m: ((idx % 12) + 12) % 12 });
+  };
+
+  // Year picker options: the filtered data span when known (newest first), else
+  // a window around today; the displayed year always rides along so the select
+  // never shows a value it doesn't contain.
+  const years = useMemo(() => {
+    const nowY = new Date().getUTCFullYear();
+    const lo = minIdx != null ? Math.floor(minIdx / 12) : Math.min(month.y, nowY - 10);
+    const hi = maxIdx != null ? Math.floor(maxIdx / 12) : Math.max(month.y, nowY);
+    const list: number[] = [];
+    for (let y = hi; y >= lo; y--) list.push(y);
+    if (!list.includes(month.y)) list.push(month.y);
+    return list.sort((a, b) => b - a);
+  }, [minIdx, maxIdx, month.y]);
+
   const todayIso = isoDate(new Date());
 
   return (
@@ -168,9 +198,42 @@ export default function CalendarView({
             >
               {Icons.back}
             </button>
-            <h2 className="cal-title">
-              {MONTHS[month.m]} {month.y}
-            </h2>
+            {/* The title doubles as the period picker: native selects (OS wheel
+                on phones) jump straight to any month/year in the data span. */}
+            <div className="cal-title" role="group" aria-label="Jump to a month">
+              <select
+                className="cal-select"
+                value={month.m}
+                onChange={(e) => jumpTo(month.y, Number(e.target.value))}
+                aria-label="Month"
+                title="Jump to a month"
+              >
+                {MONTHS.map((name, i) => {
+                  const idx = monthIndex(month.y, i);
+                  const out =
+                    (minIdx != null && idx < minIdx) ||
+                    (maxIdx != null && idx > maxIdx);
+                  return (
+                    <option key={name} value={i} disabled={out}>
+                      {name}
+                    </option>
+                  );
+                })}
+              </select>
+              <select
+                className="cal-select"
+                value={month.y}
+                onChange={(e) => jumpTo(Number(e.target.value), month.m)}
+                aria-label="Year"
+                title="Jump to a year"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               className="icon-toggle"
               onClick={() => shift(1)}
@@ -191,8 +254,10 @@ export default function CalendarView({
             </button>
           </div>
           <span className="spacer" />
-          <span className="cal-month-total">
-            {loading ? "Loading…" : `${monthTotal} this month`}
+          <span className="cal-month-total" role="status">
+            {loading
+              ? "Loading…"
+              : `${monthTotal} this month${filterCount > 0 ? " · filtered" : ""}`}
           </span>
           <button className="btn" onClick={() => setMonth(nowMonth())} title="Jump to the current month">
             Today
@@ -207,7 +272,15 @@ export default function CalendarView({
             </button>
           </div>
         ) : (
-          <div className={`cal-board${loading ? " is-loading" : ""}`}>
+          <div className={`cal-board${loading ? " is-loading" : ""}`} aria-busy={loading}>
+            {/* Floating pill over the dimmed board while a fetch is in flight —
+                both the first load and every month/filter change. */}
+            {loading && (
+              <div className="cal-loading" role="status" aria-live="polite">
+                <Spinner sm />
+                Loading calendar…
+              </div>
+            )}
             <div className="cal-weekdays">
               {WEEKDAYS.map((w) => (
                 <div key={w} className="cal-weekday">
@@ -255,7 +328,23 @@ export default function CalendarView({
             </div>
             {!loading && monthTotal === 0 && (
               <div className="cal-empty hint">
-                No media captured in {MONTHS[month.m]} {month.y}.
+                {filterCount > 0 ? (
+                  <>
+                    <span>
+                      Nothing in {MONTHS[month.m]} {month.y} matches the{" "}
+                      {filterCount === 1 ? "active filter" : `${filterCount} active filters`}.
+                    </span>
+                    {onClearFilters && (
+                      <button className="btn" onClick={onClearFilters}>
+                        Clear filters
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span>
+                    No media captured in {MONTHS[month.m]} {month.y}.
+                  </span>
+                )}
               </div>
             )}
           </div>
