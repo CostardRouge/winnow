@@ -11,9 +11,19 @@ import PullToRefresh from "./PullToRefresh";
 
 const RATE_MAX = 3000;
 const RATE_STEP = 50;
+// Periodic re-scan slider: up to 24 h between automatic incremental scans.
+const RESCAN_MAX = 1440;
+const RESCAN_STEP = 15;
 
 function rateLabel(v: number): string {
   return v <= 0 ? "Unlimited" : `${v.toLocaleString()}/h`;
+}
+
+function rescanLabel(v: number): string {
+  if (v <= 0) return "Off";
+  if (v < 60) return `every ${v} min`;
+  const h = v / 60;
+  return `every ${Number.isInteger(h) ? h : h.toFixed(1)} h`;
 }
 
 export default function ControlPanel() {
@@ -21,12 +31,13 @@ export default function ControlPanel() {
   const [scanRate, setScanRate] = useState(0);
   const [analyzeRate, setAnalyzeRate] = useState(0);
   const [mlRate, setMlRate] = useState(0);
+  const [rescan, setRescan] = useState(0);
   const [busy, setBusy] = useState(false);
   // Drone-telemetry backfill (one-click counterpart to `npm run srt-backfill`).
   const [srtBusy, setSrtBusy] = useState(false);
   const [srtMsg, setSrtMsg] = useState<string | null>(null);
   // While dragging a slider, we don't let polling overwrite its value.
-  const dragging = useRef({ scan: false, analyze: false, ml: false });
+  const dragging = useRef({ scan: false, analyze: false, ml: false, rescan: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Mirror the persisted rates into the sliders, but never clobber a value the
@@ -36,6 +47,7 @@ export default function ControlPanel() {
     if (!dragging.current.scan) setScanRate(stats.settings.scanPerHour);
     if (!dragging.current.analyze) setAnalyzeRate(stats.settings.analyzePerHour);
     if (!dragging.current.ml) setMlRate(stats.settings.mlPerHour ?? 0);
+    if (!dragging.current.rescan) setRescan(stats.settings.rescanMinutes ?? 0);
   }, [stats]);
 
   async function togglePause() {
@@ -93,6 +105,7 @@ export default function ControlPanel() {
     scanPerHour?: number;
     analyzePerHour?: number;
     mlPerHour?: number;
+    rescanMinutes?: number;
   }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -232,10 +245,33 @@ export default function ControlPanel() {
             />
           </div>
         )}
+
+        <div className="slider">
+          <label>
+            Rescan interval <span className="hint">{rescanLabel(rescan)}</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={RESCAN_MAX}
+            step={RESCAN_STEP}
+            value={rescan}
+            onPointerDown={() => (dragging.current.rescan = true)}
+            onPointerUp={() => (dragging.current.rescan = false)}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setRescan(v);
+              commit({ rescanMinutes: v });
+            }}
+          />
+        </div>
       </div>
       <div className="hint control-note">
         Photos/hour, 0 = unlimited. Incoming &amp; inbox folders are scanned and
-        analyzed first.
+        analyzed first. The rescan interval re-walks the volumes automatically
+        (incremental — unchanged files are only stat-ed) so new, changed and
+        deleted files are noticed without a manual re-index; Off = only at
+        worker startup, on import, or by hand.
       </div>
 
       <div className="control-row control-maintenance">

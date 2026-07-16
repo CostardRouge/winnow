@@ -30,7 +30,13 @@ export type Stats = {
     paused: boolean;
   } | null;
   paused: boolean;
-  settings: { scanPerHour: number; analyzePerHour: number; mlPerHour: number };
+  settings: {
+    scanPerHour: number;
+    analyzePerHour: number;
+    mlPerHour: number;
+    // Periodic re-scan interval (minutes, 0 = off) — cf. worker.ts.
+    rescanMinutes: number;
+  };
   // Whether the ML analysis feature is configured on the server (ML_ENABLED):
   // gates the ML slider/counters so a stage that can't progress isn't shown.
   mlEnabled?: boolean;
@@ -40,6 +46,8 @@ export type Stats = {
     import: number;
     ml?: number;
     duplicates?: number;
+    // Originals gone from disk, awaiting restore/purge triage (lib/integrity.ts).
+    missing?: number;
   };
 };
 
@@ -59,7 +67,8 @@ export function totalFailures(s: Stats | null): number {
     (f?.scan ?? 0) +
     (f?.import ?? 0) +
     (f?.ml ?? 0) +
-    (f?.duplicates ?? 0)
+    (f?.duplicates ?? 0) +
+    (f?.missing ?? 0)
   );
 }
 

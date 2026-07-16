@@ -16,8 +16,10 @@ import {
   type PurgeJob,
   type GeocodeJob,
   type MlJob,
+  type IntegrityJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
+import { runIntegrityJob } from "./lib/integrity";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
@@ -29,7 +31,7 @@ import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
 import { getSettings } from "./lib/settings";
 import { reserveSlot, sleep } from "./lib/rate";
-import { one } from "./lib/db";
+import { one, many } from "./lib/db";
 
 console.log("Winnow workers — starting up");
 console.log(`  storage : ${config.storage.driver}`);
@@ -175,6 +177,20 @@ const mlWorker = new Worker(
   { connection, concurrency: config.ml.concurrency },
 );
 
+// Integrity sweep (cf. lib/integrity.ts): re-stats every live original and
+// verifies the derivative objects still exist in storage. Serialized (one
+// sweep at a time) — it's the scan's I/O profile, so it must never gang up
+// on the NAS HDD.
+const integrityWorker = new Worker(
+  QUEUES.integrity,
+  async (job) => {
+    const { rootId } = job.data as IntegrityJob;
+    console.log(`[integrity] sweep${rootId ? ` (root ${rootId})` : ""}…`);
+    return runIntegrityJob({ rootId });
+  },
+  { connection, concurrency: 1 },
+);
+
 for (const [name, w] of [
   ["index", indexWorker],
   ["derivatives", derivativeWorker],
@@ -183,6 +199,7 @@ for (const [name, w] of [
   ["purge", purgeWorker],
   ["geocode", geocodeWorker],
   ["ml", mlWorker],
+  ["integrity", integrityWorker],
 ] as const) {
   w.on("failed", (job, err) =>
     console.error(`[${name}] job ${job?.id} failed:`, err.message),
@@ -192,6 +209,39 @@ for (const [name, w] of [
 // Register + (re)index the known roots (incoming + configured final
 // folders) at startup, without blocking the workers' loop.
 void bootstrapRoots();
+
+// Periodic re-scan. There is no filesystem watcher on the NAS mounts (inotify
+// doesn't propagate over SMB/NFS), so without this the library only notices
+// on-disk changes at worker startup or on a manual re-index. The interval is a
+// live setting (`rescanMinutes`, Pipeline page; 0 = off): every due tick
+// re-enqueues an incremental scan of each watched root — cheap on unchanged
+// files (stat-only), and enqueueIndex coalesces so ticks can never stack jobs.
+// The end-of-scan missing-file pass rides along, so deletions are noticed on
+// the same cadence. First tick counts from process start: bootstrap already
+// scanned everything at boot.
+let lastPeriodicScan = Date.now();
+const periodicScanTimer = setInterval(async () => {
+  try {
+    const { rescanMinutes, scanPaused } = await getSettings();
+    if (rescanMinutes <= 0 || scanPaused) return;
+    if (Date.now() - lastPeriodicScan < rescanMinutes * 60_000) return;
+    lastPeriodicScan = Date.now();
+    const roots = await many<{ id: number; path: string }>(
+      "SELECT id, path FROM roots WHERE kind IN ('source','finals') AND watch = true",
+    );
+    for (const r of roots) {
+      await enqueueIndex(r.id, {
+        priority:
+          r.path === config.import.incomingDir ? PRIORITY.high : PRIORITY.normal,
+      });
+    }
+    if (roots.length)
+      console.log(`[rescan] periodic tick: ${roots.length} root(s) re-enqueued`);
+  } catch (err) {
+    console.error("[rescan] periodic tick failed:", (err as Error).message);
+  }
+}, 60_000);
+periodicScanTimer.unref?.();
 
 // Inbox watching: SMB / FTP drops → automatic import. We create a
 // batch so these passive imports are visible/tracked like the others.
@@ -212,6 +262,7 @@ const stopWatcher = config.import.watchInbox
 
 async function shutdown() {
   console.log("Stopping the workers…");
+  clearInterval(periodicScanTimer);
   if (stopWatcher) await stopWatcher();
   await Promise.allSettled([
     indexWorker.close(),
@@ -221,6 +272,7 @@ async function shutdown() {
     purgeWorker.close(),
     geocodeWorker.close(),
     mlWorker.close(),
+    integrityWorker.close(),
   ]);
   await closeExiftool();
   process.exit(0);

@@ -86,6 +86,11 @@ export type Asset = {
   // Soft delete: non-null = hidden from the library (original untouched). This
   // is the recycle bin — recoverable until purged.
   deleted_at: string | null;
+  // File integrity (cf. lib/integrity.ts): non-null = the ORIGINAL is gone from
+  // disk (confirmed by a per-file stat). Normally auto-trashed in the same
+  // statement (deleted_at = missing_at); cleared automatically if the file
+  // reappears. Triage lives in /pipeline/failures ("Missing files").
+  missing_at: string | null;
   // Purge: non-null = the original (and its derivatives) were physically removed
   // to reclaim space. The row is kept for audit/lineage. `purge_error` holds the
   // last failure (e.g. a read-only mount) when a purge couldn't free the bytes.

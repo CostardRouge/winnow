@@ -21,7 +21,7 @@
 //     (stays in the trash, retryable) and its derivatives are left intact;
 //   - the asset row itself is never deleted (audit + export lineage): `purged_at`
 //     marks the bytes as gone while `deleted_at` keeps it hidden.
-import { unlink } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { q, one, many } from "./db";
 import { FilterSchema, buildFilter } from "./filter";
@@ -93,10 +93,25 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
     };
 
     for (const asset of assets) {
-      // Guard 1 — only the cullable Incoming zone may lose originals.
+      // Guard 1 — only the cullable Incoming zone may lose originals. The one
+      // exception: an original already GONE from disk (missing_at, cf.
+      // lib/integrity.ts), re-verified as absent right here, has no bytes to
+      // lose — purging it only clears the cached derivatives and stamps the
+      // row, which is safe on any volume. A file that reappeared is refused
+      // as before (the next re-check/scan will restore it instead).
+      let unlinkOriginal = true;
       if (!PURGEABLE_KINDS.has(asset.root_kind)) {
-        await fail(asset, `refused: ${asset.root_kind} volume is view-only`);
-        continue;
+        const absent =
+          asset.missing_at != null &&
+          (await stat(asset.abs_path).then(
+            () => false,
+            (err) => (err as NodeJS.ErrnoException).code === "ENOENT",
+          ));
+        if (!absent) {
+          await fail(asset, `refused: ${asset.root_kind} volume is view-only`);
+          continue;
+        }
+        unlinkOriginal = false;
       }
 
       // Guard 2 — confine the removal to the session folder. A resolved path
@@ -122,36 +137,43 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
 
       try {
         // 1) Remove the original (the point: reclaim NAS space). A file that is
-        //    already gone counts as reclaimed.
-        try {
-          await unlink(target);
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        //    already gone counts as reclaimed. Skipped on the view-only-missing
+        //    path (nothing on disk, and the volume must never be written).
+        if (unlinkOriginal) {
+          try {
+            await unlink(target);
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+          }
         }
 
         // 1b) Remove the clip's Sony sidecars (XML/THM) — they travel with the
         //     video, so reclaiming the clip reclaims them too. Confined to the
         //     same session folder, idempotent on ENOENT, then their rows go.
-        const sidecars = await many<{
-          id: number;
-          abs_path: string;
-          file_size: string | number | null;
-        }>(
-          "SELECT id, abs_path, file_size FROM asset_sidecars WHERE asset_id = $1",
-          [asset.id],
-        );
-        for (const sc of sidecars) {
-          const scTarget = path.resolve(sc.abs_path);
-          if (scTarget !== base && !scTarget.startsWith(base + path.sep)) continue;
-          try {
-            await unlink(scTarget);
-          } catch (err) {
-            if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        //     Skipped with the original on view-only volumes: their files (if
+        //     any survive) are never touched there.
+        if (unlinkOriginal) {
+          const sidecars = await many<{
+            id: number;
+            abs_path: string;
+            file_size: string | number | null;
+          }>(
+            "SELECT id, abs_path, file_size FROM asset_sidecars WHERE asset_id = $1",
+            [asset.id],
+          );
+          for (const sc of sidecars) {
+            const scTarget = path.resolve(sc.abs_path);
+            if (scTarget !== base && !scTarget.startsWith(base + path.sep)) continue;
+            try {
+              await unlink(scTarget);
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+            }
+            freedBytes += Number(sc.file_size ?? 0);
           }
-          freedBytes += Number(sc.file_size ?? 0);
+          if (sidecars.length)
+            await q("DELETE FROM asset_sidecars WHERE asset_id = $1", [asset.id]);
         }
-        if (sidecars.length)
-          await q("DELETE FROM asset_sidecars WHERE asset_id = $1", [asset.id]);
 
         // 2) Remove the cached derivatives (thumb + proxy). These live on the
         //    Optiplex cache, so freeing them is best-effort and never blocking.

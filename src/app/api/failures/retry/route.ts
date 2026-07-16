@@ -9,6 +9,9 @@
 //                       quarantine; failure = stays there. (Whole-quarantine only:
 //                       a recorded error path can't be mapped back to a single
 //                       quarantined file, so there is no per-file import retry.)
+//   kind="missing"    : re-stats the missing originals (ids, or all) — whichever
+//                       answer again are restored (flag + auto-trash lifted, a
+//                       broken derivative re-enqueued). Cf. lib/integrity.ts.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
@@ -20,12 +23,13 @@ import {
   PRIORITY,
 } from "@/lib/queue";
 import { quarantineDir } from "@/lib/import";
+import { recheckMissing } from "@/lib/integrity";
 import { json, badRequest, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  kind: z.enum(["derivative", "scan", "import"]),
+  kind: z.enum(["derivative", "scan", "import", "missing"]),
   ids: z.array(z.number().int()).optional(),
   paths: z.array(z.string()).optional(),
 });
@@ -106,6 +110,13 @@ export async function POST(req: NextRequest) {
         });
       }
       return json({ kind, retried: roots.length });
+    }
+
+    if (kind === "missing") {
+      // Re-check: whichever files answer a stat again come back to the library
+      // (auto-trash lifted); the rest stay listed for restore/purge triage.
+      const restored = await recheckMissing(ids);
+      return json({ kind, retried: restored });
     }
 
     // import: re-imports the quarantine (batch tracked so that any further

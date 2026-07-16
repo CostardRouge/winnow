@@ -7,12 +7,16 @@
 // -> import_batches.result. So we only duplicate what was missing.
 import { q, one } from "./db";
 
-// The four failure families surfaced as tabs on /pipeline/failures.
+// The five failure families surfaced as tabs on /pipeline/failures.
 export type FailureCounts = {
   derivative: number;
   scan: number;
   import: number;
   duplicates: number;
+  // Indexed assets whose ORIGINAL is gone from disk (cf. lib/integrity.ts).
+  // Counted while awaiting triage (not yet purged) — the auto-trashed ones
+  // included, since restoring or purging them is still a pending decision.
+  missing: number;
 };
 
 // Single source of truth for the failure-family counters, so the aggregate
@@ -23,7 +27,8 @@ export type FailureCounts = {
 //   - derivative : live-library assets stuck in derivative error,
 //   - scan       : open per-file scan failures,
 //   - import     : files that failed import, summed across every batch,
-//   - duplicates : recorded duplicate hits still awaiting triage.
+//   - duplicates : recorded duplicate hits still awaiting triage,
+//   - missing    : originals gone from disk, awaiting restore/purge triage.
 // Each family is guarded on its own so a table missing before migration yields
 // 0 for that family rather than zeroing (or 500-ing) the others.
 export async function failureCounts(): Promise<FailureCounts> {
@@ -32,6 +37,7 @@ export async function failureCounts(): Promise<FailureCounts> {
     scan: 0,
     import: 0,
     duplicates: 0,
+    missing: 0,
   };
   try {
     const r = await one<{ n: number }>(
@@ -64,6 +70,14 @@ export async function failureCounts(): Promise<FailureCounts> {
     counts.duplicates = Number(r?.n ?? 0);
   } catch {
     /* table absent before migration */
+  }
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT count(*) AS n FROM assets WHERE missing_at IS NOT NULL AND purged_at IS NULL",
+    );
+    counts.missing = Number(r?.n ?? 0);
+  } catch {
+    /* column absent before migration */
   }
   return counts;
 }

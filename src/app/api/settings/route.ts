@@ -17,6 +17,8 @@ const Body = z.object({
   // Cell size (metres): from 1 m (per-exact-coordinate, no dedup) up to 500 km.
   geocodePrecisionM: z.number().int().min(1).max(500_000).optional(),
   mlPerHour: z.number().int().min(0).max(1_000_000).optional(),
+  // Periodic re-scan interval (minutes, 0 = off) — capped at a week.
+  rescanMinutes: z.number().int().min(0).max(10_080).optional(),
 });
 
 export async function GET() {
