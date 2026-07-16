@@ -2124,6 +2124,44 @@
   }
 
   /* ---- Failures page ---------------------------------------------------- */
+  /* Sub-tabs that switch between failure families (Analyze / Scan / Import /
+     Deduplication). Wrap on narrow widths so the row never forces a page-wide
+     horizontal scroll. Visually echoes the pipeline-level tabs, one size down. */
+  .fail-tabs {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .fail-tab {
+    @apply inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius)]
+      border px-3 py-1.5 text-[13px] font-medium;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+    transition: border-color 0.15s var(--ease-out),
+      background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+  }
+  .fail-tab:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+  }
+  .fail-tab.active {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
+  }
+  .fail-tab-count {
+    @apply rounded-full px-1.5 py-0.5 text-[11px] leading-none;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .fail-tab.bad .fail-tab-count {
+    color: var(--color-reject);
+  }
+  .fail-tab.active .fail-tab-count {
+    background: color-mix(in srgb, var(--color-bg) 25%, transparent);
+    color: var(--color-bg);
+  }
   .fail-list {
     @apply grid gap-2;
   }
@@ -2160,8 +2198,13 @@
     font-family: var(--font-mono);
     color: var(--color-muted);
   }
+  /* overflow-wrap:anywhere (not break-word) so a long unbreakable token — a
+     path or URL inside the message — can break mid-string. Critically it also
+     shrinks the box's min-content width, so the row can't push the page past
+     the viewport and force a horizontal scroll. */
   .fail-err {
-    @apply mt-1.5 whitespace-pre-wrap break-words text-xs;
+    @apply mt-1.5 whitespace-pre-wrap text-xs;
+    overflow-wrap: anywhere;
     font-family: var(--font-mono);
     color: var(--color-reject);
   }
@@ -2174,7 +2217,8 @@
     @apply break-all text-[13px] font-medium;
   }
   .dup-sub {
-    @apply mt-0.5 break-words text-[11px];
+    @apply mt-0.5 text-[11px];
+    overflow-wrap: anywhere;
     font-family: var(--font-mono);
     color: var(--color-muted);
   }
@@ -2214,8 +2258,11 @@
     @apply grid gap-px;
     background: var(--color-border);
   }
+  /* flex-wrap so the action cluster ("Keep only this" + download/delete) drops
+     to the next line on narrow widths instead of pushing the row past the
+     viewport. dup-main keeps min-w-0 flex-1 so it shrinks first. */
   .dup-member {
-    @apply flex items-center gap-2.5 p-2.5;
+    @apply flex flex-wrap items-center gap-2.5 p-2.5;
     background: var(--color-surface);
   }
   .dup-member.selected {
