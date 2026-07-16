@@ -4,6 +4,7 @@
 //   - scan       : scan_failures table (per-file indexing failures)        [from now on]
 //   - import     : import_batches.result.errors of failed batches          [retroactive]
 import { many, one } from "@/lib/db";
+import { failureCounts } from "@/lib/failures";
 import { json, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -85,18 +86,21 @@ async function duplicateHits() {
 
 export async function GET() {
   try {
-    const [derivItems, derivCount, scanItems, scanCount, batches] =
+    // Counts come from the shared source of truth (lib/failures) so each tab
+    // matches the aggregate "Failures" badge exactly. The item lists below are
+    // capped previews of those same families.
+    const [counts, derivItems, scanItems, batches, duplicates] =
       await Promise.all([
+        failureCounts(),
         many(
+          // Scoped to the live library (deleted_at IS NULL) to match the count:
+          // a soft-deleted error asset is gone from every triage page.
           `SELECT id AS asset_id, filename, abs_path, media_type, session_id,
                   derivative_error AS error, updated_at
              FROM assets
-            WHERE derivative_status = 'error'
+            WHERE derivative_status = 'error' AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ${LIMIT}`,
-        ),
-        one<{ n: number }>(
-          "SELECT count(*) AS n FROM assets WHERE derivative_status = 'error'",
         ),
         many(
           `SELECT abs_path, root_id, error, attempts, updated_at
@@ -104,9 +108,6 @@ export async function GET() {
             WHERE resolved_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ${LIMIT}`,
-        ),
-        one<{ n: number }>(
-          "SELECT count(*) AS n FROM scan_failures WHERE resolved_at IS NULL",
         ),
         many<{
           id: number;
@@ -121,9 +122,11 @@ export async function GET() {
             ORDER BY created_at DESC
             LIMIT 50`,
         ),
+        duplicateHits(),
       ]);
 
-    // Flattens the per-file errors of the failed import batches.
+    // Flattens the per-file errors of the failed import batches (preview only —
+    // the tab count is the true total from failureCounts, across every batch).
     const importItems: Array<{
       batch_id: number;
       origin: string | null;
@@ -131,9 +134,7 @@ export async function GET() {
       error: string;
       created_at: string;
     }> = [];
-    let importCount = 0;
     for (const b of batches) {
-      importCount += b.failed;
       for (const e of b.result?.errors ?? []) {
         if (importItems.length >= LIMIT) break;
         importItems.push({
@@ -147,10 +148,10 @@ export async function GET() {
     }
 
     return json({
-      derivative: { count: derivCount?.n ?? 0, items: derivItems },
-      scan: { count: scanCount?.n ?? 0, items: scanItems },
-      import: { count: importCount, items: importItems },
-      duplicates: await duplicateHits(),
+      derivative: { count: counts.derivative, items: derivItems },
+      scan: { count: counts.scan, items: scanItems },
+      import: { count: counts.import, items: importItems },
+      duplicates,
     });
   } catch (err) {
     return serverError(err);
