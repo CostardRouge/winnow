@@ -68,6 +68,16 @@ type Failures = {
 type Kind = "derivative" | "scan" | "import";
 type Scope = { ids?: number[]; paths?: string[] };
 
+// The failure families, one per tab. "derivative" doubles as the default tab.
+type Family = "derivative" | "scan" | "import" | "duplicates";
+const FAMILY_ORDER: Family[] = ["derivative", "scan", "import", "duplicates"];
+const FAMILY_LABELS: Record<Family, string> = {
+  derivative: "Analyze",
+  scan: "Scan",
+  import: "Import",
+  duplicates: "Deduplication",
+};
+
 type RowData<K extends string | number> = {
   key: K;
   title: string;
@@ -87,6 +97,10 @@ export default function FailuresPage() {
   // single button spins while the rest are disabled to prevent double-submits.
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string>("");
+  // Which failure family is shown. Null until the first load lands, so the
+  // initial tab can default to the first family that actually has failures
+  // (without overriding a tab the user has since picked, nor resetting on polls).
+  const [tab, setTab] = useState<Family | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -152,18 +166,58 @@ export default function FailuresPage() {
     badge: `${it.attempts}×`,
   }));
 
+  const counts: Record<Family, number> = {
+    derivative: data?.derivative.count ?? 0,
+    scan: data?.scan.count ?? 0,
+    import: data?.import.count ?? 0,
+    duplicates: data?.duplicates.count ?? 0,
+  };
+
+  // On the first successful load, land on the first family that actually has
+  // failures (falling back to Analyze). Runs only while no tab is chosen, so it
+  // neither fights the user's clicks nor re-picks on every 5 s poll.
+  useEffect(() => {
+    if (tab !== null || !data) return;
+    setTab(FAMILY_ORDER.find((k) => counts[k] > 0) ?? "derivative");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, tab]);
+  const activeTab: Family = tab ?? "derivative";
+
   return (
     <PullToRefresh className="pl-section" onRefresh={load}>
       <div className="filterbar">
         <span className="hint">
-          Everything that failed (scan · analyze · import), in one place. Fix the
-          cause, then retry per item, by selection, or by family.
+          Everything that failed (scan · analyze · import · deduplication), in
+          one place. Pick a family below, fix the cause, then retry per item, by
+          selection, or by family.
         </span>
         <span className="spacer" />
         <button className="btn btn-sm" onClick={load}>
           Refresh
         </button>
       </div>
+
+      <nav className="fail-tabs" aria-label="Failure families">
+        {FAMILY_ORDER.map((k) => {
+          const isActive = activeTab === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              className={`fail-tab${isActive ? " active" : ""}${
+                counts[k] > 0 ? " bad" : ""
+              }`}
+              aria-current={isActive ? "true" : undefined}
+              onClick={() => setTab(k)}
+            >
+              <span>{FAMILY_LABELS[k]}</span>
+              <span className="fail-tab-count">
+                {counts[k].toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {error && (
         <div className="error-box">
@@ -175,55 +229,63 @@ export default function FailuresPage() {
       )}
       {msg && <p className="hint">{msg}</p>}
 
-      <RetrySection<number>
-        title="Analyze (derivatives)"
-        hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
-        count={data?.derivative.count ?? 0}
-        rows={derivRows}
-        retryAllLabel="Retry all"
-        prefix="derivative"
-        busy={busy}
-        onRetry={onRetryDeriv}
-      />
+      {activeTab === "derivative" && (
+        <RetrySection<number>
+          title="Analyze (derivatives)"
+          hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
+          count={counts.derivative}
+          rows={derivRows}
+          retryAllLabel="Retry all"
+          prefix="derivative"
+          busy={busy}
+          onRetry={onRetryDeriv}
+        />
+      )}
 
-      <RetrySection<string>
-        title="Scan (indexing)"
-        hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the affected roots."
-        count={data?.scan.count ?? 0}
-        rows={scanRows}
-        retryAllLabel="Retry all"
-        prefix="scan"
-        busy={busy}
-        onRetry={onRetryScan}
-      />
+      {activeTab === "scan" && (
+        <RetrySection<string>
+          title="Scan (indexing)"
+          hint="Files that couldn’t be indexed (unreadable, corrupt, metadata error). Retry re-scans the affected roots."
+          count={counts.scan}
+          rows={scanRows}
+          retryAllLabel="Retry all"
+          prefix="scan"
+          busy={busy}
+          onRetry={onRetryScan}
+        />
+      )}
 
-      <Section
-        title="Import"
-        hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them (whole quarantine)."
-        count={data?.import.count ?? 0}
-        onRetry={() => doRetry("import", {}, "import:all")}
-        busy={busy === "import:all"}
-        disabled={busy !== null}
-        retryLabel="Retry quarantine"
-      >
-        {(data?.import.items ?? []).map((it, i) => (
-          <FailRow
-            key={`i${it.batch_id}-${i}`}
-            title={it.file}
-            error={it.error}
-            when={it.created_at}
-            badge={it.origin ?? undefined}
-          />
-        ))}
-      </Section>
+      {activeTab === "import" && (
+        <Section
+          title="Import"
+          hint="Files that failed verification/filing. Failed files are quarantined in the inbox’s .failed/ folder; retry re-imports them (whole quarantine)."
+          count={counts.import}
+          onRetry={() => doRetry("import", {}, "import:all")}
+          busy={busy === "import:all"}
+          disabled={busy !== null}
+          retryLabel="Retry quarantine"
+        >
+          {(data?.import.items ?? []).map((it, i) => (
+            <FailRow
+              key={`i${it.batch_id}-${i}`}
+              title={it.file}
+              error={it.error}
+              when={it.created_at}
+              badge={it.origin ?? undefined}
+            />
+          ))}
+        </Section>
+      )}
 
-      <DedupSection
-        count={data?.duplicates.count ?? 0}
-        falseCollisions={data?.duplicates.falseCollisions ?? 0}
-        items={data?.duplicates.items ?? []}
-        onChanged={load}
-        setMsg={setMsg}
-      />
+      {activeTab === "duplicates" && (
+        <DedupSection
+          count={counts.duplicates}
+          falseCollisions={data?.duplicates.falseCollisions ?? 0}
+          items={data?.duplicates.items ?? []}
+          onChanged={load}
+          setMsg={setMsg}
+        />
+      )}
     </PullToRefresh>
   );
 }
