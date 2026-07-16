@@ -8,6 +8,7 @@ import { sessionDownloadFiles } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
+import ExportSessionModal from "./sessions/ExportSessionModal";
 import SessionActions from "./sessions/SessionActions";
 import SessionProgress from "./sessions/SessionProgress";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
@@ -51,6 +52,8 @@ type SessionRow = {
   skip_count: number;
   unrated_count: number;
   last_reviewed_at: string | null;
+  raw_jpeg_pairs: number;
+  live_photo_pairs: number;
   sample_assets: SampleAsset[];
 };
 
@@ -157,6 +160,8 @@ export default function SessionsPane({
   const [error, setError] = useState<string | null>(null);
   // Session pending a delete confirmation (opens the modal); transient toast.
   const [confirming, setConfirming] = useState<SessionRow | null>(null);
+  // Session whose export modal is open.
+  const [exporting, setExporting] = useState<SessionRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -202,36 +207,13 @@ export default function SessionsPane({
     await load();
   }
 
-  async function exportPicks(s: SessionRow) {
-    const name = prompt(
-      "Export name (RAW copy of picks to the C1 export folder):",
-      `${s.name}-picks`,
-    );
-    if (!name) return;
-    const r = await fetch("/api/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        target: "capture_one",
-        filter: { session_id: s.id, verdict: "pick" },
-      }),
-    });
-    const data = await r.json();
-    alert(
-      data.export_job_id
-        ? `Export #${data.export_job_id} queued. Run the worker to copy the RAW files.`
-        : `Error: ${data.error ?? "unknown"}`,
-    );
-  }
-
   function sessionActions(s: SessionRow) {
     return (
       <SessionActions
         ignored={s.ignored}
         canExport={s.pick_count > 0}
         onIgnore={() => toggleIgnore(s)}
-        onExportPicks={() => exportPicks(s)}
+        onExportPicks={() => setExporting(s)}
         onDelete={() => setConfirming(s)}
         download={{
           zipHref: `/api/sessions/${s.id}/download`,
@@ -364,6 +346,18 @@ export default function SessionsPane({
           onConfirm={async (withFiles) => {
             await deleteSession(confirming, withFiles);
             setConfirming(null);
+          }}
+        />
+      )}
+
+      {exporting && (
+        <ExportSessionModal
+          session={exporting}
+          onClose={() => setExporting(null)}
+          onSubmitted={(msg) => {
+            setExporting(null);
+            setNotice(msg);
+            void load();
           }}
         />
       )}

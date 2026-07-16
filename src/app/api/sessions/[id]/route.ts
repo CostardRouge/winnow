@@ -59,7 +59,11 @@ export async function GET(
            WHEN COALESCE(d.live, 0) = 0     THEN 'empty'
            WHEN COALESCE(d.unrated, 0) = 0  THEN 'done'
            ELSE 'to_sort'
-         END AS status
+         END AS status,
+         -- Companion pairs present in the session (drives the export modal's
+         -- RAW+JPEG / Live Photo options).
+         COALESCE(g.raw_jpeg_pairs, 0)   AS raw_jpeg_pairs,
+         COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (
@@ -78,6 +82,13 @@ export async function GET(
          WHERE a.deleted_at IS NULL
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
+       LEFT JOIN (
+         SELECT session_id,
+                count(*) FILTER (WHERE kind = 'raw_jpeg')   AS raw_jpeg_pairs,
+                count(*) FILTER (WHERE kind = 'live_photo')  AS live_photo_pairs
+         FROM asset_groups
+         GROUP BY session_id
+       ) g ON g.session_id = s.id
        WHERE s.id = $1`,
       [sessionId],
     );

@@ -18,6 +18,7 @@ import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
+import ExportSessionModal from "@/app/sessions/ExportSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
 import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
@@ -109,6 +110,8 @@ type SessionInfo = {
   reject_count: number | string;
   skip_count: number | string;
   unrated_count: number | string;
+  raw_jpeg_pairs: number | string;
+  live_photo_pairs: number | string;
 };
 
 const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
@@ -151,6 +154,7 @@ export default function SessionGrid({
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [exporting, setExporting] = useState(false);
   // Bulk selection (mirrors the library grid): a toggleable select mode plus the
   // chosen ids. Tapping a cell toggles instead of opening the viewer while on.
   const [selectMode, setSelectMode] = useState(false);
@@ -405,32 +409,8 @@ export default function SessionGrid({
     void loadSession();
   }, [session, loadSession]);
 
-  const exportPicks = useCallback(async () => {
-    if (!session) return;
-    const name = prompt(
-      "Export name (RAW copy of picks to the C1 export folder):",
-      `${session.name}-picks`,
-    );
-    if (!name) return;
-    try {
-      const r = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          target: "capture_one",
-          filter: { session_id: session.id, verdict: "pick" },
-        }),
-      });
-      const data = await r.json();
-      setNotice(
-        data.export_job_id
-          ? `Export #${data.export_job_id} queued`
-          : `Error: ${data.error ?? "unknown"}`,
-      );
-    } catch (e) {
-      setNotice((e as Error).message);
-    }
+  const exportPicks = useCallback(() => {
+    if (session) setExporting(true);
   }, [session]);
 
   const deleteSession = useCallback(
@@ -697,6 +677,26 @@ export default function SessionGrid({
           onConfirm={async (withFiles) => {
             await deleteSession(withFiles);
             setConfirming(false);
+          }}
+        />
+      )}
+
+      {exporting && session && (
+        <ExportSessionModal
+          session={{
+            id: session.id,
+            name: session.name,
+            pick_count: Number(session.pick_count),
+            reject_count: Number(session.reject_count),
+            unrated_count: Number(session.unrated_count),
+            raw_jpeg_pairs: Number(session.raw_jpeg_pairs),
+            live_photo_pairs: Number(session.live_photo_pairs),
+          }}
+          onClose={() => setExporting(false)}
+          onSubmitted={(msg) => {
+            setExporting(false);
+            setNotice(msg);
+            void loadSession();
           }}
         />
       )}

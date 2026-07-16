@@ -134,6 +134,10 @@ export async function GET(req: NextRequest) {
            ELSE 'to_sort'
          END                    AS status,
          d.last_reviewed        AS last_reviewed_at,
+         -- Companion pairs present in the session (drives which export options the
+         -- modal offers): RAW+JPEG (Sony .ARW+.HIF …) and iPhone Live Photos.
+         COALESCE(g.raw_jpeg_pairs, 0)  AS raw_jpeg_pairs,
+         COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs,
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
@@ -158,6 +162,15 @@ export async function GET(req: NextRequest) {
          WHERE a.deleted_at IS NULL
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
+       -- Companion-pair tallies per session, so the export modal can show the
+       -- RAW+JPEG / Live Photo options only when the session actually has them.
+       LEFT JOIN (
+         SELECT session_id,
+                count(*) FILTER (WHERE kind = 'raw_jpeg')   AS raw_jpeg_pairs,
+                count(*) FILTER (WHERE kind = 'live_photo')  AS live_photo_pairs
+         FROM asset_groups
+         GROUP BY session_id
+       ) g ON g.session_id = s.id
        -- A handful of ready thumbnails (earliest first) to preview the session,
        -- carrying each file's extension + media type so the strip can badge them.
        LEFT JOIN LATERAL (

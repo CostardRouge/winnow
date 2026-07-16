@@ -26,14 +26,30 @@ export async function POST(req: NextRequest) {
     // covers RAW+JPEG pairs (the JPEG next to the RAW keeper); `include_live_video`
     // covers iPhone Live Photos (the .mov motion next to the still keeper).
     const settings = await getSettings();
-    const includeJpeg =
-      typeof params.include_jpeg === "boolean"
-        ? params.include_jpeg
-        : settings.exportIncludeJpeg;
     const includeLiveVideo =
       typeof params.include_live_video === "boolean"
         ? params.include_live_video
         : settings.exportIncludeLiveVideo;
+
+    // RAW+JPEG pairs (Sony .ARW + .HIF, DJI .DNG + .JPG) support three policies:
+    // keep the RAW keeper only ('raw'), the direct JPEG/HIF only ('jpeg'), or
+    // both ('both'). An explicit `raw_jpeg_mode` wins; otherwise fall back to the
+    // legacy `include_jpeg` flag (true → both) or the persisted preference. We
+    // keep `include_jpeg` in the stored params in sync so older readers stay
+    // coherent (it means "the direct file travels too").
+    const rawJpegMode: "raw" | "both" | "jpeg" =
+      params.raw_jpeg_mode === "raw" ||
+      params.raw_jpeg_mode === "both" ||
+      params.raw_jpeg_mode === "jpeg"
+        ? params.raw_jpeg_mode
+        : (
+              typeof params.include_jpeg === "boolean"
+                ? params.include_jpeg
+                : settings.exportIncludeJpeg
+            )
+          ? "both"
+          : "raw";
+    const includeJpeg = rawJpegMode !== "raw";
 
     const job = await one<{ id: number }>(
       `INSERT INTO export_jobs (name, target, filter_query, params, status)
@@ -44,6 +60,7 @@ export async function POST(req: NextRequest) {
         JSON.stringify(filter),
         JSON.stringify({
           ...params,
+          raw_jpeg_mode: rawJpegMode,
           include_jpeg: includeJpeg,
           include_live_video: includeLiveVideo,
         }),
