@@ -88,7 +88,7 @@ export default function StatsStrip() {
         aria-label="Pipeline counters"
       >
         <span className="stats-summary-value">{compact(a?.total ?? 0)}</span>
-        <span className="stats-summary-label">media</span>
+        <span className="stats-summary-label max-sm:hidden">media</span>
         {fails > 0 && <span className="stats-summary-dot" aria-hidden />}
         <span className="stats-caret" aria-hidden>
           ▾
