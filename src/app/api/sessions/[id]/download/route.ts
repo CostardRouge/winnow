@@ -45,10 +45,23 @@ export async function GET(
       [sessionId],
     );
 
+    // Video sidecars (Sony XML/THM, DJI drone .SRT) ride along with their clip:
+    // a whole-session ZIP that dropped them would lose the drone flight logs and
+    // the camera metadata companions. Pull every sidecar tied to a live asset of
+    // this session and zip it next to its clip (cf. lib/sidecars.ts, export.ts).
+    const sidecarRows = await many<{ abs_path: string; filename: string }>(
+      `SELECT sc.abs_path, sc.filename
+         FROM asset_sidecars sc
+         JOIN assets a ON a.id = sc.asset_id
+        WHERE a.session_id = $1 AND a.deleted_at IS NULL
+        ORDER BY sc.filename, sc.id`,
+      [sessionId],
+    );
+
     const seen = new Map<string, number>();
     const entries: ZipEntry[] = [];
 
-    for (const r of rows) {
+    for (const r of [...rows, ...sidecarRows]) {
       const abs = path.resolve(r.abs_path);
       let mtime: Date | undefined;
       try {

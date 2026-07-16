@@ -21,6 +21,8 @@ export type GalleryAsset = {
   companion_ext?: string | null;
   companion_media_type?: "photo" | "video" | null;
   group_kind?: "raw_jpeg" | "live_photo" | null;
+  // A DJI drone flight-log .SRT rides with this clip → show a telemetry badge.
+  has_telemetry?: boolean;
 };
 
 const TARGET = 175; // target cell width (px)
@@ -127,6 +129,11 @@ export default function VirtualGrid({
               )}
               {a.media_type === "video" && a.derivative_status === "ready" && (
                 <span className="play-badge">▶</span>
+              )}
+              {a.has_telemetry && (
+                <span className="telemetry-badge" title="Flight telemetry (SRT)">
+                  🛰
+                </span>
               )}
               {a.verdict !== "unrated" && (
                 <span className="badge">

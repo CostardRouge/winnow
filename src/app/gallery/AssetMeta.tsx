@@ -7,6 +7,7 @@ import {
   formatDimensions,
   formatDuration,
 } from "@/lib/format";
+import type { SidecarBrief } from "@/lib/types";
 
 // Read-only metadata panel shown inside the full-screen viewer (gallery +
 // session grids). Every asset row returned by the API is `assets.*`, so all
@@ -45,7 +46,44 @@ export type AssetMetaInput = {
   derivative_status?: string;
   rel_path?: string | null;
   sidecar_count?: number | null;
+  // Video sidecars tied to this clip (Sony XML/THM metadata, DJI .SRT flight
+  // log). Surfaced as one or two rows with per-file download links; the .SRT is
+  // labelled "Telemetry". Falls back to `sidecar_count` when the list is absent.
+  sidecars?: SidecarBrief[] | null;
 };
+
+// A compact summary of the parsed flight-log figures ("↑ 120 m · 900 pts"), or
+// null when nothing was parsed. Peak altitude across the .srt(s) + total samples.
+function telemetryFacts(items: SidecarBrief[]): string | null {
+  let alt: number | null = null;
+  let samples = 0;
+  for (const s of items) {
+    if (s.maxAltitude != null && (alt == null || s.maxAltitude > alt))
+      alt = s.maxAltitude;
+    if (s.sampleCount != null) samples += s.sampleCount;
+  }
+  const parts: string[] = [];
+  if (alt != null) parts.push(`↑ ${Math.round(alt)} m`);
+  if (samples > 0) parts.push(`${samples} pts`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+// A comma-separated run of sidecar filenames, each a download link to its own
+// endpoint. Keyed so React is happy inside a `<dd>`.
+function sidecarLinks(items: SidecarBrief[]): React.ReactNode {
+  return items.map((s, i) => (
+    <span key={s.id}>
+      {i > 0 ? " · " : ""}
+      <a
+        className="asset-meta-link"
+        href={`/api/sidecars/${s.id}/download`}
+        download
+      >
+        {s.filename}
+      </a>
+    </span>
+  ));
+}
 
 // Join the resolved place into one line, finest → coarsest ("Tour Eiffel · Paris
 // · France"), de-duplicating repeats (a city that equals its département).
@@ -134,9 +172,28 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
     rows.push(["Sharpness", String(Math.round(asset.sharpness))]);
   if (asset.derivative_status)
     rows.push(["Derivative", asset.derivative_status]);
-  const sidecars = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;
-  if (sidecars > 0)
-    rows.push(["Sidecar", sidecars === 1 ? "1 file" : `${sidecars} files`]);
+  // Sidecars: prefer the detailed list (download links, .SRT split out as
+  // "Telemetry"); fall back to the bare count when only that is available.
+  const sidecarList = asset.sidecars ?? [];
+  if (sidecarList.length > 0) {
+    const srt = sidecarList.filter((s) => s.kind === "srt");
+    const other = sidecarList.filter((s) => s.kind !== "srt");
+    if (srt.length > 0) {
+      // Surface the parsed flight-log figures next to the download link.
+      const facts = telemetryFacts(srt);
+      rows.push([
+        "Telemetry",
+        <span key="tel">
+          {sidecarLinks(srt)}
+          {facts && <span className="asset-meta-dim"> · {facts}</span>}
+        </span>,
+      ]);
+    }
+    if (other.length > 0) rows.push(["Sidecar", sidecarLinks(other)]);
+  } else {
+    const n = asset.sidecar_count != null ? Number(asset.sidecar_count) : 0;
+    if (n > 0) rows.push(["Sidecar", n === 1 ? "1 file" : `${n} files`]);
+  }
   if (asset.rel_path) rows.push(["File", asset.rel_path]);
 
   if (!rows.length) return null;

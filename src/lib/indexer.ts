@@ -230,12 +230,22 @@ export async function indexRoot(
         await enqueueGeocode(existing.id);
       }
       if (cls.mediaType === "video") {
-        res.sidecars += await recordSidecars({
+        const sc = await recordSidecars({
           assetId: existing.id,
           absPath,
           rootPath: root.path,
           dirCache,
         });
+        res.sidecars += sc.recorded;
+        // Drone clips often carry no EXIF GPS; inherit the .SRT flight log's fix
+        // when the file itself gave none, then geocode it like any other point.
+        if (!meta.gps && sc.gps) {
+          await q("UPDATE assets SET gps = $1 WHERE id = $2 AND gps IS NULL", [
+            JSON.stringify(sc.gps),
+            existing.id,
+          ]);
+          if (config.geocode.enabled) await enqueueGeocode(existing.id);
+        }
       }
       continue;
     }
@@ -333,12 +343,22 @@ export async function indexRoot(
       await enqueueGeocode(inserted.id);
     }
     if (cls.mediaType === "video") {
-      res.sidecars += await recordSidecars({
+      const sc = await recordSidecars({
         assetId: inserted.id,
         absPath,
         rootPath: root.path,
         dirCache,
       });
+      res.sidecars += sc.recorded;
+      // Drone clips often carry no EXIF GPS; inherit the .SRT flight log's fix
+      // when the file itself gave none, then geocode it like any other point.
+      if (!meta.gps && sc.gps) {
+        await q("UPDATE assets SET gps = $1 WHERE id = $2 AND gps IS NULL", [
+          JSON.stringify(sc.gps),
+          inserted.id,
+        ]);
+        if (config.geocode.enabled) await enqueueGeocode(inserted.id);
+      }
     }
     } catch (err) {
       res.failed++;

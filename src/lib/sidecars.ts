@@ -16,8 +16,9 @@
 //                    <base>.THM
 //                    <base>.SRT      (DJI flight-log subtitles)
 import path from "node:path";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { q } from "./db";
+import { parseDjiSrt, type SrtTelemetry } from "./srt";
 
 export type SidecarKind = "xml" | "thm" | "srt";
 
@@ -109,24 +110,45 @@ async function siblingNames(
   return names;
 }
 
+export type RecordSidecarsResult = {
+  // How many sidecars are now tied to the asset.
+  recorded: number;
+  // The representative GPS fix parsed from a DJI .SRT flight log, if any — the
+  // indexer uses it to backfill the clip's location when the MP4 has no EXIF GPS.
+  gps: { lat: number; lon: number } | null;
+};
+
+// Parse a .SRT flight log's telemetry, best-effort. A read/parse failure yields
+// null — the sidecar is still recorded as an opaque companion.
+async function readSrtTelemetry(abs: string): Promise<SrtTelemetry | null> {
+  try {
+    const text = await readFile(abs, "utf8");
+    return parseDjiSrt(text);
+  } catch {
+    return null;
+  }
+}
+
 // Detect and (idempotently) record the sidecars of a freshly indexed VIDEO
-// asset. Returns how many sidecars are tied to it. Keyed on the sidecar's
-// abs_path so re-indexing the same clip never duplicates rows; a renamed/moved
-// sidecar updates in place. Never throws into the indexer — a sidecar is a
-// nicety, never a reason to fail a media file's indexing.
+// asset. Returns the count plus any GPS fix parsed from a DJI .SRT (for the
+// indexer's location backfill). Keyed on the sidecar's abs_path so re-indexing
+// the same clip never duplicates rows; a renamed/moved sidecar updates in place.
+// Never throws into the indexer — a sidecar is a nicety, never a reason to fail
+// a media file's indexing.
 export async function recordSidecars(opts: {
   assetId: number;
   absPath: string;
   rootPath: string;
   dirCache?: Map<string, string[]>;
-}): Promise<number> {
+}): Promise<RecordSidecarsResult> {
   const { assetId, absPath, rootPath, dirCache } = opts;
   const dir = path.dirname(absPath);
   const siblings = await siblingNames(dir, dirCache);
-  if (!siblings) return 0;
+  if (!siblings) return { recorded: 0, gps: null };
 
   const matches = findSidecars(path.basename(absPath), siblings);
   let recorded = 0;
+  let gps: { lat: number; lon: number } | null = null;
   for (const m of matches) {
     const abs = path.join(dir, m.filename);
     let size: number | null = null;
@@ -135,20 +157,40 @@ export async function recordSidecars(opts: {
     } catch {
       /* removed between the listing and now: record with a null size */
     }
+    // DJI flight log: parse GPS/altitude/sample-count off the .SRT so the viewer
+    // can show it and the clip can inherit the drone's location.
+    const tel = m.kind === "srt" ? await readSrtTelemetry(abs) : null;
+    if (tel && tel.gpsLat != null && tel.gpsLon != null && !gps)
+      gps = { lat: tel.gpsLat, lon: tel.gpsLon };
     try {
       await q(
-        `INSERT INTO asset_sidecars (asset_id, abs_path, rel_path, filename, kind, file_size)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO asset_sidecars
+           (asset_id, abs_path, rel_path, filename, kind, file_size,
+            gps_lat, gps_lon, max_altitude, sample_count)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (abs_path) DO UPDATE SET
            asset_id = EXCLUDED.asset_id, rel_path = EXCLUDED.rel_path,
            filename = EXCLUDED.filename, kind = EXCLUDED.kind,
-           file_size = EXCLUDED.file_size, updated_at = now()`,
-        [assetId, abs, path.relative(rootPath, abs), m.filename, m.kind, size],
+           file_size = EXCLUDED.file_size, gps_lat = EXCLUDED.gps_lat,
+           gps_lon = EXCLUDED.gps_lon, max_altitude = EXCLUDED.max_altitude,
+           sample_count = EXCLUDED.sample_count, updated_at = now()`,
+        [
+          assetId,
+          abs,
+          path.relative(rootPath, abs),
+          m.filename,
+          m.kind,
+          size,
+          tel?.gpsLat ?? null,
+          tel?.gpsLon ?? null,
+          tel?.maxAltitude ?? null,
+          tel?.sampleCount ?? null,
+        ],
       );
       recorded++;
     } catch (err) {
       console.warn(`Unable to record sidecar ${abs}:`, (err as Error).message);
     }
   }
-  return recorded;
+  return { recorded, gps };
 }
