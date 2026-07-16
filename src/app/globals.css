@@ -1670,8 +1670,12 @@
   .gallery-main {
     @apply relative flex min-w-0 flex-1 flex-col p-1.5;
   }
+  /* Shows/hides .gallery-aside. Visible at every width: on phones it opens
+     the slide-in drawer (see the max-width:760px block); on desktop it
+     collapses the always-there sidebar for a distraction-free grid/calendar,
+     see the min-width:761px block below for the ".closed" behaviour. */
   .gallery-filter-toggle {
-    @apply hidden;
+    @apply inline-flex;
   }
   /* Active-filters pill: shown in the toolbar whenever filters narrow the
      library, so a reduced view is never mistaken for the whole thing. The body
@@ -2732,10 +2736,17 @@
      overrides here. */
 }
 
-@media (max-width: 760px) {
-  .gallery-filter-toggle {
-    display: inline-flex;
+/* Desktop counterpart of the mobile drawer below: the sidebar is a normal,
+   always-visible flex child (see the base .gallery-aside rule), so collapsing
+   it just needs to drop it from layout — no slide/backdrop, since there's no
+   content underneath to protect from an overlay. */
+@media (min-width: 761px) {
+  .gallery-aside.closed {
+    display: none;
   }
+}
+
+@media (max-width: 760px) {
   /* Tight toolbar: the active-filters pill keeps only the funnel + count + ×. */
   .filters-chip-text {
     display: none;

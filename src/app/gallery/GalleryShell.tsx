@@ -314,6 +314,13 @@ export default function GalleryShell({
     localStorage.setItem(GRID_SIZE_KEY, String(gridSize));
   }, [gridSize]);
 
+  // The aside starts closed (SSR-safe default, and the right call on phones).
+  // On desktop it should start open — checked client-side, once, to avoid SSR
+  // drift, same as the grid density above.
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 761px)").matches) setPanelOpen(true);
+  }, []);
+
   // Mirror filter changes back to the host (which writes them to the URL). Skip
   // the first run so we don't immediately rewrite the URL we just seeded from.
   const firstFilterSync = useRef(true);
@@ -657,7 +664,7 @@ export default function GalleryShell({
   // The shared Filters/Browse aside, available to every filter-aware view
   // (the built-in Grid/Map and any injected view such as Sessions).
   const renderAside = () => (
-    <aside className={`gallery-aside${panelOpen ? " open" : ""}`}>
+    <aside className={`gallery-aside${panelOpen ? " open" : " closed"}`}>
       <div className="aside-head">
         <div className="view-toggle" role="group" aria-label="Panel section">
           <button
