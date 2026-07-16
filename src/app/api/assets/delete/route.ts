@@ -48,16 +48,28 @@ export async function POST(req: NextRequest) {
     } else {
       // Filter-driven: scope to the live library when deleting, to the trash
       // when restoring, so a "delete all rejects" / "restore all" is one call.
+      //
+      // Group-aware, exactly like the ids path above: match LOGICAL media
+      // (collapse companions out of the selection) then cascade to each group's
+      // companion. This keeps a pair trashed/restored as one — and, crucially,
+      // stops a verdict filter from catching a companion by accident: a RAW
+      // companion carries no rating of its own, so `verdict=unrated` would
+      // otherwise sweep up the RAW of a *picked* pair. Collapsing first excludes
+      // it; the cascade only re-adds companions of the media that actually
+      // matched.
       const { conditions, params } = buildFilter(filter!, 1, {
         deleted: restore ? "trash" : "exclude",
+        collapseGroups: true,
       });
       res = await q(
-        `UPDATE assets SET ${setClause}
-          WHERE id IN (
-            SELECT a.id FROM assets a
-            LEFT JOIN ratings r ON r.asset_id = a.id
-            WHERE ${conditions.join(" AND ")}
-          )`,
+        `WITH seed AS (
+           SELECT a.id FROM assets a
+           LEFT JOIN ratings r ON r.asset_id = a.id
+           WHERE ${conditions.join(" AND ")}
+         ),
+         ${groupExpandCTE("(SELECT COALESCE(array_agg(id), '{}') FROM seed)")}
+         UPDATE assets SET ${setClause}
+          WHERE id IN (SELECT id FROM target_ids)${restore ? " AND purged_at IS NULL" : ""}`,
         params,
       );
     }

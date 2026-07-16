@@ -798,6 +798,17 @@
     border-color: var(--color-border-strong);
     font-weight: 600;
   }
+  /* Export status: live "exporting…" (accent) vs persistent "exported ×N". */
+  .pill.exporting {
+    color: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+    background: var(--color-accent-wash);
+  }
+  .pill.exported {
+    color: var(--color-pick);
+    border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
+  }
 
   /* ---- Media strip: a responsive row of derivative tiles --------------- */
   /* Shared by the exports cards and the incoming sessions list (the ThumbStrip
@@ -2883,6 +2894,17 @@
   }
   .modal-actions {
     @apply mt-5 flex justify-end gap-2;
+  }
+  /* Checkbox rows in the export modal (ignore / trash cleanup, Live Photo). */
+  .export-check {
+    @apply mt-2.5 flex cursor-pointer items-start gap-2.5;
+  }
+  .export-check input {
+    @apply mt-0.5 shrink-0;
+    accent-color: var(--color-accent);
+  }
+  .export-check.is-disabled {
+    @apply cursor-not-allowed opacity-50;
   }
 
   /* Type selector (radio cards) */

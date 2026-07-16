@@ -50,9 +50,16 @@ export async function GET(req: NextRequest) {
     // "Done" sessions are NOT hidden here: completeness visibility is the job of
     // the `progress` filter below (All / "to sort" / Done), so the two never
     // disagree.
+    // A session with an export still queued/running stays visible even once
+    // ignored, so a long export isn't hidden mid-flight; it drops out on the next
+    // poll after the job finishes.
     const showIgnored = sp.get("show_ignored") === "true";
     params.push(showIgnored);
-    clauses.push(`(s.ignored = false OR $${params.length})`);
+    clauses.push(
+      `(s.ignored = false OR $${params.length}
+        OR EXISTS (SELECT 1 FROM export_jobs j
+                    WHERE j.session_id = s.id AND j.status IN ('queued','running')))`,
+    );
 
     // Triage-progress filter, expressed against the counters in the `d`
     // subquery below (LEFT JOIN → COALESCE the NULLs of an empty session to 0).
@@ -134,6 +141,15 @@ export async function GET(req: NextRequest) {
            ELSE 'to_sort'
          END                    AS status,
          d.last_reviewed        AS last_reviewed_at,
+         -- Companion pairs present in the session (drives which export options the
+         -- modal offers): RAW+JPEG (Sony .ARW+.HIF …) and iPhone Live Photos.
+         COALESCE(g.raw_jpeg_pairs, 0)  AS raw_jpeg_pairs,
+         COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs,
+         -- Live export status: an in-flight job (queued/running) for this session.
+         -- export_count / last_exported_at ride along via s.* (persistent history).
+         EXISTS (SELECT 1 FROM export_jobs j
+                  WHERE j.session_id = s.id
+                    AND j.status IN ('queued','running')) AS exporting,
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
@@ -158,6 +174,15 @@ export async function GET(req: NextRequest) {
          WHERE a.deleted_at IS NULL
          GROUP BY a.session_id
        ) d ON d.session_id = s.id
+       -- Companion-pair tallies per session, so the export modal can show the
+       -- RAW+JPEG / Live Photo options only when the session actually has them.
+       LEFT JOIN (
+         SELECT session_id,
+                count(*) FILTER (WHERE kind = 'raw_jpeg')   AS raw_jpeg_pairs,
+                count(*) FILTER (WHERE kind = 'live_photo')  AS live_photo_pairs
+         FROM asset_groups
+         GROUP BY session_id
+       ) g ON g.session_id = s.id
        -- A handful of ready thumbnails (earliest first) to preview the session,
        -- carrying each file's extension + media type so the strip can badge them.
        LEFT JOIN LATERAL (

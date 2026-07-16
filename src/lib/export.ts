@@ -41,6 +41,7 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     target: string;
     filter_query: unknown;
     params: Record<string, unknown>;
+    session_id: number | null;
   }>("SELECT * FROM export_jobs WHERE id = $1", [exportJobId]);
   if (!job) throw new Error(`export_job not found: ${exportJobId}`);
 
@@ -58,14 +59,22 @@ export async function runExportJob(exportJobId: number): Promise<void> {
 
     // Pairing: the picks selected in the (collapsed) gallery are the primaries,
     // but which file is the keeper depends on the group kind (cf. lib/pairing.ts):
-    //   raw_jpeg   → keeper is the RAW companion; the JPEG primary tags along
-    //                only when include_jpeg is set.
+    //   raw_jpeg   → `raw_jpeg_mode` chooses which files travel: the RAW keeper
+    //                only ('raw'), the direct JPEG/HIF only ('jpeg'), or both.
     //   live_photo → keeper is the still primary; the .mov companion (the motion)
     //                tags along only when include_live_video is set.
-    // Standalone (unpaired) matches export as-is.
-    const includeJpeg = job.params?.include_jpeg === true;
+    // Standalone (unpaired) matches export as-is. Legacy jobs stored only a
+    // boolean include_jpeg (true → both, false → raw), so fall back to it.
+    const rawJpegMode: "raw" | "both" | "jpeg" =
+      job.params?.raw_jpeg_mode === "raw" ||
+      job.params?.raw_jpeg_mode === "both" ||
+      job.params?.raw_jpeg_mode === "jpeg"
+        ? (job.params.raw_jpeg_mode as "raw" | "both" | "jpeg")
+        : job.params?.include_jpeg === true
+          ? "both"
+          : "raw";
     const includeLiveVideo = job.params?.include_live_video === true;
-    const jpegIdx = params.length + 1;
+    const modeIdx = params.length + 1;
     const liveIdx = params.length + 2;
 
     const assets = await many<Asset & { group_kind: string | null }>(
@@ -81,18 +90,21 @@ export async function runExportJob(exportJobId: number): Promise<void> {
        WHERE a.deleted_at IS NULL AND (
               a.id IN (SELECT id FROM matched WHERE group_id IS NULL)
            OR (a.group_id IN (SELECT group_id FROM grp) AND (
-                  -- keepers
-                  (g.kind = 'raw_jpeg'   AND a.group_role = 'companion')
-               OR (g.kind = 'live_photo' AND a.group_role = 'primary')
-                  -- optional extras
-               OR ($${jpegIdx}::boolean AND g.kind = 'raw_jpeg'
-                   AND a.group_role = 'primary')
+                  -- Live Photo: the still is the keeper (always); the .mov motion
+                  -- tags along only when include_live_video is set.
+                  (g.kind = 'live_photo' AND a.group_role = 'primary')
                OR ($${liveIdx}::boolean AND g.kind = 'live_photo'
                    AND a.group_role = 'companion')
+                  -- RAW+JPEG: the RAW companion for 'raw'/'both', the direct
+                  -- JPEG/HIF primary for 'jpeg'/'both'.
+               OR (g.kind = 'raw_jpeg' AND a.group_role = 'companion'
+                   AND $${modeIdx} IN ('raw', 'both'))
+               OR (g.kind = 'raw_jpeg' AND a.group_role = 'primary'
+                   AND $${modeIdx} IN ('both', 'jpeg'))
               ))
        )
        ORDER BY a.captured_at, a.id`,
-      [...params, includeJpeg, includeLiveVideo],
+      [...params, rawJpegMode, includeLiveVideo],
     );
 
     const destDir = path.join(config.exportDir, sanitize(job.name));
@@ -185,6 +197,18 @@ export async function runExportJob(exportJobId: number): Promise<void> {
         }),
       ],
     );
+
+    // Persist the session's export history. The job row + its files may be
+    // deleted later (once downloaded), but this counter survives, so the session
+    // keeps showing "already exported N times, last on <date>".
+    if (job.session_id != null) {
+      await q(
+        `UPDATE sessions
+            SET export_count = export_count + 1, last_exported_at = now()
+          WHERE id = $1`,
+        [job.session_id],
+      );
+    }
   } catch (err) {
     await q(
       `UPDATE export_jobs SET status='error', finished_at=now(), result=$2 WHERE id=$1`,
