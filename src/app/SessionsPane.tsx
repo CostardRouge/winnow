@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
@@ -174,6 +180,28 @@ function ThumbStack({ samples }: { samples: SampleAsset[] }) {
   );
 }
 
+// Returning to the list — most often after diving into a session and hitting
+// Back — remounts this pane from scratch: empty state, a skeleton, a full
+// refetch, and the scroll snapped back to the top. That throws away the place
+// you were working. This module-level store survives the unmount/remount across
+// client navigations (it is intentionally dropped on a hard reload) and holds,
+// per filter view, the rows last fetched and where the list was scrolled, so a
+// remount can paint the same rows at the same offset instead of starting over.
+type PaneCache = { sessions: SessionRow[]; scrollTop: number };
+const paneCache = new Map<string, PaneCache>();
+
+// A view is identified by its scope+filters, sort direction, and progress
+// filter — exactly what drives the fetch — so each keeps its own rows/offset.
+function paneKey(query: string, sortDir: SortDir, progress: string): string {
+  return `${query}|${sortDir}|${progress}`;
+}
+
+// Restore the scroll offset before the browser paints (no top-then-jump
+// flicker), falling back to a plain effect on the server where layout effects
+// don't run — the store is empty there anyway, so it's a no-op.
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export default function SessionsPane({
   layout,
   query = "kind=incoming",
@@ -188,8 +216,21 @@ export default function SessionsPane({
   progress?: string;
 }) {
   const router = useRouter();
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = paneKey(query, sortDir, progress);
+  // The live key, reachable from the scroll listener without re-subscribing it.
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+  // The list scroller (`.sessions-pane`) — we read its offset here to save it,
+  // and seek it back on remount.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Seed from the cache so a remount paints the last-seen rows immediately.
+  const [sessions, setSessions] = useState<SessionRow[]>(
+    () => paneCache.get(cacheKey)?.sessions ?? [],
+  );
+  // Skip the skeleton when we already have rows to show; the poll below still
+  // refreshes them in the background.
+  const [loading, setLoading] = useState(() => !paneCache.has(cacheKey));
   const [error, setError] = useState<string | null>(null);
   // Session pending a delete confirmation (opens the modal); transient toast.
   const [confirming, setConfirming] = useState<SessionRow | null>(null);
@@ -202,7 +243,15 @@ export default function SessionsPane({
       const data = await fetchJson<{ sessions?: SessionRow[] }>(
         `/api/sessions?${query}&sort_dir=${sortDir}${progress ? `&progress=${progress}` : ""}`,
       );
-      setSessions(data.sessions ?? []);
+      const rows = data.sessions ?? [];
+      setSessions(rows);
+      // Keep the cache warm (preserving the saved scroll offset) so the next
+      // remount paints these rows at once instead of refetching from empty.
+      const key = paneKey(query, sortDir, progress);
+      paneCache.set(key, {
+        sessions: rows,
+        scrollTop: paneCache.get(key)?.scrollTop ?? 0,
+      });
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -211,10 +260,20 @@ export default function SessionsPane({
     }
   }, [query, sortDir, progress]);
 
-  // Reload (and show the skeleton) whenever the filters/sort change.
+  // On a filter/sort change, adopt that view's cached rows instantly if we have
+  // them (a background refresh follows); otherwise show the skeleton and reset
+  // to the top. The initial mount is already seeded above, so skip it — and
+  // guarding on the previous key keeps a StrictMode remount from resetting the
+  // very scroll offset we're about to restore.
+  const prevKeyRef = useRef(cacheKey);
   useEffect(() => {
-    setLoading(true);
-  }, [query, sortDir, progress]);
+    if (prevKeyRef.current === cacheKey) return;
+    prevKeyRef.current = cacheKey;
+    const cached = paneCache.get(cacheKey);
+    setSessions(cached?.sessions ?? []);
+    setLoading(!cached);
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+  }, [cacheKey]);
 
   // Polls while mounted (i.e. while this view is active) to follow the
   // derivatives' progress.
@@ -223,6 +282,30 @@ export default function SessionsPane({
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Track the scroll offset as it changes so a later remount can restore it.
+  // Reads the live key via the ref, so it never needs to re-bind on a change.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const entry = paneCache.get(cacheKeyRef.current);
+      if (entry) entry.scrollTop = el.scrollTop;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Restore the saved offset on mount, before paint. The seeded rows are already
+  // laid out and `content-visibility` gives off-screen cards an intrinsic
+  // height, so the scroller is tall enough to seek into on the first frame.
+  useIsomorphicLayoutEffect(() => {
+    const el = scrollerRef.current;
+    const saved = paneCache.get(cacheKey)?.scrollTop ?? 0;
+    if (el && saved > 0) el.scrollTop = saved;
+    // Mount-only: later key changes are handled by the effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-clear the transient confirmation toast.
   useEffect(() => {
@@ -280,7 +363,11 @@ export default function SessionsPane({
   }
 
   return (
-    <PullToRefresh className="sessions-pane" onRefresh={load}>
+    <PullToRefresh
+      className="sessions-pane"
+      onRefresh={load}
+      scrollerRef={scrollerRef}
+    >
       {notice && (
         <div style={{ marginBottom: 12 }}>
           <span className="notice">{notice}</span>

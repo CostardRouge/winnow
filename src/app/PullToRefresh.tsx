@@ -9,11 +9,13 @@
 // only), so desktop behaviour is unchanged.
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { cn } from "@/lib/cn";
 
@@ -43,6 +45,7 @@ export default function PullToRefresh({
   className,
   style,
   disabled = false,
+  scrollerRef,
 }: {
   /** Reload callback; the spinner spins until the returned promise settles. */
   onRefresh: () => Promise<unknown> | void;
@@ -52,8 +55,22 @@ export default function PullToRefresh({
   /** Forwarded to the wrapper (the indicator stays anchored regardless). */
   style?: CSSProperties;
   disabled?: boolean;
+  /**
+   * Optional: receives the scroll container. The wrapper *is* the scroller when
+   * the host forwards an `overflow` class (e.g. `.sessions-pane`), so a host
+   * that needs to read/restore the scroll offset can grab it through this.
+   */
+  scrollerRef?: RefObject<HTMLDivElement | null>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  // Merge our internal ref with the host's optional one onto the same node.
+  const setRoot = useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      if (scrollerRef) scrollerRef.current = el;
+    },
+    [scrollerRef],
+  );
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   // `snap` toggles the CSS transition: off while the finger drives the
@@ -158,7 +175,7 @@ export default function PullToRefresh({
   const active = pull > 0 || refreshing;
 
   return (
-    <div ref={rootRef} className={cn("ptr", className)} style={style}>
+    <div ref={setRoot} className={cn("ptr", className)} style={style}>
       <div
         className={cn("ptr-indicator", refreshing && "is-refreshing")}
         aria-hidden={!active}
