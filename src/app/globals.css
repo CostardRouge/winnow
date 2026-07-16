@@ -441,6 +441,15 @@
   .control-note {
     @apply -mt-1;
   }
+  /* Maintenance actions (drone-telemetry backfill…) sit below the rate controls,
+     set off by a hairline divider. */
+  .control-maintenance {
+    @apply mt-2 border-t pt-4;
+    border-color: var(--color-border);
+  }
+  .control-note code {
+    font-family: var(--font-mono);
+  }
   .slider {
     @apply flex min-w-[200px] flex-1 flex-col gap-1.5;
   }
@@ -1229,6 +1238,15 @@
     color: var(--color-accent-fg);
     box-shadow: 0 1px 4px rgba(16, 15, 13, 0.5);
   }
+  /* Drone flight telemetry (a DJI .SRT rides with the clip). Top-right pill —
+     the corner is otherwise free outside select mode. */
+  .cell .telemetry-badge {
+    @apply absolute right-1 top-1 rounded-[6px] px-1 py-px text-[11px] leading-none;
+    background: rgba(16, 15, 13, 0.62);
+    backdrop-filter: blur(4px);
+    box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.25);
+    pointer-events: none;
+  }
 
   /* iPhone Live Photo — motion preview + affordances -----------------------
      The motion (the companion .mov) is laid over the still and plays muted +
@@ -1576,6 +1594,10 @@
   .asset-meta-link {
     color: var(--color-accent);
     text-decoration: underline;
+  }
+  /* Secondary figures next to a value (e.g. the flight-log altitude/samples). */
+  .asset-meta-dim {
+    opacity: 0.65;
   }
   /* Within the dark viewer, the metadata flips to light ink */
   .viewer .asset-meta dt {

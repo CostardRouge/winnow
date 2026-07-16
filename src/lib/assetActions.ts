@@ -53,11 +53,19 @@ export async function sessionDownloadFiles(
   }
   const body = (await res.json()) as {
     files?: { id: number; filename: string }[];
+    sidecars?: { id: number; filename: string }[];
   };
-  return (body.files ?? []).map((f) => ({
+  const files = (body.files ?? []).map((f) => ({
     filename: f.filename,
     href: `/api/assets/${f.id}/download`,
   }));
+  // Video sidecars (Sony XML/THM, DJI .SRT) travel with their clip: pull each
+  // through its own endpoint so "each file" / "save to folder" carry them too.
+  const sidecars = (body.sidecars ?? []).map((s) => ({
+    filename: s.filename,
+    href: `/api/sidecars/${s.id}/download`,
+  }));
+  return [...files, ...sidecars];
 }
 
 // Add (or remove) a single tag by name across the given assets.

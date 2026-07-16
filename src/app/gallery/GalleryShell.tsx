@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import VirtualGrid, { type GalleryAsset } from "./VirtualGrid";
+import type { SidecarBrief } from "@/lib/types";
 import CalendarView from "./CalendarView";
 import type { Bbox, GeoPoint } from "./MapView";
 import FilterPanel, {
@@ -94,6 +95,9 @@ type Row = GalleryAsset & {
   first_edit_id?: number | null;
   first_edit_filename?: string | null;
   first_edit_ext?: string | null;
+  // Video sidecars (Sony XML/THM, DJI .SRT) tied to this clip — surfaced in the
+  // viewer's metadata panel with per-file download links (cf. AssetMeta).
+  sidecars?: SidecarBrief[] | null;
 };
 
 // Leaflet touches `window` on import, so the map is client-only (no SSR).

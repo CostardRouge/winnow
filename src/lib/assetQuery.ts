@@ -31,6 +31,18 @@ export const GRID_SELECT = `a.*,
         g.kind          AS group_kind,
         (SELECT count(*)::int FROM asset_sidecars sc
           WHERE sc.asset_id = a.id) AS sidecar_count,
+        -- Drone telemetry present? Drives the grid's telemetry badge (a DJI .SRT
+        -- flight log, distinct from a Sony XML/THM metadata companion).
+        EXISTS (SELECT 1 FROM asset_sidecars sc
+                 WHERE sc.asset_id = a.id AND sc.kind = 'srt') AS has_telemetry,
+        -- The sidecars themselves (id/kind/filename), for the viewer's detail
+        -- row + per-file download links. Empty array when the asset has none.
+        (SELECT COALESCE(
+                  json_agg(json_build_object(
+                    'id', sc.id, 'kind', sc.kind, 'filename', sc.filename,
+                    'maxAltitude', sc.max_altitude, 'sampleCount', sc.sample_count)
+                  ORDER BY sc.id), '[]'::json)
+           FROM asset_sidecars sc WHERE sc.asset_id = a.id) AS sidecars,
         orig.filename   AS original_filename,
         orig.ext        AS original_ext,
         (SELECT count(*)::int FROM assets e

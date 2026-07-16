@@ -27,7 +27,19 @@ export async function GET(
       [sessionId],
     );
 
-    return json({ files });
+    // Video sidecars (Sony XML/THM, DJI drone .SRT) are not assets but must ride
+    // along with their clip through the per-file download too — the Download
+    // menu pulls each through /api/sidecars/:id/download (cf. lib/sidecars.ts).
+    const sidecars = await many<{ id: number; filename: string }>(
+      `SELECT sc.id, sc.filename
+         FROM asset_sidecars sc
+         JOIN assets a ON a.id = sc.asset_id
+        WHERE a.session_id = $1 AND a.deleted_at IS NULL
+        ORDER BY sc.filename, sc.id`,
+      [sessionId],
+    );
+
+    return json({ files, sidecars });
   } catch (err) {
     return serverError(err);
   }
