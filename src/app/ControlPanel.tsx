@@ -22,6 +22,9 @@ export default function ControlPanel() {
   const [analyzeRate, setAnalyzeRate] = useState(0);
   const [mlRate, setMlRate] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Drone-telemetry backfill (one-click counterpart to `npm run srt-backfill`).
+  const [srtBusy, setSrtBusy] = useState(false);
+  const [srtMsg, setSrtMsg] = useState<string | null>(null);
   // While dragging a slider, we don't let polling overwrite its value.
   const dragging = useRef({ scan: false, analyze: false, ml: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,6 +50,42 @@ export default function ControlPanel() {
       await reload();
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Parse the DJI .SRT flight logs of already-indexed drone clips and backfill
+  // their GPS from the telemetry. Runs on the server (inline); geocoding of the
+  // located clips is offloaded to the geocode queue, so this returns a summary.
+  async function runSrtBackfill() {
+    setSrtBusy(true);
+    setSrtMsg(null);
+    try {
+      const res = await fetch("/api/pipeline/srt-backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        scanned?: number;
+        parsed?: number;
+        located?: number;
+        geocoded?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        setSrtMsg(body.error ?? "Backfill failed");
+      } else if (!body.scanned) {
+        setSrtMsg("No unparsed drone .SRT sidecars found.");
+      } else {
+        setSrtMsg(
+          `Parsed ${body.parsed}/${body.scanned} · located ${body.located} clip(s) · queued ${body.geocoded} geocode job(s).`,
+        );
+        await reload();
+      }
+    } catch {
+      setSrtMsg("Backfill failed");
+    } finally {
+      setSrtBusy(false);
     }
   }
 
@@ -197,6 +236,23 @@ export default function ControlPanel() {
       <div className="hint control-note">
         Photos/hour, 0 = unlimited. Incoming &amp; inbox folders are scanned and
         analyzed first.
+      </div>
+
+      <div className="control-row control-maintenance">
+        <button
+          className="btn"
+          onClick={runSrtBackfill}
+          disabled={srtBusy}
+          title="Parse DJI drone .SRT flight logs and backfill each clip's GPS from the telemetry (idempotent)"
+        >
+          {srtBusy ? "Backfilling…" : "🛰 Backfill drone telemetry"}
+        </button>
+        {srtMsg && <span className="hint">{srtMsg}</span>}
+      </div>
+      <div className="hint control-note">
+        Reads the DJI <code>.SRT</code> sidecars already indexed next to your
+        drone clips, records their flight telemetry and gives clips without EXIF
+        GPS a location from the flight log.
       </div>
     </PullToRefresh>
   );

@@ -441,6 +441,15 @@
   .control-note {
     @apply -mt-1;
   }
+  /* Maintenance actions (drone-telemetry backfill…) sit below the rate controls,
+     set off by a hairline divider. */
+  .control-maintenance {
+    @apply mt-2 border-t pt-4;
+    border-color: var(--color-border);
+  }
+  .control-note code {
+    font-family: var(--font-mono);
+  }
   .slider {
     @apply flex min-w-[200px] flex-1 flex-col gap-1.5;
   }
