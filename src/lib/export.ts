@@ -41,6 +41,7 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     target: string;
     filter_query: unknown;
     params: Record<string, unknown>;
+    session_id: number | null;
   }>("SELECT * FROM export_jobs WHERE id = $1", [exportJobId]);
   if (!job) throw new Error(`export_job not found: ${exportJobId}`);
 
@@ -196,6 +197,18 @@ export async function runExportJob(exportJobId: number): Promise<void> {
         }),
       ],
     );
+
+    // Persist the session's export history. The job row + its files may be
+    // deleted later (once downloaded), but this counter survives, so the session
+    // keeps showing "already exported N times, last on <date>".
+    if (job.session_id != null) {
+      await q(
+        `UPDATE sessions
+            SET export_count = export_count + 1, last_exported_at = now()
+          WHERE id = $1`,
+        [job.session_id],
+      );
+    }
   } catch (err) {
     await q(
       `UPDATE export_jobs SET status='error', finished_at=now(), result=$2 WHERE id=$1`,

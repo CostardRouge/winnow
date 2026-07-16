@@ -50,9 +50,16 @@ export async function GET(req: NextRequest) {
     // "Done" sessions are NOT hidden here: completeness visibility is the job of
     // the `progress` filter below (All / "to sort" / Done), so the two never
     // disagree.
+    // A session with an export still queued/running stays visible even once
+    // ignored, so a long export isn't hidden mid-flight; it drops out on the next
+    // poll after the job finishes.
     const showIgnored = sp.get("show_ignored") === "true";
     params.push(showIgnored);
-    clauses.push(`(s.ignored = false OR $${params.length})`);
+    clauses.push(
+      `(s.ignored = false OR $${params.length}
+        OR EXISTS (SELECT 1 FROM export_jobs j
+                    WHERE j.session_id = s.id AND j.status IN ('queued','running')))`,
+    );
 
     // Triage-progress filter, expressed against the counters in the `d`
     // subquery below (LEFT JOIN → COALESCE the NULLs of an empty session to 0).
@@ -138,6 +145,11 @@ export async function GET(req: NextRequest) {
          -- modal offers): RAW+JPEG (Sony .ARW+.HIF …) and iPhone Live Photos.
          COALESCE(g.raw_jpeg_pairs, 0)  AS raw_jpeg_pairs,
          COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs,
+         -- Live export status: an in-flight job (queued/running) for this session.
+         -- export_count / last_exported_at ride along via s.* (persistent history).
+         EXISTS (SELECT 1 FROM export_jobs j
+                  WHERE j.session_id = s.id
+                    AND j.status IN ('queued','running')) AS exporting,
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id

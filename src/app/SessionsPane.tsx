@@ -54,6 +54,9 @@ type SessionRow = {
   last_reviewed_at: string | null;
   raw_jpeg_pairs: number;
   live_photo_pairs: number;
+  exporting: boolean;
+  export_count: number;
+  last_exported_at: string | null;
   sample_assets: SampleAsset[];
 };
 
@@ -87,6 +90,35 @@ function SessionMeta({ s }: { s: SessionRow }) {
   );
 }
 
+// A session's export state: a live "exporting…" pill while a job is in flight,
+// otherwise a persistent "exported ×N" pill (with the last date on hover) once
+// it has ever been exported. Nothing shown for a never-exported session.
+function ExportBadge({ s }: { s: SessionRow }) {
+  if (s.exporting) {
+    return (
+      <span className="pill exporting" title="An export is queued or running">
+        ⏳ exporting…
+      </span>
+    );
+  }
+  const count = Number(s.export_count) || 0;
+  if (count > 0) {
+    return (
+      <span
+        className="pill exported"
+        title={
+          s.last_exported_at
+            ? `Last exported ${fmtDate(s.last_exported_at)}`
+            : "Already exported"
+        }
+      >
+        ✓ exported{count > 1 ? ` ×${count}` : ""}
+      </span>
+    );
+  }
+  return null;
+}
+
 function SessionCounters({ s }: { s: SessionRow }) {
   return (
     <div className="counters">
@@ -97,6 +129,7 @@ function SessionCounters({ s }: { s: SessionRow }) {
       )}
       <span className="pill picks">{s.pick_count} picks</span>
       {s.status === "done" && <span className="pill done">✓ done</span>}
+      <ExportBadge s={s} />
     </div>
   );
 }

@@ -112,6 +112,9 @@ type SessionInfo = {
   unrated_count: number | string;
   raw_jpeg_pairs: number | string;
   live_photo_pairs: number | string;
+  exporting: boolean;
+  export_count: number | string;
+  last_exported_at: string | null;
 };
 
 const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
@@ -740,6 +743,27 @@ function SessionHeader({
             <span className="chip session-detail-kind">{roleLabel(s.root_kind)}</span>
             {s.status === "done" && <span className="pill done">✓ done</span>}
             {s.ignored && <span className="pill">ignored</span>}
+            {s.exporting ? (
+              <span className="pill exporting" title="An export is queued or running">
+                ⏳ exporting…
+              </span>
+            ) : (
+              (Number(s.export_count) || 0) > 0 && (
+                <span
+                  className="pill exported"
+                  title={
+                    s.last_exported_at
+                      ? `Last exported ${fmtDate(s.last_exported_at)}`
+                      : "Already exported"
+                  }
+                >
+                  ✓ exported
+                  {(Number(s.export_count) || 0) > 1
+                    ? ` ×${Number(s.export_count)}`
+                    : ""}
+                </span>
+              )
+            )}
           </div>
           <div className="session-detail-meta">
             {(s.device_hint ?? "device ?") + " · "}

@@ -63,7 +63,11 @@ export async function GET(
          -- Companion pairs present in the session (drives the export modal's
          -- RAW+JPEG / Live Photo options).
          COALESCE(g.raw_jpeg_pairs, 0)   AS raw_jpeg_pairs,
-         COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs
+         COALESCE(g.live_photo_pairs, 0) AS live_photo_pairs,
+         -- Live export status (export_count / last_exported_at ride along via s.*).
+         EXISTS (SELECT 1 FROM export_jobs j
+                  WHERE j.session_id = s.id
+                    AND j.status IN ('queued','running')) AS exporting
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
        LEFT JOIN (

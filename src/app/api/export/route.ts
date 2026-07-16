@@ -51,9 +51,16 @@ export async function POST(req: NextRequest) {
           : "raw";
     const includeJpeg = rawJpegMode !== "raw";
 
+    // Associate the job with its session when the export is scoped to one (the
+    // per-session "Export picks" flow sets filter.session_id). Ad-hoc gallery
+    // exports whose filter spans sessions stay unassociated (NULL). This drives
+    // the session's live "export in progress" badge; the persistent
+    // export_count / last_exported_at are bumped by the worker on completion.
+    const sessionId = filter.session_id ?? null;
+
     const job = await one<{ id: number }>(
-      `INSERT INTO export_jobs (name, target, filter_query, params, status)
-       VALUES ($1, $2, $3, $4, 'queued') RETURNING id`,
+      `INSERT INTO export_jobs (name, target, filter_query, params, status, session_id)
+       VALUES ($1, $2, $3, $4, 'queued', $5) RETURNING id`,
       [
         name,
         target,
@@ -64,6 +71,7 @@ export async function POST(req: NextRequest) {
           include_jpeg: includeJpeg,
           include_live_video: includeLiveVideo,
         }),
+        sessionId,
       ],
     );
     await enqueueExport(job!.id);
