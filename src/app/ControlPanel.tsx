@@ -116,7 +116,7 @@ export default function ControlPanel() {
           <Stat
             label="Failures"
             value={totalFail}
-            sub="scan · analyze · import →"
+            sub="scan · analyze · import · dedup →"
             tone="bad"
           />
         </Link>

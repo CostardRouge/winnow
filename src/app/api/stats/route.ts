@@ -5,20 +5,8 @@ import { one } from "@/lib/db";
 import { config } from "@/lib/config";
 import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
+import { failureCounts } from "@/lib/failures";
 import { json, serverError } from "@/lib/api";
-
-async function failureCounts() {
-  try {
-    const row = await one<{ scan: number; imp: number }>(
-      `SELECT
-         (SELECT count(*) FROM scan_failures WHERE resolved_at IS NULL)        AS scan,
-         (SELECT COALESCE(sum(failed), 0) FROM import_batches WHERE failed > 0) AS imp`,
-    );
-    return { scan: Number(row?.scan ?? 0), import: Number(row?.imp ?? 0) };
-  } catch {
-    return { scan: 0, import: 0 }; // tables absent before migration
-  }
-}
 
 // DB/Redis-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
@@ -99,11 +87,15 @@ export async function GET() {
       // ML is only surfaced when the feature is on: the sliders/counters would
       // otherwise show a pipeline stage that can never progress.
       mlEnabled: config.ml.enabled,
+      // Same source as the /pipeline/failures tabs (lib/failures.failureCounts),
+      // so the aggregate "Failures" badge always equals the sum of the
+      // subsections — including deduplication, which it previously omitted.
       failures: {
-        derivative: Number(counts?.errors ?? 0),
+        derivative: fails.derivative,
         scan: fails.scan,
         import: fails.import,
         ml: Number(counts?.ml_errors ?? 0),
+        duplicates: fails.duplicates,
       },
     });
   } catch (err) {

@@ -34,7 +34,13 @@ export type Stats = {
   // Whether the ML analysis feature is configured on the server (ML_ENABLED):
   // gates the ML slider/counters so a stage that can't progress isn't shown.
   mlEnabled?: boolean;
-  failures?: { derivative: number; scan: number; import: number; ml?: number };
+  failures?: {
+    derivative: number;
+    scan: number;
+    import: number;
+    ml?: number;
+    duplicates?: number;
+  };
 };
 
 // Active work in a queue = in progress + pending (prioritized included).
@@ -43,10 +49,18 @@ export function active(c: QueueCounts | undefined): number {
   return (c.active ?? 0) + (c.waiting ?? 0) + (c.prioritized ?? 0);
 }
 
-// Sum of every failure family surfaced by /api/stats.
+// Sum of every failure family surfaced by /api/stats. Mirrors the tabs on
+// /pipeline/failures — deduplication included — so the aggregate badge stays in
+// sync with the subsections and drops as duplicates are resolved.
 export function totalFailures(s: Stats | null): number {
   const f = s?.failures;
-  return (f?.derivative ?? 0) + (f?.scan ?? 0) + (f?.import ?? 0) + (f?.ml ?? 0);
+  return (
+    (f?.derivative ?? 0) +
+    (f?.scan ?? 0) +
+    (f?.import ?? 0) +
+    (f?.ml ?? 0) +
+    (f?.duplicates ?? 0)
+  );
 }
 
 // Polls /api/stats on an interval (default 5 s). A transient fetch error keeps

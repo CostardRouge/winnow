@@ -5,7 +5,68 @@
 // The other failure families are already persisted elsewhere and read as-is
 // by /api/failures: derivatives -> assets.derivative_status='error', import
 // -> import_batches.result. So we only duplicate what was missing.
-import { q } from "./db";
+import { q, one } from "./db";
+
+// The four failure families surfaced as tabs on /pipeline/failures.
+export type FailureCounts = {
+  derivative: number;
+  scan: number;
+  import: number;
+  duplicates: number;
+};
+
+// Single source of truth for the failure-family counters, so the aggregate
+// "Failures" badge (via /api/stats) always equals the sum of the subsection
+// tabs (via /api/failures) — they used to be computed independently and drift
+// apart (deduplication was missing from the aggregate entirely; derivative and
+// import were scoped differently on each side).
+//   - derivative : live-library assets stuck in derivative error,
+//   - scan       : open per-file scan failures,
+//   - import     : files that failed import, summed across every batch,
+//   - duplicates : recorded duplicate hits still awaiting triage.
+// Each family is guarded on its own so a table missing before migration yields
+// 0 for that family rather than zeroing (or 500-ing) the others.
+export async function failureCounts(): Promise<FailureCounts> {
+  const counts: FailureCounts = {
+    derivative: 0,
+    scan: 0,
+    import: 0,
+    duplicates: 0,
+  };
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT count(*) AS n FROM assets WHERE derivative_status = 'error' AND deleted_at IS NULL",
+    );
+    counts.derivative = Number(r?.n ?? 0);
+  } catch {
+    /* best-effort */
+  }
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT count(*) AS n FROM scan_failures WHERE resolved_at IS NULL",
+    );
+    counts.scan = Number(r?.n ?? 0);
+  } catch {
+    /* table absent before migration */
+  }
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT COALESCE(sum(failed), 0) AS n FROM import_batches WHERE failed > 0",
+    );
+    counts.import = Number(r?.n ?? 0);
+  } catch {
+    /* table absent before migration */
+  }
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT count(*) AS n FROM duplicate_hits",
+    );
+    counts.duplicates = Number(r?.n ?? 0);
+  } catch {
+    /* table absent before migration */
+  }
+  return counts;
+}
 
 export async function recordScanFailure(
   absPath: string,
