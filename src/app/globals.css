@@ -461,6 +461,81 @@
     @apply w-full;
     accent-color: var(--color-accent);
   }
+
+  /* ---- Dual-thumb range filter (library facets, cf. RangeSlider.tsx) ------ */
+  /* Two native range inputs are stacked over a shared track. Each input is made
+     transparent and pointer-transparent except for its thumb, so both thumbs
+     stay grabbable; the coloured fill between them is a separate element. */
+  .range-track-wrap {
+    @apply relative flex items-center;
+    height: 20px;
+    margin-bottom: 8px;
+  }
+  .range-track {
+    @apply absolute w-full;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-surface-3);
+  }
+  .range-fill {
+    @apply absolute;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-accent);
+  }
+  .range-thumb {
+    @apply absolute w-full;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    z-index: 3;
+  }
+  /* Raised so the min handle stays reachable when both handles crowd the top. */
+  .range-thumb.range-thumb-top {
+    z-index: 5;
+  }
+  .range-thumb:focus-visible {
+    outline: none;
+  }
+  .range-thumb::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--color-surface);
+    border: 2px solid var(--color-accent);
+    box-shadow: var(--shadow-card);
+    cursor: pointer;
+  }
+  .range-thumb::-moz-range-thumb {
+    pointer-events: auto;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--color-surface);
+    border: 2px solid var(--color-accent);
+    box-shadow: var(--shadow-card);
+    cursor: pointer;
+  }
+  .range-thumb::-moz-range-track {
+    background: transparent;
+  }
+  .range-thumb:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+  .range-thumb:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+  .range-fields {
+    @apply grid grid-cols-2 gap-1.5;
+  }
+  .range-hint {
+    margin-top: 4px;
+  }
   .stat-link {
     @apply block;
     color: inherit;
