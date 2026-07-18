@@ -60,6 +60,60 @@
     monospace;
 }
 
+/* =========================================================================
+   "Papier nuit" — the dark theme
+   The same Paper system after dark: warm ink surfaces (never cold black),
+   a soft warm off-white for text, and the vermillion accent + verdict hues
+   lifted a step so they hold their contrast on a dark ground. Only the ~20
+   colour tokens are redeclared — every component reads them through var(),
+   so nothing else changes. The viewer frame (--color-frame) and the glass
+   overlays on thumbnails are deliberately dark in both themes and stay put.
+
+   Applied via [data-theme="dark"] on <html>, seeded before paint by the
+   inline script in layout.tsx and kept in lockstep by ThemeToggle.
+   ========================================================================= */
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces — warm ink, layered for elevation (surface = raised/brightest) */
+  --color-bg: #16130e; /* night paper */
+  --color-surface: #2a251c; /* raised cards */
+  --color-surface-2: #1d1912; /* recessed wells */
+  --color-surface-3: #241f17; /* hover / pressed wells */
+  --color-border: #2d2820; /* hairlines */
+  --color-border-strong: #40392e;
+
+  /* Ink — warm off-white */
+  --color-text: #f2ece0;
+  --color-muted: #a49a86;
+  --color-faint: #6f6656;
+
+  /* Accent — vermillion lifted to read on dark */
+  --color-accent: #ef5638;
+  --color-accent-hover: #f5745a; /* brightens on dark surfaces */
+  --color-accent-fg: #ffffff;
+  --color-accent-wash: #3b211b; /* dark vermillion tint for active nav */
+
+  /* Verdict semantics — lifted to read on ink */
+  --color-pick: #57a06a;
+  --color-pick-fg: #0f1b12;
+  --color-reject: #d85a5a;
+  --color-reject-fg: #1c0f0f;
+  --color-star: #e0a52a;
+
+  /* Shadows — deeper on dark so elevation still reads */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 10px 30px -14px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 16px 48px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* Primary button = solid ink; its hover pushes toward the extreme of the
+   ink direction — pure black on light paper, pure white on night paper. */
+html[data-theme="dark"] .btn-primary:hover {
+  background: #fff;
+  border-color: #fff;
+}
+
 /* ---- Base ---------------------------------------------------------------- */
 @layer base {
   * {
@@ -184,6 +238,17 @@
   .rail-label {
     @apply text-[10px] font-semibold;
     letter-spacing: 0.01em;
+  }
+  /* Pinned foot of the rail: pushes the theme toggle to the bottom-left on
+     desktop. On phones the rail becomes a bottom bar and this is lifted out to
+     a fixed top-right chip instead (see the max-width:767px block). */
+  .rail-foot {
+    @apply mt-auto flex w-full items-center justify-center;
+    padding-top: 8px;
+  }
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
   }
 
   /* ---- Page header bar -------------------------------------------------- */
@@ -2839,6 +2904,21 @@
   .rail-link {
     flex: 1;
     padding: 6px 4px;
+  }
+  /* The rail is a bottom bar here, so its 6 nav items own the row. Lift the
+     theme toggle out of that flow to a discreet fixed chip in the top-right
+     corner — reachable from every page without crowding the nav or needing a
+     per-page header slot. Sits above the topbar (z-20) and slide-in panel. */
+  .rail-foot {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    z-index: 45;
   }
   /* Reserve the bottom bar's height — including the safe-area inset on notched
      phones — so scrollable content (and the slide-in panel, which stops at the

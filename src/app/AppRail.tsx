@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brand, Icons } from "./ui";
+import ThemeToggle from "./ThemeToggle";
 import type { ReactNode } from "react";
 
 // Persistent navigation rail: vertical on desktop (left edge), a bottom tab bar
@@ -77,6 +78,9 @@ export default function AppRail() {
             <span className="rail-label">{item.label}</span>
           </Link>
         ))}
+      </div>
+      <div className="rail-foot">
+        <ThemeToggle />
       </div>
     </nav>
   );

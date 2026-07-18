@@ -4,7 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Offline — Winnow</title>
-    <meta name="theme-color" content="#f4f0e7" />
+    <meta
+      name="theme-color"
+      content="#f4f0e7"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#16130e"
+      media="(prefers-color-scheme: dark)"
+    />
     <style>
       :root {
         --bg: #f4f0e7;
@@ -13,6 +22,17 @@
         --text: #1b1813;
         --muted: #7c7464;
         --accent: #d9442a;
+      }
+      /* "Papier nuit" — mirror the app's dark tokens for the offline fallback. */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16130e;
+          --surface: #2a251c;
+          --border: #2d2820;
+          --text: #f2ece0;
+          --muted: #a49a86;
+          --accent: #ef5638;
+        }
       }
       * { box-sizing: border-box; }
       html, body { height: 100%; margin: 0; }
