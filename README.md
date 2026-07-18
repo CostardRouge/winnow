@@ -138,10 +138,11 @@ offending variable — instead of silently degrading in production.
 |---|---|
 | `POST /api/index/scan` `{ path }` | Registers the root and enqueues an indexing run |
 | `GET /api/stats` | Counters (media / scan / analyzed / pending) + queue activity + pause + rates |
-| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour?, geocodePerHour?, geocodePrecisionM? }` | Hourly scan/analyze/geocode rates (0 = unlimited) + geocode cell precision (metres) |
+| `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour?, geocodePerHour?, geocodePrecisionM?, rescanMinutes? }` | Hourly scan/analyze/geocode rates (0 = unlimited) + geocode cell precision (metres) + periodic re-scan interval (minutes, 0 = off) |
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
-| `GET /api/failures` | Everything that failed (scan / analyze / import) + the deduplication audit (each duplicate joined to its kept asset for thumbnail/compare) |
-| `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family |
+| `GET /api/failures` | Everything that failed (scan / analyze / import) + the deduplication audit (each duplicate joined to its kept asset for thumbnail/compare) + the **missing originals** awaiting triage |
+| `POST /api/failures/retry` `{ kind, ids? }` | Retries failures of a given family (`kind=missing` re-stats the missing originals and restores whichever are back) |
+| `POST /api/integrity` `{ root_id? }` | Queues an **integrity sweep**: re-stats every live original (a source gone from disk funnels into the missing-files triage) and verifies the thumb/proxy objects still exist in storage (a wiped derivative is re-enqueued for generation). Scoped to one volume via `root_id`, whole library otherwise |
 | `GET /api/failures/duplicates/file` `?path=` | Streams a recorded duplicate's raw file (whitelisted to `duplicate_hits`) so an unindexed extra copy can be inspected locally |
 | `POST /api/failures/duplicates/delete` `{ paths[] }` | Hard-deletes extra copies recorded in `duplicate_hits` (whitelisted · never an indexed asset · confined to the browsable area) and clears their audit rows |
 | `POST /api/failures/duplicates/keep` `{ contentHash, keepPath }` | Collapses a group of byte-identical copies to the single survivor the user picked. Keeping an on-disk copy **relinks** the library asset onto it (id/rating/tags/derivatives preserved) and deletes the former original; keeping the indexed copy just removes the recorded extras. False collisions are never eligible |
@@ -505,6 +506,13 @@ dedicated Pipeline triage page:
   **analyzed** per hour (`PATCH /api/settings`, `0 = unlimited`). Spread out
   drip-by-drip via a shared Redis limiter — useful to spare the NAS's full HDD
   without blocking the app.
+- **Rescan interval** (slider): minutes between two **automatic incremental
+  re-scans** of the watched volumes (`rescanMinutes`, default 60, `0 = off`).
+  There is no filesystem watcher on the NAS mounts (inotify doesn't propagate
+  over SMB/NFS), so this cadence is what bounds how stale the library can get:
+  new/changed files are picked up and **deleted originals detected** without a
+  manual re-index. Cheap by design — an incremental scan only `stat`s unchanged
+  files — and coalesced, so ticks never stack scan jobs.
 - **Incoming / inbox priority**: imports (incoming) and the inbox go **ahead** of
   ordinary scans/derivatives (BullMQ priority). A long ordinary scan is
   **preempted** as soon as an incoming scan is waiting, then re-enqueued.
@@ -588,6 +596,24 @@ debug, and a **"retry"** button per family:
 - **Import**: per-file errors of the batches (`import_batches.result`) — *retroactive*.
   Failed files are **quarantined** (`inbox/.failed/`) so they stop looping;
   retrying re-imports them.
+- **Missing files** (integrity): indexed media whose **original is no longer on
+  disk** (deleted by hand, cleaned-up empty files…). The indexer only ever walks
+  files that exist, so these used to linger in the gallery/sessions forever with
+  a derivative that could never be rebuilt. Now every **complete scan** diffs
+  the walk against the index and re-stats each absentee individually
+  (`lib/integrity.ts`): a confirmed-gone original is flagged (`missing_at`) and
+  **auto-trashed** — the reversible soft delete, so it leaves every grid
+  immediately but nothing is lost if the detection was wrong. Two safety nets:
+  an unreachable root skips the pass entirely, and a **mass disappearance**
+  (an unmounted volume looks like everything vanished at once) only flags,
+  never trashes. A file that reappears (NAS remounted, restored from backup) is
+  **restored automatically** on the next scan. The tab lists the whole set with
+  **Re-check** (re-stat now, restore whatever answers), **Restore** (un-trash by
+  hand) and **Purge** (irreversible cleanup: drops the leftover derivatives,
+  stamps the row — there is no original left to lose). **Verify integrity**
+  queues the full sweep (`POST /api/integrity`), which also repairs 'ready'
+  assets whose thumb/proxy object went missing from the cache by re-enqueuing
+  their generation.
 - **Deduplication** (audit + triage): copies of the same bytes are **grouped by
   content**. Each group lists *every* place that content lives — the library's
   indexed copy (its thumbnail stands in for the group) and any extra copies on

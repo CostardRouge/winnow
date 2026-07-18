@@ -48,6 +48,10 @@ export type PurgeJob = { purgeJobId: number };
 export type GeocodeJob = { assetId: number; precise?: boolean };
 // ML-analyze one asset (cf. lib/ml.ts): faces + OCR read off its derivative.
 export type MlJob = { assetId: number };
+// Integrity sweep (cf. lib/integrity.ts): re-stat every live original + verify
+// the derivative objects still exist in storage. `rootId` scopes to one volume;
+// omitted → the whole library.
+export type IntegrityJob = { rootId?: number | null };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -62,6 +66,7 @@ export const QUEUES = {
   purge: "winnow-purge",
   geocode: "winnow-geocode",
   ml: "winnow-ml",
+  integrity: "winnow-integrity",
 } as const;
 
 declare global {
@@ -75,6 +80,7 @@ declare global {
         purge: Queue;
         geocode: Queue;
         ml: Queue;
+        integrity: Queue;
       }
     | undefined;
 }
@@ -88,6 +94,7 @@ function build() {
     purge: new Queue(QUEUES.purge, { connection }),
     geocode: new Queue(QUEUES.geocode, { connection }),
     ml: new Queue(QUEUES.ml, { connection }),
+    integrity: new Queue(QUEUES.integrity, { connection }),
   };
 }
 
@@ -355,6 +362,27 @@ export async function enqueueMl(
   return getQueues().ml.add("ml", { assetId } satisfies MlJob, {
     ...defaultJobOpts,
     priority: opts.priority ?? PRIORITY.normal,
+  });
+}
+
+// Enqueue an integrity sweep (cf. lib/integrity.ts), coalescing like scans do:
+// the sweep walks the whole scope anyway, so stacking a second pending job is
+// pure wasted NAS I/O — an already-queued sweep of the same scope is returned
+// as-is (a global pending sweep also covers any per-root request).
+export async function enqueueIntegrity(
+  opts: { rootId?: number | null } = {},
+): Promise<Job> {
+  const queue = getQueues().integrity;
+  const rootId = opts.rootId ?? null;
+  const jobs = await queue.getJobs([...PENDING_INDEX_STATES], 0, 99);
+  for (const job of jobs) {
+    const queued = (job?.data as IntegrityJob)?.rootId ?? null;
+    if (job && (queued === null || queued === rootId)) return job;
+  }
+  return queue.add("integrity", { rootId } satisfies IntegrityJob, {
+    ...defaultJobOpts,
+    // A sweep interrupted by pause returns cleanly (partial report); no retries.
+    attempts: 1,
   });
 }
 

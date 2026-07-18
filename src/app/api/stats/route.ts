@@ -83,6 +83,7 @@ export async function GET() {
         scanPerHour: settings.scanPerHour,
         analyzePerHour: settings.analyzePerHour,
         mlPerHour: settings.mlPerHour,
+        rescanMinutes: settings.rescanMinutes,
       },
       // ML is only surfaced when the feature is on: the sliders/counters would
       // otherwise show a pipeline stage that can never progress.
@@ -96,6 +97,7 @@ export async function GET() {
         import: fails.import,
         ml: Number(counts?.ml_errors ?? 0),
         duplicates: fails.duplicates,
+        missing: fails.missing,
       },
     });
   } catch (err) {

@@ -29,6 +29,13 @@ export type AppSettings = {
   // (0 = unlimited). The default drips an 80k backfill over ~3 days instead of
   // pinning the box's CPU for hours — raise it live from the Pipeline page.
   mlPerHour: number;
+  // Periodic re-scan of the watched roots (cf. worker.ts): minutes between two
+  // automatic incremental scans (0 = off). There is no filesystem watcher on
+  // the NAS mounts, so this is what bounds how stale the library can get —
+  // new/changed files are picked up and deleted originals detected on this
+  // cadence. Incremental scans stat-skip unchanged files, so a frequent tick
+  // costs a directory walk, not a re-read.
+  rescanMinutes: number;
 };
 
 const DEFAULTS: AppSettings = {
@@ -40,6 +47,7 @@ const DEFAULTS: AppSettings = {
   geocodePerHour: 3600,
   geocodePrecisionM: 5000,
   mlPerHour: 1200,
+  rescanMinutes: 60,
 };
 
 const TTL_MS = 1500;
@@ -68,6 +76,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.geocodePrecisionM = Math.max(1, Number(r.value) || DEFAULTS.geocodePrecisionM);
       else if (r.key === "ml_per_hour")
         value.mlPerHour = Math.max(0, Number(r.value) || 0);
+      else if (r.key === "rescan_minutes")
+        value.rescanMinutes = Math.max(0, Number(r.value) || 0);
     }
   } catch {
     // Table absent (before migration) or Postgres unavailable: we fall back
@@ -108,6 +118,11 @@ export async function setSettings(
     entries.push([
       "ml_per_hour",
       JSON.stringify(Math.max(0, Math.floor(patch.mlPerHour))),
+    ]);
+  if (patch.rescanMinutes !== undefined)
+    entries.push([
+      "rescan_minutes",
+      JSON.stringify(Math.max(0, Math.floor(patch.rescanMinutes))),
     ]);
 
   for (const [key, value] of entries) {

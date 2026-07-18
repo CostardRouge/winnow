@@ -18,6 +18,7 @@ import {
 import { reconcileBurstsForSession } from "./bursts";
 import { reconcileEdits } from "./reconcile";
 import { recordSidecars } from "./sidecars";
+import { reconcileMissingForRoot } from "./integrity";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -89,6 +90,12 @@ export type IndexResult = {
   // Edited finals newly linked back to their source original this scan
   // (finals → sources reconciliation, cf. lib/reconcile.ts).
   editsLinked: number;
+  // Originals confirmed gone from disk this scan (cf. lib/integrity.ts):
+  // auto-trashed (reversible soft delete) / only flagged (mass-disappearance
+  // guard) / previously-missing files that reappeared and were restored.
+  missingTrashed: number;
+  missingFlagged: number;
+  missingRestored: number;
   // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
@@ -117,12 +124,20 @@ export async function indexRoot(
     stacked: 0,
     sidecars: 0,
     editsLinked: 0,
+    missingTrashed: 0,
+    missingFlagged: 0,
+    missingRestored: 0,
     stopped: false,
   };
   const touchedSessions = new Set<number>();
   // Memoize per-directory file listings so a clip-heavy session reads each
   // folder at most once while detecting video sidecars.
   const dirCache = new Map<string, string[]>();
+  // Every media path the walk sees, recorded BEFORE any per-file processing —
+  // feeds the end-of-scan missing-file reconciliation (an indexed asset the
+  // walk did NOT visit is a deletion candidate; a file that merely failed
+  // indexing is still "seen" and never mistaken for one). Cf. lib/integrity.ts.
+  const visited = new Set<string>();
 
   for await (const absPath of walk(root.path)) {
     // Suspension/preemption: we stop cleanly between two files.
@@ -136,6 +151,7 @@ export async function indexRoot(
     const ext = path.extname(absPath);
     const cls = classifyExt(ext);
     if (!cls) continue; // not a recognized media
+    visited.add(absPath);
     res.scanned++;
 
     // Per-file isolation: an unreadable/corrupt file (stat, hash, metadata)
@@ -418,6 +434,24 @@ export async function indexRoot(
     } catch (err) {
       console.warn(
         `Edit reconciliation failed for root ${root.id}:`,
+        (err as Error).message,
+      );
+    }
+  }
+
+  // Missing originals: only after a COMPLETE walk (a stopped scan hasn't seen
+  // everything, so absence proves nothing). Each candidate is individually
+  // re-stat-ed and mass disappearances are flagged, never auto-trashed — see
+  // lib/integrity.ts. Never fatal: an integrity hiccup must not fail the scan.
+  if (!res.stopped) {
+    try {
+      const missing = await reconcileMissingForRoot(root, visited);
+      res.missingTrashed = missing.trashed;
+      res.missingFlagged = missing.flagged;
+      res.missingRestored = missing.restored;
+    } catch (err) {
+      console.warn(
+        `Missing-file reconciliation failed for root ${root.id}:`,
         (err as Error).message,
       );
     }
