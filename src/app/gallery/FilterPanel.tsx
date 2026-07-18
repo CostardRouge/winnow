@@ -34,6 +34,10 @@ export type Facets = {
   // read some text. Optional so a facets payload predating the feature typechecks.
   faces?: VC[];
   with_text?: number;
+  // How many assets carry a perceptual hash (were analyzed). Gates the
+  // "Near-duplicates" toggle so it never shows as a dead filter. Optional so a
+  // facets payload predating the feature typechecks.
+  with_phash?: number;
   extensions: VC[];
   media_types: VC[];
   derivative_statuses: VC[];
@@ -101,6 +105,10 @@ export type Filters = {
   // Sharpness (variance of the Laplacian, cf. lib/ml.ts): low = blurry.
   sharpness_min?: number;
   sharpness_max?: number;
+  // Perceptual near-duplicates (cf. lib/ml.ts): true → only frames that have a
+  // look-alike in the same session. A simple toggle (the "only loners" inverse
+  // isn't exposed in the panel).
+  near_dup?: boolean;
   has_gps?: boolean;
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
@@ -666,6 +674,26 @@ export default function FilterPanel({
           shows in the viewer’s info panel.
         </div>
       </div>
+
+      {!!facets.with_phash && (
+        <div className="facet">
+          <label
+            className="hint"
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              type="checkbox"
+              checked={!!filters.near_dup}
+              onChange={(e) => u({ near_dup: e.target.checked || undefined })}
+            />
+            Near-duplicates
+          </label>
+          <div className="hint" style={{ marginTop: 4 }}>
+            Shots with a visual look-alike in the same session (bursts,
+            re-exports). Open one and use the viewer’s “Similar” strip to compare.
+          </div>
+        </div>
+      )}
 
       <div className="facet">
         <label className="hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
