@@ -23,8 +23,14 @@ services:
       POSTGRES_DB: winnow
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Bound to LOOPBACK only: reachable from this host (or an SSH tunnel), never
+    # the LAN/Internet. Docker publishes ports by editing iptables directly, so a
+    # bare "5432:5432" is exposed even behind ufw — and Postgres has no business
+    # facing untrusted networks. app/worker reach it via the internal Docker
+    # network (service name `postgres`), so this host mapping is debug-only.
+    # Delete this block to publish nothing at all.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U winnow -d winnow"]
       interval: 5s
@@ -90,8 +96,11 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
+    # Loopback only. Redis runs with NO password, so an exposed port is a direct
+    # takeover vector (arbitrary commands, and well-known RCE paths). app/worker
+    # reach it via the internal Docker network (`redis`). Delete to publish none.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
