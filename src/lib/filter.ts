@@ -152,6 +152,11 @@ export const FilterSchema = z
     // it into tokens, each matched as a case-insensitive substring (AND).
     q: z.string().trim().min(1).max(200).optional(),
 
+    // Scope to a directory subtree: keep assets whose absolute path lives under
+    // this folder (prefix match on abs_path). Drives the Pipeline folder tree —
+    // picking a node scopes the grid to everything beneath it.
+    under: z.string().min(1).max(4096).optional(),
+
     // Misc
     has_gps: z.coerce.boolean().optional(),
     // Map zone: bounding box "w,s,e,n" (filters on the materialized gps_lat/lon).
@@ -358,6 +363,15 @@ export function buildFilter(
     }
   }
 
+  // Directory-subtree scope: everything under this folder. The trailing "/%"
+  // makes it a strict descendant match (the folder's own path never matches its
+  // files, only paths beneath it). LIKE wildcards in the user path are escaped.
+  if (filter.under) {
+    const prefix = filter.under.replace(/\/+$/, "");
+    conditions.push(`a.abs_path LIKE $${i++} ESCAPE '\\'`);
+    params.push(`${escapeLike(prefix)}/%`);
+  }
+
   if (filter.has_gps) conditions.push(`a.gps IS NOT NULL`);
 
   if (filter.bbox) {
@@ -435,6 +449,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "has_gps",
     "bbox",
     "q",
+    "under",
   ] as const;
   const raw: Record<string, string> = {};
   for (const k of keys) {

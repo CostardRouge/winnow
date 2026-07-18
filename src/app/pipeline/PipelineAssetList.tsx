@@ -142,14 +142,14 @@ const MUTATIONS: Record<
   },
 };
 
-// A folder selection in the Folder view: the root being browsed and, once a
-// session is picked, that leaf. The labels drive the breadcrumb; the ids scope
-// the grid (session_id when a leaf is chosen, else the whole root_id).
-type FolderScope = {
-  rootId: number;
-  rootLabel: string;
-  sessionId?: number;
-  sessionLabel?: string;
+// One node of the lazy filesystem tree (cf. /api/tree/fs): a real directory
+// holding indexed media, its recursive count, and whether it has subdirectories
+// to expand into.
+type FsNode = {
+  path: string;
+  name: string;
+  count: number;
+  expandable: boolean;
 };
 
 // SSR-safe persisted state: renders the default on the server and first client
@@ -312,8 +312,9 @@ export default function PipelineAssetList({
     }
   };
 
-  // Folder-view drill state and the scope it selects for the grid below it.
-  const [scope, setScope] = useState<FolderScope | null>(null);
+  // Folder-view selection: the absolute directory path whose subtree scopes the
+  // grid below the tree. Null until the user picks a folder.
+  const [folderPath, setFolderPath] = useState<string | null>(null);
 
   // Once the user pages past the first batch we stop auto-refreshing so polling
   // never yanks the list back to the top mid-scroll.
@@ -329,10 +330,8 @@ export default function PipelineAssetList({
     (sort.dir === "asc" ? "sort_dir=asc" : "");
   const statusQS = showStatus ? STATUS_QS[status] : "";
   const scopeQS =
-    view === "folder" && scope
-      ? scope.sessionId != null
-        ? `session_id=${scope.sessionId}`
-        : `root_id=${scope.rootId}`
+    view === "folder" && folderPath
+      ? `under=${encodeURIComponent(folderPath)}`
       : "";
   const fullQuery = useMemo(
     () => [query, statusQS, sortQS, scopeQS].filter(Boolean).join("&"),
@@ -340,8 +339,8 @@ export default function PipelineAssetList({
   );
 
   // In Folder view we only fetch media once a folder is picked; otherwise the
-  // grid would eagerly pull the whole (100k) library behind the folder list.
-  const shouldLoad = view !== "folder" || scope != null;
+  // grid would eagerly pull the whole (100k) library behind the tree.
+  const shouldLoad = view !== "folder" || folderPath != null;
 
   const loadFirst = useCallback(async () => {
     if (!shouldLoad) {
@@ -432,8 +431,11 @@ export default function PipelineAssetList({
 
   // Height for the virtualized grid (grid view, or folder view once scoped).
   const gridActive =
-    view === "grid" || (view === "folder" && scope != null);
-  const [gridRef, gridH] = useFillHeight(gridActive, `${view}:${!!hint}:${status}`);
+    view === "grid" || (view === "folder" && folderPath != null);
+  const [gridRef, gridH] = useFillHeight(
+    gridActive,
+    `${view}:${!!hint}:${status}:${folderPath ?? ""}`,
+  );
 
   const grid = (
     <div
@@ -521,10 +523,10 @@ export default function PipelineAssetList({
       {view === "folder" ? (
         <FolderView
           baseQuery={[query, statusQS].filter(Boolean).join("&")}
-          scope={scope}
-          onScope={setScope}
+          selected={folderPath}
+          onSelect={setFolderPath}
         >
-          {scope ? grid : null}
+          {folderPath ? grid : null}
         </FolderView>
       ) : view === "grid" ? (
         grid
@@ -695,37 +697,33 @@ function StatusChips({
   );
 }
 
-// Folder navigator: root ▸ session drill-down over /api/tree?group=folder. Picking
-// a root scopes the grid to the whole folder and reveals its sessions; picking a
-// session narrows to that leaf. The grid (children) renders below the breadcrumb.
+// Folder view: a lazy, real-filesystem tree (like the Library's Browse tree)
+// that expands one directory level at a time over /api/tree/fs, so hundreds of
+// folders never load at once. Selecting a node scopes the grid (rendered as
+// `children`) to that folder's whole subtree.
 function FolderView({
   baseQuery,
-  scope,
-  onScope,
+  selected,
+  onSelect,
   children,
 }: {
   baseQuery: string;
-  scope: FolderScope | null;
-  onScope: (s: FolderScope | null) => void;
+  selected: string | null;
+  onSelect: (path: string | null) => void;
   children: ReactNode;
 }) {
-  type Node = {
-    key: string;
-    value: number;
-    label: string;
-    count: number;
-    leaf: boolean;
-  };
-  const [roots, setRoots] = useState<Node[] | null>(null);
-  const [sessions, setSessions] = useState<Node[] | null>(null);
+  const [roots, setRoots] = useState<FsNode[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // Roots (top level), re-fetched when the base filters change.
+  const suffix = baseQuery ? `&${baseQuery}` : "";
+
   useEffect(() => {
     let cancelled = false;
     setRoots(null);
     setErr(null);
-    fetchJson<{ nodes: Node[] }>(`/api/tree?group=folder&${baseQuery}`)
+    fetchJson<{ nodes: FsNode[] }>(
+      `/api/tree/fs${baseQuery ? `?${baseQuery}` : ""}`,
+    )
       .then((d) => !cancelled && setRoots(d.nodes))
       .catch((e: Error) => !cancelled && setErr(e.message));
     return () => {
@@ -733,125 +731,116 @@ function FolderView({
     };
   }, [baseQuery]);
 
-  // Sessions for the drilled-into root.
-  const rootId = scope?.rootId ?? null;
-  useEffect(() => {
-    if (rootId == null) {
-      setSessions(null);
-      return;
-    }
-    let cancelled = false;
-    setSessions(null);
-    fetchJson<{ nodes: Node[] }>(
-      `/api/tree?group=folder&root_id=${rootId}&${baseQuery}`,
-    )
-      .then((d) => !cancelled && setSessions(d.nodes))
-      .catch(() => !cancelled && setSessions([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [rootId, baseQuery]);
-
-  const short = (path: string) => {
-    const parts = path.replace(/\/+$/, "").split("/");
-    return parts[parts.length - 1] || path;
-  };
-
   return (
     <div className="pl-folder">
-      <div className="pl-crumbs" aria-label="Folder path">
-        <button className="pl-crumb" onClick={() => onScope(null)}>
-          {Icons.folder} All folders
-        </button>
-        {scope && (
-          <>
-            <span className="pl-crumb-sep">{Icons.chevronRight}</span>
-            <button
-              className={`pl-crumb${scope.sessionId == null ? " active" : ""}`}
-              onClick={() =>
-                onScope({ rootId: scope.rootId, rootLabel: scope.rootLabel })
-              }
-            >
-              {short(scope.rootLabel)}
-            </button>
-          </>
-        )}
-        {scope?.sessionId != null && (
-          <>
-            <span className="pl-crumb-sep">{Icons.chevronRight}</span>
-            <span className="pl-crumb active">{scope.sessionLabel}</span>
-          </>
-        )}
-      </div>
-
       {err ? (
         <div className="error-box">
           <span>Couldn’t load folders: {err}</span>
         </div>
-      ) : scope == null ? (
-        // Top level: the roots.
-        !roots ? (
-          <div className="spinner">Loading…</div>
-        ) : roots.length === 0 ? (
-          <EmptyState icon={Icons.folder} title="No folders" />
-        ) : (
-          <div className="pl-folder-list">
-            {roots.map((r) => (
-              <button
-                key={r.value}
-                className="pl-folder-row"
-                onClick={() =>
-                  onScope({ rootId: r.value, rootLabel: r.label })
-                }
-              >
-                <span className="pl-folder-icon">{Icons.folder}</span>
-                <span className="pl-folder-name" title={r.label}>
-                  {short(r.label)}
-                </span>
-                <span className="pl-folder-count">
-                  {r.count.toLocaleString()}
-                </span>
-                <span className="pl-folder-caret">{Icons.chevronRight}</span>
-              </button>
-            ))}
-          </div>
-        )
+      ) : !roots ? (
+        <div className="spinner">Loading…</div>
+      ) : roots.length === 0 ? (
+        <EmptyState icon={Icons.folder} title="No folders" />
       ) : (
-        // Inside a root: its sessions (subfolders) above the scoped grid.
-        <>
-          {sessions == null ? (
-            <div className="spinner">Loading subfolders…</div>
-          ) : sessions.length > 0 ? (
-            <div className="pl-folder-list pl-subfolders">
-              {sessions.map((s) => (
-                <button
-                  key={s.value}
-                  className={`pl-folder-row${
-                    scope.sessionId === s.value ? " active" : ""
-                  }`}
-                  onClick={() =>
-                    onScope({
-                      rootId: scope.rootId,
-                      rootLabel: scope.rootLabel,
-                      sessionId: s.value,
-                      sessionLabel: s.label,
-                    })
-                  }
-                >
-                  <span className="pl-folder-icon">{Icons.folder}</span>
-                  <span className="pl-folder-name" title={s.label}>
-                    {s.label}
-                  </span>
-                  <span className="pl-folder-count">
-                    {s.count.toLocaleString()}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {children}
-        </>
+        <div className="pl-fs-tree" role="tree" aria-label="Folders">
+          {roots.map((n) => (
+            <FsRow
+              key={n.path}
+              node={n}
+              depth={0}
+              suffix={suffix}
+              selected={selected}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
       )}
+
+      {selected && (
+        <div className="pl-fs-scope">
+          <span className="pl-fs-scope-path" title={selected}>
+            {Icons.folder} {selected}
+          </span>
+          <button
+            className="btn btn-sm btn-icon"
+            onClick={() => onSelect(null)}
+            title="Clear folder scope"
+            aria-label="Clear folder scope"
+          >
+            {Icons.close}
+          </button>
+        </div>
+      )}
+
+      {children}
+    </div>
+  );
+}
+
+// One directory row in the lazy tree. Clicking it selects the folder (scoping
+// the grid) and, if it has subdirectories, expands them — fetched on first open.
+function FsRow({
+  node,
+  depth,
+  suffix,
+  selected,
+  onSelect,
+}: {
+  node: FsNode;
+  depth: number;
+  suffix: string;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [children, setChildren] = useState<FsNode[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const onClick = async () => {
+    onSelect(node.path);
+    if (!node.expandable) return;
+    if (children == null) {
+      setLoading(true);
+      try {
+        const d = await fetchJson<{ nodes: FsNode[] }>(
+          `/api/tree/fs?path=${encodeURIComponent(node.path)}${suffix}`,
+        );
+        setChildren(d.nodes);
+      } catch {
+        setChildren([]); // avoids a refetch loop on error
+      } finally {
+        setLoading(false);
+      }
+    }
+    setOpen((o) => !o);
+  };
+
+  return (
+    <div role="treeitem" aria-expanded={node.expandable ? open : undefined}>
+      <button
+        className={`tree-row${selected === node.path ? " active" : ""}`}
+        style={{ paddingLeft: depth * 14 + 8 }}
+        onClick={onClick}
+        title={node.path}
+      >
+        <span className="tree-caret">
+          {node.expandable ? (loading ? "…" : open ? "▾" : "▸") : ""}
+        </span>
+        <span className="pl-folder-icon">{Icons.folder}</span>
+        <span className="tree-label">{node.name}</span>
+        <span className="tree-count">{node.count.toLocaleString()}</span>
+      </button>
+      {open &&
+        children?.map((c) => (
+          <FsRow
+            key={c.path}
+            node={c}
+            depth={depth + 1}
+            suffix={suffix}
+            selected={selected}
+            onSelect={onSelect}
+          />
+        ))}
     </div>
   );
 }

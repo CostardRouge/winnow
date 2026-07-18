@@ -2459,23 +2459,41 @@
     color: var(--color-text);
   }
 
-  /* ---- Pipeline media browser (toolbar · views · folders) --------------- */
+  /* ---- Pipeline media browser (toolbar · views · folder tree) ----------- */
   /* The toolbar wraps on narrow widths; the hint takes the slack so the
      controls stay grouped on the right. */
   .pl-toolbar {
+    --tb-control-h: 32px;
     @apply flex-wrap gap-2;
   }
   .pl-hint {
     @apply min-w-0;
     max-width: 52ch;
   }
+  /* Every interactive control on the toolbar shares one height so the segmented
+     switch, the select, the icon buttons and Refresh read as one row. */
+  .pl-toolbar .view-toggle,
+  .pl-toolbar .pl-sort-field,
+  .pl-toolbar .btn {
+    height: var(--tb-control-h);
+  }
+  /* Let the shared height drive centring instead of the inner padding. */
+  .pl-toolbar .view-btn,
+  .pl-toolbar .btn {
+    @apply py-0;
+  }
+  /* Square icon buttons track the height on both axes (so ↑↓ / density / a
+     Refresh-only icon read as the same size as the pill toggles). */
+  .pl-toolbar .btn-icon {
+    width: var(--tb-control-h);
+  }
   /* Sort field + direction toggle, kept together. */
   .pl-sort {
-    @apply flex items-center gap-1;
+    @apply flex items-center gap-1.5;
   }
   .pl-sort-field {
-    @apply h-8 py-0 pl-2 pr-6 text-xs;
-    min-width: 130px;
+    @apply py-0 pl-2 pr-6 text-xs;
+    min-width: 132px;
   }
   /* The status facet sits on its own row under the toolbar. */
   .pl-status {
@@ -2487,68 +2505,36 @@
     @apply min-h-0;
   }
 
-  /* Folder view: breadcrumb + drillable folder rows over the scoped grid. */
+  /* Folder view: a lazy filesystem tree over the scoped grid. */
   .pl-folder {
     @apply flex min-h-0 flex-1 flex-col gap-2;
   }
-  .pl-crumbs {
-    @apply flex flex-wrap items-center gap-1 text-[13px];
+  /* The tree scrolls within a bounded height so a deep expansion never pushes
+     the grid off-screen. Reuses the Library tree-row styling. */
+  .pl-fs-tree {
+    @apply overflow-y-auto;
+    max-height: 42vh;
   }
-  .pl-crumb {
-    @apply inline-flex items-center gap-1 rounded-[var(--radius)] px-1.5 py-1;
-    color: var(--color-muted);
-  }
-  button.pl-crumb:hover {
-    background: var(--color-surface-2);
-    color: var(--color-text);
-  }
-  .pl-crumb.active {
-    color: var(--color-text);
-    font-weight: 600;
-  }
-  .pl-crumb-sep {
-    color: var(--color-faint);
-    line-height: 0;
-  }
-  .pl-folder-list {
-    @apply grid gap-1.5;
-  }
-  /* Subfolder chips inside a root: a horizontal, wrapping strip above the grid. */
-  .pl-subfolders {
-    @apply flex flex-wrap gap-1.5;
-  }
-  .pl-folder-row {
-    @apply flex items-center gap-2.5 rounded-[var(--radius-lg)] border px-3 py-2.5 text-left text-[13px];
-    background: var(--color-surface);
-    border-color: var(--color-border);
-    transition: border-color 0.16s var(--ease-out), transform 0.16s var(--ease-out);
-  }
-  .pl-folder-row:hover {
-    border-color: var(--color-border-strong);
-    transform: translateY(-1px);
-  }
-  .pl-folder-row.active {
-    border-color: var(--color-accent);
-    background: var(--color-surface-2);
-  }
-  .pl-subfolders .pl-folder-row {
-    @apply py-1.5;
-  }
+  /* The folder glyph beside each tree label. */
   .pl-folder-icon {
     color: var(--color-accent);
     line-height: 0;
+    flex-shrink: 0;
   }
-  .pl-folder-name {
-    @apply min-w-0 flex-1 truncate font-medium;
+  /* On the selected (accent-filled) row the glyph must read against the accent. */
+  .tree-row.active .pl-folder-icon {
+    color: var(--color-accent-fg);
   }
-  .pl-folder-count {
-    @apply text-[11px];
+  /* Selected-folder bar above the grid: the active path + a Clear button. */
+  .pl-fs-scope {
+    @apply flex items-center gap-2 rounded-[var(--radius)] border px-2.5 py-1.5;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+  }
+  .pl-fs-scope-path {
+    @apply inline-flex min-w-0 flex-1 items-center gap-1.5 truncate text-[12px];
     font-family: var(--font-mono);
-    color: var(--color-faint);
-  }
-  .pl-folder-caret {
-    color: var(--color-faint);
-    line-height: 0;
+    color: var(--color-muted);
   }
   /* On phones the segmented view labels take too much room — icon only. */
   @media (max-width: 560px) {
