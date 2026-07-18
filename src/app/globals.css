@@ -1290,6 +1290,13 @@
     background: var(--color-accent);
     color: var(--color-accent-fg);
   }
+  /* When the info panel is collapsed, the "reopen" info button occupies the
+     top-left corner (mirroring the close button). Drop the LIVE badge below it
+     so the two stack instead of overlapping — the badge clears the 2.5rem
+     button (top 0.75rem + height 2.5rem) plus a small gap. */
+  .viewer-live-badge.below-info {
+    top: 3.75rem;
+  }
   /* Deck play badge in its Live Photo variant: smaller text than the ▶ glyph. */
   .deck-card-play.is-live {
     font-size: 13px;

@@ -13,7 +13,7 @@
 // the caller through `renderActions` / `renderInfo`, and extra shortcuts through
 // `onKeyDown`. Media URLs default to the asset derivatives but can be overridden
 // (e.g. an export item keyed by its source asset).
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 import { formatBytes, formatDimensions } from "@/lib/format";
@@ -82,6 +82,26 @@ const SWIPE_THRESHOLD = 50; // px a one-finger drag must travel to count as a sw
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
 
+// Persisted "is the info panel open?" preference, shared across every surface
+// that reuses the viewer so the choice sticks between visits.
+const PANEL_PREF_KEY = "winnow.viewer.info";
+
+// Read the stored preference synchronously. The viewer only ever mounts on the
+// client — every caller starts with a null index and mounts it on interaction —
+// so this runs in the `useState` initializer with `localStorage` available, and
+// the very first render already reflects the choice. A hidden panel is thus
+// never rendered at all (nothing to flash away), and an open one is present from
+// the first paint: no reflow either way. Defaults to open when unset or
+// unreadable (SSR / private mode / storage disabled).
+const readPanelPref = () => {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(PANEL_PREF_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+};
+
 export default function MediaViewer<T extends ViewerItem>({
   items,
   index,
@@ -112,9 +132,21 @@ export default function MediaViewer<T extends ViewerItem>({
 }) {
   const last = items.length - 1;
 
-  // Metadata bottom panel: shown by default, toggleable down to a small info
-  // icon so it never has to cover the media.
-  const [panelOpen, setPanelOpen] = useState(true);
+  // Metadata bottom panel: toggleable down to a small info icon so it never has
+  // to cover the media. The open/closed choice is restored from (and mirrored
+  // back to) localStorage, so reopening the viewer honours how you last left it.
+  const [panelOpen, setPanelOpen] = useState(readPanelPref);
+
+  // Toggle helper that persists the choice alongside the state update. Wrapped
+  // in try/catch so a storage failure (private mode) still toggles the panel.
+  const setPanel = useCallback((open: boolean) => {
+    setPanelOpen(open);
+    try {
+      localStorage.setItem(PANEL_PREF_KEY, open ? "open" : "closed");
+    } catch {
+      // Storage unavailable: keep the non-persisted toggle working.
+    }
+  }, []);
 
   // RAW+JPEG pairing: which side of the pair is displayed. Resets to the primary
   // (JPEG/HEIF) whenever we move to another item.
@@ -380,7 +412,7 @@ export default function MediaViewer<T extends ViewerItem>({
       {!panelOpen && (
         <button
           className="viewer-info-btn"
-          onClick={() => setPanelOpen(true)}
+          onClick={() => setPanel(true)}
           aria-label="Show info"
           title="Show info"
         >
@@ -455,7 +487,9 @@ export default function MediaViewer<T extends ViewerItem>({
             // still and its motion. Mirrors the format toggle in the controls bar.
             <button
               type="button"
-              className={`viewer-live-badge${companionShown ? " active" : ""}`}
+              className={`viewer-live-badge${companionShown ? " active" : ""}${
+                !panelOpen ? " below-info" : ""
+              }`}
               aria-pressed={companionShown}
               title={companionShown ? "Show the still" : "Play the Live Photo motion"}
               onMouseDown={stopVideoMouse}
@@ -474,7 +508,7 @@ export default function MediaViewer<T extends ViewerItem>({
               </strong>
               <button
                 className="viewer-panel-toggle"
-                onClick={() => setPanelOpen(false)}
+                onClick={() => setPanel(false)}
                 aria-label="Hide info"
                 title="Hide info"
               >
