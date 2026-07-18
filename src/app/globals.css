@@ -3038,19 +3038,42 @@ html[data-theme="dark"] .btn-primary:hover {
     padding: 6px 4px;
   }
   /* The rail is a bottom bar here, so its 6 nav items own the row. Lift the
-     theme toggle out of that flow to a discreet fixed chip in the top-right
+     theme toggle out of that flow to a discreet bare icon in the top-right
      corner — reachable from every page without crowding the nav or needing a
-     per-page header slot. Sits above the topbar (z-20) and slide-in panel. */
+     per-page header slot. The container spans the single-line topbar band and
+     centres its content, so the icon lines up vertically with the page title.
+     Sits above the topbar (z-20) and slide-in panel. */
   .rail-foot {
     position: fixed;
-    top: max(10px, env(safe-area-inset-top));
-    right: max(10px, env(safe-area-inset-right));
+    top: env(safe-area-inset-top, 0px);
+    right: max(6px, env(safe-area-inset-right));
     bottom: auto;
     left: auto;
     width: auto;
+    height: 3.6rem; /* ≈ the single-line .topbar band (py-3.5 + h1 line box) */
     margin: 0;
     padding: 0;
+    display: flex;
+    align-items: center;
     z-index: 45;
+  }
+  /* Bare in the header: no pill, no border, no shadow — just the glyph. */
+  .theme-toggle {
+    width: 34px;
+    height: 34px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: var(--color-muted);
+  }
+  .theme-toggle:hover,
+  .theme-toggle:active {
+    background: transparent;
+    box-shadow: none;
+  }
+  .theme-toggle .theme-ic svg {
+    width: 19px;
+    height: 19px;
   }
   /* Reserve the bottom bar's height — including the safe-area inset on notched
      phones — so scrollable content (and the slide-in panel, which stops at the
