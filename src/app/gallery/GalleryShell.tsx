@@ -187,6 +187,7 @@ function toQuery(
   arr("face_count", f.face_count);
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
   if (f.has_text) sp.set("has_text", "true");
+  if (f.near_dup) sp.set("near_dup", "true");
   // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
@@ -223,6 +224,7 @@ function countActiveFilters(f: Filters): number {
   if (f.group_kind) n++;
   if (f.has_edit) n++;
   if (f.is_edit) n++;
+  if (f.near_dup) n++;
   if (f.bbox) n++;
   return n;
 }

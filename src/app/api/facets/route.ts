@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       pois,
       faces,
       withText,
+      withPhash,
       exts,
       mediaTypes,
       derivativeStatuses,
@@ -138,6 +139,16 @@ export async function GET(req: NextRequest) {
          WHERE a.ocr_text IS NOT NULL${scope}`,
         params,
       ).catch(() => null),
+      // Availability flag for the "Near-duplicates" toggle: how many assets carry
+      // a perceptual hash (i.e. were analyzed). Gates the control so it never
+      // shows as a dead filter when ML hasn't run. The btree assets_phash_idx
+      // (migration 0022) serves this count. Not the near-dup COUNT itself — that
+      // needs the self-join and is left to the filtered result.
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         WHERE a.phash IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
       settledArray(facet("ext", scope, params)),
       settledArray(facet("media_type", scope, params, "value ASC")),
       settledArray(facet("derivative_status", scope, params, "value ASC")),
@@ -184,6 +195,7 @@ export async function GET(req: NextRequest) {
       place_pois: pois,
       faces,
       with_text: withText?.count ?? 0,
+      with_phash: withPhash?.count ?? 0,
       extensions: exts,
       media_types: mediaTypes,
       derivative_statuses: derivativeStatuses,

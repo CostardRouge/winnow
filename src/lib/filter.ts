@@ -63,6 +63,12 @@ const intList = z
     return out.length ? out : undefined;
   });
 
+// Hamming-distance ceiling for the "has a near-duplicate" filter. Deliberately
+// tighter than the /similar strip's default (16 = "probably unrelated"
+// boundary): a FILTER wants precision, so ~10 ("very close" on the dHash scale)
+// keeps false positives down while still catching bursts / re-exports / resizes.
+const NEAR_DUP_MAX_DISTANCE = 10;
+
 export const FilterSchema = z
   .object({
     // Explicit selection (per-asset / bulk actions, e.g. export a selection).
@@ -122,6 +128,11 @@ export const FilterSchema = z
     face_count: intList,
     has_faces: boolish,
     has_text: boolish,
+    // Perceptual near-duplicates (cf. lib/ml.ts, GET /api/assets/:id/similar):
+    // true → only frames that have a look-alike within the same session; false →
+    // only the loners (unanalyzed included). A gallery-wide companion to the
+    // byte-exact content_hash dedup and the per-asset "Similar" strip.
+    near_dup: boolish,
 
     // Calendar (multi-value) + date range
     year: intList,
@@ -329,6 +340,27 @@ export function buildFilter(
   if (filter.sharpness_min != null) gte("a.sharpness", filter.sharpness_min);
   if (filter.sharpness_max != null) lte("a.sharpness", filter.sharpness_max);
 
+  // Perceptual near-duplicate: a frame has one when another LIVE frame IN THE
+  // SAME SESSION lands within NEAR_DUP_MAX_DISTANCE Hamming bits of its dHash —
+  // bit_count over the XOR of the two 64-bit phashes, the same measure the
+  // /similar route ranks by (cf. lib/ml.ts). Scoped to the session (where bursts
+  // and re-exports land together) so the correlated self-join stays bounded; an
+  // unscoped, library-wide near match would be O(N^2). `false` keeps the loners
+  // AND the not-yet-analyzed (phash NULL → the inner is empty → NOT EXISTS true),
+  // mirroring how has_faces=false lumps in the unanalyzed.
+  if (filter.near_dup === true || filter.near_dup === false) {
+    const exists = `EXISTS (
+      SELECT 1 FROM assets nd
+       WHERE nd.session_id = a.session_id
+         AND nd.id <> a.id
+         AND nd.deleted_at IS NULL
+         AND nd.phash IS NOT NULL
+         AND a.phash IS NOT NULL
+         AND bit_count((a.phash # nd.phash)::bit(64)) <= $${i++})`;
+    params.push(NEAR_DUP_MAX_DISTANCE);
+    conditions.push(filter.near_dup ? exists : `NOT ${exists}`);
+  }
+
   if (filter.tags) {
     conditions.push(
       `EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
@@ -417,6 +449,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "face_count",
     "has_faces",
     "has_text",
+    "near_dup",
     "year",
     "month",
     "day",
