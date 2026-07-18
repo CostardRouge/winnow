@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import VirtualGrid, { type GalleryAsset } from "./VirtualGrid";
 import type { SidecarBrief } from "@/lib/types";
@@ -124,6 +124,19 @@ const GRID_SIZES = [
 ] as const;
 const GRID_SIZE_KEY = "winnow.grid.size";
 const GRID_SIZE_DEFAULT = 1; // Medium
+
+// Desktop-only persistence of the Filters/Browse aside's collapsed choice, so
+// it survives reloads. The value is also read pre-paint by an inline script in
+// the root layout (which seeds the <html data-gallery-aside> marker); keep this
+// key and the media query identical to that script. Phones use the transient
+// slide-in drawer and never persist here.
+const ASIDE_KEY = "winnow.gallery.aside";
+const ASIDE_MQ = "(min-width: 761px)";
+
+// Layout effect on the client (so the <html> marker lands before paint — no
+// collapse/expand flash), a harmless no-op during SSR.
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 function toQuery(
   f: Filters,
@@ -315,11 +328,44 @@ export default function GalleryShell({
   }, [gridSize]);
 
   // The aside starts closed (SSR-safe default, and the right call on phones).
-  // On desktop it should start open — checked client-side, once, to avoid SSR
-  // drift, same as the grid density above.
-  useEffect(() => {
-    if (window.matchMedia("(min-width: 761px)").matches) setPanelOpen(true);
-  }, []);
+  // On desktop it restores the persisted open/closed choice (default open) and
+  // then keeps the <html data-gallery-aside> marker — the pre-paint visibility
+  // authority, seeded by the root layout's inline script — in lockstep with the
+  // panel state. A layout effect so both the restore and every runtime toggle
+  // land before paint: no collapse/expand reflow on load or on toggle.
+  const asideBooted = useRef(false);
+  useIsoLayoutEffect(() => {
+    const el = document.documentElement;
+    if (!window.matchMedia(ASIDE_MQ).matches) {
+      // Phones: the slide-in drawer owns visibility; drop any desktop marker.
+      delete el.dataset.galleryAside;
+      return;
+    }
+    if (!asideBooted.current) {
+      asideBooted.current = true;
+      const open = localStorage.getItem(ASIDE_KEY) !== "closed";
+      if (open !== panelOpen) {
+        // Re-runs this effect with the restored value before painting.
+        setPanelOpen(open);
+        return;
+      }
+    }
+    el.dataset.galleryAside = panelOpen ? "open" : "closed";
+  }, [panelOpen]);
+
+  // Toggle the aside and, on desktop, persist the choice (the marker itself is
+  // mirrored by the layout effect above). Phones toggle the drawer only.
+  const togglePanel = useCallback(() => {
+    const next = !panelOpen;
+    setPanelOpen(next);
+    if (window.matchMedia(ASIDE_MQ).matches) {
+      try {
+        localStorage.setItem(ASIDE_KEY, next ? "open" : "closed");
+      } catch {
+        // Private mode / storage disabled: fall back to a non-persisted toggle.
+      }
+    }
+  }, [panelOpen]);
 
   // Mirror filter changes back to the host (which writes them to the URL). Skip
   // the first run so we don't immediately rewrite the URL we just seeded from.
@@ -880,7 +926,7 @@ export default function GalleryShell({
         {showAside && (
           <button
             className={`icon-toggle gallery-filter-toggle${panelOpen ? " active" : ""}`}
-            onClick={() => setPanelOpen((o) => !o)}
+            onClick={togglePanel}
             aria-label="Toggle filters panel"
             aria-pressed={panelOpen}
             title="Toggle filters panel"

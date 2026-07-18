@@ -65,9 +65,24 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // The inline script below stamps data-gallery-aside on <html> before
+      // hydration (restoring the collapsed filter sidebar without a reflow), so
+      // the server markup intentionally differs here.
+      suppressHydrationWarning
       className={`${spaceGrotesk.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
     >
       <body>
+        {/* Pre-paint restore of the gallery's desktop filter-sidebar choice.
+            GalleryShell persists it to localStorage; applying it here — before
+            the tree paints — means a sidebar the user collapsed stays collapsed
+            on reload with no open→closed reflow. Desktop only (min-width:761px);
+            phones use the transient slide-in drawer. Keep the key and query in
+            sync with ASIDE_KEY/ASIDE_MQ in GalleryShell.tsx. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(window.matchMedia("(min-width: 761px)").matches&&localStorage.getItem("winnow.gallery.aside")==="closed"){document.documentElement.setAttribute("data-gallery-aside","closed")}}catch(e){}`,
+          }}
+        />
         <div className="root">
           <AppRail />
           <div className="root-main">{children}</div>
