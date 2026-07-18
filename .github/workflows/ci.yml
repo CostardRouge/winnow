@@ -52,7 +52,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector superset of postgres:16 — the CLIP-search migration (0025)
+        # does CREATE EXTENSION vector, so the plain image would fail `migrate`.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: winnow
           POSTGRES_PASSWORD: winnow

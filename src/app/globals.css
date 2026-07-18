@@ -1962,6 +1962,49 @@
     background: var(--color-surface-3);
     color: var(--color-text);
   }
+
+  /* Semantic search page (CLIP, cf. src/app/search/page.tsx). */
+  .search-page {
+    @apply mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6;
+  }
+  .search-title {
+    @apply text-2xl font-semibold;
+  }
+  .search-bar {
+    @apply relative flex items-center gap-2;
+  }
+  .search-bar .search-input {
+    @apply flex-1;
+  }
+  .search-examples {
+    @apply flex flex-wrap gap-2;
+  }
+  .search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+  }
+  .search-cell {
+    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
+    aspect-ratio: 1 / 1;
+  }
+  .search-cell img {
+    @apply h-full w-full;
+    object-fit: cover;
+  }
+  .search-badge {
+    @apply absolute bottom-1 right-1 rounded px-1 text-xs leading-none;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    padding-block: 2px;
+  }
+  .empty-state {
+    @apply rounded-[var(--radius-lg)] border p-6 text-sm;
+    color: var(--color-muted);
+  }
+  .empty-state.error {
+    color: var(--color-text);
+  }
   .facet-title {
     @apply mb-2 text-[11px] font-semibold uppercase;
     letter-spacing: 0.06em;

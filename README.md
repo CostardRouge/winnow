@@ -428,6 +428,17 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
 - **Embeddings are kept** (`asset_faces.embedding`, 512-dim ArcFace, JSONB —
   pgvector-ready). Grouping faces into named **persons** is a natural next step
   and will need **no re-inference** over the library.
+- **Semantic search (CLIP).** The same `/predict` call also returns a **CLIP
+  visual embedding** of the derivative (one more task on the existing round trip
+  — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**
+  (migration 0025; the Postgres image is `pgvector/pgvector:pg16`). The **Search**
+  page (in the rail) then takes a **natural-language** query — *"sunset over the
+  sea"*, *"people laughing at a table"* — embeds it with the **same model's
+  textual head** and ranks the library by cosine distance (`GET /api/search`).
+  Toggle with `ML_CLIP_ENABLED`; pick the model with `ML_CLIP_MODEL`
+  (`ViT-B-32__openai` = 512-dim, CPU-friendly — visual and textual heads must be
+  the same model). Back-fill embeddings over an existing library with
+  `npm run ml-backfill -- --force` after enabling it.
 - **Not covered (yet): closed eyes.** The container returns face boxes, scores
   and embeddings but **no facial landmarks**, so an eyes-open/closed verdict
   can't be derived from it — that would take a small dedicated landmarks model
