@@ -9,7 +9,13 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 is a drop-in superset of postgres:16 (same PG16 data
+    # dir) that ships the `vector` extension CLIP semantic search needs
+    # (migration 0025). Existing pgdata volumes keep working — the extension is
+    # just available. The backup sidecar stays on postgres:16-alpine: pg_dump is
+    # compatible within the same major, and a restore only needs pgvector present
+    # on the target (see docs/BACKUP.md).
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: winnow

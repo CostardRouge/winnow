@@ -41,6 +41,8 @@ export type MlResult = {
   // Every text fragment the OCR read, joined with newlines. Null when OCR is
   // disabled or nothing was read.
   ocrText: string | null;
+  // CLIP visual embedding of the image (cosine space). Null when CLIP is disabled.
+  clipEmbedding: number[] | null;
   imgWidth: number | null;
   imgHeight: number | null;
 };
@@ -62,6 +64,9 @@ type ImmichPredictResponse = {
   // Parallel arrays: one entry per fragment read. `box` (flat, 8 floats per
   // quad, normalized 0..1) is not stored — we keep the text only.
   ocr?: { text: string[]; boxScore: number[]; textScore: number[] };
+  // CLIP embedding (visual or textual). Like faces, the container may serialize
+  // it as a JSON string or a plain array — parseEmbedding tolerates both.
+  clip?: string | number[];
   imageWidth?: number;
   imageHeight?: number;
 };
@@ -89,6 +94,13 @@ function buildEntries(): Record<string, unknown> {
         modelName: config.ml.ocr.model,
         options: { minScore: config.ml.ocr.minScore },
       },
+    };
+  }
+  // CLIP visual embedding for semantic search — rides the same /predict call,
+  // so faces + OCR + clip cost ONE round trip and one image decode container-side.
+  if (config.ml.clip.enabled) {
+    entries["clip"] = {
+      visual: { modelName: config.ml.clip.model, options: {} },
     };
   }
   return entries;
@@ -140,9 +152,51 @@ async function immichPredict(image: Buffer): Promise<MlResult> {
   return {
     faces,
     ocrText: fragments.length ? fragments.join("\n") : null,
+    clipEmbedding: parseEmbedding(data.clip),
     imgWidth: data.imageWidth ?? null,
     imgHeight: data.imageHeight ?? null,
   };
+}
+
+// pgvector text input format: "[f1,f2,…]". Numbers stringify in a form the
+// extension's parser accepts (plain or scientific notation).
+function toVectorLiteral(embedding: number[]): string {
+  return `[${embedding.join(",")}]`;
+}
+
+// Embed a natural-language query with the SAME CLIP model's TEXTUAL head, so the
+// vector lives in the same cosine space as the stored visual embeddings. One
+// /predict call, the `text` form field instead of an image. Used by /api/search;
+// user-initiated (one call per search), so it is NOT paced by mlPerHour.
+export async function embedText(query: string): Promise<number[]> {
+  if (!config.ml.enabled || !config.ml.clip.enabled) {
+    throw new Error(
+      "CLIP semantic search is disabled (set ML_ENABLED=true and ML_CLIP_ENABLED=true)",
+    );
+  }
+  if (config.ml.provider !== "immich") {
+    throw new Error(`Unsupported ml provider: ${config.ml.provider}`);
+  }
+  const base = config.ml.baseUrl.replace(/\/+$/, "");
+  const form = new FormData();
+  form.set(
+    "entries",
+    JSON.stringify({
+      clip: { textual: { modelName: config.ml.clip.model, options: {} } },
+    }),
+  );
+  form.set("text", query);
+
+  const res = await fetch(`${base}/predict`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(config.ml.timeoutMs),
+  });
+  if (!res.ok) throw new Error(`ml HTTP ${res.status} from ${base}`);
+  const data = (await res.json()) as ImmichPredictResponse;
+  const emb = parseEmbedding(data.clip);
+  if (!emb) throw new Error("ml returned no CLIP embedding for the query");
+  return emb;
 }
 
 // --- Local quality/similarity metrics (no container involved) ---------------
@@ -282,23 +336,39 @@ export async function runMlJob(assetId: number): Promise<void> {
     // throttle — pure sharp work on the bytes already in hand.
     const metrics = await computeImageMetrics(image);
 
-    // The container tasks, only when at least one is enabled. facesRan/ocrRan
-    // gate the writes below so a disabled task never overwrites a previous
-    // result with an empty one.
+    // The container tasks, only when at least one is enabled. facesRan/ocrRan/
+    // clipRan gate the writes below so a disabled task never overwrites a
+    // previous result with an empty one.
     const facesRan = config.ml.faces.enabled;
     const ocrRan = config.ml.ocr.enabled;
+    const clipRan = config.ml.clip.enabled;
     let result: MlResult = {
       faces: [],
       ocrText: null,
+      clipEmbedding: null,
       imgWidth: null,
       imgHeight: null,
     };
-    if (facesRan || ocrRan) {
+    if (facesRan || ocrRan || clipRan) {
       await throttleMl();
       if (config.ml.provider !== "immich") {
         throw new Error(`Unsupported ml provider: ${config.ml.provider}`);
       }
       result = await immichPredict(image);
+    }
+
+    // CLIP visual embedding → asset_clip (upsert, so a re-analysis refreshes it).
+    // Only when the task ran AND returned a vector, so a disabled/failed clip
+    // never wipes an existing embedding.
+    if (clipRan && result.clipEmbedding) {
+      await q(
+        `INSERT INTO asset_clip (asset_id, embedding, model, updated_at)
+         VALUES ($1, $2::vector, $3, now())
+         ON CONFLICT (asset_id) DO UPDATE
+           SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
+               updated_at = now()`,
+        [assetId, toVectorLiteral(result.clipEmbedding), config.ml.clip.model],
+      );
     }
 
     // Replace wholesale: a re-analysis (new model, regenerated derivative) must

@@ -92,7 +92,11 @@ x-winnow-env: &winnow-env
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector superset of postgres:16 (same PG16 data dir) — ships the `vector`
+    # extension CLIP semantic search needs (migration 0025). Existing pgdata keeps
+    # working. The backup sidecar stays on postgres:16-alpine (pg_dump is
+    # major-compatible; a restore just needs pgvector on the target).
+    image: pgvector/pgvector:pg16
     container_name: winnow_postgres
     restart: unless-stopped
     environment:

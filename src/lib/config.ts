@@ -286,6 +286,15 @@ const EnvSchema = z
     ML_OCR_ENABLED: boolEnv(true),
     ML_OCR_MODEL: strEnv("PP-OCRv5_mobile"),
     ML_OCR_MIN_SCORE: numEnv(0.8, { min: 0, max: 1 }),
+    // CLIP semantic search (natural-language queries, cf. lib/ml.ts + /api/search).
+    // The SAME /predict call also returns a CLIP *visual* embedding of the
+    // derivative (stored in asset_clip); at search time the query text is
+    // embedded by the same model's textual head and ranked by cosine distance.
+    // The visual and textual heads must be the SAME model, so this one name drives
+    // both. ViT-B-32__openai = 512-dim, CPU-friendly, a valid Immich model; a
+    // SigLIP model is more accurate but larger. Needs pgvector (see migration 0025).
+    ML_CLIP_ENABLED: boolEnv(true),
+    ML_CLIP_MODEL: strEnv("ViT-B-32__openai"),
     // Serialized by default: the container queues requests without backpressure,
     // so a small in-flight count is what protects a CPU-only box. The per-hour
     // rate (app_settings) is what actually paces the backfill.
@@ -430,6 +439,10 @@ function loadConfig() {
         enabled: e.ML_OCR_ENABLED,
         model: e.ML_OCR_MODEL,
         minScore: e.ML_OCR_MIN_SCORE,
+      },
+      clip: {
+        enabled: e.ML_CLIP_ENABLED,
+        model: e.ML_CLIP_MODEL,
       },
       concurrency: e.ML_CONCURRENCY,
       timeoutMs: e.ML_TIMEOUT_MS,
