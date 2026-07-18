@@ -1341,7 +1341,7 @@
     @apply flex min-h-0 flex-1 flex-col;
   }
   .viewer .stage {
-    @apply flex min-h-0 flex-1 items-center justify-center overflow-hidden;
+    @apply relative flex min-h-0 flex-1 items-center justify-center overflow-hidden;
     touch-action: none;
   }
   .viewer .stage img,
@@ -1421,6 +1421,35 @@
   .viewer .close:hover {
     background: rgba(60, 54, 46, 0.8);
     transform: scale(1.05);
+  }
+  /* Zoom HUD pinned to the bottom-right of the stage: −, the live zoom readout,
+     +. Lives inside the stage so it floats over the media, clear of the info
+     panel (a bottom sheet) and the controls bar below. The readout is a button
+     that toggles between fit and the last zoom. */
+  .viewer-zoom {
+    @apply absolute bottom-3 right-3 z-10 inline-flex items-center overflow-hidden rounded-full;
+    background: rgba(16, 15, 13, 0.55);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .viewer-zoom-btn {
+    @apply flex h-9 w-9 items-center justify-center border-0 text-lg leading-none text-white transition duration-150;
+    background: transparent;
+  }
+  .viewer-zoom-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  .viewer-zoom-btn:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+  .viewer-zoom-level {
+    @apply flex h-9 min-w-[3.25rem] items-center justify-center border-0 px-1
+      font-mono text-xs tabular-nums text-white transition duration-150;
+    background: transparent;
+    border-inline: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .viewer-zoom-level:hover {
+    background: rgba(255, 255, 255, 0.16);
   }
   .viewer-tags {
     @apply mt-2 flex flex-wrap items-center gap-1;

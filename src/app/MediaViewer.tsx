@@ -156,21 +156,47 @@ export default function MediaViewer<T extends ViewerItem>({
   // of this asset. Mutually exclusive with the companion toggle below.
   const [showCounterpart, setShowCounterpart] = useState(false);
 
-  // Zoom/pan transform applied to the current media. Reset whenever we move to
-  // another item so each photo/video starts fitted.
+  // Zoom/pan transform applied to the current media. Deliberately *kept* across
+  // navigation: stepping to the next/previous item preserves the current zoom
+  // level and pan offset, so flicking back and forth compares the same framing
+  // of successive photos. Only the pair toggles reset per item (below).
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
   const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
 
+  // Toggle-to-fit memory for the zoom readout. Clicking the readout snapshots
+  // the current zoomed-in transform and drops to fit; clicking again restores
+  // that snapshot (level *and* pan), so you can peek at the whole frame and pop
+  // straight back to where you were.
+  const zoomMemory = useRef({ scale: 2, tx: 0, ty: 0 });
+
   useEffect(() => {
-    setScale(1);
-    setTx(0);
-    setTy(0);
     setShowCompanion(false);
     setShowCounterpart(false);
   }, [index]);
+
+  const zoomBy = useCallback(
+    (factor: number) => setScale((s) => clamp(s * factor, MIN_SCALE, MAX_SCALE)),
+    [],
+  );
+
+  // Clicking the zoom readout: from any zoom, snapshot it and fall back to fit;
+  // from fit, restore the last snapshot (defaulting to 2× if none yet).
+  const toggleZoom = useCallback(() => {
+    if (scale > MIN_SCALE) {
+      zoomMemory.current = { scale, tx, ty };
+      setScale(MIN_SCALE);
+      setTx(0);
+      setTy(0);
+    } else {
+      const m = zoomMemory.current;
+      setScale(m.scale > MIN_SCALE ? m.scale : 2);
+      setTx(m.tx);
+      setTy(m.ty);
+    }
+  }, [scale, tx, ty]);
 
   // Once back to fit, drop any leftover pan so the media re-centres.
   useEffect(() => {
@@ -499,6 +525,55 @@ export default function MediaViewer<T extends ViewerItem>({
               <span className="live-badge-dot" aria-hidden />
               LIVE
             </button>
+          )}
+          {ready && (
+            // Zoom HUD (bottom-right of the stage): −, the live zoom readout, +.
+            // The readout is itself a button — click to pop back to fit, click
+            // again to return to the last zoom. Stop pointer/touch events from
+            // reaching the stage so its buttons never start a pan, a swipe or a
+            // double-click zoom.
+            <div
+              className="viewer-zoom"
+              role="group"
+              aria-label="Zoom"
+              onMouseDown={stopVideoMouse}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onTouchStart={stopVideoTouch}
+            >
+              <button
+                type="button"
+                className="viewer-zoom-btn"
+                onClick={() => zoomBy(1 / 1.15)}
+                disabled={scale <= MIN_SCALE}
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="viewer-zoom-level"
+                onClick={toggleZoom}
+                aria-label={
+                  scale > MIN_SCALE ? "Reset zoom to fit" : "Restore last zoom"
+                }
+                title={
+                  scale > MIN_SCALE ? "Reset to fit" : "Restore last zoom"
+                }
+              >
+                {Math.round(scale * 100)}%
+              </button>
+              <button
+                type="button"
+                className="viewer-zoom-btn"
+                onClick={() => zoomBy(1.15)}
+                disabled={scale >= MAX_SCALE}
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                +
+              </button>
+            </div>
           )}
         </div>
         {panelOpen && (
