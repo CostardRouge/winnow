@@ -168,6 +168,46 @@ export default function FailuresPage() {
   const onRetryScan = (keys: string[] | null, busyKey: string) =>
     doRetry("scan", keys ? { paths: keys } : {}, busyKey);
 
+  // Delete broken derivatives (soft delete → trash): the escape hatch for an
+  // asset that can never be re-derived (its original was removed by hand, an
+  // @eaDir/junk file that shouldn't have been indexed…). Staged behind a
+  // confirmation. `null` keys = every derivative-error asset (server-side
+  // filter, beyond the listing cap); otherwise the picked ids.
+  const [confirmDelete, setConfirmDelete] = useState<{
+    ids: number[] | null;
+    count: number;
+  } | null>(null);
+  const onDeleteDeriv = (keys: number[] | null) =>
+    setConfirmDelete({ ids: keys, count: keys?.length ?? counts.derivative });
+
+  async function runDeleteDeriv() {
+    if (!confirmDelete || busy) return;
+    setBusy("derivative:delete");
+    setMsg("");
+    try {
+      // ids for a pick, a filter for "all" (covers rows past the 200 cap). Soft
+      // delete only: never touches a file, so it's safe even on Final volumes.
+      const body = confirmDelete.ids
+        ? { ids: confirmDelete.ids }
+        : { filter: { derivative_status: ["error"] } };
+      const r = await fetch("/api/assets/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      setMsg(
+        r.ok
+          ? `Moved ${d.updated ?? 0} broken media to the trash. Reclaim the space (and the leftover thumbnails) with Empty trash.`
+          : `Error: ${d.error ?? "unknown"}`,
+      );
+      setConfirmDelete(null);
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const derivRows: RowData<number>[] = (data?.derivative.items ?? []).map(
     (it) => ({
       key: it.asset_id,
@@ -253,13 +293,14 @@ export default function FailuresPage() {
       {activeTab === "derivative" && (
         <RetrySection<number>
           title="Analyze (derivatives)"
-          hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry."
+          hint="Photo/video derivative generation failed — check the message, fix the cause (e.g. ffmpeg/codec), then retry. If it can never be rebuilt (the original was deleted, or it's a junk/@eaDir file that shouldn't have been indexed), Delete moves it to the trash — safe even on Final volumes, since it never touches a file."
           count={counts.derivative}
           rows={derivRows}
           retryAllLabel="Retry all"
           prefix="derivative"
           busy={busy}
           onRetry={onRetryDeriv}
+          onDelete={onDeleteDeriv}
         />
       )}
 
@@ -316,7 +357,71 @@ export default function FailuresPage() {
           setMsg={setMsg}
         />
       )}
+
+      {confirmDelete && (
+        <ConfirmTrashModal
+          count={confirmDelete.count}
+          all={confirmDelete.ids === null}
+          busy={busy === "derivative:delete"}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={runDeleteDeriv}
+        />
+      )}
     </PullToRefresh>
+  );
+}
+
+// Confirms moving broken derivatives to the trash. Deliberately reassuring: a
+// soft delete only sets `deleted_at`, so it never touches a file on disk — the
+// safe answer to "these are in a Final (view-only) volume and I've already
+// deleted the originals". Reversible from the Trash tab; Empty trash then drops
+// the leftover derivatives and reclaims the row.
+function ConfirmTrashModal({
+  count,
+  all,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  all: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onCancel} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Move broken media to trash"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal-title">
+          Move {count} broken {count > 1 ? "media" : "medium"} to the trash?
+        </h2>
+        <p className="hint" style={{ marginTop: 0 }}>
+          {all
+            ? "Every media currently in derivative error"
+            : `The ${count} selected media`}{" "}
+          will be <strong>soft-deleted</strong>: hidden from the gallery and
+          sessions. This <strong>never touches a file on disk</strong> — safe
+          even on Final (view-only) volumes, and it&rsquo;s the right move when
+          the originals are already gone. It&rsquo;s <strong>reversible</strong>{" "}
+          from the Trash tab; <em>Empty trash</em> afterwards drops the leftover
+          thumbnails/proxies and reclaims the rows for good.
+        </p>
+        <div className="modal-actions">
+          <button className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+            {busy ? "Working…" : `Move ${count} to trash`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -345,6 +450,7 @@ function RetrySection<K extends string | number>({
   prefix,
   busy,
   onRetry,
+  onDelete,
 }: {
   title: string;
   hint: React.ReactNode;
@@ -354,6 +460,10 @@ function RetrySection<K extends string | number>({
   prefix: string;
   busy: string | null;
   onRetry: (keys: K[] | null, busyKey: string) => void;
+  // Optional destructive action (derivative family only): soft-delete the
+  // picked keys, or `null` for the whole family. The parent stages the
+  // confirmation; here we only surface the buttons.
+  onDelete?: (keys: K[] | null) => void;
 }) {
   const [sel, setSel] = useState<Set<K>>(new Set());
   const anyBusy = busy !== null;
@@ -396,6 +506,12 @@ function RetrySection<K extends string | number>({
     onRetry(keys, selKey);
   };
 
+  const deleteSelected = () => {
+    const keys = [...sel];
+    if (!keys.length || !onDelete) return;
+    onDelete(keys);
+  };
+
   return (
     <section style={{ marginBottom: 28 }}>
       <div className="filterbar" style={{ marginBottom: 6 }}>
@@ -431,6 +547,28 @@ function RetrySection<K extends string | number>({
         >
           {busy === allKey ? "…" : retryAllLabel}
         </button>
+        {onDelete && (
+          <>
+            <button
+              className="btn btn-danger"
+              onClick={deleteSelected}
+              disabled={anyBusy || sel.size === 0}
+              title="Move the selected media to the trash (never touches a file)"
+            >
+              {Icons.trash}
+              <span>Delete selected ({sel.size})</span>
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => onDelete(null)}
+              disabled={anyBusy || count === 0}
+              title="Move every media in this list to the trash (never touches a file)"
+            >
+              {Icons.trash}
+              <span>Delete all</span>
+            </button>
+          </>
+        )}
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
         {hint}
@@ -451,6 +589,7 @@ function RetrySection<K extends string | number>({
                 onToggle={() => toggle(key)}
                 onRetry={() => onRetry([key], oneKey)}
                 retrying={busy === oneKey}
+                onDelete={onDelete ? () => onDelete([key]) : undefined}
                 disabled={anyBusy}
               />
             );
@@ -524,6 +663,8 @@ function FailRow({
   onToggle,
   onRetry,
   retrying,
+  onDelete,
+  deleting,
   disabled,
 }: {
   title: string;
@@ -536,6 +677,8 @@ function FailRow({
   onToggle?: () => void;
   onRetry?: () => void;
   retrying?: boolean;
+  onDelete?: () => void;
+  deleting?: boolean;
   disabled?: boolean;
 }) {
   return (
@@ -562,26 +705,37 @@ function FailRow({
             }
           })()}
         </span>
-        {downloadHref && (
-          <a
-            className="btn btn-sm btn-icon"
-            href={downloadHref}
-            download
-            title="Download the original file"
-            aria-label="Download the original file"
-          >
-            {Icons.download}
-          </a>
-        )}
-        {onRetry && (
-          <button
-            className="btn btn-sm"
-            onClick={onRetry}
-            disabled={disabled}
-          >
-            {retrying ? "…" : "Retry"}
-          </button>
-        )}
+        {/* All actions share one flex box so the icon-only download and the
+            text Retry/Delete buttons line up at the same height. */}
+        <span className="fail-actions">
+          {downloadHref && (
+            <a
+              className="btn btn-sm btn-icon"
+              href={downloadHref}
+              download
+              title="Download the original file"
+              aria-label="Download the original file"
+            >
+              {Icons.download}
+            </a>
+          )}
+          {onRetry && (
+            <button className="btn btn-sm" onClick={onRetry} disabled={disabled}>
+              {retrying ? "…" : "Retry"}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              className="btn btn-sm btn-icon btn-danger"
+              onClick={onDelete}
+              disabled={disabled}
+              title="Move this media to the trash (never touches a file)"
+              aria-label="Move this media to the trash"
+            >
+              {deleting ? "…" : Icons.trash}
+            </button>
+          )}
+        </span>
       </div>
       {path && path !== title && <div className="fail-path">{path}</div>}
       <div className="fail-err">{error}</div>

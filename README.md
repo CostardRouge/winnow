@@ -602,6 +602,18 @@ Everything that failed is listed in one place, with the **error message** to
 debug, and a **"retry"** button per family:
 
 - **Analyze** (derivatives): `assets.derivative_status='error'` — *retroactive*.
+  Beyond **Retry**, each row (and the selection / the whole family) can be
+  **Deleted** — a soft delete to the trash for a derivative that can never be
+  rebuilt: the original was removed by hand, or it's a junk file that should
+  never have been indexed (a Synology `@eaDir` thumbnail, `#recycle`…). A soft
+  delete **never touches a file on disk**, so it is safe even on a **Final
+  (view-only)** volume and is the right move once the originals are already
+  gone. *Empty trash* afterwards drops the leftover thumbnails/proxies and
+  reclaims the rows — and the purge now accepts an orphan on a view-only volume
+  when its original is **confirmed absent** (a present Final original is still
+  refused, untouched). For a media whose derivative was `ready` but whose
+  source has since vanished, **Verify integrity** (Missing files tab) flags it
+  first — see below.
 - **Scan** (indexing): `scan_failures` table (per-file failure) — from now on;
   previously only a counter existed, nothing was persisted.
 - **Import**: per-file errors of the batches (`import_batches.result`) — *retroactive*.
