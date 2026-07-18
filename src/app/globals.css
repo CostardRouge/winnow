@@ -2739,9 +2739,15 @@
 /* Desktop counterpart of the mobile drawer below: the sidebar is a normal,
    always-visible flex child (see the base .gallery-aside rule), so collapsing
    it just needs to drop it from layout — no slide/backdrop, since there's no
-   content underneath to protect from an overlay. */
+   content underneath to protect from an overlay.
+
+   Driven by the <html data-gallery-aside> marker, not the aside's own class, so
+   a collapsed sidebar can be applied before first paint: an inline script in
+   the root layout seeds the marker from localStorage, and GalleryShell keeps it
+   in lockstep with the panel state for runtime toggles. This is what makes a
+   previously-hidden bar stay hidden on reload with no open→closed reflow. */
 @media (min-width: 761px) {
-  .gallery-aside.closed {
+  html[data-gallery-aside="closed"] .gallery-aside {
     display: none;
   }
 }
