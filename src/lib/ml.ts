@@ -359,16 +359,25 @@ export async function runMlJob(assetId: number): Promise<void> {
 
     // CLIP visual embedding → asset_clip (upsert, so a re-analysis refreshes it).
     // Only when the task ran AND returned a vector, so a disabled/failed clip
-    // never wipes an existing embedding.
+    // never wipes an existing embedding. Best-effort: if asset_clip doesn't exist
+    // (pgvector not installed — migration 0025 skips the table there), we must
+    // NOT fail the whole job; faces/OCR are already saved. Each q() is its own
+    // autocommit statement, so a caught error here doesn't poison the rest.
     if (clipRan && result.clipEmbedding) {
-      await q(
-        `INSERT INTO asset_clip (asset_id, embedding, model, updated_at)
-         VALUES ($1, $2::vector, $3, now())
-         ON CONFLICT (asset_id) DO UPDATE
-           SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
-               updated_at = now()`,
-        [assetId, toVectorLiteral(result.clipEmbedding), config.ml.clip.model],
-      );
+      try {
+        await q(
+          `INSERT INTO asset_clip (asset_id, embedding, model, updated_at)
+           VALUES ($1, $2::vector, $3, now())
+           ON CONFLICT (asset_id) DO UPDATE
+             SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
+                 updated_at = now()`,
+          [assetId, toVectorLiteral(result.clipEmbedding), config.ml.clip.model],
+        );
+      } catch (err) {
+        console.warn(
+          `[ml] clip embedding not stored for ${assetId} (pgvector installed?): ${(err as Error).message}`,
+        );
+      }
     }
 
     // Replace wholesale: a re-analysis (new model, regenerated derivative) must

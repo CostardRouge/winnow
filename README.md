@@ -430,15 +430,20 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
   and will need **no re-inference** over the library.
 - **Semantic search (CLIP).** The same `/predict` call also returns a **CLIP
   visual embedding** of the derivative (one more task on the existing round trip
-  — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**
-  (migration 0025; the Postgres image is `pgvector/pgvector:pg16`). The **Search**
-  page (in the rail) then takes a **natural-language** query — *"sunset over the
-  sea"*, *"people laughing at a table"* — embeds it with the **same model's
-  textual head** and ranks the library by cosine distance (`GET /api/search`).
-  Toggle with `ML_CLIP_ENABLED`; pick the model with `ML_CLIP_MODEL`
-  (`ViT-B-32__openai` = 512-dim, CPU-friendly — visual and textual heads must be
-  the same model). Back-fill embeddings over an existing library with
-  `npm run ml-backfill -- --force` after enabling it.
+  — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**. The
+  **Search** page (in the rail) then takes a **natural-language** query —
+  *"sunset over the sea"*, *"people laughing at a table"* — embeds it with the
+  **same model's textual head** and ranks the library by cosine distance
+  (`GET /api/search`). Toggle with `ML_CLIP_ENABLED`; pick the model with
+  `ML_CLIP_MODEL` (`ViT-B-32__openai` = 512-dim, CPU-friendly — visual and
+  textual heads must be the same model). Back-fill embeddings over an existing
+  library with `npm run ml-backfill -- --force` after enabling it.
+  **pgvector is optional**: the compose Postgres image (`pgvector/pgvector:pg16`,
+  a drop-in superset of `postgres:16` — existing `pgdata` keeps working) provides
+  it, but migration 0025 **skips the table gracefully** on a Postgres without the
+  extension (a stock `postgres:16-alpine`, a managed instance), so nothing else
+  breaks — Search just reports itself unavailable until you install pgvector
+  (`CREATE EXTENSION vector;`, re-run migrate, back-fill).
 - **Not covered (yet): closed eyes.** The container returns face boxes, scores
   and embeddings but **no facial landmarks**, so an eyes-open/closed verdict
   can't be derived from it — that would take a small dedicated landmarks model

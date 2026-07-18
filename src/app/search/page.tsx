@@ -107,10 +107,13 @@ export default function SearchPage() {
 
       {state === "disabled" && (
         <div className="empty-state">
-          Semantic search is off. Set <code>ML_ENABLED=true</code> and{" "}
-          <code>ML_CLIP_ENABLED=true</code>, point <code>ML_BASE_URL</code> at
-          your immich-machine-learning container, then back-fill embeddings with{" "}
-          <code>npm run ml-backfill</code>.
+          Semantic search is off. It needs (1) <strong>pgvector</strong> — the
+          compose Postgres image (<code>pgvector/pgvector:pg16</code>) provides
+          it; a stock <code>postgres:16-alpine</code> does not — and (2) ML on:{" "}
+          <code>ML_ENABLED=true</code>, <code>ML_CLIP_ENABLED=true</code>, with{" "}
+          <code>ML_BASE_URL</code> pointing at your immich-machine-learning
+          container. Then back-fill embeddings with{" "}
+          <code>npm run ml-backfill -- --force</code>.
         </div>
       )}
 

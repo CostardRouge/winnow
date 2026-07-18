@@ -10,7 +10,7 @@
 // Companions (a pair's RAW, a Live Photo's .mov) are collapsed to the displayed
 // primary. Depends on ML being enabled + a CLIP backfill having run.
 import { NextRequest } from "next/server";
-import { many } from "@/lib/db";
+import { many, one } from "@/lib/db";
 import { config } from "@/lib/config";
 import { embedText } from "@/lib/ml";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
@@ -30,6 +30,22 @@ export async function GET(req: NextRequest) {
     // hint rather than an error when the feature isn't wired yet.
     if (!config.ml.enabled || !config.ml.clip.enabled) {
       return json({ items: [], enabled: false, model: config.ml.clip.model });
+    }
+
+    // pgvector is optional (migration 0025 skips asset_clip when it's absent).
+    // Probe the table with to_regclass (returns NULL, no error, when missing) so
+    // we degrade cleanly instead of erroring — and before spending a container
+    // call to embed the query.
+    const reg = await one<{ t: string | null }>(
+      "SELECT to_regclass('public.asset_clip')::text AS t",
+    );
+    if (!reg?.t) {
+      return json({
+        items: [],
+        enabled: false,
+        model: config.ml.clip.model,
+        reason: "pgvector not installed",
+      });
     }
 
     const sp = req.nextUrl.searchParams;
