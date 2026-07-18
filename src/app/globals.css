@@ -250,6 +250,22 @@ html[data-theme="dark"] .btn-primary:hover {
     width: 44px;
     height: 44px;
   }
+  /* Show the glyph that matches the active theme, driven purely by the
+     <html data-theme> marker (seeded pre-paint) — never by JS state — so the
+     icon is correct on the first frame with no load-time swap/reflow. Default
+     (light): moon (tap to go dark). Dark: sun (tap to go light). */
+  .theme-toggle .theme-ic {
+    @apply inline-flex items-center justify-center;
+  }
+  .theme-toggle .theme-ic-sun {
+    display: none;
+  }
+  html[data-theme="dark"] .theme-toggle .theme-ic-moon {
+    display: none;
+  }
+  html[data-theme="dark"] .theme-toggle .theme-ic-sun {
+    @apply inline-flex;
+  }
 
   /* ---- Page header bar -------------------------------------------------- */
   .topbar {
