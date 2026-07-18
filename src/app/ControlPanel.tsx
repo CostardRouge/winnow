@@ -126,7 +126,7 @@ export default function ControlPanel() {
             tone={paused ? "warn" : undefined}
           />
         </Link>
-        <Link href="/pipeline/analyzed" className="stat-link">
+        <Link href="/pipeline/media?status=ready&sort=processed" className="stat-link">
           <Stat label="Analyzed" value={a?.analyzed} sub="derivatives ready →" tone="ok" />
         </Link>
         <Link href="/pipeline/pending" className="stat-link">

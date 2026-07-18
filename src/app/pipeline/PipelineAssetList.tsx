@@ -1,18 +1,37 @@
 "use client";
 
-// Reusable, paginated asset list for the Pipeline triage pages (Media / Analyzed
-// / Pending). It polls /api/assets with a caller-supplied query (e.g.
-// derivative_status=ready) and renders one card per asset. Each card stacks:
-//   1. the filename + status pill,
-//   2. the full absolute path (never truncated — debugging needs the real path),
-//   3. the thumbnail, a line of details, and the actions.
-// Actions render as a compact icon "bento" (at most four per page, all known up
-// front): "View" opens the shared MediaViewer; "Download" pulls the original
-// file (handy for items with no derivative yet); regenerate / skip / delete sit
-// beside them as icon buttons (delete carries a quiet danger tint). Everything
-// fits inline, so there's no overflow menu. Mutations update the list
-// optimistically.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+// Reusable, paginated media browser for the Pipeline triage pages (Media /
+// Pending). It polls /api/assets with a caller-supplied base query (e.g.
+// derivative_status=pending,processing) and offers three interchangeable views
+// over the same feed — all sharing one MediaViewer, one pagination cursor and
+// one set of row actions:
+//
+//   • List   — the detailed triage card (filename, full untruncated path,
+//              thumbnail, meta, inline icon actions). Best for debugging a
+//              specific item.
+//   • Grid   — a virtualized thumbnail wall (react-window) that stays smooth at
+//              100k+ media: dense, scannable, infinite-scroll. Opens the viewer.
+//   • Folder — browse by root ▸ session (via /api/tree), then see that folder's
+//              media in the grid — so you navigate instead of scrolling forever.
+//
+// A sort control (capture date vs processed date, either direction) and an
+// optional derivative-status filter (All / Ready / Pending / Error / Skipped)
+// ride the toolbar; the status filter subsumes what used to be a separate
+// "Analyzed" page (Ready is just one status). View, sort and grid density are
+// persisted to localStorage so the choice sticks across pages and visits.
+//
+// Actions render as a compact icon "bento" on the list rows and as buttons in
+// the viewer: "View" opens the viewer; "Download" pulls the original file;
+// regenerate / skip / delete sit beside them (delete carries a danger tint).
+// Mutations update the list optimistically.
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -23,12 +42,61 @@ import type { AssetGridRow } from "@/lib/types";
 import { EmptyState, Icons } from "../ui";
 import MediaViewer from "../MediaViewer";
 import PullToRefresh from "../PullToRefresh";
+import VirtualGrid, { type GalleryAsset } from "../gallery/VirtualGrid";
+import { useStats } from "../useStats";
 
 export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
 
 type Mutation = Exclude<RowAction, "view" | "download">;
 
 type Page = { assets: AssetGridRow[]; next_cursor: string | null };
+
+// The interchangeable views. `folder` is offered only when the caller allows it
+// (it makes no sense on a queue-scoped page like Pending's default).
+type View = "list" | "grid" | "folder";
+
+// Sort maps onto the two orderings /api/assets understands: the capture
+// timeline (default) or the "most recently touched" processed order (updated_at,
+// via `sort=recent`). Direction flips both via `sort_dir`.
+type SortField = "captured" | "processed";
+type SortDir = "asc" | "desc";
+type Sort = { field: SortField; dir: SortDir };
+
+// Derivative-status facet. Each maps to a query fragment appended to the base
+// query. `all` adds nothing (every status), matching the old "Media" page.
+type StatusKey = "all" | "ready" | "pending" | "error" | "skipped";
+const STATUS_ORDER: StatusKey[] = [
+  "all",
+  "ready",
+  "pending",
+  "error",
+  "skipped",
+];
+const STATUS_LABEL: Record<StatusKey, string> = {
+  all: "All",
+  ready: "Ready",
+  pending: "Pending",
+  error: "Error",
+  skipped: "Skipped",
+};
+const STATUS_QS: Record<StatusKey, string> = {
+  all: "",
+  ready: "derivative_status=ready",
+  pending: "derivative_status=pending,processing",
+  error: "derivative_status=error",
+  skipped: "derivative_status=skipped",
+};
+
+// Grid density: target cell width (px). Smaller → more media per row.
+const GRID_SIZES = [120, 160, 210];
+const DEFAULT_DENSITY = 1;
+
+// Shared localStorage keys so the view/sort/density choice is one preference
+// across every Pipeline browser (Media, Pending) — the user picks Grid once and
+// it sticks everywhere.
+const KEY_VIEW = "winnow.pipeline.view";
+const KEY_SORT = "winnow.pipeline.sort";
+const KEY_DENSITY = "winnow.pipeline.density";
 
 // Each mutating action: how it's labelled, its icon, whether it needs a confirm,
 // and whether a success removes the row from *this* list (true when the action
@@ -74,6 +142,83 @@ const MUTATIONS: Record<
   },
 };
 
+// A folder selection in the Folder view: the root being browsed and, once a
+// session is picked, that leaf. The labels drive the breadcrumb; the ids scope
+// the grid (session_id when a leaf is chosen, else the whole root_id).
+type FolderScope = {
+  rootId: number;
+  rootLabel: string;
+  sessionId?: number;
+  sessionLabel?: string;
+};
+
+// SSR-safe persisted state: renders the default on the server and first client
+// paint (no hydration drift), restores the saved value on mount, and writes back
+// on change. Mirrors the gallery's density/layout persistence.
+function usePersisted<T extends string>(
+  key: string,
+  initial: T,
+  parse: (raw: string) => T | null,
+): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) {
+        const v = parse(raw);
+        if (v != null) setValue(v);
+      }
+    } catch {
+      /* storage disabled: keep the default */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  const set = useCallback(
+    (v: T) => {
+      setValue(v);
+      try {
+        localStorage.setItem(key, v);
+      } catch {
+        /* storage disabled: non-persisted */
+      }
+    },
+    [key],
+  );
+  return [value, set];
+}
+
+// Gives the grid a definite pixel height so react-window can virtualize inside
+// the pipeline's scroll container (which sizes to content, not the viewport).
+// Measures the element's top edge and fills to the bottom of the window; recomputed
+// on resize and whenever the chrome above it might have reflowed (`dep`).
+function useFillHeight(active: boolean, dep: unknown): [React.RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [h, setH] = useState(420);
+  useEffect(() => {
+    if (!active) return;
+    const measure = () => {
+      const el = ref.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      setH(Math.max(280, Math.floor(window.innerHeight - top - 16)));
+    };
+    measure();
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(measure)
+        : null;
+    if (ro && document.body) ro.observe(document.body);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
+  }, [active, dep]);
+  return [ref, h];
+}
+
 export default function PipelineAssetList({
   query,
   actions,
@@ -81,13 +226,27 @@ export default function PipelineAssetList({
   emptyTitle,
   emptyHint,
   pollMs = 8000,
+  views = ["list", "grid"],
+  showStatus = false,
+  defaultSort = { field: "captured", dir: "desc" },
+  storageKey = "pipeline",
 }: {
+  /** Base filters, ANDed with the sort/status/folder selections (e.g. the
+   *  Pending page fixes `derivative_status=pending,processing`). */
   query: string;
   actions: RowAction[];
   hint?: string;
   emptyTitle: string;
   emptyHint?: string;
   pollMs?: number;
+  /** Which views to offer (segmented control hidden when only one). */
+  views?: View[];
+  /** Show the derivative-status facet (the Media browser; folds in "Analyzed"). */
+  showStatus?: boolean;
+  /** Sort used until the user picks one (persisted thereafter). */
+  defaultSort?: Sort;
+  /** Namespaces the status query param seeded from the URL. */
+  storageKey?: string;
 }) {
   const [items, setItems] = useState<AssetGridRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -97,20 +256,102 @@ export default function PipelineAssetList({
   const [busy, setBusy] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [viewer, setViewer] = useState<number | null>(null);
+
+  // View / sort / density: persisted preferences shared across Pipeline pages.
+  const [view, setView] = usePersisted<View>(KEY_VIEW, views[0], (raw) =>
+    views.includes(raw as View) ? (raw as View) : null,
+  );
+  const [sortRaw, setSortRaw] = usePersisted<string>(
+    KEY_SORT,
+    `${defaultSort.field}:${defaultSort.dir}`,
+    (raw) => (/^(captured|processed):(asc|desc)$/.test(raw) ? raw : null),
+  );
+  const [density, setDensity] = usePersisted<string>(
+    KEY_DENSITY,
+    String(DEFAULT_DENSITY),
+    (raw) => (/^[0-2]$/.test(raw) ? raw : null),
+  );
+  const [fp, fn] = sortRaw.split(":");
+  const sort: Sort = { field: fp as SortField, dir: fn as SortDir };
+  const setSort = (s: Sort) => setSortRaw(`${s.field}:${s.dir}`);
+  const targetWidth = GRID_SIZES[Number(density)] ?? GRID_SIZES[DEFAULT_DENSITY];
+
+  // Status facet (Media only). Seeded from the URL so the overview counter and
+  // the old /pipeline/analyzed route can deep-link (e.g. ?status=ready), then
+  // reflected back to the URL so the view is shareable.
+  const [status, setStatusState] = useState<StatusKey>("all");
+  useEffect(() => {
+    if (!showStatus) return;
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const s = sp.get("status");
+      if (s && STATUS_ORDER.includes(s as StatusKey))
+        setStatusState(s as StatusKey);
+      const so = sp.get("sort");
+      if (so === "processed" || so === "captured")
+        setSortRaw(`${so}:${sort.dir}`);
+    } catch {
+      /* no window / bad URL: keep defaults */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showStatus]);
+  const setStatus = (s: StatusKey) => {
+    setStatusState(s);
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (s === "all") sp.delete("status");
+      else sp.set("status", s);
+      const qs = sp.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+      );
+    } catch {
+      /* non-fatal: the in-memory filter still applies */
+    }
+  };
+
+  // Folder-view drill state and the scope it selects for the grid below it.
+  const [scope, setScope] = useState<FolderScope | null>(null);
+
   // Once the user pages past the first batch we stop auto-refreshing so polling
   // never yanks the list back to the top mid-scroll.
   const expanded = useRef(false);
-  // Read inside the poll without re-arming the interval (which would also reset
-  // the loaded pages) every time an action starts/finishes.
   const busyRef = useRef<number | null>(null);
   busyRef.current = busy;
-  // Pause polling while the viewer is open so item indices don't shift under it.
   const viewerRef = useRef<number | null>(null);
   viewerRef.current = viewer;
 
+  // The effective query: base + status facet + sort + (folder view) scope.
+  const sortQS =
+    (sort.field === "processed" ? "sort=recent&" : "") +
+    (sort.dir === "asc" ? "sort_dir=asc" : "");
+  const statusQS = showStatus ? STATUS_QS[status] : "";
+  const scopeQS =
+    view === "folder" && scope
+      ? scope.sessionId != null
+        ? `session_id=${scope.sessionId}`
+        : `root_id=${scope.rootId}`
+      : "";
+  const fullQuery = useMemo(
+    () => [query, statusQS, sortQS, scopeQS].filter(Boolean).join("&"),
+    [query, statusQS, sortQS, scopeQS],
+  );
+
+  // In Folder view we only fetch media once a folder is picked; otherwise the
+  // grid would eagerly pull the whole (100k) library behind the folder list.
+  const shouldLoad = view !== "folder" || scope != null;
+
   const loadFirst = useCallback(async () => {
+    if (!shouldLoad) {
+      setItems([]);
+      setCursor(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const d = await fetchJson<Page>(`/api/assets?${query}`);
+      const d = await fetchJson<Page>(`/api/assets?${fullQuery}`);
       setItems(d.assets);
       setCursor(d.next_cursor);
       setError(null);
@@ -120,7 +361,7 @@ export default function PipelineAssetList({
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [fullQuery, shouldLoad]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -128,7 +369,7 @@ export default function PipelineAssetList({
     expanded.current = true;
     try {
       const d = await fetchJson<Page>(
-        `/api/assets?${query}&cursor=${encodeURIComponent(cursor)}`,
+        `/api/assets?${fullQuery}&cursor=${encodeURIComponent(cursor)}`,
       );
       setItems((prev) => [...prev, ...d.assets]);
       setCursor(d.next_cursor);
@@ -137,12 +378,19 @@ export default function PipelineAssetList({
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, loadingMore, query]);
+  }, [cursor, loadingMore, fullQuery]);
 
+  // Reload the first page whenever the effective query changes (view/sort/status
+  // /scope), and keep polling the first page while the user hasn't paged deeper.
   useEffect(() => {
+    setLoading(true);
     loadFirst();
     const t = setInterval(() => {
-      if (!expanded.current && busyRef.current == null && viewerRef.current == null) {
+      if (
+        !expanded.current &&
+        busyRef.current == null &&
+        viewerRef.current == null
+      ) {
         loadFirst();
       }
     }, pollMs);
@@ -172,7 +420,6 @@ export default function PipelineAssetList({
     [busy],
   );
 
-  // From the viewer: run a mutation and, if it removes the asset, close the viewer.
   const runFromViewer = useCallback(
     async (id: number, action: Mutation) => {
       const ran = await run(id, action);
@@ -181,15 +428,85 @@ export default function PipelineAssetList({
     [run],
   );
 
+  const hasMore = cursor != null;
+
+  // Height for the virtualized grid (grid view, or folder view once scoped).
+  const gridActive =
+    view === "grid" || (view === "folder" && scope != null);
+  const [gridRef, gridH] = useFillHeight(gridActive, `${view}:${!!hint}:${status}`);
+
+  const grid = (
+    <div
+      ref={gridRef}
+      className="pl-grid-wrap"
+      style={{ height: gridH, display: "flex" }}
+    >
+      {loading ? (
+        <div className="spinner">Loading…</div>
+      ) : items.length === 0 ? (
+        <EmptyState icon={Icons.photos} title={emptyTitle} hint={emptyHint} />
+      ) : (
+        <VirtualGrid
+          items={items as unknown as GalleryAsset[]}
+          hasMore={hasMore}
+          loading={loadingMore}
+          loadMore={loadMore}
+          onOpen={(idx) => setViewer(idx)}
+          targetWidth={targetWidth}
+        />
+      )}
+    </div>
+  );
+
+  const list = loading ? (
+    <div className="spinner">Loading…</div>
+  ) : items.length === 0 ? (
+    <EmptyState icon={Icons.photos} title={emptyTitle} hint={emptyHint} />
+  ) : (
+    <>
+      <div className="pl-list">
+        {items.map((it, idx) => (
+          <AssetRow
+            key={it.id}
+            asset={it}
+            actions={actions}
+            busy={busy === it.id}
+            disabled={busy != null}
+            onRun={run}
+            onView={() => setViewer(idx)}
+          />
+        ))}
+      </div>
+      {hasMore && (
+        <div className="pl-more">
+          <button className="btn" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "…" : "Load more"}
+          </button>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <PullToRefresh className="pl-section" onRefresh={loadFirst}>
-      <div className="filterbar">
-        {hint && <span className="hint">{hint}</span>}
+      <div className="filterbar pl-toolbar">
+        {hint && <span className="hint pl-hint">{hint}</span>}
         <span className="spacer" />
+        <SortControl sort={sort} onChange={setSort} />
+        {view === "grid" && (
+          <DensityControl density={Number(density)} onChange={(d) => setDensity(String(d))} />
+        )}
+        {views.length > 1 && (
+          <ViewSwitch views={views} active={view} onSelect={setView} />
+        )}
         <button className="btn btn-sm" onClick={loadFirst} disabled={loading}>
           Refresh
         </button>
       </div>
+
+      {showStatus && (
+        <StatusChips status={status} onSelect={setStatus} />
+      )}
 
       {error && (
         <div className="error-box">
@@ -201,37 +518,18 @@ export default function PipelineAssetList({
       )}
       {msg && <p className="hint">{msg}</p>}
 
-      {loading ? (
-        <div className="spinner">Loading…</div>
-      ) : items.length === 0 ? (
-        <EmptyState icon={Icons.photos} title={emptyTitle} hint={emptyHint} />
+      {view === "folder" ? (
+        <FolderView
+          baseQuery={[query, statusQS].filter(Boolean).join("&")}
+          scope={scope}
+          onScope={setScope}
+        >
+          {scope ? grid : null}
+        </FolderView>
+      ) : view === "grid" ? (
+        grid
       ) : (
-        <>
-          <div className="pl-list">
-            {items.map((it, idx) => (
-              <AssetRow
-                key={it.id}
-                asset={it}
-                actions={actions}
-                busy={busy === it.id}
-                disabled={busy != null}
-                onRun={run}
-                onView={() => setViewer(idx)}
-              />
-            ))}
-          </div>
-          {cursor && (
-            <div className="pl-more">
-              <button
-                className="btn"
-                onClick={loadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore ? "…" : "Load more"}
-              </button>
-            </div>
-          )}
-        </>
+        list
       )}
 
       {viewer != null && items[viewer] && (
@@ -262,6 +560,299 @@ export default function PipelineAssetList({
         />
       )}
     </PullToRefresh>
+  );
+}
+
+// Segmented view picker (List / Grid / Folder), reusing the gallery toolbar's
+// segmented-control styling.
+function ViewSwitch({
+  views,
+  active,
+  onSelect,
+}: {
+  views: View[];
+  active: View;
+  onSelect: (v: View) => void;
+}) {
+  const icon: Record<View, ReactNode> = {
+    list: Icons.viewList,
+    grid: Icons.viewCard,
+    folder: Icons.folder,
+  };
+  const label: Record<View, string> = {
+    list: "List",
+    grid: "Grid",
+    folder: "Folder",
+  };
+  return (
+    <div className="view-toggle" role="group" aria-label="View">
+      {views.map((v) => (
+        <button
+          key={v}
+          className={`view-btn${active === v ? " active" : ""}`}
+          onClick={() => onSelect(v)}
+          aria-pressed={active === v}
+          title={`${label[v]} view`}
+        >
+          {icon[v]}
+          <span className="pl-view-label">{label[v]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Sort field (capture vs processed order) + a direction toggle.
+function SortControl({
+  sort,
+  onChange,
+}: {
+  sort: Sort;
+  onChange: (s: Sort) => void;
+}) {
+  return (
+    <div className="pl-sort">
+      <select
+        className="input pl-sort-field"
+        value={sort.field}
+        onChange={(e) =>
+          onChange({ ...sort, field: e.target.value as SortField })
+        }
+        aria-label="Sort by"
+        title="Sort by"
+      >
+        <option value="captured">Capture date</option>
+        <option value="processed">Processed date</option>
+      </select>
+      <button
+        className="btn btn-sm btn-icon"
+        onClick={() =>
+          onChange({ ...sort, dir: sort.dir === "asc" ? "desc" : "asc" })
+        }
+        title={sort.dir === "asc" ? "Ascending (oldest first)" : "Descending (newest first)"}
+        aria-label={`Sort direction: ${sort.dir === "asc" ? "ascending" : "descending"}`}
+      >
+        {sort.dir === "asc" ? Icons.arrowUp : Icons.arrowDown}
+      </button>
+    </div>
+  );
+}
+
+// Grid thumbnail-size cycler (compact → comfortable → large).
+function DensityControl({
+  density,
+  onChange,
+}: {
+  density: number;
+  onChange: (d: number) => void;
+}) {
+  return (
+    <button
+      className="btn btn-sm btn-icon"
+      onClick={() => onChange((density + 1) % GRID_SIZES.length)}
+      title="Thumbnail size"
+      aria-label="Cycle thumbnail size"
+    >
+      {Icons.gridSize}
+    </button>
+  );
+}
+
+// Derivative-status facet as count-bearing chips. Counts come from the shared
+// /api/stats poll, so the facet doubles as an at-a-glance pipeline health read.
+function StatusChips({
+  status,
+  onSelect,
+}: {
+  status: StatusKey;
+  onSelect: (s: StatusKey) => void;
+}) {
+  const { stats } = useStats();
+  const a = stats?.assets;
+  const count: Record<StatusKey, number | undefined> = {
+    all: a?.total,
+    ready: a?.analyzed,
+    pending: a?.pending,
+    error: a?.errors,
+    skipped: a?.skipped,
+  };
+  return (
+    <div className="chips pl-status">
+      {STATUS_ORDER.map((s) => (
+        <button
+          key={s}
+          className={`chip${status === s ? " active" : ""}`}
+          onClick={() => onSelect(s)}
+          aria-pressed={status === s}
+        >
+          {STATUS_LABEL[s]}
+          {count[s] != null && (
+            <span className="chip-count">{count[s]!.toLocaleString()}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Folder navigator: root ▸ session drill-down over /api/tree?group=folder. Picking
+// a root scopes the grid to the whole folder and reveals its sessions; picking a
+// session narrows to that leaf. The grid (children) renders below the breadcrumb.
+function FolderView({
+  baseQuery,
+  scope,
+  onScope,
+  children,
+}: {
+  baseQuery: string;
+  scope: FolderScope | null;
+  onScope: (s: FolderScope | null) => void;
+  children: ReactNode;
+}) {
+  type Node = {
+    key: string;
+    value: number;
+    label: string;
+    count: number;
+    leaf: boolean;
+  };
+  const [roots, setRoots] = useState<Node[] | null>(null);
+  const [sessions, setSessions] = useState<Node[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Roots (top level), re-fetched when the base filters change.
+  useEffect(() => {
+    let cancelled = false;
+    setRoots(null);
+    setErr(null);
+    fetchJson<{ nodes: Node[] }>(`/api/tree?group=folder&${baseQuery}`)
+      .then((d) => !cancelled && setRoots(d.nodes))
+      .catch((e: Error) => !cancelled && setErr(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [baseQuery]);
+
+  // Sessions for the drilled-into root.
+  const rootId = scope?.rootId ?? null;
+  useEffect(() => {
+    if (rootId == null) {
+      setSessions(null);
+      return;
+    }
+    let cancelled = false;
+    setSessions(null);
+    fetchJson<{ nodes: Node[] }>(
+      `/api/tree?group=folder&root_id=${rootId}&${baseQuery}`,
+    )
+      .then((d) => !cancelled && setSessions(d.nodes))
+      .catch(() => !cancelled && setSessions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [rootId, baseQuery]);
+
+  const short = (path: string) => {
+    const parts = path.replace(/\/+$/, "").split("/");
+    return parts[parts.length - 1] || path;
+  };
+
+  return (
+    <div className="pl-folder">
+      <div className="pl-crumbs" aria-label="Folder path">
+        <button className="pl-crumb" onClick={() => onScope(null)}>
+          {Icons.folder} All folders
+        </button>
+        {scope && (
+          <>
+            <span className="pl-crumb-sep">{Icons.chevronRight}</span>
+            <button
+              className={`pl-crumb${scope.sessionId == null ? " active" : ""}`}
+              onClick={() =>
+                onScope({ rootId: scope.rootId, rootLabel: scope.rootLabel })
+              }
+            >
+              {short(scope.rootLabel)}
+            </button>
+          </>
+        )}
+        {scope?.sessionId != null && (
+          <>
+            <span className="pl-crumb-sep">{Icons.chevronRight}</span>
+            <span className="pl-crumb active">{scope.sessionLabel}</span>
+          </>
+        )}
+      </div>
+
+      {err ? (
+        <div className="error-box">
+          <span>Couldn’t load folders: {err}</span>
+        </div>
+      ) : scope == null ? (
+        // Top level: the roots.
+        !roots ? (
+          <div className="spinner">Loading…</div>
+        ) : roots.length === 0 ? (
+          <EmptyState icon={Icons.folder} title="No folders" />
+        ) : (
+          <div className="pl-folder-list">
+            {roots.map((r) => (
+              <button
+                key={r.value}
+                className="pl-folder-row"
+                onClick={() =>
+                  onScope({ rootId: r.value, rootLabel: r.label })
+                }
+              >
+                <span className="pl-folder-icon">{Icons.folder}</span>
+                <span className="pl-folder-name" title={r.label}>
+                  {short(r.label)}
+                </span>
+                <span className="pl-folder-count">
+                  {r.count.toLocaleString()}
+                </span>
+                <span className="pl-folder-caret">{Icons.chevronRight}</span>
+              </button>
+            ))}
+          </div>
+        )
+      ) : (
+        // Inside a root: its sessions (subfolders) above the scoped grid.
+        <>
+          {sessions == null ? (
+            <div className="spinner">Loading subfolders…</div>
+          ) : sessions.length > 0 ? (
+            <div className="pl-folder-list pl-subfolders">
+              {sessions.map((s) => (
+                <button
+                  key={s.value}
+                  className={`pl-folder-row${
+                    scope.sessionId === s.value ? " active" : ""
+                  }`}
+                  onClick={() =>
+                    onScope({
+                      rootId: scope.rootId,
+                      rootLabel: scope.rootLabel,
+                      sessionId: s.value,
+                      sessionLabel: s.label,
+                    })
+                  }
+                >
+                  <span className="pl-folder-icon">{Icons.folder}</span>
+                  <span className="pl-folder-name" title={s.label}>
+                    {s.label}
+                  </span>
+                  <span className="pl-folder-count">
+                    {s.count.toLocaleString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {children}
+        </>
+      )}
+    </div>
   );
 }
 

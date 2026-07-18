@@ -34,12 +34,6 @@ export default function PipelineNav() {
       tone: "warn",
     },
     {
-      href: "/pipeline/analyzed",
-      label: "Analyzed",
-      count: a?.analyzed ?? 0,
-      tone: "ok",
-    },
-    {
       href: "/pipeline/failures",
       label: "Failures",
       count: totalFailures(stats),
