@@ -2459,6 +2459,104 @@
     color: var(--color-text);
   }
 
+  /* ---- Pipeline media browser (toolbar · views · folders) --------------- */
+  /* The toolbar wraps on narrow widths; the hint takes the slack so the
+     controls stay grouped on the right. */
+  .pl-toolbar {
+    @apply flex-wrap gap-2;
+  }
+  .pl-hint {
+    @apply min-w-0;
+    max-width: 52ch;
+  }
+  /* Sort field + direction toggle, kept together. */
+  .pl-sort {
+    @apply flex items-center gap-1;
+  }
+  .pl-sort-field {
+    @apply h-8 py-0 pl-2 pr-6 text-xs;
+    min-width: 130px;
+  }
+  /* The status facet sits on its own row under the toolbar. */
+  .pl-status {
+    @apply mt-0.5;
+  }
+  /* The virtualized grid wants a definite height (set inline from the viewport)
+     and a flex child so react-window's internal measure fills it. */
+  .pl-grid-wrap {
+    @apply min-h-0;
+  }
+
+  /* Folder view: breadcrumb + drillable folder rows over the scoped grid. */
+  .pl-folder {
+    @apply flex min-h-0 flex-1 flex-col gap-2;
+  }
+  .pl-crumbs {
+    @apply flex flex-wrap items-center gap-1 text-[13px];
+  }
+  .pl-crumb {
+    @apply inline-flex items-center gap-1 rounded-[var(--radius)] px-1.5 py-1;
+    color: var(--color-muted);
+  }
+  button.pl-crumb:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text);
+  }
+  .pl-crumb.active {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  .pl-crumb-sep {
+    color: var(--color-faint);
+    line-height: 0;
+  }
+  .pl-folder-list {
+    @apply grid gap-1.5;
+  }
+  /* Subfolder chips inside a root: a horizontal, wrapping strip above the grid. */
+  .pl-subfolders {
+    @apply flex flex-wrap gap-1.5;
+  }
+  .pl-folder-row {
+    @apply flex items-center gap-2.5 rounded-[var(--radius-lg)] border px-3 py-2.5 text-left text-[13px];
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    transition: border-color 0.16s var(--ease-out), transform 0.16s var(--ease-out);
+  }
+  .pl-folder-row:hover {
+    border-color: var(--color-border-strong);
+    transform: translateY(-1px);
+  }
+  .pl-folder-row.active {
+    border-color: var(--color-accent);
+    background: var(--color-surface-2);
+  }
+  .pl-subfolders .pl-folder-row {
+    @apply py-1.5;
+  }
+  .pl-folder-icon {
+    color: var(--color-accent);
+    line-height: 0;
+  }
+  .pl-folder-name {
+    @apply min-w-0 flex-1 truncate font-medium;
+  }
+  .pl-folder-count {
+    @apply text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .pl-folder-caret {
+    color: var(--color-faint);
+    line-height: 0;
+  }
+  /* On phones the segmented view labels take too much room — icon only. */
+  @media (max-width: 560px) {
+    .pl-view-label {
+      display: none;
+    }
+  }
+
   /* ---- States ----------------------------------------------------------- */
   .empty {
     @apply px-4 py-14 text-center;
