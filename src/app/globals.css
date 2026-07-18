@@ -2280,6 +2280,18 @@
     font-family: var(--font-mono);
     color: var(--color-faint);
   }
+  /* Action cluster (download · retry · delete): one flex box so the icon-only
+     buttons (default .btn-icon = 36px square) and the text buttons (.btn-sm)
+     share a single, smaller height instead of sitting at different sizes. */
+  .fail-actions {
+    @apply flex shrink-0 items-center gap-1.5;
+  }
+  .fail-actions .btn {
+    @apply h-7 min-h-0;
+  }
+  .fail-actions .btn.btn-icon {
+    @apply w-7 p-0;
+  }
   .fail-path {
     @apply mt-0.5 break-all text-[11px];
     font-family: var(--font-mono);

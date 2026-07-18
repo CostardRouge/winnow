@@ -94,19 +94,18 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
 
     for (const asset of assets) {
       // Guard 1 — only the cullable Incoming zone may lose originals. The one
-      // exception: an original already GONE from disk (missing_at, cf.
-      // lib/integrity.ts), re-verified as absent right here, has no bytes to
-      // lose — purging it only clears the cached derivatives and stamps the
-      // row, which is safe on any volume. A file that reappeared is refused
-      // as before (the next re-check/scan will restore it instead).
+      // exception: an original already GONE from disk, re-verified as absent
+      // right here, has no bytes to lose — purging it only clears the cached
+      // derivatives and stamps the row, which is safe on ANY volume. This is
+      // what lets the user reclaim an orphaned Final asset (its file removed by
+      // hand, a junk/@eaDir entry) that would otherwise be stuck forever, while
+      // a Final original that still EXISTS is refused exactly as before.
       let unlinkOriginal = true;
       if (!PURGEABLE_KINDS.has(asset.root_kind)) {
-        const absent =
-          asset.missing_at != null &&
-          (await stat(asset.abs_path).then(
-            () => false,
-            (err) => (err as NodeJS.ErrnoException).code === "ENOENT",
-          ));
+        const absent = await stat(asset.abs_path).then(
+          () => false,
+          (err) => (err as NodeJS.ErrnoException).code === "ENOENT",
+        );
         if (!absent) {
           await fail(asset, `refused: ${asset.root_kind} volume is view-only`);
           continue;
