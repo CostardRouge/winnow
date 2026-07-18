@@ -5,6 +5,7 @@ const nextConfig = {
   serverExternalPackages: ["sharp", "exiftool-vendored", "pg"],
   // Lint runs separately (npm run lint); don't block the build on it.
   eslint: { ignoreDuringBuilds: true },
+	devIndicators: false
 };
 
 export default nextConfig;

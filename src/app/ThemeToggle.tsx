@@ -69,8 +69,18 @@ export default function ThemeToggle() {
       aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
       aria-pressed={dark}
       title={dark ? "Light theme" : "Dark theme"}
+      // The visible glyph is chosen by CSS from the <html data-theme> the inline
+      // script sets before paint — so the correct icon shows on the first frame
+      // regardless of React state, with no mount-time swap/reflow. aria-* still
+      // tracks state and may differ from the server render, hence the suppress.
+      suppressHydrationWarning
     >
-      {dark ? Icons.sun : Icons.moon}
+      <span className="theme-ic theme-ic-moon" aria-hidden>
+        {Icons.moon}
+      </span>
+      <span className="theme-ic theme-ic-sun" aria-hidden>
+        {Icons.sun}
+      </span>
     </button>
   );
 }
