@@ -190,11 +190,12 @@ export default function MediaViewer<T extends ViewerItem>({
       if (e.key === "Escape") return onClose();
       if (e.key === "ArrowRight") return onIndexChange(Math.min(index + 1, last));
       if (e.key === "ArrowLeft") return onIndexChange(Math.max(index - 1, 0));
+      if (e.key === "i" || e.key === "I") return setPanel(!panelOpen);
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, index, last, onIndexChange, onClose, onKeyDown]);
+  }, [items, index, last, onIndexChange, onClose, onKeyDown, panelOpen, setPanel]);
 
   // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
   // deltas; a plain mouse wheel sends coarse notches. Both zoom the stage (it
