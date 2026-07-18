@@ -54,7 +54,12 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#f4f0e7",
+  // Match the browser chrome to the active theme's paper. Keep these in sync
+  // with --color-bg (light) and the night --color-bg in globals.css.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f4f0e7" },
+    { media: "(prefers-color-scheme: dark)", color: "#16130e" },
+  ],
 };
 
 export default function RootLayout({
@@ -65,13 +70,23 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      // The inline script below stamps data-gallery-aside on <html> before
-      // hydration (restoring the collapsed filter sidebar without a reflow), so
-      // the server markup intentionally differs here.
+      // The inline scripts below stamp data-theme and data-gallery-aside on
+      // <html> before hydration (applying the saved/OS theme and the collapsed
+      // filter sidebar without a flash or reflow), so the server markup
+      // intentionally differs here.
       suppressHydrationWarning
       className={`${spaceGrotesk.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
     >
       <body>
+        {/* Pre-paint theme resolution: apply the saved choice, else the OS
+            preference, by stamping data-theme on <html> before the tree paints
+            — so a dark-mode user never sees a flash of light paper. ThemeToggle
+            keeps this attribute and the "winnow.theme" key in sync at runtime. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("winnow.theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
+          }}
+        />
         {/* Pre-paint restore of the gallery's desktop filter-sidebar choice.
             GalleryShell persists it to localStorage; applying it here — before
             the tree paints — means a sidebar the user collapsed stays collapsed

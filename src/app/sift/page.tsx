@@ -110,9 +110,6 @@ export default function SiftHub() {
         <h1 className="sift-hub-title">{Icons.sift} Sift</h1>
         <span className="hint max-sm:hidden">swipe to triage — pick up where you left off</span>
         <span className="spacer" />
-        <Link href="/library/incoming/sessions" className="btn">
-          {Icons.viewList} <span className="max-sm:hidden">Sessions</span>
-        </Link>
       </div>
 
       <PullToRefresh className="sift-hub-body" onRefresh={load}>
