@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { Icons } from "../ui";
+import RangeSlider from "./RangeSlider";
 
 export type Facets = {
   total: number;
@@ -335,47 +336,6 @@ function DerivativeFacet({
   );
 }
 
-function Range({
-  title,
-  unit,
-  min,
-  max,
-  onMin,
-  onMax,
-}: {
-  title: string;
-  unit?: string;
-  min?: number;
-  max?: number;
-  onMin: (v?: number) => void;
-  onMax: (v?: number) => void;
-}) {
-  const parse = (s: string) => (s === "" ? undefined : Number(s));
-  return (
-    <div className="facet">
-      <div className="facet-title">{title}{unit ? ` (${unit})` : ""}</div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <input
-          className="input"
-          style={{ width: "50%" }}
-          type="number"
-          placeholder="min"
-          value={min ?? ""}
-          onChange={(e) => onMin(parse(e.target.value))}
-        />
-        <input
-          className="input"
-          style={{ width: "50%" }}
-          type="number"
-          placeholder="max"
-          value={max ?? ""}
-          onChange={(e) => onMax(parse(e.target.value))}
-        />
-      </div>
-    </div>
-  );
-}
-
 export default function FilterPanel({
   facets,
   filters,
@@ -630,50 +590,54 @@ export default function FilterPanel({
         </div>
       </div>
 
-      <Range
+      <RangeSlider
         title="ISO"
+        scale="iso"
+        bounds={{ min: facets.ranges.iso_min, max: facets.ranges.iso_max }}
         min={filters.iso_min}
         max={filters.iso_max}
         onMin={(v) => u({ iso_min: v })}
         onMax={(v) => u({ iso_max: v })}
       />
-      <Range
+      <RangeSlider
         title="Focal"
         unit="mm"
+        bounds={{ min: facets.ranges.focal_min, max: facets.ranges.focal_max }}
         min={filters.focal_min}
         max={filters.focal_max}
         onMin={(v) => u({ focal_min: v })}
         onMax={(v) => u({ focal_max: v })}
       />
-      <Range
+      <RangeSlider
         title="Aperture"
         unit="f/"
+        scale="aperture"
+        bounds={{
+          min: facets.ranges.aperture_min,
+          max: facets.ranges.aperture_max,
+        }}
         min={filters.aperture_min}
         max={filters.aperture_max}
         onMin={(v) => u({ aperture_min: v })}
         onMax={(v) => u({ aperture_max: v })}
       />
-      <Range
+      <RangeSlider
         title="Size"
         unit="MB"
+        bounds={{ min: facets.ranges.size_min, max: facets.ranges.size_max }}
         min={filters.size_min}
         max={filters.size_max}
         onMin={(v) => u({ size_min: v })}
         onMax={(v) => u({ size_max: v })}
       />
-      <div>
-        <Range
-          title="Sharpness"
-          min={filters.sharpness_min}
-          max={filters.sharpness_max}
-          onMin={(v) => u({ sharpness_min: v })}
-          onMax={(v) => u({ sharpness_max: v })}
-        />
-        <div className="hint" style={{ marginTop: -4 }}>
-          Low = blurry. Set only a max to surface the soft shots; the score
-          shows in the viewer’s info panel.
-        </div>
-      </div>
+      <RangeSlider
+        title="Sharpness"
+        min={filters.sharpness_min}
+        max={filters.sharpness_max}
+        onMin={(v) => u({ sharpness_min: v })}
+        onMax={(v) => u({ sharpness_max: v })}
+        hint="Low = blurry. Set only a max to surface the soft shots; the score shows in the viewer’s info panel."
+      />
 
       {!!facets.with_phash && (
         <div className="facet">
