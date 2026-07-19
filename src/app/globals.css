@@ -299,9 +299,13 @@ html[data-theme="dark"] .btn-primary:hover {
   .spacer {
     @apply flex-1;
   }
+  /* Full-width scroll body under the topbar. Same 20px inline padding as the
+     topbar's px-5 so the content (session header, filters, grid) stays aligned
+     with the back button/title at every viewport width — no centered max-width,
+     which used to inset the content past ~1440px while the topbar stayed
+     edge-to-edge. */
   .container {
-    @apply mx-auto w-full p-5;
-    max-width: 1440px;
+    @apply w-full p-5;
   }
   .app-shell {
     @apply flex flex-col overflow-hidden;
