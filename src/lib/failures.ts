@@ -6,12 +6,17 @@
 // by /api/failures: derivatives -> assets.derivative_status='error', import
 // -> import_batches.result. So we only duplicate what was missing.
 import { q, one } from "./db";
+import { config } from "./config";
 
 // The five failure families surfaced as tabs on /pipeline/failures.
 export type FailureCounts = {
   derivative: number;
   scan: number;
   import: number;
+  // Live assets whose ML analysis (faces/OCR/CLIP, cf. lib/ml.ts) errored —
+  // ml_status='error'. Only surfaced when the ML feature is on (the caller
+  // guards on config.ml.enabled), so a disabled stage never inflates the badge.
+  ml: number;
   duplicates: number;
   // Indexed assets whose ORIGINAL is gone from disk (cf. lib/integrity.ts).
   // Counted while awaiting triage (not yet purged) — the auto-trashed ones
@@ -36,6 +41,7 @@ export async function failureCounts(): Promise<FailureCounts> {
     derivative: 0,
     scan: 0,
     import: 0,
+    ml: 0,
     duplicates: 0,
     missing: 0,
   };
@@ -62,6 +68,19 @@ export async function failureCounts(): Promise<FailureCounts> {
     counts.import = Number(r?.n ?? 0);
   } catch {
     /* table absent before migration */
+  }
+  // ML errors are only a "failure" when the feature is on; with ML off the
+  // stage can't progress and its errored rows shouldn't inflate the badge (the
+  // /pipeline/failures ML tab is likewise gated on mlEnabled).
+  if (config.ml.enabled) {
+    try {
+      const r = await one<{ n: number }>(
+        "SELECT count(*) AS n FROM assets WHERE ml_status = 'error' AND deleted_at IS NULL",
+      );
+      counts.ml = Number(r?.n ?? 0);
+    } catch {
+      /* column absent before migration */
+    }
   }
   try {
     const r = await one<{ n: number }>(

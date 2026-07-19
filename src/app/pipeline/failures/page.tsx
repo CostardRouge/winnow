@@ -26,6 +26,16 @@ type ScanItem = {
   attempts: number;
   updated_at: string;
 };
+// A live asset whose ML analysis (faces/OCR/CLIP, cf. lib/ml.ts) errored — the
+// message is stored in ml_error.
+type MlItem = {
+  asset_id: number;
+  filename: string;
+  abs_path: string;
+  media_type: string;
+  error: string | null;
+  updated_at: string;
+};
 type ImportItem = {
   batch_id: number;
   origin: string | null;
@@ -70,6 +80,7 @@ type Failures = {
   derivative: { count: number; items: DerivItem[] };
   scan: { count: number; items: ScanItem[] };
   import: { count: number; items: ImportItem[] };
+  ml: { count: number; items: MlItem[] };
   duplicates: {
     count: number;
     falseCollisions: number;
@@ -78,15 +89,16 @@ type Failures = {
   missing: { count: number; items: MissingItem[] };
 };
 
-type Kind = "derivative" | "scan" | "import" | "missing";
+type Kind = "derivative" | "scan" | "import" | "missing" | "ml";
 type Scope = { ids?: number[]; paths?: string[] };
 
 // The failure families, one per tab. "derivative" doubles as the default tab.
-type Family = "derivative" | "scan" | "import" | "duplicates" | "missing";
+type Family = "derivative" | "scan" | "import" | "ml" | "duplicates" | "missing";
 const FAMILY_ORDER: Family[] = [
   "derivative",
   "scan",
   "import",
+  "ml",
   "duplicates",
   "missing",
 ];
@@ -94,6 +106,7 @@ const FAMILY_LABELS: Record<Family, string> = {
   derivative: "Analyze",
   scan: "Scan",
   import: "Import",
+  ml: "Machine learning",
   duplicates: "Deduplication",
   missing: "Missing files",
 };
@@ -167,6 +180,8 @@ export default function FailuresPage() {
     doRetry("derivative", keys ? { ids: keys } : {}, busyKey);
   const onRetryScan = (keys: string[] | null, busyKey: string) =>
     doRetry("scan", keys ? { paths: keys } : {}, busyKey);
+  const onRetryMl = (keys: number[] | null, busyKey: string) =>
+    doRetry("ml", keys ? { ids: keys } : {}, busyKey);
 
   // Delete broken derivatives (soft delete → trash): the escape hatch for an
   // asset that can never be re-derived (its original was removed by hand, an
@@ -225,11 +240,20 @@ export default function FailuresPage() {
     when: it.updated_at,
     badge: `${it.attempts}×`,
   }));
+  const mlRows: RowData<number>[] = (data?.ml.items ?? []).map((it) => ({
+    key: it.asset_id,
+    title: `#${it.asset_id} · ${it.filename} (${it.media_type})`,
+    path: it.abs_path,
+    error: it.error ?? "—",
+    when: it.updated_at,
+    downloadHref: `/api/assets/${it.asset_id}/download`,
+  }));
 
   const counts: Record<Family, number> = {
     derivative: data?.derivative.count ?? 0,
     scan: data?.scan.count ?? 0,
     import: data?.import.count ?? 0,
+    ml: data?.ml?.count ?? 0,
     duplicates: data?.duplicates.count ?? 0,
     missing: data?.missing?.count ?? 0,
   };
@@ -337,6 +361,19 @@ export default function FailuresPage() {
             />
           ))}
         </Section>
+      )}
+
+      {activeTab === "ml" && (
+        <RetrySection<number>
+          title="Machine learning"
+          hint="Assets whose ML analysis (face detection, OCR, CLIP embedding) failed — usually the ML container being unreachable, too old for a requested task, or timing out. Check the message, fix the container/models, then retry: each asset is re-analyzed from its existing derivative (the original is never re-read). Retry needs the ML feature on and a derivative to exist."
+          count={counts.ml}
+          rows={mlRows}
+          retryAllLabel="Retry all"
+          prefix="ml"
+          busy={busy}
+          onRetry={onRetryMl}
+        />
       )}
 
       {activeTab === "duplicates" && (
