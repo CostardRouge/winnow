@@ -8,6 +8,8 @@ import {
   PRIORITY,
   enqueueImport,
   enqueueIndex,
+  acquireScanLock,
+  releaseScanLock,
   nextWaitingIndexPriority,
   type IndexJob,
   type DerivativeJob,
@@ -32,6 +34,7 @@ import { closeExiftool } from "./lib/extract";
 import { getSettings } from "./lib/settings";
 import { reserveSlot, sleep } from "./lib/rate";
 import { one, many } from "./lib/db";
+import { dedupeOverlappingRoots } from "./lib/volumes";
 
 console.log("Winnow workers — starting up");
 console.log(`  storage : ${config.storage.driver}`);
@@ -54,8 +57,20 @@ const indexWorker = new Worker(
   async (job) => {
     const { rootId } = job.data as IndexJob;
     const myPriority = job.opts.priority ?? PRIORITY.normal;
+
+    // Single-flight per root: if a scan of this root is already running (another
+    // replica, or a follow-up job that stacked while this one was active and
+    // SCAN_CONCURRENCY > 1), skip rather than walk the same tree twice. Two
+    // concurrent walks race the content_hash INSERT and log files as duplicates
+    // of themselves; the periodic rescan re-enqueues, so nothing is lost.
+    const lockToken = await acquireScanLock(rootId);
+    if (!lockToken) {
+      console.log(`[index] root ${rootId} already scanning — skipping duplicate job`);
+      return { skipped: true as const };
+    }
     console.log(`[index] root ${rootId}…`);
 
+    try {
     // Preemption: an ordinary scan yields as soon as a higher-priority
     // scan (incoming/inbox) is waiting. The result is cached for 2 s
     // to bound Redis calls on large trees.
@@ -95,6 +110,9 @@ const indexWorker = new Worker(
       await enqueueIndex(rootId, { priority: myPriority });
     }
     return res;
+    } finally {
+      await releaseScanLock(rootId, lockToken);
+    }
   },
   { connection, concurrency: config.scanConcurrency },
 );
@@ -226,9 +244,16 @@ const periodicScanTimer = setInterval(async () => {
     if (rescanMinutes <= 0 || scanPaused) return;
     if (Date.now() - lastPeriodicScan < rescanMinutes * 60_000) return;
     lastPeriodicScan = Date.now();
-    const roots = await many<{ id: number; path: string }>(
+    const watched = await many<{ id: number; path: string }>(
       "SELECT id, path FROM roots WHERE kind IN ('source','finals') AND watch = true",
     );
+    // Never scan two overlapping roots — the nested one's files are already
+    // walked by its container, and doing both double-indexes every shared file.
+    const { kept: roots, dropped } = dedupeOverlappingRoots(watched);
+    for (const d of dropped)
+      console.warn(
+        `[rescan] "${d.root.path}" overlaps "${d.coveredBy.path}" — skipped (already covered); remove the nested volume to silence this`,
+      );
     for (const r of roots) {
       await enqueueIndex(r.id, {
         priority:
