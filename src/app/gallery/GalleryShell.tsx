@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import VirtualGrid, { type GalleryAsset } from "./VirtualGrid";
+import VirtualGrid, {
+  type GalleryAsset,
+  type VirtualGridHandle,
+} from "./VirtualGrid";
 import type { SidecarBrief } from "@/lib/types";
 import CalendarView from "./CalendarView";
 import type { Bbox, GeoPoint } from "./MapView";
@@ -304,6 +307,9 @@ export default function GalleryShell({
   const [facetsError, setFacetsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
+  // The grid's imperative handle, so closing the viewer can land the grid back on
+  // the media that was on screen (even if navigation paged well past the opener).
+  const gridRef = useRef<VirtualGridHandle>(null);
   const filterKey = JSON.stringify(filters);
   const activeFilterCount = countActiveFilters(filters);
 
@@ -805,6 +811,7 @@ export default function GalleryShell({
             ) : (
               <>
                 <VirtualGrid
+                  ref={gridRef}
                   items={items}
                   hasMore={hasMore}
                   loading={loading}
@@ -1017,7 +1024,16 @@ export default function GalleryShell({
           items={items}
           index={viewer}
           onIndexChange={setViewer}
-          onClose={() => setViewer(null)}
+          hasMore={hasMore}
+          loading={loading}
+          loadMore={() => fetchPage(cursor)}
+          onClose={() => {
+            // Land the grid on the media we were viewing before tearing the
+            // overlay down (the list stays mounted underneath, so the scroll
+            // takes effect immediately).
+            gridRef.current?.scrollToIndex(viewer);
+            setViewer(null);
+          }}
           onKeyDown={onViewerKey}
           onContextMenu={
             readOnly

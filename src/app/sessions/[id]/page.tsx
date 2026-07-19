@@ -163,7 +163,21 @@ export default function SessionGrid({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const sentinel = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+
+  // Land the grid back on the media the viewer was showing when it closes. The
+  // grid is a plain (non-virtualized) list mounted under the overlay, so every
+  // loaded cell is in the DOM; scroll the one at `index` into view. "nearest"
+  // is a no-op when it's already visible, so a close without far navigation
+  // leaves the scroll where it was.
+  const scrollToViewed = useCallback((index: number) => {
+    requestAnimationFrame(() => {
+      gridRef.current
+        ?.querySelector<HTMLElement>(`[data-idx="${index}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }, []);
 
   // Transient confirmation ("Export queued", "Deleted") — auto-clears.
   useEffect(() => {
@@ -551,12 +565,13 @@ export default function SessionGrid({
         {assets.length === 0 && !loading && !error ? (
           <div className="empty">No assets for this filter.</div>
         ) : (
-          <div className="grid">
+          <div className="grid" ref={gridRef}>
             {assets.map((a, i) => {
               const sel = selectMode && selected.has(a.id);
               return (
               <div
                 key={a.id}
+                data-idx={i}
                 className={`cell ${a.verdict}${sel ? " selected" : ""}`}
                 onClick={() => (selectMode ? toggleSelect(a.id) : setViewer(i))}
                 onContextMenu={(e) => {
@@ -611,7 +626,13 @@ export default function SessionGrid({
           items={assets}
           index={viewer}
           onIndexChange={setViewer}
-          onClose={() => setViewer(null)}
+          hasMore={hasMore}
+          loading={loading}
+          loadMore={() => fetchPage(cursor)}
+          onClose={() => {
+            scrollToViewed(viewer);
+            setViewer(null);
+          }}
           onKeyDown={onViewerKey}
           onContextMenu={(e, a) => {
             e.preventDefault();
