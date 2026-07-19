@@ -20,6 +20,7 @@ import {
   enqueueIndex,
   enqueueDerivative,
   enqueueImport,
+  enqueueMl,
   PRIORITY,
 } from "@/lib/queue";
 import { quarantineDir } from "@/lib/import";
@@ -29,7 +30,7 @@ import { json, badRequest, serverError } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  kind: z.enum(["derivative", "scan", "import", "missing"]),
+  kind: z.enum(["derivative", "scan", "import", "missing", "ml"]),
   ids: z.array(z.number().int()).optional(),
   paths: z.array(z.string()).optional(),
 });
@@ -57,6 +58,40 @@ export async function POST(req: NextRequest) {
           [idList],
         );
         for (const id of idList) await enqueueDerivative(id);
+      }
+      return json({ kind, retried: idList.length });
+    }
+
+    if (kind === "ml") {
+      // Re-run ML analysis for the errored assets. Guard on the feature being
+      // on (the job is a no-op with ML off) and on a derivative existing — the
+      // models feed on the proxy/poster, never the RAW, so a row with no
+      // derivative can never be analyzed and is left as-is.
+      if (!config.ml.enabled) {
+        return json({ kind, retried: 0 });
+      }
+      const rows =
+        ids && ids.length
+          ? await many<{ id: number }>(
+              `SELECT id FROM assets
+                WHERE id = ANY($1) AND ml_status = 'error' AND deleted_at IS NULL
+                  AND (CASE WHEN media_type = 'video' THEN thumb_key
+                            ELSE COALESCE(proxy_key, thumb_key) END) IS NOT NULL`,
+              [ids],
+            )
+          : await many<{ id: number }>(
+              `SELECT id FROM assets
+                WHERE ml_status = 'error' AND deleted_at IS NULL
+                  AND (CASE WHEN media_type = 'video' THEN thumb_key
+                            ELSE COALESCE(proxy_key, thumb_key) END) IS NOT NULL`,
+            );
+      const idList = rows.map((r) => r.id);
+      if (idList.length) {
+        await q(
+          "UPDATE assets SET ml_status='pending', ml_error=NULL, updated_at=now() WHERE id = ANY($1)",
+          [idList],
+        );
+        for (const id of idList) await enqueueMl(id);
       }
       return json({ kind, retried: idList.length });
     }

@@ -96,7 +96,7 @@ export async function GET() {
       () => [],
     );
 
-    const [counts, derivItems, scanItems, batches, duplicates] =
+    const [counts, derivItems, scanItems, mlItems, batches, duplicates] =
       await Promise.all([
         failureCounts(),
         many(
@@ -113,6 +113,16 @@ export async function GET() {
           `SELECT abs_path, root_id, error, attempts, updated_at
              FROM scan_failures
             WHERE resolved_at IS NULL
+            ORDER BY updated_at DESC
+            LIMIT ${LIMIT}`,
+        ),
+        // ML analysis errors (faces/OCR/CLIP, cf. lib/ml.ts): live assets whose
+        // ml_status stuck at 'error', with the message stored in ml_error.
+        many(
+          `SELECT id AS asset_id, filename, abs_path, media_type,
+                  ml_error AS error, updated_at
+             FROM assets
+            WHERE ml_status = 'error' AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ${LIMIT}`,
         ),
@@ -158,6 +168,7 @@ export async function GET() {
       derivative: { count: counts.derivative, items: derivItems },
       scan: { count: counts.scan, items: scanItems },
       import: { count: counts.import, items: importItems },
+      ml: { count: counts.ml, items: mlItems },
       duplicates,
       missing: { count: counts.missing, items: missingItems },
     });

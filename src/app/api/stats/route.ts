@@ -95,7 +95,7 @@ export async function GET() {
         derivative: fails.derivative,
         scan: fails.scan,
         import: fails.import,
-        ml: Number(counts?.ml_errors ?? 0),
+        ml: fails.ml,
         duplicates: fails.duplicates,
         missing: fails.missing,
       },
