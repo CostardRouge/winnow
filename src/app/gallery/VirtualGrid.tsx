@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { FixedSizeList, type ListOnItemsRenderedProps } from "react-window";
 import { formatBadge } from "@/lib/format";
 import { isLivePhoto, LiveMotionVideo } from "../LivePhotoPreview";
@@ -28,31 +35,44 @@ export type GalleryAsset = {
 const TARGET = 175; // target cell width (px)
 const GAP = 6;
 
-export default function VirtualGrid({
-  items,
-  hasMore,
-  loading,
-  loadMore,
-  onOpen,
-  selectMode = false,
-  selectedIds,
-  onToggleSelect,
-  onContextMenu,
-  targetWidth = TARGET,
-}: {
-  items: GalleryAsset[];
-  hasMore: boolean;
-  loading: boolean;
-  loadMore: () => void;
-  onOpen: (index: number) => void;
-  selectMode?: boolean;
-  selectedIds?: Set<number>;
-  onToggleSelect?: (id: number) => void;
-  onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
-  /** Target cell width (px). Smaller → more media per line. */
-  targetWidth?: number;
-}) {
+// Imperative handle: lets the host scroll a given item into view — used to land
+// the grid back on the media the viewer was showing when it closes.
+export type VirtualGridHandle = {
+  scrollToIndex: (index: number) => void;
+};
+
+const VirtualGrid = forwardRef<
+  VirtualGridHandle,
+  {
+    items: GalleryAsset[];
+    hasMore: boolean;
+    loading: boolean;
+    loadMore: () => void;
+    onOpen: (index: number) => void;
+    selectMode?: boolean;
+    selectedIds?: Set<number>;
+    onToggleSelect?: (id: number) => void;
+    onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
+    /** Target cell width (px). Smaller → more media per line. */
+    targetWidth?: number;
+  }
+>(function VirtualGrid(
+  {
+    items,
+    hasMore,
+    loading,
+    loadMore,
+    onOpen,
+    selectMode = false,
+    selectedIds,
+    onToggleSelect,
+    onContextMenu,
+    targetWidth = TARGET,
+  },
+  ref,
+) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<FixedSizeList>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Live Photo: which tile is hovered, so its motion (.mov companion) plays in
   // place over the still. One at a time; cleared on leave. No-op on touch (no
@@ -74,6 +94,17 @@ export default function VirtualGrid({
   const cell = size.w > 0 ? Math.floor((size.w - GAP * (cols - 1)) / cols) : targetWidth;
   const rowHeight = cell + GAP;
   const rowCount = Math.ceil(items.length / cols);
+
+  // Scroll the row holding `index` into view ("smart": no-op if already visible,
+  // so closing the viewer without having navigated far leaves the grid put).
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToIndex: (index: number) =>
+        listRef.current?.scrollToItem(Math.floor(index / cols), "smart"),
+    }),
+    [cols],
+  );
 
   const onItemsRendered = useCallback(
     (p: ListOnItemsRenderedProps) => {
@@ -156,6 +187,7 @@ export default function VirtualGrid({
     <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }}>
       {size.h > 0 && size.w > 0 && (
         <FixedSizeList
+          ref={listRef}
           height={size.h}
           width={size.w}
           itemCount={rowCount}
@@ -168,4 +200,6 @@ export default function VirtualGrid({
       )}
     </div>
   );
-}
+});
+
+export default VirtualGrid;

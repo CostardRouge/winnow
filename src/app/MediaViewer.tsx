@@ -79,6 +79,11 @@ const swapExt = (path: string, ext: string) =>
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 const SWIPE_THRESHOLD = 50; // px a one-finger drag must travel to count as a swipe
+// How close to the end of the loaded window navigation may get before we ask the
+// host to page in the next batch. Kept a few items ahead of the very last so the
+// fetch overlaps the time spent looking at the current media — reaching the end
+// then feels seamless instead of hitting a wall at the virtual list's boundary.
+const PREFETCH_MARGIN = 8;
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
 
@@ -107,6 +112,9 @@ export default function MediaViewer<T extends ViewerItem>({
   index,
   onIndexChange,
   onClose,
+  hasMore = false,
+  loading = false,
+  loadMore,
   mediaSrc = (it) => `/api/assets/${it.id}/proxy`,
   posterSrc = (it) => `/api/assets/${it.id}/thumb`,
   renderInfo,
@@ -118,6 +126,13 @@ export default function MediaViewer<T extends ViewerItem>({
   index: number;
   onIndexChange: (i: number) => void;
   onClose: () => void;
+  /** Whether the host has more pages to page in beyond `items`. */
+  hasMore?: boolean;
+  /** Whether a page fetch is in flight (host-owned; gates the prefetch). */
+  loading?: boolean;
+  /** Ask the host to append the next page — lets navigation cross the loaded
+   *  window instead of stopping at the virtual list's boundary. */
+  loadMore?: () => void;
   /** Source for the large media (default: the asset's proxy). */
   mediaSrc?: (item: T) => string;
   /** Poster for videos (default: the asset's thumbnail). */
@@ -176,6 +191,17 @@ export default function MediaViewer<T extends ViewerItem>({
     setShowCompanion(false);
     setShowCounterpart(false);
   }, [index]);
+
+  // Prefetch the next page as navigation nears the end of the loaded window.
+  // The grid's own paging is scroll-driven, so it stalls while the viewer is
+  // open (nothing scrolls); wiring the prefetch to the viewer's index lets
+  // prev/next walk the whole feed rather than being capped at whatever had been
+  // loaded when it opened. The host's fetch is idempotent under its own in-flight
+  // guard, so a redundant call here is harmless.
+  useEffect(() => {
+    if (loadMore && hasMore && !loading && index >= items.length - PREFETCH_MARGIN)
+      loadMore();
+  }, [index, items.length, hasMore, loading, loadMore]);
 
   const zoomBy = useCallback(
     (factor: number) => setScale((s) => clamp(s * factor, MIN_SCALE, MAX_SCALE)),
@@ -748,7 +774,9 @@ export default function MediaViewer<T extends ViewerItem>({
         <button
           className="btn"
           onClick={() => onIndexChange(Math.min(index + 1, last))}
-          disabled={index === last}
+          // Only the true end of the feed (no further pages) disables Next; at the
+          // edge of the loaded window the prefetch above is already pulling more.
+          disabled={index === last && !hasMore}
           aria-label="Next"
         >
           →
