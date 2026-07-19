@@ -5,10 +5,10 @@
 // Without this bootstrap, a final folder would stay empty: previously the
 // 'finals' roots were never indexed.
 import { stat } from "node:fs/promises";
-import { many, one } from "./db";
+import { q, many } from "./db";
 import { config } from "./config";
 import { coalescePendingIndexJobs, enqueueDerivative, enqueueIndex } from "./queue";
-import { isWalkable } from "./volumes";
+import { dedupeOverlappingRoots, isWalkable } from "./volumes";
 import type { Root } from "./types";
 
 async function exists(p: string): Promise<boolean> {
@@ -20,16 +20,14 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+// Register a directory as a root (idempotent). Enqueuing the scan is deferred
+// to the caller so overlapping roots can be deduped across the whole set first.
 async function ensureRoot(path: string, kind: Root["kind"]): Promise<void> {
-  const root = await one<{ id: number }>(
+  await q(
     `INSERT INTO roots (path, kind, watch) VALUES ($1, $2, true)
-     ON CONFLICT (path) DO UPDATE SET kind = EXCLUDED.kind
-     RETURNING id`,
+     ON CONFLICT (path) DO UPDATE SET kind = EXCLUDED.kind`,
     [path, kind],
   );
-  // Only walkable volumes (source/finals) are indexed; the export volume is
-  // registered for visibility in the Volumes table but never scanned.
-  if (root && isWalkable(kind)) await enqueueIndex(root.id);
 }
 
 export async function bootstrapRoots(): Promise<void> {
@@ -56,10 +54,29 @@ export async function bootstrapRoots(): Promise<void> {
     }
     try {
       await ensureRoot(path, kind);
-      console.log(`[bootstrap] ${kind} registered + indexing enqueued: ${path}`);
+      console.log(`[bootstrap] ${kind} registered: ${path}`);
     } catch (err) {
       console.error(`[bootstrap] failure ${path}:`, err);
     }
+  }
+
+  // Enqueue an initial scan of every watched, walkable root — but only the
+  // non-overlapping set. A finals folder nested inside the incoming tree (both
+  // seeded from the env) would otherwise be walked twice, double-indexing every
+  // shared file. Keep the container, skip the nested one, and say so.
+  try {
+    const watched = await many<{ id: number; path: string; kind: Root["kind"] }>(
+      "SELECT id, path, kind FROM roots WHERE watch = true",
+    );
+    const walkable = watched.filter((r) => isWalkable(r.kind));
+    const { kept, dropped } = dedupeOverlappingRoots(walkable);
+    for (const d of dropped)
+      console.warn(
+        `[bootstrap] "${d.root.path}" overlaps "${d.coveredBy.path}" — not indexed (already covered); remove the nested volume`,
+      );
+    for (const r of kept) await enqueueIndex(r.id);
+  } catch (err) {
+    console.error("[bootstrap] initial scan enqueue failed:", err);
   }
 
   await recoverStuckProcessing();

@@ -82,6 +82,33 @@ function overlaps(a: string, b: string): boolean {
   return a.startsWith(b + "/") || b.startsWith(a + "/");
 }
 
+// Split a set of roots into the ones to actually walk and the ones to skip
+// because another root already contains them. Overlapping roots are refused at
+// registration (validateRootPath), but a pair can still coexist in the DB — a
+// finals folder nested in the incoming tree seeded from the env, or a volume
+// added before that guard existed. Scanning both walks every shared file twice,
+// which races the content_hash INSERT and logs files as duplicates of
+// themselves. We keep the OUTERMOST root of each overlap (it already covers the
+// nested one's files) and drop the rest, naming the container for the caller to
+// log. Pure + deterministic (ties broken by id) so bootstrap and the periodic
+// rescan make the same choice.
+export function dedupeOverlappingRoots<T extends { id: number; path: string }>(
+  roots: T[],
+): { kept: T[]; dropped: { root: T; coveredBy: T }[] } {
+  const norm = roots.map((r) => ({ r, p: normalizeRootPath(r.path) }));
+  const kept: T[] = [];
+  const dropped: { root: T; coveredBy: T }[] = [];
+  for (const { r, p } of norm) {
+    // A strict ancestor in the set (its path is a parent dir of ours) means our
+    // whole subtree is already walked by it. roots.path is UNIQUE, so equal
+    // paths never occur here — only true nesting.
+    const ancestor = norm.find(({ r: o, p: op }) => o.id !== r.id && p.startsWith(op + "/"));
+    if (ancestor) dropped.push({ root: r, coveredBy: ancestor.r });
+    else kept.push(r);
+  }
+  return { kept, dropped };
+}
+
 export type GuardResult = { ok: true; path: string } | { ok: false; reason: string };
 
 // Validate a path the user wants to register, against the already-known roots.

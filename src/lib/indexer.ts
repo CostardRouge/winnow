@@ -323,6 +323,18 @@ export async function indexRoot(
         "SELECT id, abs_path FROM assets WHERE content_hash = $1",
         [hash],
       );
+      // Self-collision: the hash is already held by an asset at the very path
+      // we're scanning. That's not a second copy — it's the same file, inserted
+      // by a concurrent index job between our `existing` lookup above and this
+      // INSERT's ON CONFLICT. It happens when overlapping roots re-enqueue the
+      // same tree (cf. the two-root rescan), so every file is walked twice.
+      // Recording it would list the file as a duplicate of ITSELF (identical
+      // "in library" / "on disk" paths). Treat it as already-indexed and move on
+      // — no duplicate hit, no self-referential audit row.
+      if (match && match.abs_path === absPath) {
+        res.skipped++;
+        continue;
+      }
       const same = match ? await sameContent(absPath, match.abs_path) : null;
       if (same === false) {
         // FALSE collision: the two files genuinely differ. Index this one with a

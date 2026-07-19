@@ -38,6 +38,49 @@ export async function pingRedis(timeoutMs = 3000): Promise<boolean> {
   }
 }
 
+// --- Per-root scan lock -----------------------------------------------------
+// Guarantees a single in-flight scan per root across every worker/replica, even
+// when SCAN_CONCURRENCY > 1 or a periodic rescan tick queues a follow-up while
+// one is still active (`active` is deliberately excluded from coalescing, see
+// PENDING_INDEX_STATES — so nothing else stops two jobs for the same root from
+// running at once). Two concurrent scans of the same tree walk identical paths
+// and race the content_hash INSERT, logging files as duplicates of themselves.
+// The lock serializes them; a skipped follow-up is harmless because the next
+// rescan tick re-enqueues once the walk is free. The TTL is a safety net so a
+// crashed holder can't wedge a root forever.
+const SCAN_LOCK_TTL_MS = 6 * 60 * 60 * 1000; // 6h — longer than any single scan
+let scanLockSeq = 0;
+
+// Try to claim the scan slot for a root. Returns an opaque owner token on
+// success (pass it back to releaseScanLock), or null if a scan already holds it.
+export async function acquireScanLock(rootId: number): Promise<string | null> {
+  const token = `${process.pid}-${Date.now()}-${scanLockSeq++}`;
+  const ok = await redisClient.set(
+    `winnow:scan-lock:${rootId}`,
+    token,
+    "PX",
+    SCAN_LOCK_TTL_MS,
+    "NX",
+  );
+  return ok ? token : null;
+}
+
+// Release the scan slot — but only if we still own it (compare-and-delete), so a
+// holder whose TTL expired and was reacquired elsewhere doesn't drop another
+// worker's lock.
+export async function releaseScanLock(rootId: number, token: string): Promise<void> {
+  try {
+    await redisClient.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`,
+      1,
+      `winnow:scan-lock:${rootId}`,
+      token,
+    );
+  } catch (err) {
+    console.warn(`releaseScanLock(${rootId}):`, (err as Error).message);
+  }
+}
+
 export type IndexJob = { rootId: number };
 export type DerivativeJob = { assetId: number };
 export type ExportJob = { exportJobId: number };
