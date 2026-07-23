@@ -72,6 +72,14 @@ export type Asset = {
   aperture: number | null;
   focal_length: number | null;
   gps: { lat: number; lon: number } | null;
+  // Manual geotag (cf. api/assets/geotag): 'manual' when a human set the
+  // coordinates through the geotag action, NULL when they came from the file's
+  // EXIF or a telemetry sidecar. `gps_write_status` follows the async write-back
+  // of a manual position into the ORIGINAL file's EXIF (lib/exifWrite.ts) —
+  // 'skipped' (the default) means there is nothing to write.
+  gps_source: "manual" | null;
+  gps_write_status: "pending" | "processing" | "ready" | "error" | "skipped";
+  gps_write_error: string | null;
   width: number | null;
   height: number | null;
   duration_s: number | null;

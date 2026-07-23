@@ -18,6 +18,7 @@ export default function BulkActionBar({
   onExport,
   onRegenerate,
   onGeocode,
+  onGeotag,
   onMl,
   onDelete,
 }: {
@@ -36,6 +37,9 @@ export default function BulkActionBar({
   onRegenerate: () => void;
   /** Resolve the GPS coordinates of the selection to place names. */
   onGeocode: () => void;
+  /** Manually set the GPS position of the selection (picker + recap flow).
+   * Omitted when the host surface doesn't offer it. */
+  onGeotag?: () => void;
   /** (Re)run the ML analysis (faces + OCR) on the selection. Omitted when the
    * host surface doesn't offer it. */
   onMl?: () => void;
@@ -116,6 +120,16 @@ export default function BulkActionBar({
       >
         📍 Locate
       </button>
+      {onGeotag && (
+        <button
+          className="btn"
+          disabled={none}
+          title="Set the capture location (search, map pick) with a before/after recap"
+          onClick={onGeotag}
+        >
+          📌 Geotag
+        </button>
+      )}
       {onMl && (
         <button
           className="btn"

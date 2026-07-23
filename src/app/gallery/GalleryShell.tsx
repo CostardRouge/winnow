@@ -21,6 +21,8 @@ import SimilarStrip from "./SimilarStrip";
 import MediaViewer from "../MediaViewer";
 import ViewerActions from "../ViewerActions";
 import BulkActionBar from "../BulkActionBar";
+import GeotagRecapModal from "../GeotagRecapModal";
+import type { PickedLocation } from "../LocationPickerModal";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -62,6 +64,9 @@ type Row = GalleryAsset & {
   duration_s?: number | null;
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
+  // 'manual' when the position was hand-set through the geotag action (cf.
+  // api/assets/geotag) — the recap modal badges it to tell it from a camera fix.
+  gps_source?: "manual" | null;
   rel_path?: string | null;
   // Reverse-geocoded place (cf. lib/geocode.ts) — fed to the viewer's metadata
   // panel and reflected optimistically while a "Resolve location" job runs.
@@ -108,6 +113,11 @@ const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
   loading: () => <div className="map-loading">Loading map…</div>,
 });
+// Same constraint for the geotag location picker (it embeds a Leaflet map).
+const LocationPickerModal = dynamic(
+  () => import("../LocationPickerModal"),
+  { ssr: false },
+);
 
 const MB = 1024 * 1024;
 
@@ -609,6 +619,41 @@ export default function GalleryShell({
     }
   }, []);
 
+  // --- Manual geotag (two-step: location picker, then before/after recap) ---
+  // `ids` is the frozen selection the flow was opened for; `loc` flips the flow
+  // from step 1 (pick a point) to step 2 (confirm per-media).
+  const [geotag, setGeotag] = useState<{
+    ids: number[];
+    loc?: PickedLocation;
+  } | null>(null);
+
+  const geotagSelection = useCallback((ids: number[]) => {
+    if (ids.length) setGeotag({ ids });
+  }, []);
+
+  // Recap confirmed & applied: reflect the new position (and the two queued
+  // pipelines) in the grid rows without a refetch, like the other bulk actions.
+  const geotagApplied = useCallback(
+    (message: string, ids: number[], loc: PickedLocation) => {
+      const idset = new Set(ids);
+      setItems((prev) =>
+        prev.map((a) =>
+          idset.has(a.id)
+            ? {
+                ...a,
+                gps: { lat: loc.lat, lon: loc.lon },
+                gps_source: "manual" as const,
+                geocode_status: "pending",
+              }
+            : a,
+        ),
+      );
+      setGeotag(null);
+      setNotice(message);
+    },
+    [],
+  );
+
   // (Re)runs the ML analysis (face detection + OCR, cf. lib/ml.ts) for these
   // ids. Optimistically flags them 'pending' until the worker writes back.
   const mlSelection = useCallback(async (ids: number[]) => {
@@ -997,8 +1042,46 @@ export default function GalleryShell({
           onExport={() => exportSelection([...selected])}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
+          onGeotag={() => geotagSelection([...selected])}
           onMl={() => mlSelection([...selected])}
           onDelete={() => removeAssets([...selected])}
+        />
+      )}
+
+      {geotag && !geotag.loc && (
+        <LocationPickerModal
+          count={geotag.ids.length}
+          // Re-tagging a single already-positioned media: start from its point.
+          initial={
+            geotag.ids.length === 1
+              ? items.find((a) => a.id === geotag.ids[0])?.gps ?? null
+              : null
+          }
+          onClose={() => setGeotag(null)}
+          onPicked={(loc) => setGeotag({ ids: geotag.ids, loc })}
+        />
+      )}
+      {geotag?.loc && (
+        <GeotagRecapModal
+          assets={geotag.ids.flatMap((id) => {
+            const a = items.find((x) => x.id === id);
+            return a
+              ? [
+                  {
+                    id: a.id,
+                    filename: a.filename,
+                    media_type: a.media_type,
+                    gps: a.gps ?? null,
+                    gps_source: a.gps_source ?? null,
+                    place_city: a.place_city,
+                    place_country: a.place_country,
+                  },
+                ]
+              : [];
+          })}
+          target={geotag.loc}
+          onClose={() => setGeotag(null)}
+          onApplied={(message, ids) => geotagApplied(message, ids, geotag.loc!)}
         />
       )}
 
@@ -1088,6 +1171,7 @@ export default function GalleryShell({
                     onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onGeocode={() => geocodeSelection([it.id])}
+                    onGeotag={() => geotagSelection([it.id])}
                     onMl={() => mlSelection([it.id])}
                     onDelete={async () => {
                       if (await removeAssets([it.id])) {

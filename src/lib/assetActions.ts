@@ -173,6 +173,49 @@ export async function geocodeAssets(
   return body.queued;
 }
 
+// Manually sets the GPS position of these assets (the geotag action — cf.
+// api/assets/geotag): updates the DB, re-resolves the place names and queues
+// the EXIF write-back into the originals. The caller (GeotagRecapModal) has
+// already had the user confirm the per-asset before/after, including any
+// overwrite of an existing position. Works for one (ids:[id]) or many. Returns
+// how many rows were actually updated, or throws on a non-2xx response.
+export async function geotagAssets(
+  ids: number[],
+  gps: { lat: number; lon: number },
+): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/geotag", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids, lat: gps.lat, lon: gps.lon }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Geotag failed (${res.status})`);
+  }
+  const body = (await res.json()) as { updated: number };
+  return body.updated;
+}
+
+// One place suggestion returned by the geotag autocomplete (cf.
+// api/places/search): the provider's display name + the coordinate to jump to.
+export type PlaceSuggestion = { display_name: string; lat: number; lon: number };
+
+// Searches place names for the geotag autocomplete (debounced by the caller).
+export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const res = await fetch(
+    `/api/places/search?q=${encodeURIComponent(trimmed)}`,
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Place search failed (${res.status})`);
+  }
+  const body = (await res.json()) as { results: PlaceSuggestion[] };
+  return body.results ?? [];
+}
+
 // (Re)runs the ML analysis — face detection + OCR text read off the derivative
 // (cf. lib/ml.ts) — for these assets. Works for one (ids:[id]) or many. Returns
 // how many were actually queued (assets without a derivative yet are skipped),

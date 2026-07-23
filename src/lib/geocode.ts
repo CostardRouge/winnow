@@ -144,6 +144,84 @@ async function reverseGeocode(
   return mapNominatim(data);
 }
 
+// --- Forward geocoding: place-name search (the geotag autocomplete) ---------
+
+// The provider's request budget is exhausted right now (a big reverse-geocode
+// backfill is drinking it): the search API maps this to HTTP 429 so the
+// autocomplete can tell "no such place" from "retry in a moment".
+export class GeocodeRateLimited extends Error {
+  constructor() {
+    super("geocode rate limit reached — retry shortly");
+  }
+}
+
+// One suggestion for the geotag place autocomplete: the provider's full display
+// name plus the coordinate the map picker jumps to when it's chosen.
+export type PlaceSuggestion = {
+  display_name: string;
+  lat: number;
+  lon: number;
+};
+
+// Search places by free-typed name against the same Nominatim-compatible
+// provider (and the same base URL / User-Agent / language settings) as the
+// reverse geocoding above — `/search` instead of `/reverse`, no code fork per
+// provider. Called by GET /api/places/search on each (debounced) keystroke of
+// the geotag autocomplete; shares the reverse-geocoder's hourly budget so both
+// paths together stay inside the provider's rate limit.
+export async function searchPlaces(
+  query: string,
+  limit = 8,
+): Promise<PlaceSuggestion[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  if (config.geocode.provider !== "nominatim") {
+    throw new Error(`Unsupported geocode provider: ${config.geocode.provider}`);
+  }
+  const base = config.geocode.baseUrl.replace(/\/+$/, "");
+  const url = new URL(`${base}/search`);
+  url.searchParams.set("q", trimmed);
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("limit", String(limit));
+  if (config.geocode.language)
+    url.searchParams.set("accept-language", config.geocode.language);
+  if (config.geocode.email) url.searchParams.set("email", config.geocode.email);
+
+  // Same hourly budget as the reverse geocoder, but with a short patience cap:
+  // an interactive autocomplete keystroke must fail fast (the client just shows
+  // "try again"), never hang minutes for a backfill to free the budget.
+  const { geocodePerHour } = await getSettings();
+  if (geocodePerHour > 0) {
+    const wait = await reserveSlot("geocode", geocodePerHour);
+    if (wait > 3000) throw new GeocodeRateLimited();
+    if (wait > 0) await sleep(wait);
+  }
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": config.geocode.userAgent,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(config.geocode.timeoutMs),
+  });
+  if (!res.ok) {
+    throw new Error(`geocode HTTP ${res.status} from ${base}`);
+  }
+  const data = (await res.json()) as Array<{
+    display_name?: string;
+    lat?: string;
+    lon?: string;
+  }>;
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((row) => {
+    const lat = Number.parseFloat(row.lat ?? "");
+    const lon = Number.parseFloat(row.lon ?? "");
+    const display_name = str(row.display_name);
+    if (!display_name || !Number.isFinite(lat) || !Number.isFinite(lon))
+      return [];
+    return [{ display_name, lat, lon }];
+  });
+}
+
 // Drip-feed throttle around the ONLY expensive part — the network call. A cache
 // hit makes no call and never waits. The queue runs at concurrency 1, so waiting
 // here simply paces the single worker (Nominatim public = ~1 req/s → set
