@@ -91,6 +91,9 @@ export type PurgeJob = { purgeJobId: number };
 export type GeocodeJob = { assetId: number; precise?: boolean };
 // ML-analyze one asset (cf. lib/ml.ts): faces + OCR read off its derivative.
 export type MlJob = { assetId: number };
+// Write a manually-set GPS position back into the ORIGINAL file's EXIF
+// (cf. lib/exifWrite.ts, api/assets/geotag).
+export type GpsWriteJob = { assetId: number };
 // Integrity sweep (cf. lib/integrity.ts): re-stat every live original + verify
 // the derivative objects still exist in storage. `rootId` scopes to one volume;
 // omitted → the whole library.
@@ -110,6 +113,7 @@ export const QUEUES = {
   geocode: "winnow-geocode",
   ml: "winnow-ml",
   integrity: "winnow-integrity",
+  gpswrite: "winnow-gpswrite",
 } as const;
 
 declare global {
@@ -124,6 +128,7 @@ declare global {
         geocode: Queue;
         ml: Queue;
         integrity: Queue;
+        gpswrite: Queue;
       }
     | undefined;
 }
@@ -138,6 +143,7 @@ function build() {
     geocode: new Queue(QUEUES.geocode, { connection }),
     ml: new Queue(QUEUES.ml, { connection }),
     integrity: new Queue(QUEUES.integrity, { connection }),
+    gpswrite: new Queue(QUEUES.gpswrite, { connection }),
   };
 }
 
@@ -427,6 +433,18 @@ export async function enqueueIntegrity(
     // A sweep interrupted by pause returns cleanly (partial report); no retries.
     attempts: 1,
   });
+}
+
+// Write a manual GPS position back into the original file (cf. lib/exifWrite.ts).
+// Idempotent: the job re-reads the asset's current coordinates at run time, so
+// re-enqueuing (or geotagging twice before the worker catches up) just writes
+// the latest value.
+export async function enqueueGpsWrite(assetId: number) {
+  return getQueues().gpswrite.add(
+    "gpswrite",
+    { assetId } satisfies GpsWriteJob,
+    defaultJobOpts,
+  );
 }
 
 // Reverse-geocode one asset. Cheap and idempotent (a cached cell makes no

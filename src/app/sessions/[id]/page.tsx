@@ -8,6 +8,7 @@ import {
   use as usePromise,
 } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
@@ -17,6 +18,8 @@ import SimilarStrip from "@/app/gallery/SimilarStrip";
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
+import GeotagRecapModal from "@/app/GeotagRecapModal";
+import type { PickedLocation } from "@/app/LocationPickerModal";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import ExportSessionModal from "@/app/sessions/ExportSessionModal";
 import SessionActions from "@/app/sessions/SessionActions";
@@ -36,6 +39,12 @@ import {
   tagAssets,
 } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
+
+// Leaflet touches `window` on import, so the geotag location picker (which
+// embeds a map) is client-only — same treatment as the gallery's MapView.
+const LocationPickerModal = dynamic(() => import("@/app/LocationPickerModal"), {
+  ssr: false,
+});
 
 type Verdict = "pick" | "reject" | "skip" | "unrated";
 type AssetRow = {
@@ -58,6 +67,9 @@ type AssetRow = {
   duration_s: number | null;
   device: string | null;
   gps: { lat: number; lon: number } | null;
+  // 'manual' when the position was hand-set through the geotag action (cf.
+  // api/assets/geotag) — the recap modal badges it to tell it from a camera fix.
+  gps_source?: "manual" | null;
   rel_path: string | null;
   // Reverse-geocoded place (cf. lib/geocode.ts) — surfaced in the viewer's
   // metadata panel; `geocode_status` flips optimistically during a resolve.
@@ -392,6 +404,41 @@ export default function SessionGrid({
     }
   }, []);
 
+  // --- Manual geotag (two-step: location picker, then before/after recap) ---
+  // `ids` is the frozen selection the flow was opened for; `loc` flips the flow
+  // from step 1 (pick a point) to step 2 (confirm per-media).
+  const [geotag, setGeotag] = useState<{
+    ids: number[];
+    loc?: PickedLocation;
+  } | null>(null);
+
+  const openGeotag = useCallback((ids: number[]) => {
+    if (ids.length) setGeotag({ ids });
+  }, []);
+
+  // Recap confirmed & applied: reflect the new position (and the queued
+  // pipelines) in the grid rows without a refetch, like the other bulk actions.
+  const geotagApplied = useCallback(
+    (message: string, ids: number[], loc: PickedLocation) => {
+      const idset = new Set(ids);
+      setAssets((prev) =>
+        prev.map((a) =>
+          idset.has(a.id)
+            ? {
+                ...a,
+                gps: { lat: loc.lat, lon: loc.lon },
+                gps_source: "manual" as const,
+                geocode_status: "pending",
+              }
+            : a,
+        ),
+      );
+      setGeotag(null);
+      setNotice(message);
+    },
+    [],
+  );
+
   // (Re)run the ML analysis (face detection + OCR, cf. lib/ml.ts).
   const mlAnalyze = useCallback(async (ids: number[]) => {
     if (!ids.length) return;
@@ -549,6 +596,7 @@ export default function SessionGrid({
             onExport={() => exportSelection([...selected])}
             onRegenerate={() => regenerate([...selected])}
             onGeocode={() => geocode([...selected])}
+            onGeotag={() => openGeotag([...selected])}
             onMl={() => mlAnalyze([...selected])}
             onDelete={() => removeAssets([...selected])}
           />
@@ -661,6 +709,7 @@ export default function SessionGrid({
               onDownload={() => downloadAssetOriginal(a.id)}
               onRegenerate={() => regenerate([a.id])}
               onGeocode={() => geocode([a.id])}
+              onGeotag={() => openGeotag([a.id])}
               onMl={() => mlAnalyze([a.id])}
               onDelete={async () => {
                 if (await removeAssets([a.id])) {
@@ -687,6 +736,43 @@ export default function SessionGrid({
           label={assets.find((a) => a.id === menu.id)?.filename}
           onAction={(action) => onMenuAction(menu.id, action)}
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {geotag && !geotag.loc && (
+        <LocationPickerModal
+          count={geotag.ids.length}
+          // Re-tagging a single already-positioned media: start from its point.
+          initial={
+            geotag.ids.length === 1
+              ? assets.find((a) => a.id === geotag.ids[0])?.gps ?? null
+              : null
+          }
+          onClose={() => setGeotag(null)}
+          onPicked={(loc) => setGeotag({ ids: geotag.ids, loc })}
+        />
+      )}
+      {geotag?.loc && (
+        <GeotagRecapModal
+          assets={geotag.ids.flatMap((id) => {
+            const a = assets.find((x) => x.id === id);
+            return a
+              ? [
+                  {
+                    id: a.id,
+                    filename: a.filename,
+                    media_type: a.media_type,
+                    gps: a.gps,
+                    gps_source: a.gps_source ?? null,
+                    place_city: a.place_city,
+                    place_country: a.place_country,
+                  },
+                ]
+              : [];
+          })}
+          target={geotag.loc}
+          onClose={() => setGeotag(null)}
+          onApplied={(message, ids) => geotagApplied(message, ids, geotag.loc!)}
         />
       )}
 

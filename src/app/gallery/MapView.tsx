@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Icons } from "@/app/ui";
+import { TILE_URL, TILE_ATTRIBUTION } from "@/app/mapTiles";
 
 // Map view for the gallery: plots every geotagged asset (a point per asset),
 // and lets the user carve out a zone — either the current viewport or a
@@ -13,16 +14,6 @@ import { Icons } from "@/app/ui";
 
 export type GeoPoint = { id: number; lat: number; lon: number };
 export type Bbox = { w: number; s: number; e: number; n: number };
-
-// Tile source is configurable (self-hosters can point to their own server);
-// defaults to the public OpenStreetMap tiles — same source the asset metadata
-// panel already links to. NEXT_PUBLIC_* is inlined at build time.
-const TILE_URL =
-  process.env.NEXT_PUBLIC_MAP_TILE_URL ||
-  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const TILE_ATTRIBUTION =
-  process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION ||
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 // Normalize a longitude into [-180, 180] (Leaflet hands back wrapped values when
 // the world map is panned across copies).

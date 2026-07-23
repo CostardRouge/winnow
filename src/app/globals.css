@@ -3350,6 +3350,133 @@ html[data-theme="dark"] .btn-primary:hover {
 }
 
 /* =========================================================================
+   Manual geotag — location picker + before/after recap modals
+   ========================================================================= */
+@layer components {
+  /* Both geotag steps need more room than the default 28rem modal. */
+  .modal-wide {
+    @apply max-w-2xl;
+  }
+
+  /* ---- Place autocomplete ------------------------------------------------ */
+  .place-search {
+    @apply relative;
+  }
+  .place-search .input {
+    @apply w-full;
+  }
+  .place-search-spin {
+    @apply absolute right-3 top-1/2 -translate-y-1/2;
+  }
+  .place-suggestions {
+    @apply absolute left-0 right-0 z-20 m-0 mt-1 max-h-60 list-none overflow-y-auto rounded-[var(--radius)] border p-1;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+  }
+  .place-suggestion {
+    @apply block w-full cursor-pointer rounded-[calc(var(--radius)-2px)] border-0 bg-transparent px-2.5 py-2 text-left text-sm;
+    color: var(--color-text);
+  }
+  .place-suggestion.active {
+    background: var(--color-accent-wash);
+  }
+
+  /* ---- Map picker -------------------------------------------------------- */
+  .picker-map {
+    @apply mt-3 w-full overflow-hidden rounded-[var(--radius)] border;
+    border-color: var(--color-border-strong);
+    height: min(45vh, 320px);
+    /* Leaflet panes stack above the page by default; keep them under the
+       autocomplete dropdown and the overlay chrome. */
+    z-index: 0;
+    position: relative;
+  }
+  .picker-coords {
+    @apply mt-3 grid grid-cols-2 gap-3;
+  }
+  /* The draggable CSS pin (divIcon — the bundler doesn't ship Leaflet's
+     default image markers). A teardrop anchored at its tip. */
+  .picker-pin-wrap {
+    background: transparent;
+    border: 0;
+  }
+  .picker-pin {
+    @apply block;
+    width: 22px;
+    height: 22px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    background: var(--color-accent);
+    border: 2px solid var(--color-frame);
+    box-shadow: var(--shadow-pop);
+  }
+
+  /* ---- Before/after recap ------------------------------------------------ */
+  .recap-toolbar {
+    @apply mt-3 flex items-center gap-2;
+  }
+  .recap-toolbar .hint {
+    @apply ml-auto;
+  }
+  .recap-table-wrap {
+    @apply mt-2 max-h-[45vh] overflow-y-auto rounded-[var(--radius)] border;
+    border-color: var(--color-border);
+  }
+  .recap-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .recap-table th,
+  .recap-table td {
+    @apply px-2.5 py-2 text-left align-middle;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .recap-table thead th {
+    @apply sticky top-0 z-10 text-xs font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+    background: var(--color-surface-2);
+  }
+  .recap-table tbody tr {
+    @apply cursor-pointer;
+  }
+  .recap-table tbody tr:hover {
+    background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+  }
+  .recap-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .recap-table tr.is-skipped td {
+    @apply opacity-60;
+  }
+  .recap-table input[type="checkbox"] {
+    accent-color: var(--color-accent);
+  }
+  .recap-thumb {
+    @apply block h-9 w-9 rounded-[calc(var(--radius)-4px)] object-cover;
+    background: var(--color-surface-2);
+  }
+  .recap-name {
+    @apply max-w-[10rem] truncate;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+  }
+  .recap-before,
+  .recap-after {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .recap-none {
+    color: var(--color-muted);
+  }
+  .recap-after {
+    color: var(--color-accent);
+  }
+  .recap-table tr.is-skipped .recap-after {
+    color: var(--color-muted);
+  }
+}
+
+/* =========================================================================
    Volumes — server-side folder picker (Add-folder modal)
    ========================================================================= */
 @layer components {

@@ -19,6 +19,7 @@ import {
   type GeocodeJob,
   type MlJob,
   type IntegrityJob,
+  type GpsWriteJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { runIntegrityJob } from "./lib/integrity";
@@ -27,6 +28,7 @@ import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
 import { runGeocodeJob } from "./lib/geocode";
+import { runGpsWriteJob } from "./lib/exifWrite";
 import { runMlJob } from "./lib/ml";
 import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
@@ -183,6 +185,18 @@ const geocodeWorker = new Worker(
   { connection, concurrency: config.geocode.concurrency },
 );
 
+// GPS write-back (cf. lib/exifWrite.ts): stamps a manually-set position into the
+// original file's EXIF. Serialized — it's a per-file write on the NAS, and the
+// shared exiftool process pool is already bounded; one at a time keeps a bulk
+// geotag of a whole session from ganging up on the disk.
+const gpsWriteWorker = new Worker(
+  QUEUES.gpswrite,
+  async (job) => {
+    await runGpsWriteJob((job.data as GpsWriteJob).assetId);
+  },
+  { connection, concurrency: 1 },
+);
+
 // ML analysis (faces + OCR, cf. lib/ml.ts): sends the existing derivative to the
 // immich-machine-learning container. Concurrency defaults to 1 (the container
 // queues without backpressure) and the call is drip-fed by mlPerHour, so the
@@ -216,6 +230,7 @@ for (const [name, w] of [
   ["import", importWorker],
   ["purge", purgeWorker],
   ["geocode", geocodeWorker],
+  ["gpswrite", gpsWriteWorker],
   ["ml", mlWorker],
   ["integrity", integrityWorker],
 ] as const) {
@@ -296,6 +311,7 @@ async function shutdown() {
     importWorker.close(),
     purgeWorker.close(),
     geocodeWorker.close(),
+    gpsWriteWorker.close(),
     mlWorker.close(),
     integrityWorker.close(),
   ]);

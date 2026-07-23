@@ -24,6 +24,7 @@ export default function ViewerActions({
   onDownload,
   onRegenerate,
   onGeocode,
+  onGeotag,
   onMl,
   onDelete,
   onTag,
@@ -38,6 +39,8 @@ export default function ViewerActions({
   onRegenerate: () => void;
   /** Optional: resolve the GPS coordinates to place names (country/city/POI). */
   onGeocode?: () => void;
+  /** Optional: manually set the capture location (picker + recap flow). */
+  onGeotag?: () => void;
   /** Optional: (re)run the ML analysis (faces + OCR) on this media. */
   onMl?: () => void;
   onDelete: () => void;
@@ -210,6 +213,19 @@ export default function ViewerActions({
                 }}
               >
                 <span className="vbar-menu-ic">📍</span> Resolve location
+              </button>
+            )}
+            {onGeotag && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                onClick={() => {
+                  onGeotag();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">📌</span> Set location…
               </button>
             )}
             {onMl && (

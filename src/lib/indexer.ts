@@ -202,7 +202,14 @@ export async function indexRoot(
            rel_path=$2, filename=$3, ext=$4, media_type=$5, device=$6,
            file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
            camera_model=$11, lens=$12, iso=$13, shutter=$14, aperture=$15,
-           focal_length=$16, gps=$17, width=$18, height=$19, duration_s=$20,
+           focal_length=$16,
+           -- Keep a hand-set position (cf. api/assets/geotag) when the file
+           -- itself carries none — e.g. the EXIF write-back failed or the
+           -- format can't hold GPS. A file WITH coordinates always wins: after
+           -- a successful write-back it echoes the manual value anyway.
+           gps=CASE WHEN $17::jsonb IS NOT NULL THEN $17::jsonb
+                    WHEN gps_source='manual' THEN gps END,
+           width=$18, height=$19, duration_s=$20,
            content_id=$23,
            derivative_status=$21,
            processing_state=CASE WHEN $22 THEN 'ignored' ELSE processing_state END,
