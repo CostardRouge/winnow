@@ -568,7 +568,7 @@ export default function SessionGrid({
         <span className="hint">{assets.length} loaded</span>
       </div>
 
-      <PullToRefresh className="container" onRefresh={refresh}>
+      <PullToRefresh className="session-view-body" onRefresh={refresh}>
         {session && (
           <SessionHeader
             s={session}
