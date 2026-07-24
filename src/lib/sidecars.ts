@@ -166,14 +166,22 @@ export async function recordSidecars(opts: {
       await q(
         `INSERT INTO asset_sidecars
            (asset_id, abs_path, rel_path, filename, kind, file_size,
-            gps_lat, gps_lon, max_altitude, sample_count)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            gps_lat, gps_lon, max_altitude, sample_count,
+            gimbal_pitch, gimbal_yaw, gimbal_roll, max_speed,
+            iso, shutter, fnumber, focal_length)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 $11, $12, $13, $14, $15, $16, $17, $18)
          ON CONFLICT (abs_path) DO UPDATE SET
            asset_id = EXCLUDED.asset_id, rel_path = EXCLUDED.rel_path,
            filename = EXCLUDED.filename, kind = EXCLUDED.kind,
            file_size = EXCLUDED.file_size, gps_lat = EXCLUDED.gps_lat,
            gps_lon = EXCLUDED.gps_lon, max_altitude = EXCLUDED.max_altitude,
-           sample_count = EXCLUDED.sample_count, updated_at = now()`,
+           sample_count = EXCLUDED.sample_count,
+           gimbal_pitch = EXCLUDED.gimbal_pitch, gimbal_yaw = EXCLUDED.gimbal_yaw,
+           gimbal_roll = EXCLUDED.gimbal_roll, max_speed = EXCLUDED.max_speed,
+           iso = EXCLUDED.iso, shutter = EXCLUDED.shutter,
+           fnumber = EXCLUDED.fnumber, focal_length = EXCLUDED.focal_length,
+           updated_at = now()`,
         [
           assetId,
           abs,
@@ -185,6 +193,14 @@ export async function recordSidecars(opts: {
           tel?.gpsLon ?? null,
           tel?.maxAltitude ?? null,
           tel?.sampleCount ?? null,
+          tel?.gimbalPitch ?? null,
+          tel?.gimbalYaw ?? null,
+          tel?.gimbalRoll ?? null,
+          tel?.maxSpeed ?? null,
+          tel?.iso ?? null,
+          tel?.shutter ?? null,
+          tel?.fnumber ?? null,
+          tel?.focalLength ?? null,
         ],
       );
       recorded++;

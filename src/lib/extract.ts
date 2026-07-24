@@ -27,6 +27,15 @@ export type Metadata = {
   // the still and its companion .mov). Null for everything that isn't a Live
   // Photo member. Used by lib/pairing.ts to tie the pair at scan time.
   content_id: string | null;
+  // DJI drone telemetry embedded in the still's own EXIF/XMP (drone-dji:*
+  // tags) — no sidecar file involved, unlike the video .SRT flight log (cf.
+  // lib/srt.ts). Null on every non-DJI photo. Gimbal orientation is the
+  // camera's aim; altitude is relative to takeoff.
+  gimbal_pitch: number | null;
+  gimbal_yaw: number | null;
+  gimbal_roll: number | null;
+  relative_altitude: number | null;
+  absolute_altitude: number | null;
 };
 
 function toIso(v: unknown): string | null {
@@ -130,6 +139,14 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
     // value, which is exactly what lets lib/pairing.ts match them.
     content_id:
       str((t as any).ContentIdentifier) ?? str((t as any).MediaGroupUUID),
+    // DJI writes these under its drone-dji XMP namespace; exiftool-vendored
+    // flattens the group away, so they read as plain tag names. Undefined
+    // (→ null) on every non-DJI file.
+    gimbal_pitch: num((t as any).GimbalPitchDegree),
+    gimbal_yaw: num((t as any).GimbalYawDegree),
+    gimbal_roll: num((t as any).GimbalRollDegree),
+    relative_altitude: num((t as any).RelativeAltitude),
+    absolute_altitude: num((t as any).AbsoluteAltitude),
   };
 }
 
