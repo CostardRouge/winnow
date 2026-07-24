@@ -303,8 +303,13 @@ html[data-theme="dark"] .btn-primary:hover {
      topbar's px-5 so the content (session header, filters, grid) stays aligned
      with the back button/title at every viewport width — no centered max-width,
      which used to inset the content past ~1440px while the topbar stayed
-     edge-to-edge. */
-  .container {
+     edge-to-edge.
+     Named "session-view-body", not "container": Tailwind v4 reserves the bare
+     "container" class name and generates its own responsive max-width utility
+     for it in the utilities layer, which wins over this components-layer rule
+     regardless of source order — reintroducing a (this time asymmetric, since
+     there's no mx-auto) right-hand gap above each breakpoint. */
+  .session-view-body {
     @apply w-full p-5;
   }
   .app-shell {
