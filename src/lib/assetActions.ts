@@ -197,6 +197,48 @@ export async function geotagAssets(
   return body.updated;
 }
 
+// What the geotag recap modal needs to know about one media (a subset of the
+// grid row). Kept here so the session-level flows (sessions list, session
+// header) and the grid flows share one shape.
+export type GeotagAsset = {
+  id: number;
+  filename: string;
+  media_type: "photo" | "video";
+  gps: { lat: number; lon: number } | null;
+  gps_source?: "manual" | null;
+  place_city?: string | null;
+  place_country?: string | null;
+};
+
+// Every live media of a session, in the recap shape — the session-level geotag
+// entry points (the Geotag segment on a session card/header) start from here,
+// where the caller has no asset grid loaded. Pages through the session assets
+// route (keyset cursor) so a large session comes back whole; `collapse=0` so
+// BOTH members of a RAW+JPEG / Live Photo pair are listed and written — the
+// companion file needs the coordinates in its metadata too.
+export async function sessionGeotagAssets(
+  sessionId: number,
+): Promise<GeotagAsset[]> {
+  const out: GeotagAsset[] = [];
+  let cursor: string | null = null;
+  do {
+    const sp = new URLSearchParams({ limit: "500" });
+    if (cursor) sp.set("cursor", cursor);
+    const res = await fetch(`/api/sessions/${sessionId}/assets?${sp}`);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Couldn’t list the session (${res.status})`);
+    }
+    const body = (await res.json()) as {
+      assets?: GeotagAsset[];
+      next_cursor?: string | null;
+    };
+    out.push(...(body.assets ?? []));
+    cursor = body.next_cursor ?? null;
+  } while (cursor);
+  return out;
+}
+
 // One place suggestion returned by the geotag autocomplete (cf.
 // api/places/search): the provider's display name + the coordinate to jump to.
 export type PlaceSuggestion = { display_name: string; lat: number; lon: number };

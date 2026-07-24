@@ -8,15 +8,22 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
-import { sessionDownloadFiles } from "@/lib/assetActions";
+import {
+  sessionDownloadFiles,
+  sessionGeotagAssets,
+  type GeotagAsset,
+} from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import ExportSessionModal from "./sessions/ExportSessionModal";
 import SessionActions from "./sessions/SessionActions";
 import SessionProgress from "./sessions/SessionProgress";
+import GeotagRecapModal from "./GeotagRecapModal";
+import type { PickedLocation } from "./LocationPickerModal";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
 import PullToRefresh from "./PullToRefresh";
 
@@ -28,6 +35,12 @@ import PullToRefresh from "./PullToRefresh";
 // Renders in one of two layouts (chosen from the section toolbar): a "list"
 // (one row each, with a 3-up thumbnail strip) or a "card" grid (a stacked deck
 // of thumbnails per session). Thumbnails load on sight via LazyImage.
+
+// Leaflet touches `window` on import, so the geotag location picker (which
+// embeds a map) is client-only — same treatment as the gallery's MapView.
+const LocationPickerModal = dynamic(() => import("./LocationPickerModal"), {
+  ssr: false,
+});
 
 export type Layout = "list" | "card";
 export type SortDir = "desc" | "asc";
@@ -314,6 +327,38 @@ export default function SessionsPane({
     return () => clearTimeout(t);
   }, [notice]);
 
+  // --- Session-level geotag (picker → per-media recap) ----------------------
+  // The list has no asset grid loaded, so opening the flow first pulls the
+  // session's full media list (paged) into the recap shape. `assets` present =
+  // picker open; `loc` set = recap open.
+  const [geotag, setGeotag] = useState<{
+    session: SessionRow;
+    assets: GeotagAsset[];
+    loc?: PickedLocation;
+  } | null>(null);
+  // Guards double-clicks while a session's media list is being fetched.
+  const [geotagLoading, setGeotagLoading] = useState(false);
+
+  const openGeotag = useCallback(
+    async (s: SessionRow) => {
+      if (geotagLoading) return;
+      setGeotagLoading(true);
+      try {
+        const assets = await sessionGeotagAssets(s.id);
+        if (!assets.length) {
+          setNotice("No media in this session to geotag.");
+          return;
+        }
+        setGeotag({ session: s, assets });
+      } catch (e) {
+        setNotice((e as Error).message);
+      } finally {
+        setGeotagLoading(false);
+      }
+    },
+    [geotagLoading],
+  );
+
   async function toggleIgnore(s: SessionRow) {
     await fetch(`/api/sessions/${s.id}`, {
       method: "PATCH",
@@ -330,6 +375,7 @@ export default function SessionsPane({
         canExport={s.pick_count > 0}
         onIgnore={() => toggleIgnore(s)}
         onExportPicks={() => setExporting(s)}
+        onGeotag={() => void openGeotag(s)}
         onDelete={() => setConfirming(s)}
         download={{
           zipHref: `/api/sessions/${s.id}/download`,
@@ -457,6 +503,26 @@ export default function SessionsPane({
             </div>
           ))}
         </div>
+      )}
+
+      {geotag && !geotag.loc && (
+        <LocationPickerModal
+          count={geotag.assets.length}
+          onClose={() => setGeotag(null)}
+          onPicked={(loc) => setGeotag({ ...geotag, loc })}
+        />
+      )}
+      {geotag?.loc && (
+        <GeotagRecapModal
+          assets={geotag.assets}
+          target={geotag.loc}
+          onClose={() => setGeotag(null)}
+          onApplied={(message) => {
+            setGeotag(null);
+            setNotice(message);
+            void load();
+          }}
+        />
       )}
 
       {confirming && (
