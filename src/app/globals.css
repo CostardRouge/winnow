@@ -2181,8 +2181,9 @@ html[data-theme="dark"] .btn-primary:hover {
     gap: 0.5rem;
   }
   .search-cell {
-    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0;
+    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0 cursor-pointer;
     aspect-ratio: 1 / 1;
+    background: none;
   }
   .search-cell img {
     @apply h-full w-full;

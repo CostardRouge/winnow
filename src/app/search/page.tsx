@@ -6,6 +6,7 @@
 // being enabled and a CLIP back-fill having run (npm run ml-backfill).
 import { useState } from "react";
 import { Icons } from "../ui";
+import MediaViewer from "../MediaViewer";
 
 type Item = {
   id: number;
@@ -28,6 +29,7 @@ export default function SearchPage() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [state, setState] = useState<State>("idle");
   const [msg, setMsg] = useState("");
+  const [viewer, setViewer] = useState<number | null>(null);
 
   async function run(query: string) {
     const text = query.trim();
@@ -127,14 +129,13 @@ export default function SearchPage() {
 
       {items && items.length > 0 && (
         <div className="search-grid">
-          {items.map((it) => (
-            <a
+          {items.map((it, idx) => (
+            <button
               key={it.id}
-              href={`/api/assets/${it.id}/proxy`}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
               className="search-cell"
               title={`${it.filename} · ${(1 - it.distance).toFixed(2)}`}
+              onClick={() => setViewer(idx)}
             >
               <img
                 src={`/api/assets/${it.id}/thumb`}
@@ -144,9 +145,23 @@ export default function SearchPage() {
               {it.media_type === "video" && (
                 <span className="search-badge">▶</span>
               )}
-            </a>
+            </button>
           ))}
         </div>
+      )}
+
+      {viewer != null && items?.[viewer] && (
+        <MediaViewer
+          items={items}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          renderActions={(it) => (
+            <a className="btn" href={`/api/assets/${it.id}/download`} download>
+              Download
+            </a>
+          )}
+        />
       )}
     </div>
   );
