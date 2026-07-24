@@ -27,12 +27,12 @@ import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
   downloadAssetOriginal,
-  exportAssets,
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
 } from "@/lib/assetActions";
+import ExportSelectionModal from "../exports/ExportSelectionModal";
 import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
 
 // Reusable gallery shell, parameterized by a `scope` (folder role):
@@ -313,6 +313,8 @@ export default function GalleryShell({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  // Ids awaiting export: non-null opens the export modal (dynamic file picker).
+  const [exportIds, setExportIds] = useState<number[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [facetsError, setFacetsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -570,15 +572,13 @@ export default function GalleryShell({
     [readOnly, loadFacets],
   );
 
-  // Queues a RAW-copy export job for exactly these ids.
-  const exportSelection = useCallback(async (ids: number[]) => {
+  // Opens the export modal for exactly these ids: the selection is scanned and
+  // the user picks which file categories travel (RAW / photos / videos / pair
+  // JPEG / Live motion / sidecars) before the job is queued — no more silent
+  // fire-and-forget POST.
+  const exportSelection = useCallback((ids: number[]) => {
     if (!ids.length) return;
-    try {
-      const jobId = await exportAssets(ids);
-      setNotice(`Export queued (#${jobId})`);
-    } catch (e) {
-      setNotice((e as Error).message);
-    }
+    setExportIds(ids);
   }, []);
 
   // Rebuilds the thumb + proxy for these ids. Optimistically flips the grid
@@ -1045,6 +1045,17 @@ export default function GalleryShell({
           onGeotag={() => geotagSelection([...selected])}
           onMl={() => mlSelection([...selected])}
           onDelete={() => removeAssets([...selected])}
+        />
+      )}
+
+      {exportIds && (
+        <ExportSelectionModal
+          ids={exportIds}
+          onClose={() => setExportIds(null)}
+          onSubmitted={(message) => {
+            setExportIds(null);
+            setNotice(message);
+          }}
         />
       )}
 

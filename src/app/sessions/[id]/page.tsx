@@ -30,7 +30,6 @@ import { formatBadge } from "@/lib/format";
 import {
   deleteAssets,
   downloadAssetOriginal,
-  exportAssets,
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
@@ -40,6 +39,7 @@ import {
   tagAssets,
   type GeotagAsset,
 } from "@/lib/assetActions";
+import ExportSelectionModal from "@/app/exports/ExportSelectionModal";
 import type { SessionStatus } from "@/lib/types";
 
 // Leaflet touches `window` on import, so the geotag location picker (which
@@ -172,6 +172,8 @@ export default function SessionGrid({
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Ids awaiting an ad-hoc export: non-null opens the selection export modal.
+  const [exportIds, setExportIds] = useState<number[] | null>(null);
   // Bulk selection (mirrors the library grid): a toggleable select mode plus the
   // chosen ids. Tapping a cell toggles instead of opening the viewer while on.
   const [selectMode, setSelectMode] = useState(false);
@@ -360,14 +362,11 @@ export default function SessionGrid({
     [loadSession],
   );
 
-  const exportSelection = useCallback(async (ids: number[]) => {
+  // Opens the export modal for exactly these ids (dynamic file picker — same
+  // flow as the gallery), instead of the old silent fire-and-forget POST.
+  const exportSelection = useCallback((ids: number[]) => {
     if (!ids.length) return;
-    try {
-      const jobId = await exportAssets(ids);
-      setNotice(`Export queued (#${jobId})`);
-    } catch (e) {
-      setNotice((e as Error).message);
-    }
+    setExportIds(ids);
   }, []);
 
   // Rebuilds the thumb + proxy. Optimistically flips the cell back to "pending"
@@ -811,6 +810,17 @@ export default function SessionGrid({
           onConfirm={async (withFiles) => {
             await deleteSession(withFiles);
             setConfirming(false);
+          }}
+        />
+      )}
+
+      {exportIds && (
+        <ExportSelectionModal
+          ids={exportIds}
+          onClose={() => setExportIds(null)}
+          onSubmitted={(message) => {
+            setExportIds(null);
+            setNotice(message);
           }}
         />
       )}

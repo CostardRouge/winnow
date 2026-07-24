@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/fetchJson";
 import { deleteAssetsByFilter } from "@/lib/assetActions";
+import { formatBytes } from "@/lib/format";
+import ExportFilePicker, {
+  type ExportPickerState,
+} from "@/app/exports/ExportFilePicker";
 
 // Custom, reusable export modal for a session — replaces the old browser
-// prompt()/alert() flow. It drives the same POST /api/export (RAW copy of the
-// picks to the Capture One export folder) but adds:
+// prompt()/alert() flow. It drives the same POST /api/export (copy of the
+// picks' originals to the export folder) but adds:
 //   - a proper export-name field;
-//   - companion-file choices, shown only when the session actually has them:
-//       · RAW+JPEG pairs (Sony .ARW+.HIF …) → keep both, the JPEG/HIF only, or
-//         the RAW only (raw_jpeg_mode);
-//       · iPhone Live Photos → optionally carry the .mov motion;
+//   - a dynamic "files to include" picker (ExportFilePicker): the session's
+//     picks are scanned and one checkbox per file category actually present is
+//     shown — RAW / photos / videos / pair JPEG / Live Photo motion / drone
+//     SRT telemetry / camera XML+THM — with real extensions, counts and sizes;
 //   - post-export cleanup, so the whole "export then tidy up" gesture is one
 //     step: mark the session ignored (treated), and/or move its rejects and its
 //     still-unrated media to the trash (soft-delete, recoverable).
@@ -29,18 +32,6 @@ export type ExportableSession = {
   live_photo_pairs: number;
 };
 
-type RawJpegMode = "both" | "jpeg" | "raw";
-
-const RAW_JPEG_CHOICES: Array<{
-  value: RawJpegMode;
-  label: string;
-  hint: string;
-}> = [
-  { value: "both", label: "RAW + JPEG/HIF", hint: "Copy both files of each pair" },
-  { value: "jpeg", label: "JPEG/HIF only", hint: "Skip the RAW, keep the light file" },
-  { value: "raw", label: "RAW only", hint: "Skip the direct JPEG/HIF companion" },
-];
-
 export default function ExportSessionModal({
   session,
   onClose,
@@ -55,35 +46,14 @@ export default function ExportSessionModal({
   const [ignoreAfter, setIgnoreAfter] = useState(false);
   const [trashRejects, setTrashRejects] = useState(false);
   const [trashUnrated, setTrashUnrated] = useState(false);
-  const [rawJpegMode, setRawJpegMode] = useState<RawJpegMode>("raw");
-  const [includeLiveVideo, setIncludeLiveVideo] = useState(false);
+  // What the file picker currently has checked (per-category include + live
+  // file/byte totals). Null until its scan resolves.
+  const [picker, setPicker] = useState<ExportPickerState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const hasRawJpeg = session.raw_jpeg_pairs > 0;
-  const hasLivePhoto = session.live_photo_pairs > 0;
   const rejectCount = Number(session.reject_count) || 0;
   const unratedCount = Number(session.unrated_count) || 0;
-
-  // Seed the companion defaults from the persisted export preferences, so the
-  // modal opens on whatever the user usually picks.
-  useEffect(() => {
-    let alive = true;
-    fetchJson<{ exportIncludeJpeg?: boolean; exportIncludeLiveVideo?: boolean }>(
-      "/api/settings",
-    )
-      .then((s) => {
-        if (!alive) return;
-        setRawJpegMode(s.exportIncludeJpeg ? "both" : "raw");
-        setIncludeLiveVideo(Boolean(s.exportIncludeLiveVideo));
-      })
-      .catch(() => {
-        /* keep the safe defaults (raw only / no live video) */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // Close on Escape (unless a request is in flight).
   useEffect(() => {
@@ -100,13 +70,10 @@ export default function ExportSessionModal({
       setError("Give the export a name.");
       return;
     }
+    if (!picker?.loaded || picker.files === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const params: Record<string, unknown> = {};
-      if (hasRawJpeg) params.raw_jpeg_mode = rawJpegMode;
-      if (hasLivePhoto) params.include_live_video = includeLiveVideo;
-
       const r = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,7 +81,7 @@ export default function ExportSessionModal({
           name: trimmed,
           target: "capture_one",
           filter: { session_id: session.id, verdict: "pick" },
-          params,
+          include: picker.include,
         }),
       });
       const data = await r.json().catch(() => ({}));
@@ -147,7 +114,7 @@ export default function ExportSessionModal({
       const bits = [`Export #${data.export_job_id} queued`];
       if (trashed > 0) bits.push(`${trashed} moved to trash`);
       if (ignoreAfter) bits.push("session ignored");
-      onSubmitted(`${bits.join(" · ")}. Run the worker to copy the RAW files.`);
+      onSubmitted(`${bits.join(" · ")}. Run the worker to copy the files.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -166,8 +133,11 @@ export default function ExportSessionModal({
       >
         <h2 className="modal-title">Export “{session.name}”</h2>
         <p className="hint" style={{ marginTop: 0 }}>
-          Copies the {session.pick_count} RAW pick(s) to the Capture One export
-          folder. The originals are never touched.
+          Copies the files of the {session.pick_count} pick(s) to the export
+          folder — {picker?.loaded
+            ? `${picker.files} file(s) · ${formatBytes(picker.bytes)} selected`
+            : "scanning the selection"}
+          . The originals are never touched.
         </p>
 
         <label className="modal-label" htmlFor="export-name">
@@ -186,54 +156,12 @@ export default function ExportSessionModal({
           }}
         />
 
-        {(hasRawJpeg || hasLivePhoto) && (
-          <>
-            {hasRawJpeg && (
-              <>
-                <label className="modal-label">
-                  RAW + JPEG/HIF pairs ({session.raw_jpeg_pairs})
-                </label>
-                <div className="type-choices">
-                  {RAW_JPEG_CHOICES.map((c) => (
-                    <label
-                      key={c.value}
-                      className={`type-choice${rawJpegMode === c.value ? " active" : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="raw-jpeg-mode"
-                        value={c.value}
-                        checked={rawJpegMode === c.value}
-                        disabled={busy}
-                        onChange={() => setRawJpegMode(c.value)}
-                      />
-                      <span className="type-choice-label">{c.label}</span>
-                      <span className="type-choice-hint">{c.hint}</span>
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {hasLivePhoto && (
-              <label className="export-check">
-                <input
-                  type="checkbox"
-                  checked={includeLiveVideo}
-                  disabled={busy}
-                  onChange={(e) => setIncludeLiveVideo(e.target.checked)}
-                />
-                <span>
-                  <strong>Include the Live Photo video (.mov)</strong>
-                  <span className="hint" style={{ display: "block" }}>
-                    Carry the motion clip next to the still for the{" "}
-                    {session.live_photo_pairs} Live Photo(s).
-                  </span>
-                </span>
-              </label>
-            )}
-          </>
-        )}
+        <label className="modal-label">Files to include</label>
+        <ExportFilePicker
+          filter={{ session_id: session.id, verdict: "pick" }}
+          disabled={busy}
+          onChange={setPicker}
+        />
 
         <label className="modal-label">After exporting</label>
         <label className="export-check">
@@ -293,8 +221,16 @@ export default function ExportSessionModal({
           <button className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={submit} disabled={busy}>
-            {busy ? "Exporting…" : "Export picks"}
+          <button
+            className="btn btn-primary"
+            onClick={submit}
+            disabled={busy || !picker?.loaded || picker.files === 0}
+          >
+            {busy
+              ? "Exporting…"
+              : picker?.loaded
+                ? `Export ${picker.files} file(s)`
+                : "Export"}
           </button>
         </div>
       </div>

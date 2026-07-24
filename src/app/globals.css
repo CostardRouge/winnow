@@ -531,6 +531,54 @@ html[data-theme="dark"] .btn-primary:hover {
   .control-note {
     @apply -mt-1;
   }
+  /* Export modal — dynamic file picker (cf. exports/ExportFilePicker) --------
+     One checkbox row per file category the scanned selection holds, clustered
+     under small section labels, with extension chips + a cumulated size. */
+  .export-picker {
+    @apply flex flex-col gap-1;
+  }
+  .picker-section {
+    @apply flex flex-col gap-1;
+  }
+  .picker-section + .picker-section {
+    @apply mt-2;
+  }
+  .picker-section-label {
+    @apply text-[11px] font-semibold uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  .picker-row {
+    @apply items-center gap-3;
+  }
+  .picker-row-main {
+    @apply min-w-0 flex-1;
+  }
+  .picker-row-hint {
+    @apply block truncate;
+  }
+  .picker-row-facts {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .picker-chips {
+    @apply flex flex-wrap justify-end gap-1;
+  }
+  .ext-chip {
+    @apply rounded-[6px] px-1.5 py-px text-[10px] uppercase;
+    font-family: var(--font-mono);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 1px var(--color-border);
+    white-space: nowrap;
+  }
+  .picker-bytes {
+    @apply text-[12px] tabular-nums;
+    color: var(--color-muted);
+    min-width: 4.5rem;
+    text-align: right;
+  }
+  .picker-scanning {
+    @apply py-3;
+  }
+
   /* Maintenance actions (drone-telemetry backfill…) sit below the rate controls,
      set off by a hairline divider. */
   .control-maintenance {

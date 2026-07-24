@@ -294,33 +294,6 @@ export async function skipAssets(ids: number[]): Promise<number> {
   return body.skipped;
 }
 
-// Queues a RAW-copy export job scoped to exactly these asset ids (reuses the
-// existing export pipeline via the new `ids` filter). The worker exports each
-// pair's keeper by default (RAW+JPEG → the RAW; Live Photo → the still); pass
-// `includeJpeg` / `includeLiveVideo` to also copy the companion extra (omitted →
-// the server falls back to the persisted preference). Returns the job id, or
-// throws on a non-2xx response.
-export async function exportAssets(
-  ids: number[],
-  opts: { includeJpeg?: boolean; includeLiveVideo?: boolean } = {},
-): Promise<number> {
-  if (!ids.length) throw new Error("No assets to export");
-  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const name =
-    ids.length === 1 ? `Export ${stamp}` : `Selection ${ids.length} · ${stamp}`;
-  const params: Record<string, boolean> = {};
-  if (opts.includeJpeg !== undefined) params.include_jpeg = opts.includeJpeg;
-  if (opts.includeLiveVideo !== undefined)
-    params.include_live_video = opts.includeLiveVideo;
-  const res = await fetch("/api/export", {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify({ name, target: "capture_one", filter: { ids }, params }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Export failed (${res.status})`);
-  }
-  const body = (await res.json()) as { export_job_id: number };
-  return body.export_job_id;
-}
+// Ad-hoc exports now go through ExportSelectionModal (dynamic file picker) —
+// see app/exports/ExportSelectionModal.tsx — which POSTs /api/export itself
+// with the per-category `include` map.
