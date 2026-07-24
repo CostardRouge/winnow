@@ -603,8 +603,10 @@ export const Icons = {
       <path d="m8.2 10.9 7.4-3.6M8.2 13.1l7.4 3.6" />
     </svg>
   ),
+  // Map pin — the session-level Geotag action. Sized 16 like the other
+  // seg-actions icons (skip / upload / trash) so the segments line up.
   mapPin: (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z" />
       <circle cx="12" cy="10" r="3" />
     </svg>

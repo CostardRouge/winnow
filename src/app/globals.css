@@ -3392,8 +3392,20 @@ html[data-theme="dark"] .btn-primary:hover {
     z-index: 0;
     position: relative;
   }
+  /* Latitude / longitude side by side (explicit grid — not @apply — so the
+     two-column layout can't silently fall back to stacked). Inputs fill their
+     column so the pair reads as one row. */
   .picker-coords {
-    @apply mt-3 grid grid-cols-2 gap-3;
+    margin-top: 0.75rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .picker-coords label {
+    @apply block min-w-0;
+  }
+  .picker-coords .input {
+    @apply w-full;
   }
   /* The draggable CSS pin (divIcon — the bundler doesn't ship Leaflet's
      default image markers). A teardrop anchored at its tip. */
