@@ -326,14 +326,19 @@ export type QueueJobInfo = {
   attemptsMade: number;
   timestamp: number | null;
   processedOn: number | null;
+  finishedOn: number | null;
   failedReason: string | null;
 };
 
+// Includes "completed" so the triage pages can show a job's full run history
+// (not just what's still pending or failed) — retained per queue up to
+// `defaultJobOpts.removeOnComplete`/`removeOnFail`.
 const LISTABLE_STATES = [
   "active",
   "waiting",
   "prioritized",
   "delayed",
+  "completed",
   "failed",
 ] as const;
 
@@ -358,6 +363,7 @@ export async function listQueueJobs(
         attemptsMade: job.attemptsMade ?? 0,
         timestamp: job.timestamp ?? null,
         processedOn: job.processedOn ?? null,
+        finishedOn: job.finishedOn ?? null,
         failedReason: job.failedReason ?? null,
       } satisfies QueueJobInfo;
     }),
