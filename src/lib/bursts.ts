@@ -1,6 +1,6 @@
 // Burst / bracket stacks — group N DISTINCT frames shot in one quick run (same
 // device, a small temporal gap) into one "pile" the culling grid can collapse,
-// drill into, and cull as a unit (cf. migration 0016). A stack is ORTHOGONAL to
+// drill into, and cull as a unit (cf. migration 0029). A stack is ORTHOGONAL to
 // the RAW+JPEG / Live-Photo pairing of lib/pairing.ts:
 //
 //   * pairing  ties TWO files of ONE shot → rated/exported as one logical media,

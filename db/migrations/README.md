@@ -45,8 +45,10 @@ and to reason about when something fails.
 
 ## History
 
-`0006_` and `0007_` once had two files each (a collision from parallel work).
-They were renumbered into the strict sequence above:
+Two rounds of collisions from parallel work were renumbered into the strict
+sequence above:
+
+**2026-06** — `0006_` and `0007_` once had two files each:
 
 | Old name                       | New name                       |
 | ------------------------------ | ------------------------------ |
@@ -56,7 +58,19 @@ They were renumbered into the strict sequence above:
 | `0008_gps_coords.sql`          | `0010_gps_coords.sql`          |
 | `0009_root_export_kind.sql`    | `0011_root_export_kind.sql`    |
 
-Because migrations are tracked by filename, databases migrated *before* the
+**2026-07** — `0016_bursts.sql` (PR #104) collided with `0016_session_lifecycle.sql`
+merged in parallel. Per rule 1, the burst migration (merged second) is renumbered
+to the tail of the sequence:
+
+| Old name             | New name             |
+| -------------------- | -------------------- |
+| `0016_bursts.sql`    | `0029_bursts.sql`    |
+
+Moving the burst backfill later in the order is safe: no migration in `0017`–`0028`
+references the `bursts` table or `assets.burst_id`, and the backfill is a no-op on
+a fresh database (no assets exist yet at migrate time).
+
+Because migrations are tracked by filename, databases migrated *before* a
 renumbering recorded the old names. `migrate.ts` carries a one-time
 `reconcileRenumbered` shim that rewrites those `schema_migrations` rows to the
 new names, so the renamed files are recognised as already applied instead of
