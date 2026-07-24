@@ -100,6 +100,12 @@ export const FilterSchema = z
     // Photos" filter toggle maps to `group_kind=live_photo`.
     paired: boolish,
     group_kind: z.enum(["raw_jpeg", "live_photo"]).optional(),
+    // Burst/bracket stacks (cf. lib/bursts.ts). `stacked` → only frames that are
+    // in a pile (true) / only standalone frames (false). `burst_id` drills into
+    // ONE pile: it returns every frame of that stack AND suppresses the
+    // collapse-to-cover, so the grid can expand the pile in place.
+    stacked: boolish,
+    burst_id: z.coerce.number().int().optional(),
     // Finals → sources reconciliation (cf. lib/reconcile.ts). `is_edit` → finals
     // linked back to a source (true) / not an edit (false). `has_edit` → sources
     // that have at least one linked edit (true) / none (false).
@@ -279,6 +285,12 @@ export function buildFilter(
     params.push(filter.group_kind);
   }
 
+  // Burst/bracket stacks (cf. lib/bursts.ts). `burst_id` drills into one pile;
+  // `stacked` keys on membership. Both ride the assets_burst_idx index.
+  if (filter.burst_id != null) eq("a.burst_id", filter.burst_id);
+  if (filter.stacked === true) conditions.push("a.burst_id IS NOT NULL");
+  else if (filter.stacked === false) conditions.push("a.burst_id IS NULL");
+
   // Finals → sources reconciliation. `is_edit` keys on the link column directly;
   // `has_edit` on the existence of an edit pointing back at this asset (the
   // reverse fan-out, served by assets_original_idx). No params: constant
@@ -303,6 +315,17 @@ export function buildFilter(
   // see every file. NULL group_role (unpaired) is always kept.
   if (opts.collapseGroups) {
     conditions.push("a.group_role IS DISTINCT FROM 'companion'");
+    // Collapse burst/bracket stacks to their cover frame, so a pile shows as one
+    // tile in the grid. Orthogonal to the pair collapse above (a stack is built
+    // over logical media, so a cover can itself be a pair primary). Suppressed
+    // when drilling into a specific pile (burst_id set) so that request returns
+    // every frame. Non-stacked assets (burst_id NULL) are always kept.
+    if (filter.burst_id == null) {
+      conditions.push(
+        `(a.burst_id IS NULL
+          OR a.id IN (SELECT cover_asset_id FROM bursts WHERE id = a.burst_id))`,
+      );
+    }
   }
   if (filter.device) inAny("a.device", filter.device);
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
@@ -449,6 +472,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "ext",
     "paired",
     "group_kind",
+    "stacked",
+    "burst_id",
     "is_edit",
     "has_edit",
     "device",

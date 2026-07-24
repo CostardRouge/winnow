@@ -11,19 +11,25 @@ import { pool } from "./db";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../db/migrations");
 
-// One-time shim for the 2026-06 renumbering that removed duplicate 0006_/0007_
-// prefixes (see db/migrations/README.md "History"). Migrations are tracked by
-// filename, so a database migrated before the renumbering recorded the OLD names
-// and would otherwise re-run the renamed files. Rewrite those rows to the new
-// names so the renumbered files are recognised as already applied. No new name
-// equals any old name, so the rewrites are independent; on a fresh database
-// nothing matches and this is a no-op.
+// One-time shims for the renumberings that removed duplicate NNNN_ prefixes
+// (see db/migrations/README.md "History"). Migrations are tracked by filename, so
+// a database migrated before a renumbering recorded the OLD name and would
+// otherwise re-run the renamed file. Rewrite those rows to the new names so the
+// renumbered files are recognised as already applied. No new name equals any old
+// name, so the rewrites are independent; on a fresh database nothing matches and
+// this is a no-op.
+//
+//   * 2026-06 — the original 0006_/0007_ collision from parallel work.
+//   * 2026-07 — `0016_bursts.sql` (PR #104) collided with `0016_session_lifecycle`
+//     merged in parallel. Bursts is renumbered to the tail (0029); moving its
+//     backfill later is safe (no 0017–0028 migration references the bursts table).
 const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
   ["0006_session_completed.sql", "0007_session_completed.sql"],
   ["0007_duplicate_hits.sql", "0008_duplicate_hits.sql"],
   ["0007_soft_delete.sql", "0009_soft_delete.sql"],
   ["0008_gps_coords.sql", "0010_gps_coords.sql"],
   ["0009_root_export_kind.sql", "0011_root_export_kind.sql"],
+  ["0016_bursts.sql", "0029_bursts.sql"],
 ];
 
 async function reconcileRenumbered(client: PoolClient): Promise<void> {

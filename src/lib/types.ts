@@ -296,6 +296,13 @@ export type AssetGridRow = Asset & {
   companion_width: number | null;
   companion_height: number | null;
   group_kind: "raw_jpeg" | "live_photo" | null;
+  // Burst/bracket stack (cf. lib/bursts.ts): the pile this frame belongs to.
+  // `burst_count` is the pile's LIVE (non-deleted) frame count — badged on the
+  // collapsed cover tile; `burst_cover_id` is the frame shown for the collapsed
+  // pile. Both NULL when the asset isn't stacked (`burst_id`/`burst_seq` ride
+  // along from Asset).
+  burst_count: number | null;
+  burst_cover_id: number | null;
   // Number of sidecar files (Sony XML/THM, DJI .SRT) tied to this asset (0 for
   // most). Lets the viewer note that a clip carries its companion files.
   sidecar_count: number;
