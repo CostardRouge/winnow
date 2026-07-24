@@ -19,7 +19,7 @@
 import sharp from "sharp";
 import { config } from "./config";
 import { getSettings } from "./settings";
-import { one, q } from "./db";
+import { many, one, q } from "./db";
 import { reserveSlot, sleep } from "./rate";
 import { getStorage } from "./storage/index";
 
@@ -195,8 +195,85 @@ export async function embedText(query: string): Promise<number[]> {
   if (!res.ok) throw new Error(`ml HTTP ${res.status} from ${base}`);
   const data = (await res.json()) as ImmichPredictResponse;
   const emb = parseEmbedding(data.clip);
-  if (!emb) throw new Error("ml returned no CLIP embedding for the query");
+  if (!emb || emb.length === 0) {
+    throw new Error("ml returned no CLIP embedding for the query");
+  }
+  if (!textDimLogged) {
+    // One-time sanity trace: the textual head must produce vectors of the same
+    // dimension as the stored visual ones, or every search would error/degrade.
+    console.log(
+      `[ml] CLIP textual head "${config.ml.clip.model}" -> ${emb.length}-dim query vector`,
+    );
+    textDimLogged = true;
+  }
   return emb;
+}
+let textDimLogged = false;
+
+// --- Semantic-search index maintenance ---------------------------------------
+
+// The pool the search actually ranks over vs the searchable library. `indexed`
+// counts embeddings under the CURRENT model only — stale rows from a previous
+// ML_CLIP_MODEL are dead weight the search ignores (cf. api/search). Used by
+// /api/stats (dashboard tile) and /api/search (coverage line under the results).
+export async function clipCoverage(): Promise<{
+  indexed: number;
+  library: number;
+}> {
+  const row = await one<{ indexed: number; library: number }>(
+    `SELECT
+       (SELECT count(*) FROM asset_clip cl
+          JOIN assets a ON a.id = cl.asset_id
+         WHERE a.deleted_at IS NULL
+           AND a.group_role IS DISTINCT FROM 'companion'
+           AND cl.model = $1)                                   AS indexed,
+       (SELECT count(*) FROM assets a
+         WHERE a.deleted_at IS NULL
+           AND a.group_role IS DISTINCT FROM 'companion')       AS library`,
+    [config.ml.clip.model],
+  );
+  return row ?? { indexed: 0, library: 0 };
+}
+
+// Select the assets an ML backfill should (re-)enqueue and flip them back to
+// ml_status='pending' so runMlJob picks them up. Shared by the CLI
+// (scripts/ml-backfill.ts) and the one-click Pipeline action
+// (api/pipeline/ml-backfill) so both always agree on what "needs analysis":
+//   - assets still pending (never analyzed), and
+//   - when CLIP is on, assets analyzed BEFORE CLIP was enabled (or under a
+//     previous model): ml_status='ready' but no embedding for the current
+//     model. Re-running the full job re-does faces/OCR too — acceptable cost
+//     for not tracking per-task status.
+// `force` re-enqueues every live asset with a derivative (container upgrade).
+export async function prepareMlBackfill(force: boolean): Promise<number[]> {
+  // Only live assets whose derivative exists (photo proxy / video poster) —
+  // the ML job feeds on the derivative, never the original.
+  const hasDerivative = `(CASE WHEN a.media_type = 'video' THEN a.thumb_key
+                               ELSE COALESCE(a.proxy_key, a.thumb_key) END) IS NOT NULL`;
+  const where = force
+    ? hasDerivative
+    : `${hasDerivative} AND (
+         a.ml_status = 'pending'
+         OR ($2 AND a.ml_status = 'ready' AND NOT EXISTS (
+               SELECT 1 FROM asset_clip cl
+                WHERE cl.asset_id = a.id AND cl.model = $1))
+       )`;
+  const rows = await many<{ id: number }>(
+    `SELECT a.id FROM assets a
+      WHERE a.deleted_at IS NULL AND ${where}
+      ORDER BY a.id`,
+    force ? [] : [config.ml.clip.model, config.ml.clip.enabled],
+  );
+  const ids = rows.map((r) => r.id);
+  if (ids.length) {
+    // Re-enqueued assets must go through the full lifecycle again.
+    await q(
+      `UPDATE assets SET ml_status='pending', ml_error=NULL, updated_at=now()
+        WHERE id = ANY($1) AND ml_status <> 'pending'`,
+      [ids],
+    );
+  }
+  return ids;
 }
 
 // --- Local quality/similarity metrics (no container involved) ---------------

@@ -12,7 +12,7 @@
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { config } from "@/lib/config";
-import { embedText } from "@/lib/ml";
+import { clipCoverage, embedText } from "@/lib/ml";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import { json, badRequest, serverError } from "@/lib/api";
 import type { AssetGridRow } from "@/lib/types";
@@ -41,6 +41,21 @@ export async function GET(req: NextRequest) {
       Math.max(Number.parseInt(sp.get("limit") ?? "", 10) || DEFAULT_LIMIT, 1),
       MAX_LIMIT,
     );
+
+    // Index coverage, returned with every response: with a partially indexed
+    // library the ranking silently runs over a small pool and every query
+    // returns the same few images — self-diagnosing beats silently wrong.
+    const { indexed, library } = await clipCoverage();
+    if (indexed === 0) {
+      // Nothing to rank — skip the container round-trip entirely.
+      return json({
+        items: [],
+        enabled: true,
+        model: config.ml.clip.model,
+        indexed,
+        library,
+      });
+    }
 
     // Embed the query with the model's textual head (one container call). A
     // provider/container problem surfaces as a 502 rather than a generic 500.
@@ -78,7 +93,13 @@ export async function GET(req: NextRequest) {
       [literal, config.ml.clip.model, limit],
     );
 
-    return json({ items, enabled: true, model: config.ml.clip.model });
+    return json({
+      items,
+      enabled: true,
+      model: config.ml.clip.model,
+      indexed,
+      library,
+    });
   } catch (err) {
     return serverError(err);
   }

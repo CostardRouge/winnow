@@ -36,6 +36,9 @@ export default function ControlPanel() {
   // Drone-telemetry backfill (one-click counterpart to `npm run srt-backfill`).
   const [srtBusy, setSrtBusy] = useState(false);
   const [srtMsg, setSrtMsg] = useState<string | null>(null);
+  // ML/search-index backfill (one-click counterpart to `npm run ml-backfill`).
+  const [mlBusy, setMlBusy] = useState(false);
+  const [mlMsg, setMlMsg] = useState<string | null>(null);
   // While dragging a slider, we don't let polling overwrite its value.
   const dragging = useRef({ scan: false, analyze: false, ml: false, rescan: false });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +104,39 @@ export default function ControlPanel() {
     }
   }
 
+  // Enqueue an ML job for every asset still missing an analysis or a CLIP
+  // embedding (the gap that leaves semantic search returning the same few
+  // images). Enqueue-only: the ml queue drains at the Faces/OCR rate.
+  async function runMlBackfill() {
+    setMlBusy(true);
+    setMlMsg(null);
+    try {
+      const res = await fetch("/api/pipeline/ml-backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        queued?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        setMlMsg(body.error ?? "Backfill failed");
+      } else if (!body.queued) {
+        setMlMsg("Everything is already analyzed & indexed.");
+      } else {
+        setMlMsg(
+          `Queued ${body.queued.toLocaleString()} job(s) — drains at the Faces/OCR rate.`,
+        );
+        await reload();
+      }
+    } catch {
+      setMlMsg("Backfill failed");
+    } finally {
+      setMlBusy(false);
+    }
+  }
+
   function commit(patch: {
     scanPerHour?: number;
     analyzePerHour?: number;
@@ -161,6 +197,20 @@ export default function ControlPanel() {
               value={a?.ml_ready}
               sub={`${(a?.ml_pending ?? 0).toLocaleString()} to analyze →`}
               tone="accent"
+            />
+          </Link>
+        )}
+        {stats?.clipEnabled && stats.clip && (
+          <Link
+            href="/search"
+            className="stat-link"
+            title="Media with a CLIP embedding — the pool semantic search ranks. Below the library total? Run “Index for search” below."
+          >
+            <Stat
+              label="Search index"
+              value={stats.clip.indexed}
+              sub={`of ${stats.clip.library.toLocaleString()} media →`}
+              tone={stats.clip.indexed >= stats.clip.library ? "ok" : "warn"}
             />
           </Link>
         )}
@@ -290,6 +340,28 @@ export default function ControlPanel() {
         drone clips, records their flight telemetry and gives clips without EXIF
         GPS a location from the flight log.
       </div>
+
+      {stats?.mlEnabled && (
+        <>
+          <div className="control-row control-maintenance">
+            <button
+              className="btn"
+              onClick={runMlBackfill}
+              disabled={mlBusy}
+              title="Queue ML analysis for every asset still missing faces/OCR or a search embedding (idempotent)"
+            >
+              {mlBusy ? "Queuing…" : "🔍 Index for search"}
+            </button>
+            {mlMsg && <span className="hint">{mlMsg}</span>}
+          </div>
+          <div className="hint control-note">
+            Queues the ML analysis (faces, text, search embedding) for every
+            media that doesn&apos;t have one yet — including media analyzed
+            before semantic search was enabled, which otherwise never enter the
+            search index. Idempotent; paced by the Faces/OCR rate slider.
+          </div>
+        </>
+      )}
     </PullToRefresh>
   );
 }

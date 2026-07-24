@@ -3,6 +3,7 @@
 // Single source for the numbers banner + the dashboard control panel.
 import { one } from "@/lib/db";
 import { config } from "@/lib/config";
+import { clipCoverage } from "@/lib/ml";
 import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
 import { failureCounts } from "@/lib/failures";
@@ -62,6 +63,11 @@ export async function GET() {
     const settings = await getSettings();
     const fails = await failureCounts();
 
+    // Semantic-search coverage: how many media have a CLIP embedding under the
+    // current model. Decoupled from ml_status on purpose — an asset analyzed for
+    // faces/OCR before CLIP was enabled is "ready" yet absent from the index.
+    const clip = config.ml.clip.enabled ? await clipCoverage() : null;
+
     return json({
       assets: counts ?? {
         total: 0,
@@ -88,6 +94,9 @@ export async function GET() {
       // ML is only surfaced when the feature is on: the sliders/counters would
       // otherwise show a pipeline stage that can never progress.
       mlEnabled: config.ml.enabled,
+      clipEnabled: config.ml.clip.enabled,
+      // null when CLIP is off (tile hidden), {indexed, library} otherwise.
+      clip,
       // Same source as the /pipeline/failures tabs (lib/failures.failureCounts),
       // so the aggregate "Failures" badge always equals the sum of the
       // subsections — including deduplication, which it previously omitted.
