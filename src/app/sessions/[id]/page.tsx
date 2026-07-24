@@ -36,7 +36,9 @@ import {
   rateAssets,
   regenerateAssets,
   sessionDownloadFiles,
+  sessionGeotagAssets,
   tagAssets,
+  type GeotagAsset,
 } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
 
@@ -406,15 +408,33 @@ export default function SessionGrid({
 
   // --- Manual geotag (two-step: location picker, then before/after recap) ---
   // `ids` is the frozen selection the flow was opened for; `loc` flips the flow
-  // from step 1 (pick a point) to step 2 (confirm per-media).
+  // from step 1 (pick a point) to step 2 (confirm per-media). `recap`, when
+  // set, is a prefetched whole-session media list (the header's Geotag action —
+  // it must cover the session's every media, not just the loaded page).
   const [geotag, setGeotag] = useState<{
     ids: number[];
+    recap?: GeotagAsset[];
     loc?: PickedLocation;
   } | null>(null);
 
   const openGeotag = useCallback((ids: number[]) => {
     if (ids.length) setGeotag({ ids });
   }, []);
+
+  // Header action: geotag the WHOLE session. The grid may only have a page
+  // loaded, so pull the full media list (paged) first.
+  const openSessionGeotag = useCallback(async () => {
+    try {
+      const recap = await sessionGeotagAssets(Number(id));
+      if (!recap.length) {
+        setNotice("No media in this session to geotag.");
+        return;
+      }
+      setGeotag({ ids: recap.map((a) => a.id), recap });
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, [id]);
 
   // Recap confirmed & applied: reflect the new position (and the queued
   // pipelines) in the grid rows without a refetch, like the other bulk actions.
@@ -554,6 +574,7 @@ export default function SessionGrid({
             s={session}
             onIgnore={toggleIgnore}
             onExportPicks={exportPicks}
+            onGeotag={() => void openSessionGeotag()}
             onDelete={() => setConfirming(true)}
             onMessage={setNotice}
           />
@@ -754,22 +775,25 @@ export default function SessionGrid({
       )}
       {geotag?.loc && (
         <GeotagRecapModal
-          assets={geotag.ids.flatMap((id) => {
-            const a = assets.find((x) => x.id === id);
-            return a
-              ? [
-                  {
-                    id: a.id,
-                    filename: a.filename,
-                    media_type: a.media_type,
-                    gps: a.gps,
-                    gps_source: a.gps_source ?? null,
-                    place_city: a.place_city,
-                    place_country: a.place_country,
-                  },
-                ]
-              : [];
-          })}
+          assets={
+            geotag.recap ??
+            geotag.ids.flatMap((id) => {
+              const a = assets.find((x) => x.id === id);
+              return a
+                ? [
+                    {
+                      id: a.id,
+                      filename: a.filename,
+                      media_type: a.media_type,
+                      gps: a.gps,
+                      gps_source: a.gps_source ?? null,
+                      place_city: a.place_city,
+                      place_country: a.place_country,
+                    },
+                  ]
+                : [];
+            })
+          }
           target={geotag.loc}
           onClose={() => setGeotag(null)}
           onApplied={(message, ids) => geotagApplied(message, ids, geotag.loc!)}
@@ -820,12 +844,15 @@ function SessionHeader({
   s,
   onIgnore,
   onExportPicks,
+  onGeotag,
   onDelete,
   onMessage,
 }: {
   s: SessionInfo;
   onIgnore: () => void;
   onExportPicks: () => void;
+  /** Set the capture location of the whole session (picker + recap flow). */
+  onGeotag: () => void;
   onDelete: () => void;
   /** Surface the Download menu's transient status to the page notice. */
   onMessage: (msg: string | null) => void;
@@ -885,6 +912,7 @@ function SessionHeader({
           canExport={picks > 0}
           onIgnore={onIgnore}
           onExportPicks={onExportPicks}
+          onGeotag={onGeotag}
           onDelete={onDelete}
           download={{
             zipHref: `/api/sessions/${s.id}/download`,

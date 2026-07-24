@@ -26,6 +26,7 @@ export default function SessionActions({
   canExport,
   onIgnore,
   onExportPicks,
+  onGeotag,
   onDelete,
   download,
   deleteTitle = "Remove this session (optionally delete its files from disk)",
@@ -35,6 +36,9 @@ export default function SessionActions({
   canExport: boolean;
   onIgnore: () => void;
   onExportPicks: () => void;
+  /** When provided, adds a Geotag segment: set the capture location of the
+   * whole session (location picker + per-media before/after recap). */
+  onGeotag?: () => void;
   onDelete: () => void;
   /** When provided, adds a Download segment for the session's original files. */
   download?: {
@@ -71,6 +75,17 @@ export default function SessionActions({
         {Icons.upload}
         <span className="seg-label">Export picks</span>
       </button>
+      {onGeotag && (
+        <button
+          className="seg-btn"
+          onClick={onGeotag}
+          aria-label="Geotag session"
+          title="Set the capture location of the whole session (with a before/after recap)"
+        >
+          {Icons.mapPin}
+          <span className="seg-label">Geotag</span>
+        </button>
+      )}
       {download && (
         <DownloadMenu
           zipHref={download.zipHref}
