@@ -2,9 +2,11 @@
 
 // Semantic search surface: type a description in natural language and rank the
 // library by CLIP cosine similarity (GET /api/search, cf. lib/ml.ts). Results
-// render as a simple thumbnail grid; each opens the full proxy. Depends on ML
-// being enabled and a CLIP back-fill having run (npm run ml-backfill).
+// render as a simple thumbnail grid; each opens in the shared MediaViewer.
+// Depends on ML being enabled and the library being indexed — the coverage
+// line under the results says how much of it actually is.
 import { useState } from "react";
+import Link from "next/link";
 import { Icons } from "../ui";
 import MediaViewer from "../MediaViewer";
 
@@ -14,6 +16,11 @@ type Item = {
   media_type: "photo" | "video";
   distance: number;
 };
+
+// How much of the library the ranking actually ran over (cf. api/search): a
+// partially filled index is THE reason different queries return the same few
+// images, so the page always says what it searched.
+type Coverage = { indexed: number; library: number };
 
 type State = "idle" | "loading" | "error" | "disabled";
 
@@ -29,6 +36,7 @@ export default function SearchPage() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [state, setState] = useState<State>("idle");
   const [msg, setMsg] = useState("");
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
 
   async function run(query: string) {
@@ -52,6 +60,11 @@ export default function SearchPage() {
         return;
       }
       setItems(data.items ?? []);
+      setCoverage(
+        typeof data.indexed === "number" && typeof data.library === "number"
+          ? { indexed: data.indexed, library: data.library }
+          : null,
+      );
       setState("idle");
     } catch (err) {
       setState("error");
@@ -120,12 +133,22 @@ export default function SearchPage() {
         <div className="empty-state error">Search failed: {msg}</div>
       )}
 
-      {state === "idle" && items && items.length === 0 && (
-        <div className="empty-state">
-          No matches. Try a broader description — or check that a CLIP back-fill
-          has run.
-        </div>
-      )}
+      {state === "idle" &&
+        items &&
+        items.length === 0 &&
+        (coverage?.indexed === 0 ? (
+          <div className="empty-state">
+            Nothing is indexed for search yet. Run{" "}
+            <Link href="/pipeline">“Index for search” on the Pipeline page</Link>{" "}
+            (or <code>npm run ml-backfill</code>) and let the worker drain the
+            queue.
+          </div>
+        ) : (
+          <div className="empty-state">
+            No matches. Try a broader description — or check that a CLIP
+            back-fill has run.
+          </div>
+        ))}
 
       {items && items.length > 0 && (
         <div className="search-grid">
@@ -148,6 +171,20 @@ export default function SearchPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {state === "idle" && items && coverage && coverage.indexed > 0 && (
+        <p className="hint search-coverage">
+          Searched {coverage.indexed.toLocaleString()} of{" "}
+          {coverage.library.toLocaleString()} media
+          {coverage.indexed < coverage.library && (
+            <>
+              {" "}
+              — the rest aren’t indexed yet.{" "}
+              <Link href="/pipeline">Index for search →</Link>
+            </>
+          )}
+        </p>
       )}
 
       {viewer != null && items?.[viewer] && (

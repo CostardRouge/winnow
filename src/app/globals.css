@@ -2189,6 +2189,9 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply h-full w-full;
     object-fit: cover;
   }
+  .search-coverage {
+    margin-top: 0.75rem;
+  }
   .search-badge {
     @apply absolute bottom-1 right-1 rounded px-1 text-xs leading-none;
     background: rgba(0, 0, 0, 0.6);

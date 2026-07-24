@@ -40,6 +40,10 @@ export type Stats = {
   // Whether the ML analysis feature is configured on the server (ML_ENABLED):
   // gates the ML slider/counters so a stage that can't progress isn't shown.
   mlEnabled?: boolean;
+  // Semantic search (ML_CLIP_ENABLED) + its index coverage: media with a CLIP
+  // embedding under the current model vs the searchable library.
+  clipEnabled?: boolean;
+  clip?: { indexed: number; library: number } | null;
   failures?: {
     derivative: number;
     scan: number;
