@@ -56,13 +56,24 @@ export async function runSrtBackfill(
     await q(
       `UPDATE asset_sidecars
           SET gps_lat = $1, gps_lon = $2, max_altitude = $3,
-              sample_count = $4, updated_at = now()
-        WHERE id = $5`,
+              sample_count = $4,
+              gimbal_pitch = $5, gimbal_yaw = $6, gimbal_roll = $7,
+              max_speed = $8, iso = $9, shutter = $10, fnumber = $11,
+              focal_length = $12, updated_at = now()
+        WHERE id = $13`,
       [
         tel?.gpsLat ?? null,
         tel?.gpsLon ?? null,
         tel?.maxAltitude ?? null,
         tel?.sampleCount ?? null,
+        tel?.gimbalPitch ?? null,
+        tel?.gimbalYaw ?? null,
+        tel?.gimbalRoll ?? null,
+        tel?.maxSpeed ?? null,
+        tel?.iso ?? null,
+        tel?.shutter ?? null,
+        tel?.fnumber ?? null,
+        tel?.focalLength ?? null,
         r.id,
       ],
     );

@@ -32,6 +32,13 @@ export type AssetMetaInput = {
   aperture?: number | null;
   focal_length?: number | null;
   gps?: { lat: number; lon: number } | null;
+  // DJI drone telemetry embedded in a still's own EXIF/XMP (cf. lib/extract.ts).
+  // Null on every non-DJI photo. Video's equivalent comes via `sidecars` below.
+  gimbal_pitch?: number | null;
+  gimbal_yaw?: number | null;
+  gimbal_roll?: number | null;
+  relative_altitude?: number | null;
+  absolute_altitude?: number | null;
   // Reverse-geocoded place (cf. lib/geocode.ts). Surfaced as one "Location" line.
   place_country?: string | null;
   place_region?: string | null;
@@ -52,18 +59,40 @@ export type AssetMetaInput = {
   sidecars?: SidecarBrief[] | null;
 };
 
-// A compact summary of the parsed flight-log figures ("↑ 120 m · 900 pts"), or
-// null when nothing was parsed. Peak altitude across the .srt(s) + total samples.
+// A compact summary of the parsed flight-log figures ("↑ 120 m · 8.2 m/s · gimbal
+// -45° · 24mm · f/2.8 · 1/500s · ISO 100 · 900 pts"), or null when nothing was
+// parsed. Altitude/speed are peaks across the .srt(s); gimbal/exposure are the
+// first clip that carries one (DJI holds them roughly steady per clip); samples
+// are summed.
 function telemetryFacts(items: SidecarBrief[]): string | null {
   let alt: number | null = null;
+  let speed: number | null = null;
   let samples = 0;
+  let gimbalPitch: number | null = null;
+  let focalLength: number | null = null;
+  let fnumber: number | null = null;
+  let shutter: string | null = null;
+  let iso: number | null = null;
   for (const s of items) {
     if (s.maxAltitude != null && (alt == null || s.maxAltitude > alt))
       alt = s.maxAltitude;
+    if (s.maxSpeed != null && (speed == null || s.maxSpeed > speed))
+      speed = s.maxSpeed;
     if (s.sampleCount != null) samples += s.sampleCount;
+    if (gimbalPitch == null) gimbalPitch = s.gimbalPitch ?? null;
+    if (focalLength == null) focalLength = s.focalLength ?? null;
+    if (fnumber == null) fnumber = s.fnumber ?? null;
+    if (shutter == null) shutter = s.shutter ?? null;
+    if (iso == null) iso = s.iso ?? null;
   }
   const parts: string[] = [];
   if (alt != null) parts.push(`↑ ${Math.round(alt)} m`);
+  if (speed != null) parts.push(`${speed.toFixed(1)} m/s`);
+  if (gimbalPitch != null) parts.push(`gimbal ${Math.round(gimbalPitch)}°`);
+  if (focalLength != null) parts.push(`${focalLength}mm`);
+  if (fnumber != null) parts.push(`f/${fnumber}`);
+  if (shutter != null) parts.push(`${shutter}s`);
+  if (iso != null) parts.push(`ISO ${iso}`);
   if (samples > 0) parts.push(`${samples} pts`);
   return parts.length ? parts.join(" · ") : null;
 }
@@ -99,6 +128,19 @@ function locationLine(a: AssetMetaInput): string | null {
     const s = p?.trim();
     if (s && !parts.includes(s)) parts.push(s);
   }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+// Joins a DJI still's embedded gimbal/altitude telemetry into one compact line
+// ("gimbal -45° · ↑ 30 m rel · 120 m abs"), or null when the photo carries none
+// (every non-DJI file, and DJI stills that don't embed the drone-dji tags).
+function droneLine(a: AssetMetaInput): string | null {
+  const parts: string[] = [];
+  if (a.gimbal_pitch != null) parts.push(`gimbal ${Math.round(a.gimbal_pitch)}°`);
+  if (a.relative_altitude != null)
+    parts.push(`↑ ${Math.round(a.relative_altitude)} m rel`);
+  if (a.absolute_altitude != null)
+    parts.push(`${Math.round(a.absolute_altitude)} m abs`);
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -150,6 +192,8 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   }
   const location = locationLine(asset);
   if (location) rows.push(["Location", location]);
+  const drone = droneLine(asset);
+  if (drone) rows.push(["Drone", drone]);
   // ML analysis: only meaningful once analyzed (face_count stays null before).
   if (asset.face_count != null)
     rows.push([

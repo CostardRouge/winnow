@@ -40,7 +40,11 @@ export const GRID_SELECT = `a.*,
         (SELECT COALESCE(
                   json_agg(json_build_object(
                     'id', sc.id, 'kind', sc.kind, 'filename', sc.filename,
-                    'maxAltitude', sc.max_altitude, 'sampleCount', sc.sample_count)
+                    'maxAltitude', sc.max_altitude, 'sampleCount', sc.sample_count,
+                    'gimbalPitch', sc.gimbal_pitch, 'gimbalYaw', sc.gimbal_yaw,
+                    'gimbalRoll', sc.gimbal_roll, 'maxSpeed', sc.max_speed,
+                    'iso', sc.iso, 'shutter', sc.shutter,
+                    'fnumber', sc.fnumber, 'focalLength', sc.focal_length)
                   ORDER BY sc.id), '[]'::json)
            FROM asset_sidecars sc WHERE sc.asset_id = a.id) AS sidecars,
         orig.filename   AS original_filename,

@@ -204,6 +204,8 @@ export async function indexRoot(
            camera_model=$11, lens=$12, iso=$13, shutter=$14, aperture=$15,
            focal_length=$16, gps=$17, width=$18, height=$19, duration_s=$20,
            content_id=$23,
+           gimbal_pitch=$24, gimbal_yaw=$25, gimbal_roll=$26,
+           relative_altitude=$27, absolute_altitude=$28,
            derivative_status=$21,
            processing_state=CASE WHEN $22 THEN 'ignored' ELSE processing_state END,
            updated_at=now()
@@ -232,6 +234,11 @@ export async function indexRoot(
           willDerive ? "pending" : "skipped",
           ignored,
           meta.content_id,
+          meta.gimbal_pitch,
+          meta.gimbal_yaw,
+          meta.gimbal_roll,
+          meta.relative_altitude,
+          meta.absolute_altitude,
         ],
       );
       res.updated++;
@@ -277,10 +284,12 @@ export async function indexRoot(
            session_id, abs_path, rel_path, filename, ext, media_type, device,
            file_size, file_mtime, content_hash, captured_at, camera_model, lens,
            iso, shutter, aperture, focal_length, gps, width, height, duration_s,
-           derivative_status, processing_state, content_id
+           derivative_status, processing_state, content_id,
+           gimbal_pitch, gimbal_yaw, gimbal_roll,
+           relative_altitude, absolute_altitude
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-           $20,$21,$22,$23,$24
+           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -309,6 +318,11 @@ export async function indexRoot(
           willDerive ? "pending" : "skipped",
           ignored ? "ignored" : "unprocessed",
           meta.content_id,
+          meta.gimbal_pitch,
+          meta.gimbal_yaw,
+          meta.gimbal_roll,
+          meta.relative_altitude,
+          meta.absolute_altitude,
         ],
       );
 

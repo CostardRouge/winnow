@@ -78,6 +78,14 @@ export type Asset = {
   // iPhone Live Photo link: Apple's Content Identifier, written on both the
   // still and its companion .mov. Used to tie the pair (cf. lib/pairing.ts).
   content_id: string | null;
+  // DJI drone telemetry embedded in a still's own EXIF/XMP (cf. lib/extract.ts).
+  // NULL on every non-DJI asset. For video, the equivalent lives on the clip's
+  // .SRT sidecar (cf. AssetSidecar/SidecarBrief) rather than on the asset row.
+  gimbal_pitch: number | null;
+  gimbal_yaw: number | null;
+  gimbal_roll: number | null;
+  relative_altitude: number | null;
+  absolute_altitude: number | null;
   derivative_status: DerivativeStatus;
   derivative_error: string | null;
   processing_state: ProcessingState;
@@ -232,6 +240,19 @@ export type SidecarBrief = {
   // any .srt we couldn't parse. Peak altitude in metres + telemetry sample count.
   maxAltitude?: number | null;
   sampleCount?: number | null;
+  // Representative gimbal orientation (degrees) and peak ground speed (m/s)
+  // over the clip.
+  gimbalPitch?: number | null;
+  gimbalYaw?: number | null;
+  gimbalRoll?: number | null;
+  maxSpeed?: number | null;
+  // Representative camera exposure for the clip (modern firmware only) — a
+  // video container carries no per-frame EXIF, so this is DJI's own exposure
+  // reading for the shot.
+  iso?: number | null;
+  shutter?: string | null;
+  fnumber?: number | null;
+  focalLength?: number | null;
 };
 
 export type Rating = {
