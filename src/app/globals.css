@@ -2685,6 +2685,78 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex justify-center py-3;
   }
 
+  /* ---- Scan queue: grouped by root, one card per folder ----------------- */
+  /* Repeat scans of the same root used to read as an undifferentiated flat
+     list. Grouping by root turns it into a per-folder timeline: a compact
+     history strip for an at-a-glance pattern, then the individual runs
+     (newest first) with a visible date and, for failures, the reason. */
+  .pl-group-list {
+    @apply grid gap-3;
+  }
+  .pl-group {
+    @apply flex flex-col gap-2.5 rounded-[var(--radius-lg)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .pl-group-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .pl-group-title {
+    @apply break-all text-[13px] font-medium;
+    color: var(--color-text);
+  }
+  .pl-group-stats {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  /* Oldest→newest strip of small dots, one per run — a CI-style build history
+     at a glance before scanning the dated list below. */
+  .pl-run-strip {
+    @apply flex flex-wrap items-center gap-1;
+  }
+  .pl-run-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+    background: var(--color-border-strong);
+  }
+  .pl-run-dot.is-completed {
+    background: var(--color-pick);
+  }
+  .pl-run-dot.is-failed {
+    background: var(--color-reject);
+  }
+  .pl-run-dot.is-active {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+  .pl-run-dot.is-waiting,
+  .pl-run-dot.is-prioritized,
+  .pl-run-dot.is-delayed {
+    background: var(--color-star);
+  }
+  .pl-run-list {
+    @apply flex flex-col gap-1.5;
+  }
+  .pl-run {
+    @apply flex flex-wrap items-center gap-2 rounded-[var(--radius)] border-t pt-1.5 text-[12px];
+    border-color: var(--color-border);
+  }
+  .pl-run:first-child {
+    @apply border-t-0 pt-0;
+  }
+  .pl-run-when {
+    @apply text-[12px] font-medium;
+    color: var(--color-text);
+  }
+  .pl-run-meta {
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .pl-run-err {
+    @apply w-full;
+  }
+  .pl-run-more {
+    @apply self-start;
+  }
+
   /* ---- Pipeline asset card (Media / Pending / Analyzed) ----------------- */
   /* Stacked so the full path is always readable: name + status on line 1, the
      untruncated path on line 2, then thumbnail · details · actions. */
