@@ -30,6 +30,11 @@ export type GalleryAsset = {
   group_kind?: "raw_jpeg" | "live_photo" | null;
   // A DJI drone flight-log .SRT rides with this clip → show a telemetry badge.
   has_telemetry?: boolean;
+  // Burst/bracket pile size (cf. lib/bursts.ts). In the collapsed grid the pile
+  // shows as its cover tile only — the badge says how many frames it stands for.
+  // Expanding piles lives in the session grid (the culling surface); here the
+  // badge just keeps the collapsed frames from reading as missing photos.
+  burst_count?: number | null;
 };
 
 const TARGET = 175; // target cell width (px)
@@ -164,6 +169,14 @@ const VirtualGrid = forwardRef<
               {a.has_telemetry && (
                 <span className="telemetry-badge" title="Flight telemetry (SRT)">
                   🛰
+                </span>
+              )}
+              {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
+                <span
+                  className="stack-badge"
+                  title={`Burst pile of ${a.burst_count} frames — open the session grid to expand it`}
+                >
+                  ⧉ {a.burst_count}
                 </span>
               )}
               {a.verdict !== "unrated" && (
