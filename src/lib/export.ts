@@ -1,13 +1,20 @@
-// Export worker (cf. §8). MVP: target `capture_one` = copies the original RAWs
-// of the picks to a local export folder. This is the ONLY place where we pull
+// Export worker (cf. §8). MVP: target `capture_one` = copies the originals of
+// the picks to a local export folder. This is the ONLY place where we pull
 // large files back over the network. Records the source->export lineage.
+//
+// Which files travel is driven by `params.include` — a per-category map over
+// the taxonomy in lib/exportTypes.ts (RAW / photos / videos / pair JPEG / Live
+// Photo motion / SRT telemetry / XML+THM metadata). The modal builds it from a
+// dynamic scan of the selection (POST /api/export/plan → collectExportFiles);
+// legacy jobs that only carry raw_jpeg_mode / include_jpeg / include_live_video
+// are mapped onto the same shape, so their behavior is unchanged.
 import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { q, one, many } from "./db";
-import { config } from "./config";
-import { buildFilter, FilterSchema } from "./filter";
+import { config, PHOTO_RAW_EXTS } from "./config";
+import { buildFilter, FilterSchema, type AssetFilter } from "./filter";
 import { partialHash } from "./hash";
-import type { Asset } from "./types";
+import type { ExportCategory, ExportInclude } from "./exportTypes";
 
 // Atomic + verified copy: we write to a `.part`, check size + partial hash,
 // then rename (atomic on the same FS). A crash in progress never leaves a
@@ -34,6 +41,175 @@ export function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "export";
 }
 
+// One candidate file of an export: a media original/companion (sidecar_id null)
+// or a video sidecar. `category` is the picker taxonomy (lib/exportTypes.ts);
+// `role` is the legacy lineage label recorded on the exports row.
+export type ExportFileRow = {
+  asset_id: number;
+  sidecar_id: number | null;
+  category: ExportCategory;
+  ext: string;
+  filename: string;
+  abs_path: string;
+  file_size: number | null;
+  role: string;
+};
+
+// Where a candidate media file falls in the picker taxonomy. Pure so the
+// mapping can be unit-tested without a database.
+export function categorizeAsset(a: {
+  media_type: string;
+  ext: string;
+  group_kind: string | null;
+  group_role: string | null;
+}): ExportCategory {
+  if (a.group_kind === "live_photo" && a.group_role === "companion")
+    return "live_motion";
+  if (a.group_kind === "raw_jpeg" && a.group_role === "primary")
+    return "pair_jpeg";
+  if (a.media_type === "video") return "video";
+  return PHOTO_RAW_EXTS.has(a.ext.toLowerCase()) ? "raw" : "photo";
+}
+
+// Legacy lineage role for a media copy (kept stable for existing readers of
+// exports.params.role): pairs → raw/jpeg, Live Photos → still/live_video,
+// unpaired → single.
+function lineageRole(a: {
+  group_kind: string | null;
+  group_role: string | null;
+}): string {
+  if (a.group_role == null) return "single";
+  if (a.group_kind === "live_photo")
+    return a.group_role === "primary" ? "still" : "live_video";
+  return a.group_role === "companion" ? "raw" : "jpeg";
+}
+
+// Everything the selection COULD export, categorized — the group companions of
+// every matched primary and the sidecars of every candidate video, regardless
+// of what the user will end up checking. Both the plan endpoint (counts for
+// the modal's dynamic scan) and the worker (filtered by include) feed on this,
+// so what the modal shows is exactly what the worker considers.
+export async function collectExportFiles(
+  filter: AssetFilter,
+): Promise<ExportFileRow[]> {
+  const { conditions, params } = buildFilter(filter, 1);
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const assets = await many<{
+    id: number;
+    ext: string;
+    filename: string;
+    abs_path: string;
+    file_size: number | null;
+    media_type: string;
+    group_kind: string | null;
+    group_role: string | null;
+  }>(
+    `WITH matched AS (
+       SELECT a.id, a.group_id
+       FROM assets a
+       LEFT JOIN ratings r ON r.asset_id = a.id
+       ${where}
+     ),
+     grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
+     SELECT a.id, a.ext, a.filename, a.abs_path, a.file_size, a.media_type,
+            g.kind AS group_kind, a.group_role
+     FROM assets a
+     LEFT JOIN asset_groups g ON g.id = a.group_id
+     WHERE a.deleted_at IS NULL AND (
+            a.id IN (SELECT id FROM matched WHERE group_id IS NULL)
+         OR a.group_id IN (SELECT group_id FROM grp)
+     )
+     ORDER BY a.captured_at, a.id`,
+    params,
+  );
+
+  const out: ExportFileRow[] = [];
+  const videoIds: number[] = [];
+  for (const a of assets) {
+    out.push({
+      asset_id: a.id,
+      sidecar_id: null,
+      category: categorizeAsset(a),
+      ext: a.ext.toLowerCase(),
+      filename: a.filename,
+      abs_path: a.abs_path,
+      file_size: a.file_size,
+      role: lineageRole(a),
+    });
+    if (a.media_type === "video") videoIds.push(a.id);
+  }
+
+  // Sidecars of every candidate video, in one round-trip. SRT = drone flight
+  // log; XML/THM = camera metadata (cf. lib/sidecars.ts).
+  if (videoIds.length) {
+    const sidecars = await many<{
+      id: number;
+      asset_id: number;
+      abs_path: string;
+      filename: string;
+      kind: string;
+      file_size: number | null;
+    }>(
+      `SELECT id, asset_id, abs_path, filename, kind, file_size
+         FROM asset_sidecars WHERE asset_id = ANY($1)
+        ORDER BY asset_id, id`,
+      [videoIds],
+    );
+    for (const sc of sidecars) {
+      out.push({
+        asset_id: sc.asset_id,
+        sidecar_id: sc.id,
+        category: sc.kind === "srt" ? "sidecar_srt" : "sidecar_meta",
+        ext: path.extname(sc.filename).toLowerCase(),
+        filename: sc.filename,
+        abs_path: sc.abs_path,
+        file_size: sc.file_size,
+        role: "sidecar",
+      });
+    }
+  }
+  return out;
+}
+
+// Resolve the job's effective include map. Modern jobs carry params.include
+// (overlaid onto the legacy-derived base so partial maps stay predictable);
+// legacy jobs reproduce today's behavior exactly: originals always travel,
+// raw_jpeg_mode decides the two sides of a pair, include_live_video the .mov,
+// and sidecars always ride with their clip.
+export function includeFromParams(
+  params: Record<string, unknown> | null | undefined,
+): Record<ExportCategory, boolean> {
+  const rawJpegMode: "raw" | "both" | "jpeg" =
+    params?.raw_jpeg_mode === "raw" ||
+    params?.raw_jpeg_mode === "both" ||
+    params?.raw_jpeg_mode === "jpeg"
+      ? (params.raw_jpeg_mode as "raw" | "both" | "jpeg")
+      : params?.include_jpeg === true
+        ? "both"
+        : "raw";
+  // Note: the legacy 'jpeg' mode only skipped the RAW side of PAIRS (standalone
+  // RAWs still exported). The category filter is coarser — raw:false also drops
+  // standalone RAWs — which matches the mode's intent ("keep the light files")
+  // and only shifts behavior for a re-run legacy 'jpeg' job holding lone RAWs.
+  const base: Record<ExportCategory, boolean> = {
+    raw: rawJpegMode !== "jpeg",
+    photo: true,
+    video: true,
+    pair_jpeg: rawJpegMode !== "raw",
+    live_motion: params?.include_live_video === true,
+    sidecar_srt: true,
+    sidecar_meta: true,
+  };
+  const inc = params?.include;
+  if (inc && typeof inc === "object") {
+    for (const [k, v] of Object.entries(inc as ExportInclude)) {
+      if (typeof v === "boolean" && k in base) base[k as ExportCategory] = v;
+    }
+  }
+  return base;
+}
+
 export async function runExportJob(exportJobId: number): Promise<void> {
   const job = await one<{
     id: number;
@@ -54,57 +230,13 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     }
 
     const filter = FilterSchema.parse(job.filter_query ?? {});
-    const { conditions, params } = buildFilter(filter, 1);
-    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Pairing: the picks selected in the (collapsed) gallery are the primaries,
-    // but which file is the keeper depends on the group kind (cf. lib/pairing.ts):
-    //   raw_jpeg   → `raw_jpeg_mode` chooses which files travel: the RAW keeper
-    //                only ('raw'), the direct JPEG/HIF only ('jpeg'), or both.
-    //   live_photo → keeper is the still primary; the .mov companion (the motion)
-    //                tags along only when include_live_video is set.
-    // Standalone (unpaired) matches export as-is. Legacy jobs stored only a
-    // boolean include_jpeg (true → both, false → raw), so fall back to it.
-    const rawJpegMode: "raw" | "both" | "jpeg" =
-      job.params?.raw_jpeg_mode === "raw" ||
-      job.params?.raw_jpeg_mode === "both" ||
-      job.params?.raw_jpeg_mode === "jpeg"
-        ? (job.params.raw_jpeg_mode as "raw" | "both" | "jpeg")
-        : job.params?.include_jpeg === true
-          ? "both"
-          : "raw";
-    const includeLiveVideo = job.params?.include_live_video === true;
-    const modeIdx = params.length + 1;
-    const liveIdx = params.length + 2;
-
-    const assets = await many<Asset & { group_kind: string | null }>(
-      `WITH matched AS (
-         SELECT a.id, a.group_id
-         FROM assets a
-         LEFT JOIN ratings r ON r.asset_id = a.id
-         ${where}
-       ),
-       grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
-       SELECT a.*, g.kind AS group_kind FROM assets a
-       LEFT JOIN asset_groups g ON g.id = a.group_id
-       WHERE a.deleted_at IS NULL AND (
-              a.id IN (SELECT id FROM matched WHERE group_id IS NULL)
-           OR (a.group_id IN (SELECT group_id FROM grp) AND (
-                  -- Live Photo: the still is the keeper (always); the .mov motion
-                  -- tags along only when include_live_video is set.
-                  (g.kind = 'live_photo' AND a.group_role = 'primary')
-               OR ($${liveIdx}::boolean AND g.kind = 'live_photo'
-                   AND a.group_role = 'companion')
-                  -- RAW+JPEG: the RAW companion for 'raw'/'both', the direct
-                  -- JPEG/HIF primary for 'jpeg'/'both'.
-               OR (g.kind = 'raw_jpeg' AND a.group_role = 'companion'
-                   AND $${modeIdx} IN ('raw', 'both'))
-               OR (g.kind = 'raw_jpeg' AND a.group_role = 'primary'
-                   AND $${modeIdx} IN ('both', 'jpeg'))
-              ))
-       )
-       ORDER BY a.captured_at, a.id`,
-      [...params, rawJpegMode, includeLiveVideo],
+    // Scan the selection's full candidate set (same helper the modal's plan
+    // endpoint uses), then keep the categories this job includes. Legacy jobs
+    // (no params.include) reproduce the historical behavior exactly.
+    const include = includeFromParams(job.params);
+    const files = (await collectExportFiles(filter)).filter(
+      (f) => include[f.category],
     );
 
     const destDir = path.join(config.exportDir, sanitize(job.name));
@@ -114,75 +246,50 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     let sidecarsCopied = 0;
     const errors: Array<{ asset_id: number; error: string }> = [];
 
-    for (const asset of assets) {
-      const dest = path.join(destDir, asset.filename);
+    for (const file of files) {
+      const dest = path.join(destDir, file.filename);
       try {
-        await copyVerified(asset.abs_path, dest);
-        // Lineage role records which side of the pair this copy is, per group
-        // kind: RAW+JPEG → 'raw' (keeper) / 'jpeg'; Live Photo → 'still' (keeper)
-        // / 'live_video'; unpaired → 'single'. `kind` stays 'raw_copy' — an
-        // original-file copy either way.
-        const role =
-          asset.group_role == null
-            ? "single"
-            : asset.group_kind === "live_photo"
-              ? asset.group_role === "primary"
-                ? "still"
-                : "live_video"
-              : asset.group_role === "companion"
-                ? "raw"
-                : "jpeg";
-        await q(
-          `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
-           VALUES ($1, $2, 'raw_copy', $3, $4)`,
-          [asset.id, exportJobId, dest, JSON.stringify({ role })],
-        );
-        await q(
-          "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
-          [asset.id],
-        );
-        copied++;
-
-        // Sony video sidecars travel with the clip: copy each next to the
-        // exported video (its filename already tracks the clip's name) and
-        // record the lineage. A sidecar copy that fails is reported but never
-        // discards the video that was already exported above.
-        if (asset.media_type === "video") {
-          const sidecars = await many<{
-            id: number;
-            abs_path: string;
-            filename: string;
-          }>(
-            "SELECT id, abs_path, filename FROM asset_sidecars WHERE asset_id = $1",
-            [asset.id],
+        await copyVerified(file.abs_path, dest);
+        if (file.sidecar_id == null) {
+          // Media copy. Lineage role records which side of the pair this is
+          // (raw/jpeg, still/live_video, single); `kind` stays 'raw_copy'.
+          await q(
+            `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
+             VALUES ($1, $2, 'raw_copy', $3, $4)`,
+            [file.asset_id, exportJobId, dest, JSON.stringify({ role: file.role })],
           );
-          for (const sc of sidecars) {
-            const scDest = path.join(destDir, sc.filename);
-            try {
-              await copyVerified(sc.abs_path, scDest);
-              await q(
-                `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
-                 VALUES ($1, $2, 'sidecar', $3, $4)`,
-                [
-                  asset.id,
-                  exportJobId,
-                  scDest,
-                  JSON.stringify({ role: "sidecar", sidecar_id: sc.id }),
-                ],
-              );
-              sidecarsCopied++;
-            } catch (err) {
-              errors.push({
-                asset_id: asset.id,
-                error: `sidecar ${sc.filename}: ${(err as Error).message}`,
-              });
-            }
-          }
+          await q(
+            "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
+            [file.asset_id],
+          );
+          copied++;
+        } else {
+          // Sidecar copy (SRT flight log, XML/THM metadata) next to its clip —
+          // its filename already tracks the clip's name. A failure is reported
+          // but never discards the media that exported fine.
+          await q(
+            `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
+             VALUES ($1, $2, 'sidecar', $3, $4)`,
+            [
+              file.asset_id,
+              exportJobId,
+              dest,
+              JSON.stringify({ role: "sidecar", sidecar_id: file.sidecar_id }),
+            ],
+          );
+          sidecarsCopied++;
         }
       } catch (err) {
-        errors.push({ asset_id: asset.id, error: (err as Error).message });
+        errors.push({
+          asset_id: file.asset_id,
+          error:
+            file.sidecar_id == null
+              ? (err as Error).message
+              : `sidecar ${file.filename}: ${(err as Error).message}`,
+        });
       }
     }
+    const mediaTotal = files.filter((f) => f.sidecar_id == null).length;
 
     await q(
       `UPDATE export_jobs SET status='done', finished_at=now(), result=$2 WHERE id=$1`,
@@ -190,7 +297,7 @@ export async function runExportJob(exportJobId: number): Promise<void> {
         exportJobId,
         JSON.stringify({
           dest_dir: destDir,
-          total: assets.length,
+          total: mediaTotal,
           copied,
           sidecars: sidecarsCopied,
           errors,

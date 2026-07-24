@@ -4,21 +4,35 @@ import { z } from "zod";
 import { one } from "@/lib/db";
 import { enqueueExport } from "@/lib/queue";
 import { FilterSchema } from "@/lib/filter";
+import { EXPORT_CATEGORIES, type ExportCategory } from "@/lib/exportTypes";
 import { getSettings } from "@/lib/settings";
 import { json, badRequest, serverError } from "@/lib/api";
+
+// Per-category file selection (cf. lib/exportTypes.ts) — what the redesigned
+// export modal sends. Optional: legacy callers keep sending raw_jpeg_mode /
+// include_jpeg / include_live_video and the worker maps them onto the same
+// shape (lib/export.ts includeFromParams).
+const IncludeSchema = z
+  .object(
+    Object.fromEntries(
+      EXPORT_CATEGORIES.map((c) => [c, z.boolean().optional()]),
+    ) as Record<ExportCategory, z.ZodOptional<z.ZodBoolean>>,
+  )
+  .strict();
 
 const Body = z.object({
   name: z.string().min(1),
   target: z.enum(["capture_one", "web", "immich"]).default("capture_one"),
   filter: FilterSchema.default({}),
   params: z.record(z.string(), z.unknown()).default({}),
+  include: IncludeSchema.optional(),
 });
 
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
-    const { name, target, filter, params } = parsed.data;
+    const { name, target, filter, params, include } = parsed.data;
 
     // Pairing: resolve whether to also copy the companion extras now, so the job
     // is self-contained. An explicit params flag wins; otherwise fall back to the
@@ -27,9 +41,11 @@ export async function POST(req: NextRequest) {
     // covers iPhone Live Photos (the .mov motion next to the still keeper).
     const settings = await getSettings();
     const includeLiveVideo =
-      typeof params.include_live_video === "boolean"
-        ? params.include_live_video
-        : settings.exportIncludeLiveVideo;
+      typeof include?.live_motion === "boolean"
+        ? include.live_motion
+        : typeof params.include_live_video === "boolean"
+          ? params.include_live_video
+          : settings.exportIncludeLiveVideo;
 
     // RAW+JPEG pairs (Sony .ARW + .HIF, DJI .DNG + .JPG) support three policies:
     // keep the RAW keeper only ('raw'), the direct JPEG/HIF only ('jpeg'), or
@@ -37,10 +53,15 @@ export async function POST(req: NextRequest) {
     // legacy `include_jpeg` flag (true → both) or the persisted preference. We
     // keep `include_jpeg` in the stored params in sync so older readers stay
     // coherent (it means "the direct file travels too").
-    const rawJpegMode: "raw" | "both" | "jpeg" =
-      params.raw_jpeg_mode === "raw" ||
-      params.raw_jpeg_mode === "both" ||
-      params.raw_jpeg_mode === "jpeg"
+    const rawJpegMode: "raw" | "both" | "jpeg" = include
+      ? include.pair_jpeg
+        ? include.raw !== false
+          ? "both"
+          : "jpeg"
+        : "raw"
+      : params.raw_jpeg_mode === "raw" ||
+          params.raw_jpeg_mode === "both" ||
+          params.raw_jpeg_mode === "jpeg"
         ? params.raw_jpeg_mode
         : (
               typeof params.include_jpeg === "boolean"
@@ -67,6 +88,9 @@ export async function POST(req: NextRequest) {
         JSON.stringify(filter),
         JSON.stringify({
           ...params,
+          // The per-category selection is the worker's source of truth when
+          // present; the legacy mirrors below keep older readers coherent.
+          ...(include ? { include } : {}),
           raw_jpeg_mode: rawJpegMode,
           include_jpeg: includeJpeg,
           include_live_video: includeLiveVideo,
