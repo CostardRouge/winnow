@@ -29,6 +29,15 @@ export const GRID_SELECT = `a.*,
         comp.width      AS companion_width,
         comp.height     AS companion_height,
         g.kind          AS group_kind,
+        bu.cover_asset_id AS burst_cover_id,
+        -- Live (non-deleted) size of this frame's burst/bracket pile — badged on
+        -- the collapsed cover tile. NULL (no subquery) when the frame isn't
+        -- stacked. Counted live, not read off bursts.member_count, so the badge
+        -- shrinks as pile frames are trashed.
+        CASE WHEN a.burst_id IS NULL THEN NULL ELSE (
+          SELECT count(*)::int FROM assets bm
+           WHERE bm.burst_id = a.burst_id AND bm.deleted_at IS NULL) END
+          AS burst_count,
         (SELECT count(*)::int FROM asset_sidecars sc
           WHERE sc.asset_id = a.id) AS sidecar_count,
         -- Drone telemetry present? Drives the grid's telemetry badge (a DJI .SRT
@@ -64,6 +73,7 @@ export const GRID_SELECT = `a.*,
 export const GRID_FROM = `FROM assets a
         LEFT JOIN ratings r ON r.asset_id = a.id
         LEFT JOIN asset_groups g ON g.id = a.group_id
+        LEFT JOIN bursts bu ON bu.id = a.burst_id
         LEFT JOIN LATERAL (
           SELECT c.id, c.ext, c.media_type, c.filename, c.file_size,
                  c.width, c.height
