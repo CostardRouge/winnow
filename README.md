@@ -152,6 +152,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
+| `GET /api/gear` | The **shelf**: every camera body + lens the library was shot with, each with its media count, photo/video split, date span, and companion piece of gear (top lens per body, top body per lens). Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
 | `DELETE /api/sessions/:id` `?files=true` | Deletes the session (cascade: assets/ratings/picks) + its derivative cache. `files=true` also removes the originals from disk (incoming only, confined to the session folder) — to clear an orphaned import |
@@ -449,6 +450,43 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
   analyzed automatically once their derivative is ready. Toggle the whole
   feature with `ML_ENABLED` (off by default — point `ML_BASE_URL` at your
   container first).
+
+---
+
+## Gear: what the library was shot with (page `/gear`)
+
+The **Gear** page (`/gear`, in the rail) is the shelf: every **camera body** and
+every **lens** the library was shot with, each **drawn** and counted. It is the
+inverse of the gallery's device/lens filter chips — instead of *"narrow the grid
+by camera"* it answers *"what have I shot with, and how much"* at a glance, then
+links each piece of gear back to its frames (`/library/incoming/grid?device=…`,
+`?lens=…`).
+
+- **Counted like every other counter** (`GET /api/gear`, `src/lib/gear.ts`): live
+  assets only (a trashed frame stops inflating a body's tally) and **logical
+  media**, so a RAW+JPEG pair counts once. Grouping stays on the **raw EXIF
+  string** — the value the gallery filters on — so a card's count and the grid it
+  opens can never drift; prettifying (`lib/cameraLabels.ts`) happens on display
+  only. Each card also carries the **date span** it was in service, the
+  photo/video split, and its most-used companion (top lens per body, top body per
+  lens).
+- **The artwork is generated, not drawn** (`src/lib/gearArt.ts`). A library can
+  hold any camera anyone ever pointed at anything, so per-model illustrations are
+  a losing game: each EXIF name is classified into a body **archetype** (reflex ·
+  mirrorless · rangefinder · compact · phone · drone · action · camcorder) with a
+  rough footprint, and the SVG is drawn from those numbers — unknown cameras
+  included, and **to scale** against each other (a 5D towers over a GR IIIx).
+- **Lenses are drawn from the data.** No lookup table: barrel **length** follows
+  the focal length and **girth** follows the entrance pupil (focal ÷ aperture,
+  the physical reason fast glass is fat), so a 56mm f/1.2 draws short and fat, an
+  f/2.8 pancake flat, a 70-300 long and stepped. The focal range is read off the
+  name where it's stated and off the **recorded EXIF** otherwise (which is also
+  how a zoom betrays itself when its name doesn't say so), the engraved
+  **aperture scale** starts at the lens' real widest stop, and only lenses that
+  have one get an aperture ring. Sizes use a compressed scale: the ordering is
+  truthful, the ratio softened so a pancake stays legible beside a telephoto.
+- **Sort** by *Most used* (default) or *Recent*, and the whole shelf is line-art
+  in `currentColor`, so it inks itself in both the paper and the night theme.
 
 ---
 
