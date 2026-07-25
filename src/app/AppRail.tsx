@@ -36,6 +36,12 @@ const NAV: NavItem[] = [
     match: (p) => p.startsWith("/search"),
   },
   {
+    href: "/gear",
+    label: "Gear",
+    icon: Icons.gear,
+    match: (p) => p.startsWith("/gear"),
+  },
+  {
     href: "/import",
     label: "Import",
     icon: Icons.inbox,

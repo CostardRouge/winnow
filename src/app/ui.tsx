@@ -359,6 +359,14 @@ export const Icons = {
       <circle cx="8.5" cy="17" r="1.8" />
     </svg>
   ),
+  // Camera body seen from the front — the Gear shelf (bodies + lenses).
+  gear: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.2-1.8a1 1 0 0 1 .84-.45h5.12a1 1 0 0 1 .83.45l1.2 1.8H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5Z" />
+      <circle cx="12" cy="12.8" r="3.4" />
+      <path d="M6 9.6h.01" />
+    </svg>
+  ),
   // Stacked drives — the Volumes section (registered directories/mounts).
   volumes: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

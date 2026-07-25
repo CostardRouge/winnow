@@ -3170,7 +3170,7 @@ html[data-theme="dark"] .btn-primary:hover {
     flex: 1;
     padding: 6px 4px;
   }
-  /* The rail is a bottom bar here, so its 6 nav items own the row. Lift the
+  /* The rail is a bottom bar here, so its 7 nav items own the row. Lift the
      theme toggle out of that flow to a discreet bare icon in the top-right
      corner — reachable from every page without crowding the nav or needing a
      per-page header slot. The container spans the single-line topbar band and
@@ -4505,3 +4505,107 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
+
+/* ---- Gear: the illustrated shelf of bodies + lenses (page /gear) ---------
+   Cards are deliberately chrome-less on paper — the line-art IS the card, so the
+   grid reads like a plate from a maker's catalogue and the surface/border only
+   appear on hover. Every camera shares one viewBox and one mm→unit scale (cf.
+   CameraArt.tsx), so their drawn sizes are comparable across the grid; the same
+   holds for the lenses. Names are set in mono: they are part numbers, not prose.
+   -------------------------------------------------------------------------- */
+@layer components {
+  .gear-shelf {
+    @apply flex flex-col gap-9;
+  }
+  .gear-head {
+    @apply flex flex-wrap items-center gap-3;
+  }
+  .gear-section h2 {
+    @apply m-0 mb-5;
+    font-size: 2rem;
+  }
+  .gear-grid {
+    @apply grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 28px 16px;
+  }
+  .gear-card {
+    @apply flex flex-col items-center gap-2 rounded-[var(--radius-lg)] border
+      px-3 pb-4 pt-3 text-center transition duration-150;
+    color: var(--color-text);
+    background: transparent;
+    border-color: transparent;
+    transition-timing-function: var(--ease-out);
+  }
+  .gear-card:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  /* The artwork inks itself with currentColor, so it flips with the theme. The
+     width cap is what sets the drawn size: bodies are wide, lenses stand tall,
+     and each keeps a comparable footprint across its own section. */
+  .gear-art {
+    @apply block w-full;
+  }
+  .gear-art-camera {
+    max-width: 250px;
+  }
+  .gear-art-lens {
+    max-width: 140px;
+  }
+  .gear-art svg {
+    @apply block h-auto w-full;
+    transition: transform 0.18s var(--ease-out);
+  }
+  .gear-card:hover .gear-art svg {
+    transform: translateY(-2px);
+  }
+  .gear-name {
+    @apply mt-1 text-[13px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+    text-wrap: balance;
+  }
+  .gear-count {
+    font-family: var(--font-mono);
+  }
+  .gear-meta {
+    @apply flex w-full flex-col gap-0.5 text-[11px];
+    color: var(--color-faint);
+  }
+  /* Long lens/body names truncate rather than reflow the card. */
+  .gear-meta-line {
+    @apply block max-w-full truncate;
+  }
+}
+
+/* Phones: tighter shelf, two cards per row on the narrowest screens. */
+@media (max-width: 767px) {
+  .gear-shelf {
+    gap: 26px;
+  }
+  .gear-section h2 {
+    font-size: 1.6rem;
+    margin-bottom: 14px;
+  }
+  .gear-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 20px 10px;
+  }
+}
+
+/* Narrow phones: the bottom bar now carries seven items (Gear joined the rail),
+   so shrink the labels a notch rather than let them clip or wrap. */
+@media (max-width: 400px) {
+  .rail-label {
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .rail-link {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+}
