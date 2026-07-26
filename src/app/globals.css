@@ -1462,9 +1462,9 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* Burst/bracket piles (cf. lib/bursts.ts) ---------------------------------
-     A collapsed pile shows as its cover tile wearing a "deck" edge (cards
-     tucked behind the top) + a count badge; expanding splices the members in,
-     each carrying a small accent rail so the run reads as one group. */
+     A collapsed pile shows as its cover tile with a count badge; expanding
+     splices the members in, each carrying a small accent rail so the run
+     reads as one group, plus its live "x/n" position in the pile. */
   .cell .stack-badge {
     @apply absolute right-1 top-1 rounded-[6px] px-1.5 py-px text-[11px] font-semibold;
     background: rgba(16, 15, 13, 0.62);
@@ -1476,19 +1476,6 @@ html[data-theme="dark"] .btn-primary:hover {
   .cell .stack-badge.open {
     color: var(--color-accent);
   }
-  /* Deck edge on the collapsed cover: two card slivers along the top. */
-  .cell.stack::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    box-shadow:
-      inset 0 2px 0 rgba(244, 240, 231, 0.55),
-      inset 0 4px 0 rgba(16, 15, 13, 0.4),
-      inset 0 6px 0 rgba(244, 240, 231, 0.3),
-      inset 0 8px 0 rgba(16, 15, 13, 0.28);
-  }
   /* Sharpest frame of an expanded pile (sharpness analysis, cf. lib/ml.ts) —
      a nudge toward the keeper. Top-center: every corner is already taken. */
   .cell .sharpest-badge {
@@ -1498,6 +1485,19 @@ html[data-theme="dark"] .btn-primary:hover {
     backdrop-filter: blur(4px);
     color: var(--color-star);
     box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.25);
+    pointer-events: none;
+  }
+  /* This frame's live position in its expanded pile ("3/6") — bottom-center,
+     the one corner every other badge (verdict, stars, ext, sharpest) leaves
+     free. Counts only LIVE members (trashing a frame never leaves a gap or
+     lets the numerator outrun the count). */
+  .cell .frame-index-badge {
+    @apply absolute bottom-1 left-1/2 -translate-x-1/2 rounded-[6px] px-1.5 py-px
+      text-[11px] font-semibold leading-none;
+    font-family: var(--font-mono);
+    background: rgba(16, 15, 13, 0.62);
+    backdrop-filter: blur(4px);
+    color: rgba(244, 240, 231, 0.85);
     pointer-events: none;
   }
 
