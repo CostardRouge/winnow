@@ -15,7 +15,9 @@ import { json, badRequest, serverError } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  filter: FilterSchema.default({}),
+  // prefault (not default): the fallback is fed through FilterSchema's parse,
+  // so `{}` gets the same transforms an absent body would.
+  filter: FilterSchema.prefault({}),
 });
 
 export async function POST(req: NextRequest) {

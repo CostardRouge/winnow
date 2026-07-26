@@ -26,10 +26,11 @@ async function main(): Promise<void> {
   const buffer = await readFile(input);
   // heic-decode sniffs the brand with String.fromCharCode(...buf.slice(8,12))
   // (needs an iterable byte view) and libheif wants a Uint8Array: the Node
-  // Buffer from readFile satisfies both. The published @types claim
-  // ArrayBufferLike, which is wrong for the runtime — hence the cast.
+  // Buffer from readFile satisfies both. @types/heic-convert v2 finally types
+  // `buffer` as Uint8Array (it claimed ArrayBufferLike before), so the Buffer
+  // now goes in uncast.
   const jpeg = await heicConvert({
-    buffer: buffer as unknown as ArrayBufferLike,
+    buffer,
     format: "JPEG",
   });
   await writeFile(output, Buffer.from(jpeg));

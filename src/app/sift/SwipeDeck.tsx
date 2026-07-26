@@ -38,7 +38,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { FixedSizeList } from "react-window";
+import { Grid, type CellComponentProps } from "react-window";
 import { Icons } from "@/app/ui";
 import { formatBadge } from "@/lib/format";
 import { isLivePhoto, liveMotionSrc, LiveMotionVideo } from "@/app/LivePhotoPreview";
@@ -601,12 +601,102 @@ export default function SwipeDeck({
   );
 }
 
+const ITEM = 104; // px per tile, gap included
+const HEIGHT = 116; // tile height + room for the horizontal scrollbar
+
+// Everything a strip tile needs. react-window v2 passes these through the Grid's
+// `cellProps`, so Tile lives at module scope rather than being redefined inside
+// RecentStrip on every render.
+type TileData = {
+  items: { card: DeckCard; verdict: Verdict }[];
+  onRate: (card: DeckCard, verdict: Verdict) => void;
+  onOpen: (card: DeckCard) => void;
+  liveHoverId: number | null;
+  setLiveHoverId: React.Dispatch<React.SetStateAction<number | null>>;
+};
+
+function Tile({
+  columnIndex,
+  style,
+  items,
+  onRate,
+  onOpen,
+  liveHoverId,
+  setLiveHoverId,
+}: CellComponentProps<TileData>) {
+  const { card, verdict } = items[columnIndex];
+  const live = isLivePhoto(card);
+  return (
+    <div style={style}>
+      <div className={`sift-recent-card is-${verdict}`}>
+        <button
+          type="button"
+          className="sift-recent-thumb"
+          onClick={() => onOpen(card)}
+          onMouseEnter={live ? () => setLiveHoverId(card.id) : undefined}
+          onMouseLeave={
+            live ? () => setLiveHoverId((p) => (p === card.id ? null : p)) : undefined
+          }
+          title="Open in viewer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/assets/${card.id}/thumb`} alt={card.filename} loading="lazy" />
+          {live && liveHoverId === card.id && (
+            <LiveMotionVideo
+              companionId={card.companion_id!}
+              poster={`/api/assets/${card.id}/thumb`}
+              fit="contain"
+            />
+          )}
+          {card.media_type === "video" && (
+            <span className="sift-recent-play" aria-hidden>▶</span>
+          )}
+          {live && <span className="sift-recent-live" aria-hidden>LIVE</span>}
+        </button>
+        <div className="sift-recent-acts" role="group" aria-label="Re-cast verdict">
+          <button
+            type="button"
+            className={`sift-recent-btn is-reject${verdict === "reject" ? " on" : ""}`}
+            onClick={() => onRate(card, "reject")}
+            aria-label="Reject"
+            aria-pressed={verdict === "reject"}
+          >
+            ✕
+          </button>
+          <button
+            type="button"
+            className={`sift-recent-btn is-skip${verdict === "skip" ? " on" : ""}`}
+            onClick={() => onRate(card, "skip")}
+            aria-label="Skip"
+            aria-pressed={verdict === "skip"}
+          >
+            ↪
+          </button>
+          <button
+            type="button"
+            className={`sift-recent-btn is-pick${verdict === "pick" ? " on" : ""}`}
+            onClick={() => onRate(card, "pick")}
+            aria-label="Pick"
+            aria-pressed={verdict === "pick"}
+          >
+            ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // The recent-decisions strip: a horizontally-scrollable, virtualized row of the
 // cards just sorted (latest first). Each tile shows the thumbnail (tap to open
 // it big in the viewer) and the three verdict buttons with the current call lit,
 // so a decision can be re-cast without hunting back through the deck. Virtual +
 // width-aware (a ResizeObserver feeds react-window the available width) so a
 // session with thousands of files only ever renders the handful on screen.
+//
+// react-window v2 dropped `layout="horizontal"` from List (it virtualizes rows
+// only), so the strip is a single-row Grid: one row of HEIGHT, one column of
+// ITEM per decision.
 function RecentStrip({
   items,
   onRate,
@@ -631,73 +721,6 @@ function RecentStrip({
     return () => ro.disconnect();
   }, []);
 
-  const ITEM = 104; // px per tile, gap included
-  const HEIGHT = 116; // tile height + room for the horizontal scrollbar
-
-  const Tile = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const { card, verdict } = items[index];
-    const live = isLivePhoto(card);
-    return (
-      <div style={style}>
-        <div className={`sift-recent-card is-${verdict}`}>
-          <button
-            type="button"
-            className="sift-recent-thumb"
-            onClick={() => onOpen(card)}
-            onMouseEnter={live ? () => setLiveHoverId(card.id) : undefined}
-            onMouseLeave={
-              live ? () => setLiveHoverId((p) => (p === card.id ? null : p)) : undefined
-            }
-            title="Open in viewer"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/assets/${card.id}/thumb`} alt={card.filename} loading="lazy" />
-            {live && liveHoverId === card.id && (
-              <LiveMotionVideo
-                companionId={card.companion_id!}
-                poster={`/api/assets/${card.id}/thumb`}
-                fit="contain"
-              />
-            )}
-            {card.media_type === "video" && (
-              <span className="sift-recent-play" aria-hidden>▶</span>
-            )}
-            {live && <span className="sift-recent-live" aria-hidden>LIVE</span>}
-          </button>
-          <div className="sift-recent-acts" role="group" aria-label="Re-cast verdict">
-            <button
-              type="button"
-              className={`sift-recent-btn is-reject${verdict === "reject" ? " on" : ""}`}
-              onClick={() => onRate(card, "reject")}
-              aria-label="Reject"
-              aria-pressed={verdict === "reject"}
-            >
-              ✕
-            </button>
-            <button
-              type="button"
-              className={`sift-recent-btn is-skip${verdict === "skip" ? " on" : ""}`}
-              onClick={() => onRate(card, "skip")}
-              aria-label="Skip"
-              aria-pressed={verdict === "skip"}
-            >
-              ↪
-            </button>
-            <button
-              type="button"
-              className={`sift-recent-btn is-pick${verdict === "pick" ? " on" : ""}`}
-              onClick={() => onRate(card, "pick")}
-              aria-label="Pick"
-              aria-pressed={verdict === "pick"}
-            >
-              ✓
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="sift-recent">
       <div className="sift-recent-head">
@@ -719,16 +742,16 @@ function RecentStrip({
           </div>
         ) : (
           width > 0 && (
-            <FixedSizeList
-              layout="horizontal"
-              height={HEIGHT}
-              width={width}
-              itemCount={items.length}
-              itemSize={ITEM}
+            <Grid
+              style={{ height: HEIGHT, width }}
+              rowCount={1}
+              rowHeight={HEIGHT}
+              columnCount={items.length}
+              columnWidth={ITEM}
+              cellComponent={Tile}
+              cellProps={{ items, onRate, onOpen, liveHoverId, setLiveHoverId }}
               overscanCount={6}
-            >
-              {Tile}
-            </FixedSizeList>
+            />
           )
         )}
       </div>
