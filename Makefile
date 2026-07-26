@@ -128,10 +128,6 @@ shell: ## Open a shell in a service container (default app: make shell SVC=worke
 scan: ## Run the NAS scan script
 	$(COMPOSE) run --rm app npm run scan
 
-.PHONY: lint
-lint: ## Run the linter
-	$(COMPOSE) run --rm app npm run lint
-
 .PHONY: typecheck
 typecheck: ## Run the TypeScript type checker
 	$(COMPOSE) run --rm app npm run typecheck

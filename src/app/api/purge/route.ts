@@ -20,7 +20,9 @@ import { buildFilter, FilterSchema } from "@/lib/filter";
 import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z.object({
-  filter: FilterSchema.default({}),
+  // prefault (not default): the fallback is fed through FilterSchema's parse,
+  // so `{}` gets the same transforms an absent body would.
+  filter: FilterSchema.prefault({}),
   dryRun: z.boolean().optional(),
 });
 

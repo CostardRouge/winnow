@@ -23,7 +23,9 @@ const IncludeSchema = z
 const Body = z.object({
   name: z.string().min(1),
   target: z.enum(["capture_one", "web", "immich"]).default("capture_one"),
-  filter: FilterSchema.default({}),
+  // prefault (not default): the fallback is fed through FilterSchema's parse,
+  // so `{}` gets the same transforms an absent body would.
+  filter: FilterSchema.prefault({}),
   params: z.record(z.string(), z.unknown()).default({}),
   include: IncludeSchema.optional(),
 });

@@ -5,11 +5,13 @@
   "license": "MIT",
   "description": "Media management tool (ingest / cull / export) — indexes, culls and exports the NAS RAW/videos without ever touching the originals more than once.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/lib/migrate.ts",
     "worker": "tsx src/worker.ts",
@@ -19,35 +21,38 @@
     "srt-backfill": "tsx src/scripts/srt-backfill.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.658.0",
-    "@aws-sdk/s3-request-presigner": "^3.658.0",
-    "bullmq": "^5.34.0",
-    "chokidar": "^4.0.3",
+    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/s3-request-presigner": "^3.1095.0",
+    "bullmq": "^5.81.2",
+    "chokidar": "^5.0.0",
     "clsx": "^2.1.1",
-    "exiftool-vendored": "^28.6.0",
+    "exiftool-vendored": "^37.0.0",
     "geist": "^1.7.2",
     "heic-convert": "^2.1.0",
-    "ioredis": "^5.4.1",
+    "ioredis": "^5.11.1",
     "leaflet": "^1.9.4",
-    "next": "^15.1.0",
-    "pg": "^8.13.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-window": "^1.8.11",
-    "sharp": "^0.33.5",
-    "tsx": "^4.19.2",
-    "zod": "^3.24.1"
+    "next": "^16.2.12",
+    "pg": "^8.22.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-window": "^2.3.0",
+    "sharp": "^0.35.3",
+    "tsx": "^4.23.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.1",
-    "@types/heic-convert": "^1.2.3",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/heic-convert": "^2.1.1",
     "@types/leaflet": "^1.9.21",
-    "@types/node": "^22.10.0",
-    "@types/pg": "^8.11.10",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@types/react-window": "^1.8.8",
-    "tailwindcss": "^4.3.1",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "sharp": "^0.35.3"
   }
 }

@@ -8,7 +8,7 @@ import {
   useState,
   useCallback,
 } from "react";
-import { FixedSizeList, type ListOnItemsRenderedProps } from "react-window";
+import { List, type ListImperativeAPI, type RowComponentProps } from "react-window";
 import { formatBadge } from "@/lib/format";
 import { isLivePhoto, LiveMotionVideo } from "../LivePhotoPreview";
 
@@ -39,6 +39,115 @@ export type GalleryAsset = {
 
 const TARGET = 175; // target cell width (px)
 const GAP = 6;
+
+// Everything a row needs to paint its slice of the grid. react-window v2 hands
+// these to the row component through the `rowProps` prop (and re-renders rows
+// when they change), which is why Row lives at module scope: an inline
+// component would be a fresh identity on every parent render and remount every
+// tile.
+type RowData = {
+  items: GalleryAsset[];
+  cols: number;
+  cell: number;
+  selectMode: boolean;
+  selectedIds?: Set<number>;
+  onOpen: (index: number) => void;
+  onToggleSelect?: (id: number) => void;
+  onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
+  liveHoverId: number | null;
+  setLiveHoverId: React.Dispatch<React.SetStateAction<number | null>>;
+};
+
+function Row({
+  index,
+  style,
+  items,
+  cols,
+  cell,
+  selectMode,
+  selectedIds,
+  onOpen,
+  onToggleSelect,
+  onContextMenu,
+  liveHoverId,
+  setLiveHoverId,
+}: RowComponentProps<RowData>) {
+  const start = index * cols;
+  const cells = items.slice(start, start + cols);
+  return (
+    <div style={{ ...style, display: "flex", gap: GAP }}>
+      {cells.map((a, j) => {
+        const idx = start + j;
+        const sel = selectMode && selectedIds?.has(a.id);
+        const live = isLivePhoto(a);
+        return (
+          <div
+            key={a.id}
+            className={`cell ${a.verdict}${sel ? " selected" : ""}`}
+            style={{ width: cell, height: cell, aspectRatio: "auto" }}
+            onClick={() => (selectMode ? onToggleSelect?.(a.id) : onOpen(idx))}
+            onMouseEnter={live ? () => setLiveHoverId(a.id) : undefined}
+            onMouseLeave={
+              live ? () => setLiveHoverId((p) => (p === a.id ? null : p)) : undefined
+            }
+            onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
+          >
+            {a.derivative_status === "ready" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/assets/${a.id}/thumb`}
+                alt={a.filename}
+                loading="lazy"
+                decoding="async"
+              />
+            ) : (
+              <div className="placeholder">
+                {a.derivative_status === "error"
+                  ? "⚠ error"
+                  : a.media_type === "video"
+                    ? "🎬 video"
+                    : "⏳"}
+              </div>
+            )}
+            {live && a.derivative_status === "ready" && liveHoverId === a.id && (
+              <LiveMotionVideo
+                companionId={a.companion_id!}
+                poster={`/api/assets/${a.id}/thumb`}
+                fit="cover"
+              />
+            )}
+            {a.media_type === "video" && a.derivative_status === "ready" && (
+              <span className="play-badge">▶</span>
+            )}
+            {a.has_telemetry && (
+              <span className="telemetry-badge" title="Flight telemetry (SRT)">
+                🛰
+              </span>
+            )}
+            {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
+              <span
+                className="stack-badge"
+                title={`Burst pile of ${a.burst_count} frames — open the session grid to expand it`}
+              >
+                ⧉ {a.burst_count}
+              </span>
+            )}
+            {a.verdict !== "unrated" && (
+              <span className="badge">
+                {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
+              </span>
+            )}
+            {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
+            <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
+              {formatBadge(a.ext, a.companion_ext, a.group_kind)}
+            </span>
+            {sel && <span className="select-check">✓</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // Imperative handle: lets the host scroll a given item into view — used to land
 // the grid back on the media the viewer was showing when it closes.
@@ -77,7 +186,7 @@ const VirtualGrid = forwardRef<
   ref,
 ) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<FixedSizeList>(null);
+  const listRef = useRef<ListImperativeAPI>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Live Photo: which tile is hovered, so its motion (.mov companion) plays in
   // place over the still. One at a time; cleared on leave. No-op on touch (no
@@ -106,110 +215,45 @@ const VirtualGrid = forwardRef<
     ref,
     () => ({
       scrollToIndex: (index: number) =>
-        listRef.current?.scrollToItem(Math.floor(index / cols), "smart"),
+        listRef.current?.scrollToRow({
+          index: Math.floor(index / cols),
+          align: "smart",
+        }),
     }),
     [cols],
   );
 
-  const onItemsRendered = useCallback(
-    (p: ListOnItemsRenderedProps) => {
-      if (!loading && hasMore && p.visibleStopIndex >= rowCount - 3) loadMore();
+  const onRowsRendered = useCallback(
+    (visible: { startIndex: number; stopIndex: number }) => {
+      if (!loading && hasMore && visible.stopIndex >= rowCount - 3) loadMore();
     },
     [loading, hasMore, rowCount, loadMore],
   );
 
-  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const start = index * cols;
-    const cells = items.slice(start, start + cols);
-    return (
-      <div style={{ ...style, display: "flex", gap: GAP }}>
-        {cells.map((a, j) => {
-          const idx = start + j;
-          const sel = selectMode && selectedIds?.has(a.id);
-          const live = isLivePhoto(a);
-          return (
-            <div
-              key={a.id}
-              className={`cell ${a.verdict}${sel ? " selected" : ""}`}
-              style={{ width: cell, height: cell, aspectRatio: "auto" }}
-              onClick={() =>
-                selectMode ? onToggleSelect?.(a.id) : onOpen(idx)
-              }
-              onMouseEnter={live ? () => setLiveHoverId(a.id) : undefined}
-              onMouseLeave={live ? () => setLiveHoverId((p) => (p === a.id ? null : p)) : undefined}
-              onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
-            >
-              {a.derivative_status === "ready" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`/api/assets/${a.id}/thumb`}
-                  alt={a.filename}
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <div className="placeholder">
-                  {a.derivative_status === "error"
-                    ? "⚠ error"
-                    : a.media_type === "video"
-                      ? "🎬 video"
-                      : "⏳"}
-                </div>
-              )}
-              {live && a.derivative_status === "ready" && liveHoverId === a.id && (
-                <LiveMotionVideo
-                  companionId={a.companion_id!}
-                  poster={`/api/assets/${a.id}/thumb`}
-                  fit="cover"
-                />
-              )}
-              {a.media_type === "video" && a.derivative_status === "ready" && (
-                <span className="play-badge">▶</span>
-              )}
-              {a.has_telemetry && (
-                <span className="telemetry-badge" title="Flight telemetry (SRT)">
-                  🛰
-                </span>
-              )}
-              {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
-                <span
-                  className="stack-badge"
-                  title={`Burst pile of ${a.burst_count} frames — open the session grid to expand it`}
-                >
-                  ⧉ {a.burst_count}
-                </span>
-              )}
-              {a.verdict !== "unrated" && (
-                <span className="badge">
-                  {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
-                </span>
-              )}
-              {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
-              <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
-                {formatBadge(a.ext, a.companion_ext, a.group_kind)}
-              </span>
-              {sel && <span className="select-check">✓</span>}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
   return (
     <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }}>
       {size.h > 0 && size.w > 0 && (
-        <FixedSizeList
-          ref={listRef}
-          height={size.h}
-          width={size.w}
-          itemCount={rowCount}
-          itemSize={rowHeight}
-          onItemsRendered={onItemsRendered}
+        <List
+          listRef={listRef}
+          style={{ height: size.h, width: size.w }}
+          rowCount={rowCount}
+          rowHeight={rowHeight}
+          rowComponent={Row}
+          rowProps={{
+            items,
+            cols,
+            cell,
+            selectMode,
+            selectedIds,
+            onOpen,
+            onToggleSelect,
+            onContextMenu,
+            liveHoverId,
+            setLiveHoverId,
+          }}
+          onRowsRendered={onRowsRendered}
           overscanCount={4}
-        >
-          {Row}
-        </FixedSizeList>
+        />
       )}
     </div>
   );

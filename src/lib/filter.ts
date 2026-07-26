@@ -183,6 +183,13 @@ export const FilterSchema = z
 
 export type AssetFilter = z.infer<typeof FilterSchema>;
 
+// A hand-built scope (as opposed to a parsed one). Zod 4 types every key of the
+// parse *output* as present-but-possibly-undefined, so a literal like
+// `{ kind: "final" }` no longer satisfies AssetFilter — even though buildFilter
+// reads each dimension defensively and treats a missing key as "no filter".
+// Callers that assemble a filter by hand pass this instead.
+export type PartialAssetFilter = Partial<AssetFilter>;
+
 // Escapes the LIKE/ILIKE wildcards so a user's literal `%`/`_` (and the `\`
 // escape char itself) match themselves rather than acting as patterns.
 function escapeLike(s: string): string {
@@ -195,7 +202,7 @@ function escapeLike(s: string): string {
 export type DeletedScope = "exclude" | "trash";
 
 export function buildFilter(
-  filter: AssetFilter,
+  filter: PartialAssetFilter,
   startIdx = 1,
   opts: { deleted?: DeletedScope; collapseGroups?: boolean } = {},
 ): { conditions: string[]; params: unknown[] } {
