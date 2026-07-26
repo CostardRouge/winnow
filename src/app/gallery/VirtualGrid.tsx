@@ -35,6 +35,9 @@ export type GalleryAsset = {
   // Expanding piles lives in the session grid (the culling surface); here the
   // badge just keeps the collapsed frames from reading as missing photos.
   burst_count?: number | null;
+  // The pile itself, if any — lets the media viewer fetch this cover's sibling
+  // frames for its filmstrip (cf. MediaViewer.tsx).
+  burst_id?: number | null;
 };
 
 const TARGET = 175; // target cell width (px)
