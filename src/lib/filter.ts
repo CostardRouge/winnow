@@ -320,10 +320,22 @@ export function buildFilter(
     // over logical media, so a cover can itself be a pair primary). Suppressed
     // when drilling into a specific pile (burst_id set) so that request returns
     // every frame. Non-stacked assets (burst_id NULL) are always kept.
+    //
+    // The representative is the stored cover when it's still live, else the
+    // pile's first live frame — so trashing the cover surfaces the next frame
+    // instead of hiding the whole pile. Bounded per-pile subquery on
+    // assets_burst_idx (piles are small).
     if (filter.burst_id == null) {
       conditions.push(
         `(a.burst_id IS NULL
-          OR a.id IN (SELECT cover_asset_id FROM bursts WHERE id = a.burst_id))`,
+          OR a.id = (
+            SELECT bm.id FROM assets bm
+            WHERE bm.burst_id = a.burst_id AND bm.deleted_at IS NULL
+            ORDER BY bm.id = (SELECT b.cover_asset_id FROM bursts b
+                              WHERE b.id = a.burst_id) DESC,
+                     bm.burst_seq ASC, bm.id ASC
+            LIMIT 1
+          ))`,
       );
     }
   }

@@ -100,6 +100,15 @@ type AssetRow = {
   companion_width?: number | null;
   companion_height?: number | null;
   group_kind?: "raw_jpeg" | "live_photo" | null;
+  // Burst/bracket stack (cf. lib/bursts.ts): the pile this frame belongs to,
+  // its 1-based order inside it, and the pile's live frame count (served on
+  // every member). In the collapsed grid only the pile's cover row shows, with
+  // `burst_count` driving the stack badge; expanding drills in (?burst_id=) and
+  // splices the members in place.
+  burst_id?: number | null;
+  burst_seq?: number | null;
+  burst_count?: number | null;
+  burst_cover_id?: number | null;
 };
 
 // Session metadata + status breakdown (GET /api/sessions/:id). Postgres returns
@@ -178,6 +187,11 @@ export default function SessionGrid({
   // chosen ids. Tapping a cell toggles instead of opening the viewer while on.
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Expanded burst piles: burst_id → the cover row's id (so collapsing restores
+  // exactly the tile that stood for the pile). Cleared on every grid reload.
+  const [expandedBursts, setExpandedBursts] = useState<Map<number, number>>(
+    new Map(),
+  );
   const sentinel = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -223,6 +237,7 @@ export default function SessionGrid({
     setAssets([]);
     setCursor(null);
     setHasMore(true);
+    setExpandedBursts(new Map());
   }, []);
 
   const fetchPage = useCallback(
@@ -311,6 +326,50 @@ export default function SessionGrid({
       return next;
     });
   }, []);
+
+  // Expand a burst pile in place: drill into the stack (?burst_id= — the API
+  // returns every frame of the pile, collapse suppressed) and splice the members
+  // over the cover tile, so the viewer, selection and context menu work on them
+  // like any other row. Collapsing puts the remembered cover tile back and drops
+  // the other members from the list (nothing is refetched or mutated).
+  const toggleStack = useCallback(
+    async (a: AssetRow) => {
+      const burstId = a.burst_id;
+      if (burstId == null) return;
+      const coverId = expandedBursts.get(burstId);
+      if (coverId != null) {
+        // Collapse: keep only the row that stood for the pile.
+        setAssets((prev) =>
+          prev.filter((x) => x.burst_id !== burstId || x.id === coverId),
+        );
+        setExpandedBursts((prev) => {
+          const next = new Map(prev);
+          next.delete(burstId);
+          return next;
+        });
+        return;
+      }
+      try {
+        // The pile is fetched WITHOUT the verdict filter: expanding is about
+        // seeing the whole run, whatever each frame is rated. Piles are seconds
+        // long, so one max-size page always covers a real burst.
+        const data = await fetchJson<{ assets?: AssetRow[] }>(
+          `/api/sessions/${id}/assets?burst_id=${burstId}&limit=500`,
+        );
+        const members = data.assets ?? [];
+        if (!members.length) return;
+        setAssets((prev) => {
+          const at = prev.findIndex((x) => x.id === a.id);
+          if (at < 0) return prev;
+          return [...prev.slice(0, at), ...members, ...prev.slice(at + 1)];
+        });
+        setExpandedBursts((prev) => new Map(prev).set(burstId, a.id));
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [id, expandedBursts],
+  );
 
   // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
   const rateMany = useCallback(
@@ -636,12 +695,29 @@ export default function SessionGrid({
           <div className="grid" ref={gridRef}>
             {assets.map((a, i) => {
               const sel = selectMode && selected.has(a.id);
+              // Burst pile affordances: a collapsed pile shows as one "stacked"
+              // cover tile (count badge, click to expand); expanded members get
+              // the in-stack styling, with the collapse control on the cover.
+              const stackExpanded =
+                a.burst_id != null && expandedBursts.has(a.burst_id);
+              const isStackCover =
+                (a.burst_count ?? 0) > 1 && !stackExpanded;
+              const isExpandedCover =
+                stackExpanded && expandedBursts.get(a.burst_id!) === a.id;
               return (
               <div
                 key={a.id}
                 data-idx={i}
-                className={`cell ${a.verdict}${sel ? " selected" : ""}`}
-                onClick={() => (selectMode ? toggleSelect(a.id) : setViewer(i))}
+                className={`cell ${a.verdict}${sel ? " selected" : ""}${
+                  isStackCover ? " stack" : ""
+                }${stackExpanded ? " in-stack" : ""}`}
+                onClick={() =>
+                  selectMode
+                    ? toggleSelect(a.id)
+                    : isStackCover
+                      ? void toggleStack(a)
+                      : setViewer(i)
+                }
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, id: a.id });
@@ -678,6 +754,30 @@ export default function SessionGrid({
                 <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
                   {formatBadge(a.ext, a.companion_ext, a.group_kind)}
                 </span>
+                {!sel && isStackCover && (
+                  <button
+                    className="stack-badge"
+                    title={`Burst pile — expand ${a.burst_count} frames`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleStack(a);
+                    }}
+                  >
+                    ⧉ {a.burst_count}
+                  </button>
+                )}
+                {!sel && isExpandedCover && (
+                  <button
+                    className="stack-badge open"
+                    title="Collapse pile"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleStack(a);
+                    }}
+                  >
+                    ▴ {a.burst_count}
+                  </button>
+                )}
                 {sel && <span className="select-check">✓</span>}
               </div>
               );
