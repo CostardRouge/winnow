@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 import { formatBytes, formatDimensions } from "@/lib/format";
+import { fetchJson } from "@/lib/fetchJson";
 
 export type ViewerItem = AssetMetaInput & {
   id: number;
@@ -51,6 +52,25 @@ export type ViewerItem = AssetMetaInput & {
   first_edit_id?: number | null;
   first_edit_filename?: string | null;
   first_edit_ext?: string | null;
+  // Burst/bracket stack (cf. lib/bursts.ts): the pile this frame belongs to, and
+  // its live frame count — mirrors the grid's collapsed-cover badge so a pile
+  // reads the same way once opened. `burst_count` is null/absent, or ≤1, for a
+  // standalone frame. The pile's other frames aren't otherwise in `items` (the
+  // grid always collapses a pile to its cover), so the viewer fetches them
+  // itself (see BurstFrame below) to feed the filmstrip.
+  burst_id?: number | null;
+  burst_count?: number | null;
+};
+
+// One frame of the current item's burst pile, as returned by
+// `/api/assets?burst_id=`. Same projection as the grid (GRID_SELECT), so this
+// already carries everything the stage + metadata panel need to display it —
+// no per-frame fetch when the filmstrip is clicked.
+type BurstFrame = AssetMetaInput & {
+  id: number;
+  filename: string;
+  media_type?: "photo" | "video";
+  derivative_status?: string;
 };
 
 // "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
@@ -171,6 +191,19 @@ export default function MediaViewer<T extends ViewerItem>({
   // of this asset. Mutually exclusive with the companion toggle below.
   const [showCounterpart, setShowCounterpart] = useState(false);
 
+  // Burst/bracket pile (cf. lib/bursts.ts): the current item's sibling frames,
+  // fetched on demand and cached per pile (a pile is small and immutable enough
+  // during one viewing session that a refetch on every visit would be wasted
+  // work). `burstFrameId` is which sibling the filmstrip has picked to preview,
+  // if any — null means "show the item itself". Picking a frame only swaps the
+  // displayed media/metadata; it deliberately never moves `index`, so prev/next
+  // keeps stepping pile-to-pile exactly as it does today (mirrors the grid,
+  // where a pile is always one collapsed tile) instead of surprising the user
+  // with a jump of N frames the next time they hit →.
+  const [burstMembers, setBurstMembers] = useState<BurstFrame[] | null>(null);
+  const [burstFrameId, setBurstFrameId] = useState<number | null>(null);
+  const burstCache = useRef<Map<number, BurstFrame[]>>(new Map());
+
   // Zoom/pan transform applied to the current media. Deliberately *kept* across
   // navigation: stepping to the next/previous item preserves the current zoom
   // level and pan offset, so flicking back and forth compares the same framing
@@ -190,7 +223,42 @@ export default function MediaViewer<T extends ViewerItem>({
   useEffect(() => {
     setShowCompanion(false);
     setShowCounterpart(false);
+    setBurstFrameId(null);
   }, [index]);
+
+  // Load the current item's pile once it's known to have one (burst_count > 1
+  // — a lone frame carries a burst_id too briefly if at all, cf. lib/bursts.ts,
+  // but is never worth a fetch). Cached by burst_id so flicking prev/next
+  // across an already-seen pile (e.g. back onto its cover) doesn't refetch.
+  useEffect(() => {
+    const it = items[index];
+    const burstId = it?.burst_id;
+    if (burstId == null || (it?.burst_count ?? 0) <= 1) {
+      setBurstMembers(null);
+      return;
+    }
+    const cached = burstCache.current.get(burstId);
+    if (cached) {
+      setBurstMembers(cached);
+      return;
+    }
+    let cancelled = false;
+    fetchJson<{ assets?: BurstFrame[] }>(
+      `/api/assets?burst_id=${burstId}&collapse=1&sort_dir=asc&limit=200`,
+    )
+      .then((data) => {
+        if (cancelled) return;
+        const members = data.assets ?? [];
+        burstCache.current.set(burstId, members);
+        setBurstMembers(members);
+      })
+      .catch(() => {
+        if (!cancelled) setBurstMembers(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [items, index]);
 
   // Prefetch the next page as navigation nears the end of the loaded window.
   // The grid's own paging is scroll-driven, so it stalls while the viewer is
@@ -408,45 +476,65 @@ export default function MediaViewer<T extends ViewerItem>({
     : item.first_edit_filename;
   const counterpartExt = isEdit ? item.original_ext : item.first_edit_ext;
 
-  const currentSrc = counterpartShown
-    ? `/api/assets/${counterpartId}/proxy`
-    : companionShown
-      ? `/api/assets/${item.companion_id}/proxy`
-      : mediaSrc(item);
+  // Burst/bracket pile: a filmstrip frame other than the item itself, picked
+  // for preview. Bursts cluster photos only (cf. lib/bursts.ts), so this is
+  // always a still — no video/companion handling needed for it.
+  const burstFrame =
+    burstFrameId != null
+      ? (burstMembers?.find((m) => m.id === burstFrameId) ?? null)
+      : null;
+  const burstFrameReady = burstFrame
+    ? burstFrame.derivative_status
+      ? burstFrame.derivative_status === "ready"
+      : true
+    : false;
+  // Whichever media is on screen — the item or a previewed burst frame — is
+  // ready to display.
+  const showable = burstFrame ? burstFrameReady : ready;
+
+  const currentSrc = burstFrame
+    ? `/api/assets/${burstFrame.id}/proxy`
+    : counterpartShown
+      ? `/api/assets/${counterpartId}/proxy`
+      : companionShown
+        ? `/api/assets/${item.companion_id}/proxy`
+        : mediaSrc(item);
 
   // The file actually on screen. EXIF (date/camera/exposure/GPS) is shared
   // across a pair, so only the file-level fields — name, type, size, dimensions
   // and path — switch to the companion's when the RAW side is displayed. This
   // keeps the header and metadata panel describing what you're looking at rather
   // than always the primary.
-  const displayed: AssetMetaInput & { filename: string } = counterpartShown
-    ? {
-        // The counterpart is a different file in another folder. EXIF (capture
-        // date, camera, exposure) is shared with this asset — that's *why* they
-        // pair — so keep it; only the file identity (name/ext) is the
-        // counterpart's. We don't carry its size/dimensions, so omit them rather
-        // than show this asset's.
-        ...item,
-        filename: counterpartFilename ?? item.filename,
-        ext: counterpartExt ?? item.ext,
-        file_size: null,
-        width: null,
-        height: null,
-        rel_path: null,
-      }
-    : companionShown
+  const displayed: AssetMetaInput & { filename: string } = burstFrame
+    ? burstFrame
+    : counterpartShown
       ? {
+          // The counterpart is a different file in another folder. EXIF (capture
+          // date, camera, exposure) is shared with this asset — that's *why* they
+          // pair — so keep it; only the file identity (name/ext) is the
+          // counterpart's. We don't carry its size/dimensions, so omit them rather
+          // than show this asset's.
           ...item,
-          filename: item.companion_filename ?? item.filename,
-          ext: item.companion_ext ?? item.ext,
-          file_size: item.companion_file_size ?? item.file_size,
-          width: item.companion_width ?? item.width,
-          height: item.companion_height ?? item.height,
-          rel_path: item.rel_path
-            ? swapExt(item.rel_path, item.companion_ext ?? "")
-            : null,
+          filename: counterpartFilename ?? item.filename,
+          ext: counterpartExt ?? item.ext,
+          file_size: null,
+          width: null,
+          height: null,
+          rel_path: null,
         }
-      : item;
+      : companionShown
+        ? {
+            ...item,
+            filename: item.companion_filename ?? item.filename,
+            ext: item.companion_ext ?? item.ext,
+            file_size: item.companion_file_size ?? item.file_size,
+            width: item.companion_width ?? item.width,
+            height: item.companion_height ?? item.height,
+            rel_path: item.rel_path
+              ? swapExt(item.rel_path, item.companion_ext ?? "")
+              : null,
+          }
+        : item;
 
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
@@ -483,7 +571,19 @@ export default function MediaViewer<T extends ViewerItem>({
           onDoubleClick={onDoubleClick}
           onContextMenu={onContextMenu ? (e) => onContextMenu(e, item) : undefined}
         >
-          {ready ? (
+          {burstFrame ? (
+            burstFrameReady ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={`b${burstFrame.id}`}
+                src={currentSrc}
+                alt={displayed.filename}
+                style={transform}
+              />
+            ) : (
+              <div className="placeholder">Derivative unavailable</div>
+            )
+          ) : ready ? (
             companionShown && companionIsVideo ? (
               // Live Photo motion: play the companion .mov proxy in place.
               <video
@@ -535,7 +635,7 @@ export default function MediaViewer<T extends ViewerItem>({
           ) : (
             <div className="placeholder">Derivative unavailable</div>
           )}
-          {isLive && ready && !counterpartShown && (
+          {isLive && showable && !counterpartShown && !burstFrame && (
             // Apple-style LIVE badge sitting on the image: tap to swap between the
             // still and its motion. Mirrors the format toggle in the controls bar.
             <button
@@ -552,7 +652,18 @@ export default function MediaViewer<T extends ViewerItem>({
               LIVE
             </button>
           )}
-          {ready && (
+          {(item.burst_count ?? 0) > 1 && (
+            // Pile size (bottom-left of the stage), mirroring the grid's
+            // collapsed-cover badge — informational only, the filmstrip below
+            // is what actually browses the other frames.
+            <div
+              className="viewer-burst-badge"
+              title={`Burst pile of ${item.burst_count} frames`}
+            >
+              ⧉ {item.burst_count}
+            </div>
+          )}
+          {showable && (
             // Zoom HUD (bottom-right of the stage): −, the live zoom readout, +.
             // The readout is itself a button — click to pop back to fit, click
             // again to return to the last zoom. Stop pointer/touch events from
@@ -602,6 +713,35 @@ export default function MediaViewer<T extends ViewerItem>({
             </div>
           )}
         </div>
+        {burstMembers && burstMembers.length > 1 && (
+          // Horizontal filmstrip of the pile's other frames — sits under the
+          // stage (and above the info panel, whether or not it's open) so
+          // browsing a burst never requires leaving the viewer or expanding the
+          // grid. Picking a frame only swaps what's on screen (see burstFrame
+          // above); prev/next below keeps walking the host's list pile-by-pile.
+          <div className="viewer-burst-strip" role="group" aria-label="Burst frames">
+            {burstMembers.map((m) => {
+              const active = (burstFrameId ?? item.id) === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`viewer-burst-thumb${active ? " active" : ""}`}
+                  aria-pressed={active}
+                  title={m.filename}
+                  onClick={() => {
+                    setShowCompanion(false);
+                    setShowCounterpart(false);
+                    setBurstFrameId(m.id === item.id ? null : m.id);
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
+                </button>
+              );
+            })}
+          </div>
+        )}
         {panelOpen && (
           <aside className="viewer-panel">
             <div className="viewer-panel-head">
@@ -634,7 +774,10 @@ export default function MediaViewer<T extends ViewerItem>({
                   type="button"
                   className={`viewer-pair-member${!companionShown ? " active" : ""}`}
                   aria-pressed={!companionShown}
-                  onClick={() => setShowCompanion(false)}
+                  onClick={() => {
+                    setBurstFrameId(null);
+                    setShowCompanion(false);
+                  }}
                 >
                   <span className="viewer-pair-ext">{fmtExt(item.ext)}</span>
                   <span className="viewer-pair-stat">
@@ -656,6 +799,7 @@ export default function MediaViewer<T extends ViewerItem>({
                       : "Show the RAW source"
                   }
                   onClick={() => {
+                    setBurstFrameId(null);
                     setShowCounterpart(false);
                     setShowCompanion(true);
                   }}
@@ -691,7 +835,10 @@ export default function MediaViewer<T extends ViewerItem>({
                   type="button"
                   className={`viewer-pair-member${!counterpartShown ? " active" : ""}`}
                   aria-pressed={!counterpartShown}
-                  onClick={() => setShowCounterpart(false)}
+                  onClick={() => {
+                    setBurstFrameId(null);
+                    setShowCounterpart(false);
+                  }}
                 >
                   <span className="viewer-pair-ext">{selfLabel}</span>
                   <span className="viewer-pair-stat" title={item.filename}>
@@ -708,6 +855,7 @@ export default function MediaViewer<T extends ViewerItem>({
                       : "Show the edited version"
                   }
                   onClick={() => {
+                    setBurstFrameId(null);
                     setShowCompanion(false);
                     setShowCounterpart(true);
                   }}
@@ -741,7 +889,10 @@ export default function MediaViewer<T extends ViewerItem>({
               type="button"
               className={`vbar-btn${!companionShown ? " active" : ""}`}
               aria-pressed={!companionShown}
-              onClick={() => setShowCompanion(false)}
+              onClick={() => {
+                setBurstFrameId(null);
+                setShowCompanion(false);
+              }}
             >
               {fmtExt(item.ext)}
             </button>
@@ -754,7 +905,10 @@ export default function MediaViewer<T extends ViewerItem>({
                   ? "Play the Live Photo motion"
                   : "Show the RAW source"
               }
-              onClick={() => setShowCompanion(true)}
+              onClick={() => {
+                setBurstFrameId(null);
+                setShowCompanion(true);
+              }}
             >
               {item.group_kind === "live_photo"
                 ? "LIVE"

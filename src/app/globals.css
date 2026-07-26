@@ -1722,6 +1722,42 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mt-2 flex flex-wrap items-center gap-1;
   }
 
+  /* Burst/bracket pile in the full-screen viewer (cf. lib/bursts.ts) --------
+     A pile-size chip on the stage (mirrors the grid's collapsed-cover badge)
+     plus a horizontal filmstrip of the pile's frames, sitting between the
+     stage and the metadata panel — whether or not that panel is open — so a
+     burst can be browsed without leaving the viewer or expanding the grid. */
+  .viewer-burst-badge {
+    @apply absolute bottom-3 left-3 z-10 inline-flex items-center gap-1 rounded-full
+      px-2.5 py-1 text-[11px] font-semibold;
+    background: color-mix(in srgb, #000 50%, transparent);
+    color: #fff;
+    backdrop-filter: blur(3px);
+  }
+  .viewer-burst-strip {
+    @apply flex flex-none items-center gap-2 overflow-x-auto px-3 py-2;
+    background: rgba(16, 15, 13, 0.5);
+    backdrop-filter: blur(14px) saturate(1.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    touch-action: pan-x;
+  }
+  .viewer-burst-thumb {
+    @apply relative h-14 w-14 flex-none overflow-hidden rounded-[6px] border-0 p-0;
+    opacity: 0.6;
+    transition: opacity 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+  .viewer-burst-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .viewer-burst-thumb:hover {
+    opacity: 0.85;
+  }
+  .viewer-burst-thumb.active {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px var(--color-accent);
+  }
+
   /* RAW+JPEG group block: the two files of one logical media, side by side, so
      the pairing is explicit and either side can be selected from the panel. The
      active member (the one on screen) reads as a lit chip. */
