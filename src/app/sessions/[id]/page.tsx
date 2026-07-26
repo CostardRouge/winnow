@@ -371,6 +371,75 @@ export default function SessionGrid({
     [id, expandedBursts],
   );
 
+  // --- Pile actions (cf. lib/bursts.ts) — the "cull a pile in one gesture" ---
+  // All explicit: rating a frame normally NEVER cascades to its pile; these
+  // three are the deliberate whole-stack gestures, reachable from the context
+  // menu of any pile frame (collapsed cover or expanded member, grid or viewer).
+
+  // Pick / reject / clear the WHOLE pile. The server widens the id to every
+  // live frame + pair companions (expand_bursts); locally every loaded row of
+  // the pile follows (the collapsed cover included).
+  const ratePile = useCallback(
+    async (a: AssetRow, verdict: Verdict) => {
+      const bid = a.burst_id;
+      if (bid == null) return;
+      setAssets((prev) =>
+        prev.map((x) => (x.burst_id === bid ? { ...x, verdict } : x)),
+      );
+      await rateAssets([a.id], { verdict }, { expandBursts: true });
+      setNotice(
+        verdict === "pick"
+          ? "Pile picked"
+          : verdict === "reject"
+            ? "Pile rejected"
+            : "Pile verdicts cleared",
+      );
+      void loadSession();
+    },
+    [loadSession],
+  );
+
+  // The flagship gesture: keep THIS frame, reject every other frame of its
+  // pile. Two sequential bulk calls — reject the whole pile, then pick the
+  // keeper (each cascading to its pair companion server-side).
+  const keepOne = useCallback(
+    async (a: AssetRow) => {
+      const bid = a.burst_id;
+      if (bid == null) return;
+      setAssets((prev) =>
+        prev.map((x) =>
+          x.burst_id === bid
+            ? { ...x, verdict: x.id === a.id ? "pick" : "reject" }
+            : x,
+        ),
+      );
+      await rateAssets([a.id], { verdict: "reject" }, { expandBursts: true });
+      await rateAssets([a.id], { verdict: "pick" });
+      setNotice("Kept 1 — rest of the pile rejected");
+      void loadSession();
+    },
+    [loadSession],
+  );
+
+  // Export the whole pile: resolve the live members (drill-in), then open the
+  // regular selection export modal on exactly those ids.
+  const exportPile = useCallback(
+    async (a: AssetRow) => {
+      const bid = a.burst_id;
+      if (bid == null) return;
+      try {
+        const data = await fetchJson<{ assets?: AssetRow[] }>(
+          `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
+        );
+        const ids = (data.assets ?? []).map((x) => x.id);
+        if (ids.length) setExportIds(ids);
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [id],
+  );
+
   // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
   const rateMany = useCallback(
     async (ids: number[], patch: { verdict?: Verdict; star?: number }) => {
@@ -569,9 +638,11 @@ export default function SessionGrid({
     [session, router],
   );
 
-  // Dispatch a context-menu action onto a single asset.
+  // Dispatch a context-menu action onto a single asset. The pile_* kinds need
+  // the full row (burst_id), so they resolve it from the loaded grid.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
+      const row = assets.find((a) => a.id === id);
       switch (action.kind) {
         case "verdict":
           return void rate(id, { verdict: action.verdict });
@@ -591,9 +662,27 @@ export default function SessionGrid({
           return void mlAnalyze([id]);
         case "delete":
           return void removeAssets([id]);
+        case "pile_verdict":
+          return row ? void ratePile(row, action.verdict) : undefined;
+        case "pile_keep":
+          return row ? void keepOne(row) : undefined;
+        case "pile_export":
+          return row ? void exportPile(row) : undefined;
       }
     },
-    [rate, addTag, exportSelection, regenerate, geocode, mlAnalyze, removeAssets],
+    [
+      assets,
+      rate,
+      addTag,
+      exportSelection,
+      regenerate,
+      geocode,
+      mlAnalyze,
+      removeAssets,
+      ratePile,
+      keepOne,
+      exportPile,
+    ],
   );
 
   // Keyboard navigation in the viewer (desktop).
@@ -849,15 +938,24 @@ export default function SessionGrid({
         />
       )}
 
-      {menu && (
-        <AssetActionMenu
-          x={menu.x}
-          y={menu.y}
-          label={assets.find((a) => a.id === menu.id)?.filename}
-          onAction={(action) => onMenuAction(menu.id, action)}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      {menu &&
+        (() => {
+          const target = assets.find((a) => a.id === menu.id);
+          return (
+            <AssetActionMenu
+              x={menu.x}
+              y={menu.y}
+              label={target?.filename}
+              pile={
+                (target?.burst_count ?? 0) > 1
+                  ? { count: target!.burst_count! }
+                  : null
+              }
+              onAction={(action) => onMenuAction(menu.id, action)}
+              onClose={() => setMenu(null)}
+            />
+          );
+        })()}
 
       {geotag && !geotag.loc && (
         <LocationPickerModal

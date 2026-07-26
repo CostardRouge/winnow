@@ -1,28 +1,35 @@
-// POST /api/ratings/bulk { ids[], verdict?, star? } → quick bulk culling.
+// POST /api/ratings/bulk { ids[], verdict?, star?, expand_bursts? } → quick bulk
+// culling. `expand_bursts` widens each id to its whole burst pile (every live
+// frame + each frame's pair companion) — the deliberate "cull the pile in one
+// gesture" action; never implicit (cf. lib/bursts.ts).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { q } from "@/lib/db";
 import { groupExpandCTE } from "@/lib/pairing";
+import { burstExpandCTE } from "@/lib/bursts";
 import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z.object({
   ids: z.array(z.number().int()).min(1),
   verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
   star: z.number().int().min(0).max(5).optional(),
+  expand_bursts: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
-    const { ids, verdict, star } = parsed.data;
+    const { ids, verdict, star, expand_bursts } = parsed.data;
     if (verdict == null && star == null)
       return badRequest("verdict or star required");
 
-    // RAW+JPEG pairing: cascade each rating to its group companion so a pair is
-    // rated as one logical media (cf. lib/pairing.ts).
+    // Cascade each rating so a logical media is rated as one: always to the
+    // RAW+JPEG / Live pair companion (cf. lib/pairing.ts); and — only on the
+    // explicit pile action — to every live frame of the id's burst stack too.
+    const expand = expand_bursts ? burstExpandCTE : groupExpandCTE;
     await q(
-      `WITH ${groupExpandCTE("$1")}
+      `WITH ${expand("$1")}
        INSERT INTO ratings (asset_id, verdict, star, reviewed_at)
        SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), now()
        FROM target_ids
@@ -34,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
 
     await q(
-      `WITH ${groupExpandCTE("$1")}
+      `WITH ${expand("$1")}
        UPDATE assets SET processing_state = 'triaged', updated_at = now()
        WHERE id IN (SELECT id FROM target_ids) AND processing_state = 'unprocessed'`,
       [ids],
