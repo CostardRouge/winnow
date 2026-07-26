@@ -18,10 +18,12 @@ export type AssetMenuAction =
   | { kind: "delete" }
   // Burst-pile actions (cf. lib/bursts.ts) — only emitted when the host passes
   // `pile`. `pile_verdict` culls the WHOLE stack in one gesture; `pile_keep`
-  // picks this frame and rejects every other frame of its pile; `pile_export`
-  // exports the whole pile.
+  // picks this frame and rejects every other frame of its pile;
+  // `pile_keep_sharpest` does the same but lets the sharpness analysis pick the
+  // keeper; `pile_export` exports the whole pile.
   | { kind: "pile_verdict"; verdict: "pick" | "reject" | "unrated" }
   | { kind: "pile_keep" }
+  | { kind: "pile_keep_sharpest" }
   | { kind: "pile_export" };
 
 export default function AssetActionMenu({
@@ -129,6 +131,14 @@ export default function AssetActionMenu({
           >
             <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◉</span>
             Keep this one, reject the rest
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_keep_sharpest" })}
+            title="Let the sharpness analysis pick the keeper"
+          >
+            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◆</span>
+            Keep sharpest, reject the rest
           </button>
           <button
             className="ctx-item"

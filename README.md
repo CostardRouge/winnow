@@ -289,6 +289,38 @@ reason recorded — nothing else is touched, and you can retry. Disable the whol
 capability with `PURGE_ENABLED=false`. The **Trash** tab shows the reclaimable
 size up front and the result of each purge (freed bytes, anything that failed).
 
+### Burst / bracket stacks (cull a pile in one gesture)
+
+Rapid runs — a continuous burst, an AEB bracket — are **grouped into piles** so
+they stop dominating the grid and can be culled in one gesture. Frames are
+clustered at scan time by **temporal gap + same device**: a new pile starts when
+the gap to the previous frame exceeds `BURST_GAP_SECONDS` (default 1.5 s) or the
+device changes; a run of at least `BURST_MIN_FRAMES` (default 3) becomes a
+stack. Unlike a RAW+JPEG or Live-Photo *pair* (two files of one shot), a stack
+is **N distinct shots** — so stacking is a dimension **orthogonal** to pairing,
+built over logical media: a pile of RAW+JPEG pairs is 5 tiles' worth of frames,
+not 10, and each frame keeps its own rating.
+
+- **In the session grid** a collapsed pile is one *stacked* cover tile (deck
+  edge + `⧉ N` badge). **Tap to expand in place**: the frames splice into the
+  grid (accent rail, `▴ N` to collapse) and work like any row — viewer,
+  selection, context menu. The gallery shows the `⧉ N` badge (display-only).
+- **Pile actions** (context menu of any pile frame, incl. inside the viewer),
+  all **explicit** — rating a frame normally never cascades to its pile:
+  **Keep this one, reject the rest** · **Keep sharpest, reject the rest** (the
+  sharpness analysis picks the keeper; run *Detect faces & text* first) ·
+  **Pick / Reject / Clear whole pile** · **Export pile**. Whole-pile verdicts
+  reach every live frame *and* each frame's RAW/Live companion; trashed frames
+  are never touched. When a pile is expanded, a `◆` chip marks its sharpest
+  analyzed frame.
+- **Restack** (session header): re-clusters the session from scratch with the
+  *current* thresholds. The scan-time clustering is deliberately incremental —
+  it never reshapes an existing pile — so threshold changes and frames indexed
+  after a pile formed only take effect through this action. Non-destructive:
+  verdicts/stars/tags are per-frame and survive; only membership and covers are
+  recomputed. Trashing a pile's cover never hides the pile — the next live
+  frame stands in.
+
 ### Global gallery & cumulative filters
 
 **Gallery** page: **virtualized** grid (react-window — only the visible rows are

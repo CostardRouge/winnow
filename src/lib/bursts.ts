@@ -57,6 +57,31 @@ type Frame = {
   is_break: boolean;
 };
 
+// Re-cluster one session from scratch with the CURRENT thresholds: dissolve its
+// piles, then run the normal reconciler over the whole session. This is the
+// deliberate escape hatch the incremental reconciler doesn't provide — it never
+// touches an existing pile, so threshold changes (BURST_GAP_SECONDS /
+// BURST_MIN_FRAMES) and frames that arrived after a pile formed only take
+// effect here. Safe by design: piles carry no culling state (verdicts, stars
+// and tags are per-asset and survive untouched); only membership, order and
+// covers are recomputed.
+export async function restackSession(
+  sessionId: number,
+): Promise<{ dissolved: number; created: number }> {
+  // Clear membership first (both columns — the FK's ON DELETE SET NULL would
+  // null burst_id but leave burst_seq behind), then drop the session's piles.
+  await q(
+    `UPDATE assets SET burst_id = NULL, burst_seq = NULL
+     WHERE session_id = $1 AND burst_id IS NOT NULL`,
+    [sessionId],
+  );
+  const dissolved = (
+    await q(`DELETE FROM bursts WHERE session_id = $1`, [sessionId])
+  ).rowCount;
+  const created = await reconcileBurstsForSession(sessionId);
+  return { dissolved: dissolved ?? 0, created };
+}
+
 // Reconcile burst stacks for one session; returns the number of new piles created.
 export async function reconcileBurstsForSession(
   sessionId: number,
