@@ -23,6 +23,31 @@
 import { q, many } from "./db";
 import { config } from "./config";
 
+// SQL CTE expanding a set of asset ids to every LIVE frame of their burst piles,
+// then to each frame's RAW/Live pair companion — so one deliberate pile action
+// (pick/reject the whole stack from its cover) reaches all N shots and each
+// shot's other file. This is the action-side counterpart of the grid collapse:
+// same `target_ids(id)` contract as groupExpandCTE (lib/pairing.ts), compose it
+// as the first WITH binding. Soft-deleted frames are never pulled in by the pile
+// hop (a trashed frame stays untouched by a pile verdict); explicitly passed ids
+// are kept as-is, mirroring groupExpandCTE.
+export function burstExpandCTE(param: string): string {
+  return `target_ids AS (
+    WITH pile AS (
+      SELECT a.id, a.group_id
+      FROM assets a
+      WHERE a.id = ANY(${param}::bigint[])
+         OR (a.deleted_at IS NULL AND a.burst_id IN (
+               SELECT burst_id FROM assets
+               WHERE id = ANY(${param}::bigint[]) AND burst_id IS NOT NULL))
+    )
+    SELECT id FROM pile
+    UNION
+    SELECT c.id FROM assets c
+    WHERE c.group_id IN (SELECT group_id FROM pile WHERE group_id IS NOT NULL)
+  )`;
+}
+
 type Frame = {
   id: number;
   device: string | null;

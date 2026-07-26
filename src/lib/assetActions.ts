@@ -7,15 +7,23 @@ import type { Verdict } from "./types";
 const HEADERS = { "Content-Type": "application/json" };
 
 // Pick / reject / clear verdict and/or stars. Works for one (ids:[id]) or many.
+// `expandBursts` widens each id to its whole burst pile server-side (every live
+// frame + pair companions) — the explicit "cull the pile in one gesture" action
+// (cf. lib/bursts.ts); never set it from an ordinary single-frame rating.
 export async function rateAssets(
   ids: number[],
   patch: { verdict?: Verdict; star?: number },
+  opts: { expandBursts?: boolean } = {},
 ): Promise<void> {
   if (!ids.length || (patch.verdict == null && patch.star == null)) return;
   await fetch("/api/ratings/bulk", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, ...patch }),
+    body: JSON.stringify({
+      ids,
+      ...patch,
+      ...(opts.expandBursts ? { expand_bursts: true } : {}),
+    }),
   });
 }
 

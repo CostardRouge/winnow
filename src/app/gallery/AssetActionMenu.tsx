@@ -15,18 +15,29 @@ export type AssetMenuAction =
   | { kind: "regenerate" }
   | { kind: "geocode" }
   | { kind: "ml" }
-  | { kind: "delete" };
+  | { kind: "delete" }
+  // Burst-pile actions (cf. lib/bursts.ts) — only emitted when the host passes
+  // `pile`. `pile_verdict` culls the WHOLE stack in one gesture; `pile_keep`
+  // picks this frame and rejects every other frame of its pile; `pile_export`
+  // exports the whole pile.
+  | { kind: "pile_verdict"; verdict: "pick" | "reject" | "unrated" }
+  | { kind: "pile_keep" }
+  | { kind: "pile_export" };
 
 export default function AssetActionMenu({
   x,
   y,
   label,
+  pile,
   onAction,
   onClose,
 }: {
   x: number;
   y: number;
   label?: string;
+  /** When the asset belongs to a burst pile: its live frame count. Shows the
+      pile section (pick/reject/keep-one/export the whole stack). */
+  pile?: { count: number } | null;
   onAction: (a: AssetMenuAction) => void;
   onClose: () => void;
 }) {
@@ -107,6 +118,46 @@ export default function AssetActionMenu({
           ✕
         </button>
       </div>
+
+      {pile && pile.count > 1 && (
+        <>
+          <div className="ctx-sep" />
+          <div className="ctx-label">Pile · {pile.count} frames</div>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_keep" })}
+          >
+            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◉</span>
+            Keep this one, reject the rest
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_verdict", verdict: "pick" })}
+          >
+            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>✓</span>
+            Pick whole pile
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_verdict", verdict: "reject" })}
+          >
+            <span className="ctx-ic" style={{ color: "var(--color-reject)" }}>✕</span>
+            Reject whole pile
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_verdict", verdict: "unrated" })}
+          >
+            <span className="ctx-ic">↺</span> Clear pile verdicts
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => fire({ kind: "pile_export" })}
+          >
+            <span className="ctx-ic">⤓</span> Export pile
+          </button>
+        </>
+      )}
 
       <div className="ctx-sep" />
 
