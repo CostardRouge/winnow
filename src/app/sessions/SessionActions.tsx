@@ -27,6 +27,7 @@ export default function SessionActions({
   onIgnore,
   onExportPicks,
   onGeotag,
+  onRestack,
   onDelete,
   download,
   deleteTitle = "Remove this session (optionally delete its files from disk)",
@@ -39,6 +40,10 @@ export default function SessionActions({
   /** When provided, adds a Geotag segment: set the capture location of the
    * whole session (location picker + per-media before/after recap). */
   onGeotag?: () => void;
+  /** When provided, adds a Restack segment: re-cluster the session's burst
+   * piles from scratch with the current thresholds (cf. lib/bursts.ts).
+   * Non-destructive — ratings are per-frame and survive. */
+  onRestack?: () => void;
   onDelete: () => void;
   /** When provided, adds a Download segment for the session's original files. */
   download?: {
@@ -84,6 +89,17 @@ export default function SessionActions({
         >
           {Icons.mapPin}
           <span className="seg-label">Geotag</span>
+        </button>
+      )}
+      {onRestack && (
+        <button
+          className="seg-btn"
+          onClick={onRestack}
+          aria-label="Restack bursts"
+          title="Re-cluster the burst piles with the current thresholds (ratings are kept)"
+        >
+          {Icons.regenerate}
+          <span className="seg-label">Restack</span>
         </button>
       )}
       {download && (

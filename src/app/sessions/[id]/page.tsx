@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   use as usePromise,
@@ -192,6 +193,22 @@ export default function SessionGrid({
   const [expandedBursts, setExpandedBursts] = useState<Map<number, number>>(
     new Map(),
   );
+
+  // Sharpest loaded frame of each EXPANDED pile (burst_id → asset id), for the
+  // "◆" hint chip — a nudge toward the keeper, fed by the sharpness analysis
+  // (cf. lib/ml.ts). Only meaningful once a pile is expanded, and only over
+  // frames that carry a score (unanalyzed frames never win by default).
+  const sharpestByBurst = useMemo(() => {
+    const best = new Map<number, { id: number; sharpness: number }>();
+    for (const a of assets) {
+      if (a.burst_id == null || a.sharpness == null) continue;
+      if (!expandedBursts.has(a.burst_id)) continue;
+      const cur = best.get(a.burst_id);
+      if (!cur || a.sharpness > cur.sharpness)
+        best.set(a.burst_id, { id: a.id, sharpness: a.sharpness });
+    }
+    return new Map([...best].map(([bid, v]) => [bid, v.id]));
+  }, [assets, expandedBursts]);
   const sentinel = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -440,6 +457,55 @@ export default function SessionGrid({
     [id],
   );
 
+  // Keep-sharpest: same gesture as keepOne but the sharpness analysis (variance
+  // of the Laplacian, cf. lib/ml.ts) picks the keeper among the pile's live
+  // frames. Needs the members' sharpness → resolve them via the drill-in, then
+  // delegate to keepOne on the winner. Frames not analyzed yet have no score;
+  // if none has one, say so instead of guessing.
+  const keepSharpest = useCallback(
+    async (a: AssetRow) => {
+      const bid = a.burst_id;
+      if (bid == null) return;
+      try {
+        const data = await fetchJson<{ assets?: AssetRow[] }>(
+          `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
+        );
+        const members = (data.assets ?? []).filter((x) => x.sharpness != null);
+        if (!members.length) {
+          setNotice(
+            "No sharpness scores in this pile yet — run “Detect faces & text” first",
+          );
+          return;
+        }
+        const winner = members.reduce((best, x) =>
+          x.sharpness! > best.sharpness! ? x : best,
+        );
+        await keepOne(winner);
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [id, keepOne],
+  );
+
+  // Re-cluster the whole session's piles with the current thresholds (cf.
+  // lib/bursts.ts). The scan-time reconciler never reshapes an existing pile,
+  // so threshold changes and late-arriving frames only take effect here.
+  // Ratings are per-frame and survive; the grid reloads to show the new piles.
+  const restack = useCallback(async () => {
+    try {
+      const data = await fetchJson<{ dissolved: number; created: number }>(
+        `/api/sessions/${id}/restack`,
+        { method: "POST" },
+      );
+      setNotice(`Restacked: ${data.created} piles (was ${data.dissolved})`);
+      reset();
+      await fetchPage(null);
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, [id, reset, fetchPage]);
+
   // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
   const rateMany = useCallback(
     async (ids: number[], patch: { verdict?: Verdict; star?: number }) => {
@@ -666,6 +732,8 @@ export default function SessionGrid({
           return row ? void ratePile(row, action.verdict) : undefined;
         case "pile_keep":
           return row ? void keepOne(row) : undefined;
+        case "pile_keep_sharpest":
+          return row ? void keepSharpest(row) : undefined;
         case "pile_export":
           return row ? void exportPile(row) : undefined;
       }
@@ -681,6 +749,7 @@ export default function SessionGrid({
       removeAssets,
       ratePile,
       keepOne,
+      keepSharpest,
       exportPile,
     ],
   );
@@ -722,6 +791,7 @@ export default function SessionGrid({
             onIgnore={toggleIgnore}
             onExportPicks={exportPicks}
             onGeotag={() => void openSessionGeotag()}
+            onRestack={() => void restack()}
             onDelete={() => setConfirming(true)}
             onMessage={setNotice}
           />
@@ -867,6 +937,16 @@ export default function SessionGrid({
                     ▴ {a.burst_count}
                   </button>
                 )}
+                {stackExpanded &&
+                  a.burst_id != null &&
+                  sharpestByBurst.get(a.burst_id) === a.id && (
+                    <span
+                      className="sharpest-badge"
+                      title="Sharpest frame of the pile (sharpness analysis)"
+                    >
+                      ◆
+                    </span>
+                  )}
                 {sel && <span className="select-check">✓</span>}
               </div>
               );
@@ -1053,6 +1133,7 @@ function SessionHeader({
   onIgnore,
   onExportPicks,
   onGeotag,
+  onRestack,
   onDelete,
   onMessage,
 }: {
@@ -1061,6 +1142,8 @@ function SessionHeader({
   onExportPicks: () => void;
   /** Set the capture location of the whole session (picker + recap flow). */
   onGeotag: () => void;
+  /** Re-cluster the session's burst piles with the current thresholds. */
+  onRestack: () => void;
   onDelete: () => void;
   /** Surface the Download menu's transient status to the page notice. */
   onMessage: (msg: string | null) => void;
@@ -1121,6 +1204,7 @@ function SessionHeader({
           onIgnore={onIgnore}
           onExportPicks={onExportPicks}
           onGeotag={onGeotag}
+          onRestack={cullable ? onRestack : undefined}
           onDelete={onDelete}
           download={{
             zipHref: `/api/sessions/${s.id}/download`,
