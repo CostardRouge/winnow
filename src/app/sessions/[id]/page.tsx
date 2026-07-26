@@ -209,6 +209,25 @@ export default function SessionGrid({
     }
     return new Map([...best].map(([bid, v]) => [bid, v.id]));
   }, [assets, expandedBursts]);
+
+  // This frame's live "x/n" position within its EXPANDED pile (asset id →
+  // {rank, total}), for a per-member index badge. Ranked by where each frame
+  // falls among the pile's other LOADED members — not the stored `burst_seq`,
+  // which is assigned once at cluster time and never renumbered, so it can
+  // skip (or even outrun `burst_count`) once a frame in the run is trashed.
+  // Expanded members are spliced in capture order (cf. toggleStack), so a
+  // single forward pass yields the correct rank.
+  const burstRankById = useMemo(() => {
+    const seen = new Map<number, number>();
+    const ranks = new Map<number, { rank: number; total: number }>();
+    for (const a of assets) {
+      if (a.burst_id == null || !expandedBursts.has(a.burst_id)) continue;
+      const rank = (seen.get(a.burst_id) ?? 0) + 1;
+      seen.set(a.burst_id, rank);
+      ranks.set(a.id, { rank, total: a.burst_count ?? rank });
+    }
+    return ranks;
+  }, [assets, expandedBursts]);
   const sentinel = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -854,22 +873,23 @@ export default function SessionGrid({
           <div className="grid" ref={gridRef}>
             {assets.map((a, i) => {
               const sel = selectMode && selected.has(a.id);
-              // Burst pile affordances: a collapsed pile shows as one "stacked"
-              // cover tile (count badge, click to expand); expanded members get
-              // the in-stack styling, with the collapse control on the cover.
+              // Burst pile affordances: a collapsed pile shows as one cover tile
+              // (count badge, click to expand); expanded members get the
+              // in-stack styling, with the collapse control on the cover.
               const stackExpanded =
                 a.burst_id != null && expandedBursts.has(a.burst_id);
               const isStackCover =
                 (a.burst_count ?? 0) > 1 && !stackExpanded;
               const isExpandedCover =
                 stackExpanded && expandedBursts.get(a.burst_id!) === a.id;
+              const frameIndex = stackExpanded ? burstRankById.get(a.id) : undefined;
               return (
               <div
                 key={a.id}
                 data-idx={i}
                 className={`cell ${a.verdict}${sel ? " selected" : ""}${
-                  isStackCover ? " stack" : ""
-                }${stackExpanded ? " in-stack" : ""}`}
+                  stackExpanded ? " in-stack" : ""
+                }`}
                 onClick={() =>
                   selectMode
                     ? toggleSelect(a.id)
@@ -947,6 +967,11 @@ export default function SessionGrid({
                       ◆
                     </span>
                   )}
+                {!sel && frameIndex && (
+                  <span className="frame-index-badge">
+                    {frameIndex.rank}/{frameIndex.total}
+                  </span>
+                )}
                 {sel && <span className="select-check">✓</span>}
               </div>
               );
