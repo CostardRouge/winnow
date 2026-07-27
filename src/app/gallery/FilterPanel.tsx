@@ -45,6 +45,11 @@ export type Facets = {
   // "Near-duplicates" toggle so it never shows as a dead filter. Optional so a
   // facets payload predating the feature typechecks.
   with_phash?: number;
+  // Burst/bracket stacks in scope (cf. lib/bursts.ts): `piles` counts the
+  // stacks, `frames` the shots they hold. Drives the "Bursts" filter toggle —
+  // in the collapsed grid the filter yields exactly `piles` tiles (one cover
+  // per burst). Optional so a facets payload predating the feature typechecks.
+  bursts?: { piles: number; frames: number };
   extensions: VC[];
   media_types: VC[];
   derivative_statuses: VC[];
@@ -138,6 +143,9 @@ export type Filters = {
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
   group_kind?: "raw_jpeg" | "live_photo";
+  // Burst/bracket stacks (cf. lib/bursts.ts). Tri-state: true → only frames that
+  // belong to a pile, false → only the standalone shots, undefined → both.
+  stacked?: boolean;
   // Finals → sources reconciliation (cf. lib/reconcile.ts). `has_edit` → sources
   // that have a linked edit; `is_edit` → finals linked back to a source.
   has_edit?: boolean;
@@ -722,6 +730,42 @@ export default function FilterPanel({
           Links edited finals to the source they came from.
         </div>
       </div>
+
+      {/* Burst / bracket stacks (cf. lib/bursts.ts). The grid collapses a pile
+          to its cover, so "In a burst" lists one tile per run — the shortlist of
+          every burst shot in scope. Hidden until the library holds a pile. */}
+      {!!facets.bursts?.piles && (
+        <div className="facet">
+          <div className="facet-title">Bursts</div>
+          <div className="chips">
+            <button
+              className={`chip${filters.stacked === true ? " active" : ""}`}
+              onClick={() =>
+                u({ stacked: filters.stacked === true ? undefined : true })
+              }
+              title="Frames that belong to a burst / bracket pile"
+            >
+              In a burst
+              <span className="chip-count">{facets.bursts.piles}</span>
+            </button>
+            <button
+              className={`chip${filters.stacked === false ? " active" : ""}`}
+              onClick={() =>
+                u({ stacked: filters.stacked === false ? undefined : false })
+              }
+              title="Shots taken on their own, outside any pile"
+            >
+              Standalone
+            </button>
+          </div>
+          <div className="hint" style={{ marginTop: 4 }}>
+            {facets.bursts.piles} pile{facets.bursts.piles === 1 ? "" : "s"} ·{" "}
+            {facets.bursts.frames} frame
+            {facets.bursts.frames === 1 ? "" : "s"}. Each pile shows as one
+            cover tile (⧉ N) — open its session grid to expand the run.
+          </div>
+        </div>
+      )}
 
       {!!facets.live_photos && (
         <div className="facet">

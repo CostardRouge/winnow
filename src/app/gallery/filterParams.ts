@@ -57,6 +57,8 @@ export function encodeFilters(f: Filters): URLSearchParams {
   for (const k of BOOLS) if (f[k]) sp.set(k, "1");
   // Tri-state: true ("only with faces") and false ("only without") both encode.
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "1" : "0");
+  // Same tri-state for burst piles: "only stacked" / "only standalone".
+  if (f.stacked != null) sp.set("stacked", f.stacked ? "1" : "0");
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
@@ -103,6 +105,10 @@ export function decodeFilters(params: URLSearchParams): Filters {
   const hasFaces = params.get("has_faces");
   if (hasFaces === "1") f.has_faces = true;
   else if (hasFaces === "0") f.has_faces = false;
+
+  const stacked = params.get("stacked");
+  if (stacked === "1") f.stacked = true;
+  else if (stacked === "0") f.stacked = false;
 
   const verdict = params.get("verdict");
   if (verdict === "pick" || verdict === "reject" || verdict === "unrated")
