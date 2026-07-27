@@ -8,6 +8,8 @@ import RangeSlider from "./RangeSlider";
 export type Facets = {
   total: number;
   ranges: {
+    // Bytes, straight off the `file_size` column — the Size facet renders MB, so
+    // the panel divides by 1 MiB (cf. `MB` below).
     size_min?: number | null;
     size_max?: number | null;
     iso_min?: number | null;
@@ -16,6 +18,10 @@ export type Facets = {
     focal_max?: number | null;
     aperture_min?: number | null;
     aperture_max?: number | null;
+    // Laplacian variance (cf. lib/ml.ts). Null until ML analysis has run, so the
+    // Sharpness slider degrades to its number-field pair on a fresh library.
+    sharpness_min?: number | null;
+    sharpness_max?: number | null;
   };
   years: VC[];
   months: VC[];
@@ -50,6 +56,24 @@ export type Facets = {
   session_status?: { active: number; ignored: number };
 };
 type VC = { value: string | number; count: number };
+
+// Size is the one facet whose stored unit isn't the unit on screen: the column
+// (and the API's `size_min`/`size_max` params) is bytes, while the panel shows —
+// and the user types — MB. Exported so GalleryShell multiplies by the very same
+// divisor on the way back out; a mismatch here is what made the Size handles
+// read in the tens of millions.
+export const MB = 1024 * 1024;
+
+/**
+ * Bytes → MB at 2-decimal precision. `round` widens the domain outward (floor
+ * for the low bound, ceil for the high) so the slider always covers the data.
+ */
+function toMB(
+  bytes: number | null | undefined,
+  round: (n: number) => number,
+): number | undefined {
+  return typeof bytes === "number" ? round((bytes / MB) * 100) / 100 : undefined;
+}
 
 // Friendly labels for the technical derivative lifecycle states.
 const DERIVATIVE_LABELS: Record<string, string> = {
@@ -596,8 +620,7 @@ export default function FilterPanel({
         bounds={{ min: facets.ranges.iso_min, max: facets.ranges.iso_max }}
         min={filters.iso_min}
         max={filters.iso_max}
-        onMin={(v) => u({ iso_min: v })}
-        onMax={(v) => u({ iso_max: v })}
+        onChange={(r) => u({ iso_min: r.min, iso_max: r.max })}
       />
       <RangeSlider
         title="Focal"
@@ -605,8 +628,7 @@ export default function FilterPanel({
         bounds={{ min: facets.ranges.focal_min, max: facets.ranges.focal_max }}
         min={filters.focal_min}
         max={filters.focal_max}
-        onMin={(v) => u({ focal_min: v })}
-        onMax={(v) => u({ focal_max: v })}
+        onChange={(r) => u({ focal_min: r.min, focal_max: r.max })}
       />
       <RangeSlider
         title="Aperture"
@@ -618,24 +640,30 @@ export default function FilterPanel({
         }}
         min={filters.aperture_min}
         max={filters.aperture_max}
-        onMin={(v) => u({ aperture_min: v })}
-        onMax={(v) => u({ aperture_max: v })}
+        onChange={(r) => u({ aperture_min: r.min, aperture_max: r.max })}
       />
       <RangeSlider
         title="Size"
         unit="MB"
-        bounds={{ min: facets.ranges.size_min, max: facets.ranges.size_max }}
+        step="auto"
+        bounds={{
+          min: toMB(facets.ranges.size_min, Math.floor),
+          max: toMB(facets.ranges.size_max, Math.ceil),
+        }}
         min={filters.size_min}
         max={filters.size_max}
-        onMin={(v) => u({ size_min: v })}
-        onMax={(v) => u({ size_max: v })}
+        onChange={(r) => u({ size_min: r.min, size_max: r.max })}
       />
       <RangeSlider
         title="Sharpness"
+        step="auto"
+        bounds={{
+          min: facets.ranges.sharpness_min,
+          max: facets.ranges.sharpness_max,
+        }}
         min={filters.sharpness_min}
         max={filters.sharpness_max}
-        onMin={(v) => u({ sharpness_min: v })}
-        onMax={(v) => u({ sharpness_max: v })}
+        onChange={(r) => u({ sharpness_min: r.min, sharpness_max: r.max })}
         hint="Low = blurry. Set only a max to surface the soft shots; the score shows in the viewer’s info panel."
       />
 
