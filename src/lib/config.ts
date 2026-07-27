@@ -292,7 +292,7 @@ const EnvSchema = z
     // embedded by the same model's textual head and ranked by cosine distance.
     // The visual and textual heads must be the SAME model, so this one name drives
     // both. ViT-B-32__openai = 512-dim, CPU-friendly, a valid Immich model; a
-    // SigLIP model is more accurate but larger. Needs pgvector (see migration 0025).
+    // SigLIP model is more accurate but larger. Needs pgvector (see migration 0030).
     ML_CLIP_ENABLED: boolEnv(true),
     ML_CLIP_MODEL: strEnv("ViT-B-32__openai"),
     // Serialized by default: the container queues requests without backpressure,
