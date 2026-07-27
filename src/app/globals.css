@@ -1735,11 +1735,31 @@ html[data-theme="dark"] .btn-primary:hover {
     backdrop-filter: blur(3px);
   }
   .viewer-burst-strip {
-    @apply flex flex-none items-center gap-2 overflow-x-auto px-3 py-2;
+    @apply flex flex-none items-center gap-2 px-3 py-2;
     background: rgba(16, 15, 13, 0.5);
     backdrop-filter: blur(14px) saturate(1.4);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  /* The toggle (below) stays put; only the thumbnails themselves scroll. */
+  .viewer-burst-thumbs {
+    @apply flex min-w-0 flex-1 items-center gap-2 overflow-x-auto;
     touch-action: pan-x;
+  }
+  /* Opts prev/next/arrow-keys/swipe into stepping through the pile's own
+     frames (cf. stepBurst) — off by default, so it reads as a deliberate,
+     session-only choice rather than a persisted preference. */
+  .viewer-burst-nav-toggle {
+    @apply flex h-9 w-9 flex-none items-center justify-center rounded-full
+      border-0 text-base leading-none transition duration-150;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ece7da;
+  }
+  .viewer-burst-nav-toggle:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  .viewer-burst-nav-toggle.active {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .viewer-burst-thumb {
     @apply relative h-14 w-14 flex-none overflow-hidden rounded-[6px] border-0 p-0;

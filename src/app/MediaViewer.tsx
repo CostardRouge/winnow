@@ -204,6 +204,14 @@ export default function MediaViewer<T extends ViewerItem>({
   const [burstFrameId, setBurstFrameId] = useState<number | null>(null);
   const burstCache = useRef<Map<number, BurstFrame[]>>(new Map());
 
+  // Whether ← → (buttons, arrow keys, swipe) step through a pile's own frames
+  // before moving on to the next item. Off by default: plain component state,
+  // never persisted — a session-only compromise so arrow navigation stays
+  // predictable (one photo per press) unless deliberately opted into for this
+  // viewing session, and stays on across piles once flipped so it doesn't need
+  // re-arming for every burst encountered before the viewer is closed.
+  const [burstArrowNav, setBurstArrowNav] = useState(false);
+
   // Zoom/pan transform applied to the current media. Deliberately *kept* across
   // navigation: stepping to the next/previous item preserves the current zoom
   // level and pan offset, so flicking back and forth compares the same framing
@@ -271,6 +279,33 @@ export default function MediaViewer<T extends ViewerItem>({
       loadMore();
   }, [index, items.length, hasMore, loading, loadMore]);
 
+  // Prev/next stepper behind the buttons, arrow keys and swipe alike. When
+  // `burstArrowNav` is on and the current item's pile is loaded, a step first
+  // walks to the pile's next/previous frame (only swapping the displayed
+  // media, like a filmstrip click); once at either end of the pile it falls
+  // through to the normal host-index step. Off (the default), every step
+  // moves the host index directly, so a pile is one stop — exactly like the
+  // collapsed grid tile it came from.
+  const stepBurst = useCallback(
+    (dir: 1 | -1) => {
+      const it = items[index];
+      if (burstArrowNav && burstMembers && burstMembers.length > 1 && it) {
+        const curId = burstFrameId ?? it.id;
+        const pos = burstMembers.findIndex((m) => m.id === curId);
+        const nextPos = pos + dir;
+        if (pos >= 0 && nextPos >= 0 && nextPos < burstMembers.length) {
+          setShowCompanion(false);
+          setShowCounterpart(false);
+          const next = burstMembers[nextPos];
+          setBurstFrameId(next.id === it.id ? null : next.id);
+          return;
+        }
+      }
+      onIndexChange(clamp(index + dir, 0, last));
+    },
+    [items, index, last, burstArrowNav, burstMembers, burstFrameId, onIndexChange],
+  );
+
   const zoomBy = useCallback(
     (factor: number) => setScale((s) => clamp(s * factor, MIN_SCALE, MAX_SCALE)),
     [],
@@ -308,14 +343,14 @@ export default function MediaViewer<T extends ViewerItem>({
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") return onClose();
-      if (e.key === "ArrowRight") return onIndexChange(Math.min(index + 1, last));
-      if (e.key === "ArrowLeft") return onIndexChange(Math.max(index - 1, 0));
+      if (e.key === "ArrowRight") return stepBurst(1);
+      if (e.key === "ArrowLeft") return stepBurst(-1);
       if (e.key === "i" || e.key === "I") return setPanel(!panelOpen);
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, index, last, onIndexChange, onClose, onKeyDown, panelOpen, setPanel]);
+  }, [items, index, stepBurst, onClose, onKeyDown, panelOpen, setPanel]);
 
   // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
   // deltas; a plain mouse wheel sends coarse notches. Both zoom the stage (it
@@ -389,8 +424,8 @@ export default function MediaViewer<T extends ViewerItem>({
       const dx = t.clientX - g.startX;
       const dy = t.clientY - g.startY;
       if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-        if (dx < 0) onIndexChange(Math.min(index + 1, last));
-        else onIndexChange(Math.max(index - 1, 0));
+        if (dx < 0) stepBurst(1);
+        else stepBurst(-1);
       }
     }
     if (e.touches.length === 0) g.mode = "none";
@@ -491,6 +526,16 @@ export default function MediaViewer<T extends ViewerItem>({
   // Whichever media is on screen — the item or a previewed burst frame — is
   // ready to display.
   const showable = burstFrame ? burstFrameReady : ready;
+
+  // This item's position within its pile, only meaningful once burst-aware
+  // arrow nav is on — drives whether the prev/next buttons still have a step
+  // left to take even at the host list's own boundary (index 0 / last).
+  const burstPos =
+    burstArrowNav && burstMembers
+      ? burstMembers.findIndex((m) => m.id === (burstFrameId ?? item.id))
+      : -1;
+  const canStepBackInPile = burstPos > 0;
+  const canStepFwdInPile = burstPos >= 0 && burstPos < (burstMembers?.length ?? 0) - 1;
 
   const currentSrc = burstFrame
     ? `/api/assets/${burstFrame.id}/proxy`
@@ -718,28 +763,45 @@ export default function MediaViewer<T extends ViewerItem>({
           // stage (and above the info panel, whether or not it's open) so
           // browsing a burst never requires leaving the viewer or expanding the
           // grid. Picking a frame only swaps what's on screen (see burstFrame
-          // above); prev/next below keeps walking the host's list pile-by-pile.
+          // above). The leading toggle opts prev/next/swipe into stepping
+          // through these same frames too (see stepBurst) — off by default so
+          // arrow navigation stays one photo per press.
           <div className="viewer-burst-strip" role="group" aria-label="Burst frames">
-            {burstMembers.map((m) => {
-              const active = (burstFrameId ?? item.id) === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`viewer-burst-thumb${active ? " active" : ""}`}
-                  aria-pressed={active}
-                  title={m.filename}
-                  onClick={() => {
-                    setShowCompanion(false);
-                    setShowCounterpart(false);
-                    setBurstFrameId(m.id === item.id ? null : m.id);
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              className={`viewer-burst-nav-toggle${burstArrowNav ? " active" : ""}`}
+              aria-pressed={burstArrowNav}
+              title={
+                burstArrowNav
+                  ? "Arrow keys, swipe and prev/next step through this pile's frames — click to stop"
+                  : "Include this pile's frames when navigating with ← → / swipe"
+              }
+              onClick={() => setBurstArrowNav((v) => !v)}
+            >
+              ⇄
+            </button>
+            <div className="viewer-burst-thumbs">
+              {burstMembers.map((m) => {
+                const active = (burstFrameId ?? item.id) === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`viewer-burst-thumb${active ? " active" : ""}`}
+                    aria-pressed={active}
+                    title={m.filename}
+                    onClick={() => {
+                      setShowCompanion(false);
+                      setShowCounterpart(false);
+                      setBurstFrameId(m.id === item.id ? null : m.id);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
         {panelOpen && (
@@ -918,8 +980,8 @@ export default function MediaViewer<T extends ViewerItem>({
         )}
         <button
           className="btn"
-          onClick={() => onIndexChange(Math.max(index - 1, 0))}
-          disabled={index === 0}
+          onClick={() => stepBurst(-1)}
+          disabled={index === 0 && !canStepBackInPile}
           aria-label="Previous"
         >
           ←
@@ -927,10 +989,12 @@ export default function MediaViewer<T extends ViewerItem>({
         {renderActions?.(item)}
         <button
           className="btn"
-          onClick={() => onIndexChange(Math.min(index + 1, last))}
-          // Only the true end of the feed (no further pages) disables Next; at the
-          // edge of the loaded window the prefetch above is already pulling more.
-          disabled={index === last && !hasMore}
+          onClick={() => stepBurst(1)}
+          // Only the true end of the feed (no further pages, and no further
+          // frame left in the pile when burst-aware nav is on) disables Next;
+          // at the edge of the loaded window the prefetch above is already
+          // pulling more.
+          disabled={index === last && !hasMore && !canStepFwdInPile}
           aria-label="Next"
         >
           →
