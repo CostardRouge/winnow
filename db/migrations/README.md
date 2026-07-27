@@ -45,7 +45,7 @@ and to reason about when something fails.
 
 ## History
 
-Two rounds of collisions from parallel work were renumbered into the strict
+Three rounds of collisions from parallel work were renumbered into the strict
 sequence above:
 
 **2026-06** — `0006_` and `0007_` once had two files each:
@@ -69,6 +69,36 @@ to the tail of the sequence:
 Moving the burst backfill later in the order is safe: no migration in `0017`–`0028`
 references the `bursts` table or `assets.burst_id`, and the backfill is a no-op on
 a fresh database (no assets exist yet at migrate time).
+
+**2026-07 (second pass)** — the two duplicate prefixes still left on `main` after
+the bursts fix. In both cases the file listed below is the one that merged
+*second* under that number, so per rule 1 it is the one that moves, again to the
+tail of the sequence:
+
+| Old name                       | New name                       | Collided with                  |
+| ------------------------------ | ------------------------------ | ------------------------------ |
+| `0025_clip_embeddings.sql`     | `0030_clip_embeddings.sql`     | `0025_missing_files.sql`       |
+| `0026_manual_geotag.sql`       | `0031_manual_geotag.sql`       | `0026_dedup_self_hits.sql`     |
+
+Both moves are safe: nothing between the old and new positions references
+`asset_clip`/the `vector` type (`0021_ml_faces` stores face embeddings as JSONB
+and only mentions pgvector in comments) or the `assets.gps_source` /
+`gps_write_status` / `gps_write_error` columns the geotag migration adds.
+
+Renumbering CLIP also shrinks a real blast radius. Under `0025_`, the
+lexicographic tie-break put `clip_embeddings` *before* `missing_files`, so the
+`CREATE EXTENSION vector` it used to open with aborted the whole run at the
+earliest possible point — `0025`–`0029` never applied on a Postgres without
+pgvector. It is now both last in the order and non-fatal (it skips the table with
+a `NOTICE` instead of failing), so a missing extension costs only the feature.
+
+That non-fatal rewrite edited an already-applied migration, which rule 2 forbids.
+It is allowed here for the same reason the renumbering is: a database that
+*failed* on the file never recorded it (the transaction rolled back), so a new
+migration appended at the tail would never be reached — `migrate` still aborts at
+the old file first. Editing in place is the only fix that reaches those
+databases, and it is inert everywhere else: where the original succeeded, the
+shim below marks the file applied and the new text is never executed.
 
 Because migrations are tracked by filename, databases migrated *before* a
 renumbering recorded the old names. `migrate.ts` carries a one-time

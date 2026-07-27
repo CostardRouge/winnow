@@ -3,14 +3,14 @@
 // Embeds the query text with the same CLIP model that produced the stored image
 // embeddings (lib/ml.ts embedText), then ranks the library by cosine distance
 // (pgvector `<=>`) — "the sunset beach shots", "people around a table", "a bird
-// close-up". Exact flat scan over asset_clip (no ANN index; see migration 0025),
+// close-up". Exact flat scan over asset_clip (no ANN index; see migration 0030),
 // which stays low-ms over a ~100k library.
 //
 // Returns the usual grid rows so the results render like any other gallery.
 // Companions (a pair's RAW, a Live Photo's .mov) are collapsed to the displayed
 // primary. Depends on ML being enabled + a CLIP backfill having run.
 import { NextRequest } from "next/server";
-import { many, one } from "@/lib/db";
+import { many } from "@/lib/db";
 import { config } from "@/lib/config";
 import { clipCoverage, embedText } from "@/lib/ml";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
@@ -32,22 +32,6 @@ export async function GET(req: NextRequest) {
       return json({ items: [], enabled: false, model: config.ml.clip.model });
     }
 
-    // pgvector is optional (migration 0025 skips asset_clip when it's absent).
-    // Probe the table with to_regclass (returns NULL, no error, when missing) so
-    // we degrade cleanly instead of erroring — and before spending a container
-    // call to embed the query.
-    const reg = await one<{ t: string | null }>(
-      "SELECT to_regclass('public.asset_clip')::text AS t",
-    );
-    if (!reg?.t) {
-      return json({
-        items: [],
-        enabled: false,
-        model: config.ml.clip.model,
-        reason: "pgvector not installed",
-      });
-    }
-
     const sp = req.nextUrl.searchParams;
     const q = (sp.get("q") ?? "").trim();
     if (!q) return badRequest("q (the search text) is required");
@@ -61,7 +45,19 @@ export async function GET(req: NextRequest) {
     // Index coverage, returned with every response: with a partially indexed
     // library the ranking silently runs over a small pool and every query
     // returns the same few images — self-diagnosing beats silently wrong.
-    const { indexed, library } = await clipCoverage();
+    const { indexed, library, available } = await clipCoverage();
+    // pgvector isn't installed, so migration 0030 skipped asset_clip and there
+    // is no index at all. Report the feature unavailable (the page shows the
+    // same "how to turn it on" hint as ML being off) rather than erroring — and
+    // before spending a container call to embed the query.
+    if (!available) {
+      return json({
+        items: [],
+        enabled: false,
+        model: config.ml.clip.model,
+        reason: "pgvector not installed",
+      });
+    }
     if (indexed === 0) {
       // Nothing to rank — skip the container round-trip entirely.
       return json({

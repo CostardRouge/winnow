@@ -66,7 +66,12 @@ export async function GET() {
     // Semantic-search coverage: how many media have a CLIP embedding under the
     // current model. Decoupled from ml_status on purpose — an asset analyzed for
     // faces/OCR before CLIP was enabled is "ready" yet absent from the index.
-    const clip = config.ml.clip.enabled ? await clipCoverage() : null;
+    // null (tile hidden) when pgvector isn't installed: "0 of N indexed" would
+    // read as "run a back-fill", which can't store anything without the table.
+    const coverage = config.ml.clip.enabled ? await clipCoverage() : null;
+    const clip = coverage?.available
+      ? { indexed: coverage.indexed, library: coverage.library }
+      : null;
 
     return json({
       assets: counts ?? {

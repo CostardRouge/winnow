@@ -52,8 +52,11 @@ jobs:
 
     services:
       postgres:
-        # pgvector superset of postgres:16 — the CLIP-search migration (0025)
-        # does CREATE EXTENSION vector, so the plain image would fail `migrate`.
+        # pgvector superset of postgres:16. The CLIP-search migration (0030) now
+        # SKIPS its table where the extension is missing instead of failing, so
+        # a plain postgres:16 would migrate fine — and silently never exercise
+        # the asset_clip DDL. Keep the pgvector image: it is what makes CI cover
+        # the branch that actually creates the table.
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: winnow

@@ -486,7 +486,7 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
   library with `npm run ml-backfill -- --force` after enabling it.
   **pgvector is optional**: the compose Postgres image (`pgvector/pgvector:pg16`,
   a drop-in superset of `postgres:16` — existing `pgdata` keeps working) provides
-  it, but migration 0025 **skips the table gracefully** on a Postgres without the
+  it, but migration 0030 **skips the table gracefully** on a Postgres without the
   extension (a stock `postgres:16-alpine`, a managed instance), so nothing else
   breaks — Search just reports itself unavailable until you install pgvector
   (`CREATE EXTENSION vector;`, re-run migrate, back-fill).

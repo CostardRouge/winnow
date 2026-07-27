@@ -23,6 +23,12 @@ const MIGRATIONS_DIR = path.resolve(__dirname, "../../db/migrations");
 //   * 2026-07 — `0016_bursts.sql` (PR #104) collided with `0016_session_lifecycle`
 //     merged in parallel. Bursts is renumbered to the tail (0029); moving its
 //     backfill later is safe (no 0017–0028 migration references the bursts table).
+//   * 2026-07 — the last two duplicate prefixes left on main, both renumbered to
+//     the tail like bursts (each is the one that merged SECOND under its number,
+//     per rule 1): `0025_clip_embeddings` (vs `0025_missing_files`) → 0030, and
+//     `0026_manual_geotag` (vs `0026_dedup_self_hits`) → 0031. Both are safe to
+//     move later — nothing between them and the tail touches asset_clip or the
+//     assets.gps_* columns they add.
 const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
   ["0006_session_completed.sql", "0007_session_completed.sql"],
   ["0007_duplicate_hits.sql", "0008_duplicate_hits.sql"],
@@ -30,6 +36,8 @@ const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
   ["0008_gps_coords.sql", "0010_gps_coords.sql"],
   ["0009_root_export_kind.sql", "0011_root_export_kind.sql"],
   ["0016_bursts.sql", "0029_bursts.sql"],
+  ["0025_clip_embeddings.sql", "0030_clip_embeddings.sql"],
+  ["0026_manual_geotag.sql", "0031_manual_geotag.sql"],
 ];
 
 async function reconcileRenumbered(client: PoolClient): Promise<void> {
