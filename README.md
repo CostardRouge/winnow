@@ -305,6 +305,11 @@ not 10, and each frame keeps its own rating.
   edge + `⧉ N` badge). **Tap to expand in place**: the frames splice into the
   grid (accent rail, `▴ N` to collapse) and work like any row — viewer,
   selection, context menu. The gallery shows the `⧉ N` badge (display-only).
+- **Find them at a glance**: the gallery filter panel has a **Bursts** section
+  (*In a burst* / *Standalone*, `stacked=`) — combined with the collapse, *In a
+  burst* turns the grid into **one tile per run**, so every burst in scope is
+  listed side by side. It stacks with every other filter (device, date, session,
+  rating…), so "the drone bursts of last July" is one query.
 - **Pile actions** (context menu of any pile frame, incl. inside the viewer),
   all **explicit** — rating a frame normally never cascades to its pile:
   **Keep this one, reject the rest** · **Keep sharpest, reject the rest** (the
@@ -340,6 +345,13 @@ panel (combined with AND):
 - **Size** (MB range), **GPS** present, **verdict**, **min rating**
 - **Live Photos** (`group_kind=live_photo`): show only iPhone Live Photos (the
   still + `.mov` pairs)
+- **Bursts** (`stacked=1` / `stacked=0`): *In a burst* keeps only the frames
+  that belong to a [burst/bracket pile](#burst--bracket-stacks-cull-a-pile-in-one-gesture),
+  *Standalone* only the shots taken on their own. Because the grid collapses a
+  pile to its cover, *In a burst* lists **one tile per run** — the shortlist of
+  every burst shot in scope, ready to review or export. The panel states how
+  many piles and frames are in scope, and the toggle stays hidden on a library
+  that holds no pile.
 
 These dimensions are **materialized and indexed in the database** (migration
 0003: `capture_year/month/day/date` populated by trigger + indexes on device,

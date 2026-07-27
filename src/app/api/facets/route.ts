@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
       faces,
       withText,
       withPhash,
+      bursts,
       exts,
       mediaTypes,
       derivativeStatuses,
@@ -149,6 +150,18 @@ export async function GET(req: NextRequest) {
          WHERE a.phash IS NOT NULL${scope}`,
         params,
       ).catch(() => null),
+      // Burst/bracket stacks (cf. lib/bursts.ts): how many piles live in scope
+      // and how many frames they hold. `piles` is what the "Bursts" filter
+      // surfaces in the COLLAPSED gallery (one cover tile per pile), `frames`
+      // what it surfaces uncollapsed — so the panel can state both. Also gates
+      // the toggle, which stays hidden on a library that was never stacked.
+      // Served by assets_burst_idx (migration 0029).
+      one<{ piles: number; frames: number }>(
+        `SELECT count(DISTINCT a.burst_id)::int AS piles,
+                count(*)::int                   AS frames
+         FROM assets a WHERE a.burst_id IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
       settledArray(facet("ext", scope, params)),
       settledArray(facet("media_type", scope, params, "value ASC")),
       settledArray(facet("derivative_status", scope, params, "value ASC")),
@@ -196,6 +209,7 @@ export async function GET(req: NextRequest) {
       faces,
       with_text: withText?.count ?? 0,
       with_phash: withPhash?.count ?? 0,
+      bursts: bursts ?? { piles: 0, frames: 0 },
       extensions: exts,
       media_types: mediaTypes,
       derivative_statuses: derivativeStatuses,
