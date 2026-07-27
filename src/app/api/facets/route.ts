@@ -110,11 +110,18 @@ export async function GET(req: NextRequest) {
         focal_max: number | null;
         aperture_min: number | null;
         aperture_max: number | null;
+        sharpness_min: number | null;
+        sharpness_max: number | null;
       }>(
+        // `size_*` is in BYTES here (the raw column); the panel divides by 1 MiB
+        // before showing it, and re-multiplies on the way back out.
+        // `sharpness_*` is NULL until ML analysis has run (cf. lib/ml.ts) — the
+        // slider then falls back to its bare number-field pair.
         `SELECT min(file_size) size_min, max(file_size) size_max,
                 min(iso) iso_min, max(iso) iso_max,
                 min(focal_length) focal_min, max(focal_length) focal_max,
-                min(aperture) aperture_min, max(aperture) aperture_max
+                min(aperture) aperture_min, max(aperture) aperture_max,
+                min(sharpness) sharpness_min, max(sharpness) sharpness_max
          FROM assets a WHERE true${scope}`,
         params,
       ).catch(() => null),

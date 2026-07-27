@@ -11,6 +11,7 @@ import CalendarView from "./CalendarView";
 import type { Bbox, GeoPoint } from "./MapView";
 import FilterPanel, {
   EMPTY_FILTERS,
+  MB,
   type Filters,
   type Facets,
 } from "./FilterPanel";
@@ -118,8 +119,6 @@ const LocationPickerModal = dynamic(
   () => import("../LocationPickerModal"),
   { ssr: false },
 );
-
-const MB = 1024 * 1024;
 
 // Feed page sizes. The first page is deliberately small so the grid paints
 // fast on a filter change / cold load (the heavy projection is per-row);
@@ -233,6 +232,7 @@ function countActiveFilters(f: Filters): number {
   if (f.focal_min != null || f.focal_max != null) n++;
   if (f.aperture_min != null || f.aperture_max != null) n++;
   if (f.size_min != null || f.size_max != null) n++;
+  if (f.sharpness_min != null || f.sharpness_max != null) n++;
   if (f.has_gps) n++;
   if (f.group_kind) n++;
   if (f.has_edit) n++;

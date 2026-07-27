@@ -5,9 +5,10 @@ import { cn } from "@/lib/cn";
 
 /**
  * Dual-thumb range filter used across the library's numeric facets (ISO, focal
- * length, aperture, file size…). It replaces the old bare pair of min/max number
- * fields: you now *see* the full span the dataset covers and where your selected
- * window sits inside it, and you drag two handles to narrow it.
+ * length, aperture, file size, sharpness…). It replaces the old bare pair of
+ * min/max number fields: you now *see* the full span the dataset covers and
+ * where your selected window sits inside it, and you drag two handles to narrow
+ * it.
  *
  * Design notes:
  *  - Built from two overlaid native `<input type="range">` — the same primitive
@@ -16,13 +17,17 @@ import { cn } from "@/lib/cn";
  *  - `scale="iso" | "aperture"` snaps the handles to the standard photographic
  *    stops (100/200/400…, f/1.4/2/2.8…) so a drag never lands on a bastard value.
  *    `scale="linear"` (the default) runs continuously over the domain.
+ *  - Both bounds are emitted in a *single* `onChange({ min, max })` call. The
+ *    parent merges a patch into one immutable filter object, so two back-to-back
+ *    one-sided callbacks would both read the same stale filters and the last one
+ *    would silently drop the other's edit.
  *  - The two number fields are kept for precise entry and accessibility. Typing
  *    an exact value is the escape hatch when snapping is too coarse — the field
  *    commits the raw number, the handle just settles on the nearest stop.
  *  - An empty side means "no bound": a handle parked on the domain edge emits
  *    `undefined`, so a full-width selection is the same as no filter at all.
- *  - When no dataset `bounds` are available (e.g. sharpness has no facet range),
- *    it degrades to the plain number-field pair — zero regression.
+ *  - When no dataset `bounds` are available (a facet whose column is entirely
+ *    NULL), it degrades to the plain number-field pair — zero regression.
  */
 
 // Standard full-stop photographic scales. The slider snaps to these; the number
@@ -33,6 +38,9 @@ const ISO_STOPS = [
 const APERTURE_STOPS = [1, 1.4, 2, 2.8, 4, 5.6, 8, 11, 16, 22, 32];
 
 export type RangeScale = "linear" | "iso" | "aperture";
+
+/** Both sides at once — see the note above on why this is a single callback. */
+export type Range = { min?: number; max?: number };
 
 type Bounds = { min: number; max: number };
 
@@ -67,7 +75,32 @@ function coveringStops(base: number[], lo: number, hi: number): number[] {
   return stops.length >= 2 ? stops : base.slice();
 }
 
-function buildModel(scale: RangeScale, bounds: Bounds, step: number): Model {
+/**
+ * A "nice" step (1/2/5 × a power of ten) giving ~400 increments over the domain.
+ * Facets whose magnitude isn't known up front — file size in MB (0.4 → 90),
+ * sharpness (a raw Laplacian variance, single digits → thousands) — ask for
+ * `step="auto"` rather than guessing a constant that is coarse at one end of the
+ * library and useless at the other.
+ */
+function autoStep(span: number): number {
+  if (!(span > 0)) return 1;
+  const raw = span / 400;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const norm = raw / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * mag;
+}
+
+/** Kill the float dust a step-grid multiplication leaves behind (0.30000000004). */
+function tidy(v: number): number {
+  return Math.round(v * 1e6) / 1e6;
+}
+
+function buildModel(
+  scale: RangeScale,
+  bounds: Bounds,
+  step: number | "auto",
+): Model {
   if (scale === "iso" || scale === "aperture") {
     const stops = coveringStops(
       scale === "iso" ? ISO_STOPS : APERTURE_STOPS,
@@ -82,11 +115,12 @@ function buildModel(scale: RangeScale, bounds: Bounds, step: number): Model {
       toPos: (v) => nearestIndex(stops, v),
     };
   }
+  const resolved = step === "auto" ? autoStep(bounds.max - bounds.min) : step;
   return {
     sliderMin: bounds.min,
     sliderMax: bounds.max,
-    sliderStep: step,
-    toValue: (pos) => pos,
+    sliderStep: resolved,
+    toValue: (pos) => tidy(Math.max(bounds.min, Math.min(bounds.max, pos))),
     toPos: (v) => Math.max(bounds.min, Math.min(bounds.max, v)),
   };
 }
@@ -106,8 +140,7 @@ export default function RangeSlider({
   step = 1,
   min,
   max,
-  onMin,
-  onMax,
+  onChange,
   hint,
 }: {
   title: string;
@@ -115,11 +148,11 @@ export default function RangeSlider({
   /** Real min/max of the dataset (from facets.ranges). Absent → number-field fallback. */
   bounds?: { min?: number | null; max?: number | null };
   scale?: RangeScale;
-  step?: number;
+  /** Linear granularity, or "auto" to derive it from the domain's magnitude. */
+  step?: number | "auto";
   min?: number;
   max?: number;
-  onMin: (v?: number) => void;
-  onMax: (v?: number) => void;
+  onChange: (range: Range) => void;
   hint?: string;
 }) {
   const parse = (s: string) => (s === "" ? undefined : Number(s));
@@ -142,7 +175,7 @@ export default function RangeSlider({
             type="number"
             placeholder="min"
             value={min ?? ""}
-            onChange={(e) => onMin(parse(e.target.value))}
+            onChange={(e) => onChange({ min: parse(e.target.value), max })}
             aria-label={`${title} minimum`}
           />
           <input
@@ -150,7 +183,7 @@ export default function RangeSlider({
             type="number"
             placeholder="max"
             value={max ?? ""}
-            onChange={(e) => onMax(parse(e.target.value))}
+            onChange={(e) => onChange({ min, max: parse(e.target.value) })}
             aria-label={`${title} maximum`}
           />
         </div>
@@ -168,8 +201,7 @@ export default function RangeSlider({
       step={step}
       min={min}
       max={max}
-      onMin={onMin}
-      onMax={onMax}
+      onChange={onChange}
       hint={hint}
     />
   );
@@ -184,19 +216,17 @@ function SliderBody({
   step,
   min,
   max,
-  onMin,
-  onMax,
+  onChange,
   hint,
 }: {
   title: string;
   unit?: string;
   bounds: Bounds;
   scale: RangeScale;
-  step: number;
+  step: number | "auto";
   min?: number;
   max?: number;
-  onMin: (v?: number) => void;
-  onMax: (v?: number) => void;
+  onChange: (range: Range) => void;
   hint?: string;
 }) {
   const model = buildModel(scale, bounds, step);
@@ -228,10 +258,14 @@ function SliderBody({
   const rightPct = ((sliderMax - hiPos) / span) * 100;
 
   // Commit local positions to the parent. A handle on the domain edge means
-  // "unbounded" → emit undefined so a full selection reads as no filter.
+  // "unbounded" → emit undefined so a full selection reads as no filter. Both
+  // sides go out together: the parent patches one immutable filters object, so
+  // two separate calls would race and the second would clobber the first.
   const commit = () => {
-    onMin(loPos <= sliderMin ? undefined : model.toValue(loPos));
-    onMax(hiPos >= sliderMax ? undefined : model.toValue(hiPos));
+    onChange({
+      min: loPos <= sliderMin ? undefined : model.toValue(loPos),
+      max: hiPos >= sliderMax ? undefined : model.toValue(hiPos),
+    });
   };
 
   const onDragMin = (pos: number) => {
@@ -250,11 +284,11 @@ function SliderBody({
   // Number-field entry commits the raw value immediately (the precise escape
   // hatch); the handle just settles on the nearest position.
   const setMinField = (v?: number) => {
-    onMin(v);
+    onChange({ min: v, max });
     setLoPos(v === undefined ? sliderMin : Math.min(model.toPos(v), hiPos));
   };
   const setMaxField = (v?: number) => {
-    onMax(v);
+    onChange({ min, max: v });
     setHiPos(v === undefined ? sliderMax : Math.max(model.toPos(v), loPos));
   };
   const parse = (s: string) => (s === "" ? undefined : Number(s));
