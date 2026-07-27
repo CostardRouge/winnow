@@ -17,6 +17,11 @@ import { cn } from "@/lib/cn";
  *  - `scale="iso" | "aperture"` snaps the handles to the standard photographic
  *    stops (100/200/400…, f/1.4/2/2.8…) so a drag never lands on a bastard value.
  *    `scale="linear"` (the default) runs continuously over the domain.
+ *  - `scale="log"` is for facets spanning several orders of magnitude, where a
+ *    linear axis is useless. File size is the case in point: one video drags the
+ *    domain to ~13 GB, so on a linear track every photo in the library sits in
+ *    the leftmost half-percent and a one-pixel drag jumps ~35 MB. Log gives each
+ *    decade equal width — MB-sized stills get as much track as GB-sized clips.
  *  - Both bounds are emitted in a *single* `onChange({ min, max })` call. The
  *    parent merges a patch into one immutable filter object, so two back-to-back
  *    one-sided callbacks would both read the same stale filters and the last one
@@ -37,7 +42,7 @@ const ISO_STOPS = [
 ];
 const APERTURE_STOPS = [1, 1.4, 2, 2.8, 4, 5.6, 8, 11, 16, 22, 32];
 
-export type RangeScale = "linear" | "iso" | "aperture";
+export type RangeScale = "linear" | "log" | "iso" | "aperture";
 
 /** Both sides at once — see the note above on why this is a single callback. */
 export type Range = { min?: number; max?: number };
@@ -75,32 +80,22 @@ function coveringStops(base: number[], lo: number, hi: number): number[] {
   return stops.length >= 2 ? stops : base.slice();
 }
 
-/**
- * A "nice" step (1/2/5 × a power of ten) giving ~400 increments over the domain.
- * Facets whose magnitude isn't known up front — file size in MB (0.4 → 90),
- * sharpness (a raw Laplacian variance, single digits → thousands) — ask for
- * `step="auto"` rather than guessing a constant that is coarse at one end of the
- * library and useless at the other.
- */
-function autoStep(span: number): number {
-  if (!(span > 0)) return 1;
-  const raw = span / 400;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const norm = raw / mag;
-  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return nice * mag;
-}
-
 /** Kill the float dust a step-grid multiplication leaves behind (0.30000000004). */
 function tidy(v: number): number {
   return Math.round(v * 1e6) / 1e6;
 }
 
-function buildModel(
-  scale: RangeScale,
-  bounds: Bounds,
-  step: number | "auto",
-): Model {
+/** ~3 significant digits, so a log drag emits 0.35 / 7.2 / 84 / 2350, not 84.3927. */
+function roundNice(v: number): number {
+  if (!(v > 0)) return 0;
+  const p = 10 ** (2 - Math.floor(Math.log10(v)));
+  return tidy(Math.round(v * p) / p);
+}
+
+/** How many positions a log slider offers between the two bounds. */
+const LOG_POSITIONS = 1000;
+
+function buildModel(scale: RangeScale, bounds: Bounds, step: number): Model {
   if (scale === "iso" || scale === "aperture") {
     const stops = coveringStops(
       scale === "iso" ? ISO_STOPS : APERTURE_STOPS,
@@ -115,11 +110,35 @@ function buildModel(
       toPos: (v) => nearestIndex(stops, v),
     };
   }
-  const resolved = step === "auto" ? autoStep(bounds.max - bounds.min) : step;
+  if (scale === "log") {
+    // ln() needs a strictly positive low end, and these facets legitimately reach
+    // zero (a flat frame scores 0 sharpness). Floor the domain four decades below
+    // its top rather than at some absolute value that would be wrong for one of
+    // the two facets.
+    const lo = bounds.min > 0 ? bounds.min : Math.max(bounds.max / 1e4, 1e-6);
+    const hi = Math.max(bounds.max, lo * 10);
+    const lnLo = Math.log(lo);
+    const k = (Math.log(hi) - lnLo) / LOG_POSITIONS;
+    return {
+      sliderMin: 0,
+      sliderMax: LOG_POSITIONS,
+      sliderStep: 1,
+      toValue: (pos) =>
+        roundNice(
+          Math.exp(lnLo + k * Math.max(0, Math.min(LOG_POSITIONS, pos))),
+        ),
+      toPos: (v) =>
+        v <= lo
+          ? 0
+          : v >= hi
+            ? LOG_POSITIONS
+            : Math.round((Math.log(v) - lnLo) / k),
+    };
+  }
   return {
     sliderMin: bounds.min,
     sliderMax: bounds.max,
-    sliderStep: resolved,
+    sliderStep: step,
     toValue: (pos) => tidy(Math.max(bounds.min, Math.min(bounds.max, pos))),
     toPos: (v) => Math.max(bounds.min, Math.min(bounds.max, v)),
   };
@@ -148,8 +167,8 @@ export default function RangeSlider({
   /** Real min/max of the dataset (from facets.ranges). Absent → number-field fallback. */
   bounds?: { min?: number | null; max?: number | null };
   scale?: RangeScale;
-  /** Linear granularity, or "auto" to derive it from the domain's magnitude. */
-  step?: number | "auto";
+  /** Granularity of the `linear` scale (ignored by the snapped and log scales). */
+  step?: number;
   min?: number;
   max?: number;
   onChange: (range: Range) => void;
@@ -223,7 +242,7 @@ function SliderBody({
   unit?: string;
   bounds: Bounds;
   scale: RangeScale;
-  step: number | "auto";
+  step: number;
   min?: number;
   max?: number;
   onChange: (range: Range) => void;
