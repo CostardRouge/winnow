@@ -21,8 +21,16 @@ export type GearStats = {
 };
 
 export type GearLens = {
-  /** Raw EXIF lens string — also the gallery filter value. */
-  name: string;
+  /** Canonical id the spellings below were merged on (cf. lib/lensLabels.ts). */
+  key: string;
+  /** Display name — the busiest spelling, tidied. Never a filter value. */
+  label: string;
+  /**
+   * Every raw EXIF string that folded into this lens, busiest first. These ARE
+   * the filter values: a card links on all of them (`?lens=a,b`), so its count
+   * and the grid it opens hold the same frames.
+   */
+  names: string[];
   /** Focal range actually recorded in the EXIF — how a zoom betrays itself. */
   focal_min: number | null;
   focal_max: number | null;

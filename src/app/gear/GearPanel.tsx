@@ -49,10 +49,14 @@ const SOURCE_KEY = "winnow.gear.source";
 
 const num = (n: number) => n.toLocaleString();
 
-/** Where a piece of gear's frames live, for the active source. */
-function href(source: GearSource, device: string, lens?: string): string {
+/**
+ * Where a piece of gear's frames live, for the active source. `lenses` is every
+ * raw EXIF spelling the card merged (cf. lib/lensLabels.ts) — the filter is
+ * multi-value, so one card still reaches all of its frames.
+ */
+function href(source: GearSource, device: string, lenses?: string[]): string {
   const sp = new URLSearchParams({ device });
-  if (lens) sp.set("lens", lens);
+  if (lenses?.length) sp.set("lens", lenses.join(","));
   // Both targets seed their filters from the query string: Incoming through its
   // `[view]` route (Grid is the one that shows the frames themselves), the
   // Gallery tab through the same decode (cf. library/gallery/page.tsx).
@@ -136,14 +140,14 @@ function Card({
 
 /** Busiest first / most recently used first, both read off the active source. */
 function sortFor(sort: Sort, source: GearSource) {
-  return <T extends { name: string; incoming: GearStats; gallery: GearStats }>(
+  return <T extends { label: string; incoming: GearStats; gallery: GearStats }>(
     a: T,
     b: T,
   ) =>
     sort === "recent"
       ? (b[source].last_capture ?? "").localeCompare(a[source].last_capture ?? "") ||
-        a.name.localeCompare(b.name)
-      : b[source].count - a[source].count || a.name.localeCompare(b.name);
+        a.label.localeCompare(b.label)
+      : b[source].count - a[source].count || a.label.localeCompare(b.label);
 }
 
 export default function GearPanel() {
@@ -191,7 +195,7 @@ export default function GearPanel() {
   }
   if (!data) return <LoadingState label="Reading the EXIF…" />;
 
-  const lensCount = new Set(cameras.flatMap((c) => c.lenses.map((l) => l.name))).size;
+  const lensCount = new Set(cameras.flatMap((c) => c.lenses.map((l) => l.key))).size;
   const totalFrames = cameras.reduce((s, c) => s + c[source].count, 0);
   // Empty tab vs empty library: only the second one is "no gear yet".
   const otherTotal = (data.cameras ?? []).reduce(
@@ -305,7 +309,7 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
         {camera.lenses.length > 0 && (
           <div className="gear-grid">
             {camera.lenses.map((l) => (
-              <LensCard key={l.name} lens={l} device={camera.name} source={source} />
+              <LensCard key={l.key} lens={l} device={camera.name} source={source} />
             ))}
           </div>
         )}
@@ -327,30 +331,33 @@ function LensCard({
   const other = lens[source === "incoming" ? "gallery" : "incoming"];
   return (
     <Card
-      href={href(source, device, lens.name)}
+      href={href(source, device, lens.names)}
       art={
         <LensArt
-          name={lens.name}
+          name={lens.label}
           focalMin={lens.focal_min}
           focalMax={lens.focal_max}
           aperture={lens.aperture_min}
         />
       }
       kind="lens"
-      name={lens.name}
-      label={lens.name}
+      // The tooltip carries every raw EXIF spelling this card merged, so a
+      // merge is always inspectable rather than something that just happened.
+      name={lens.names.join(" · ")}
+      label={lens.label}
       count={countLabel(stats)}
       meta={[
         // The spec line is derived, so a lens whose name states nothing
         // ("E 18-55") still shows the range its frames recorded.
         lensSpec(
-          lensArt(lens.name, {
+          lensArt(lens.label, {
             focalMin: lens.focal_min,
             focalMax: lens.focal_max,
             aperture: lens.aperture_min,
           }),
         ) || null,
         years(stats.first_capture, stats.last_capture),
+        lens.names.length > 1 ? `${lens.names.length} EXIF names` : null,
         elsewhereLine(other, source),
       ]}
     />

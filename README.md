@@ -564,6 +564,15 @@ much"* at a glance, then links each piece of gear back to its frames.
   active half is dropped rather than drawn at zero — its card would open an empty
   grid — and each card names what the *other* half still holds ("3 more in the
   Gallery"). The choice is remembered between visits.
+- **One lens, one card** (`src/lib/lensLabels.ts`). Bodies and EXIF tools disagree
+  about whether to prefix the maker and whether to append the part number, so the
+  same glass arrives as both `FE 50mm F1.4 GM` and
+  `Sony FE 50mm F1.4 GM (SEL50F14GM)` — drawn twice, with its count split in half.
+  Spellings that normalize to the same lens merge onto one card, which keeps
+  **every** raw string and filters on all of them (`?lens=a,b`), so the count and
+  the grid still agree. An optical difference is never merged away: `+ 2X
+  Teleconverter` stays its own lens. The card's tooltip lists what was folded in,
+  and Sony's `----` placeholder reads as *Unknown lens*.
 - **Counted like every other counter** (`GET /api/gear`, `src/lib/gear.ts`): live
   assets only (a trashed frame stops inflating a body's tally) and **logical
   media**, so a RAW+JPEG pair counts once. Only roots the Library can actually

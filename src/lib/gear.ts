@@ -17,12 +17,20 @@
 // one of those two grids. A merged total would promise media the linked grid
 // doesn't hold — the "card says 400, grid says 3" mismatch.
 //
-// Grouping stays on the RAW EXIF strings, never on the friendly label: they are
+// The SQL groups on the RAW EXIF strings, never on a friendly label: they are
 // the values the gallery filters on (`?device=` / `?lens=`), so a card's count
 // and the grid it links to can't drift. Prettifying happens on the way out, for
 // display only (cf. lib/cameraLabels.ts).
+//
+// Lenses then get one extra fold in JS, because the raw string is not stable
+// across bodies: the same glass arrives as "FE 50mm F1.4 GM" from one camera and
+// "Sony FE 50mm F1.4 GM (SEL50F14GM)" from another, and drawing it twice with
+// half the count each is simply wrong. Spellings that mean the same lens merge
+// on `lensKey()`, and the card keeps ALL of them so it can still filter on the
+// raw values (`?lens=a,b`) — the count/grid guarantee holds either way.
 import { many } from "./db";
 import { friendlyCameraName } from "./cameraLabels";
+import { friendlyLensName, lensKey } from "./lensLabels";
 import {
   EMPTY_STATS,
   type GearCamera,
@@ -99,20 +107,24 @@ const lo = (a: number | null, b: number | null) =>
 const hi = (a: number | null, b: number | null) =>
   a == null ? b : b == null ? a : Math.max(a, b);
 
-/** Busiest first, across BOTH sources, then by name so the order is stable. */
-function byUse<T extends { incoming: GearStats; gallery: GearStats; name: string }>(
+/** Busiest first, across BOTH sources, then by label so the order is stable. */
+function byUse<T extends { incoming: GearStats; gallery: GearStats; label: string }>(
   a: T,
   b: T,
 ): number {
   const total = (x: T) => x.incoming.count + x.gallery.count;
-  return total(b) - total(a) || a.name.localeCompare(b.name);
+  return total(b) - total(a) || a.label.localeCompare(b.label);
 }
+
+// A lens under construction: the merged tallies plus how many frames each raw
+// spelling contributed, so the busiest one can name the card.
+type LensAcc = GearLens & { spellings: Map<string, number> };
 
 export async function listCameras(): Promise<GearCamera[]> {
   const rows = await many<Row>(GEAR_SQL);
 
   const cameras = new Map<string, GearCamera>();
-  const lenses = new Map<string, Map<string, GearLens>>();
+  const lenses = new Map<string, Map<string, LensAcc>>();
 
   for (const r of rows) {
     let cam = cameras.get(r.device);
@@ -134,26 +146,40 @@ export async function listCameras(): Promise<GearCamera[]> {
     if (!r.lens) continue;
 
     const shelf = lenses.get(r.device)!;
-    let lens = shelf.get(r.lens);
+    const key = lensKey(r.lens);
+    let lens = shelf.get(key);
     if (!lens) {
       lens = {
-        name: r.lens,
+        key,
+        label: "",
+        names: [],
         focal_min: null,
         focal_max: null,
         aperture_min: null,
         incoming: stats(),
         gallery: stats(),
+        spellings: new Map(),
       };
-      shelf.set(r.lens, lens);
+      shelf.set(key, lens);
     }
     add(lens[r.source], r);
+    lens.spellings.set(r.lens, (lens.spellings.get(r.lens) ?? 0) + r.count);
     lens.focal_min = lo(lens.focal_min, r.focal_min);
     lens.focal_max = hi(lens.focal_max, r.focal_max);
     lens.aperture_min = lo(lens.aperture_min, r.aperture_min);
   }
 
   for (const [device, shelf] of lenses) {
-    cameras.get(device)!.lenses = [...shelf.values()].sort(byUse);
+    cameras.get(device)!.lenses = [...shelf.values()]
+      .map(({ spellings, ...lens }) => {
+        // Busiest spelling first — it names the card, and a tie falls back to
+        // the alphabet so the label doesn't flip between requests.
+        const names = [...spellings.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([name]) => name);
+        return { ...lens, names, label: friendlyLensName(names[0]) };
+      })
+      .sort(byUse);
   }
   return [...cameras.values()].sort(byUse);
 }
