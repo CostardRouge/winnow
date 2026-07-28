@@ -166,6 +166,36 @@ const EnvSchema = z
     // Directory where the "RAW copy for Capture One" export drops the originals.
     EXPORT_DIR: strEnv("/data/exports"),
 
+    // --- Immich push (export target `immich`) -----------------------------
+    // The other end of the winnowing: once a session is culled, the keepers are
+    // pushed to the Immich library that already serves the phone/browsing side
+    // (the NAS "final" folders above are its output). Winnow stays the darkroom,
+    // Immich stays the archive — so this uploads COPIES through Immich's public
+    // REST API and never writes into its storage or its database.
+    //
+    // Disabled by default: it needs a server and an API key (Immich → Account
+    // Settings → API Keys). Unlike ML_BASE_URL (an internal, unversioned
+    // endpoint), this is the documented, versioned API — upgrades are safe.
+    IMMICH_ENABLED: boolEnv(false),
+    // Server root, WITHOUT the /api suffix (the client appends it).
+    IMMICH_BASE_URL: strEnv("http://immich-server:2283"),
+    // Sent as `x-api-key`. Required when IMMICH_ENABLED (cf. superRefine).
+    IMMICH_API_KEY: strEnv(""),
+    // Where the pushed media land:
+    //   job   — one album per export, named after the export job (default);
+    //   fixed — always the same album (IMMICH_ALBUM_NAME);
+    //   none  — upload to the timeline only, no album.
+    // An album is reused when one of that name already exists.
+    IMMICH_ALBUM_MODE: enumEnv(["job", "fixed", "none"], "job"),
+    IMMICH_ALBUM_NAME: strEnv("Winnow"),
+    // SHA-1 pre-check (POST /assets/bulk-upload-check) before uploading: Immich
+    // dedups by checksum anyway, but asking first means a re-pushed export sends
+    // no bytes at all. Costs one full read of each file, so it pays off over the
+    // network and can be turned off when Winnow and Immich share a disk.
+    IMMICH_PRECHECK: boolEnv(true),
+    // Generous: a 60 MB RAW over a slow uplink. Applies per HTTP call.
+    IMMICH_TIMEOUT_MS: intEnv(300000, { min: 1000 }),
+
     // --- Folder picker (Volumes "Add folder") -----------------------------
     // Base directories the server-side folder picker is allowed to browse. The
     // configured volume dirs (incoming/finals/export) are always added on top,
@@ -315,7 +345,7 @@ const EnvSchema = z
     // 60 MP decode on a busy box is never cut short.
     HEIC_DECODE_TIMEOUT_MS: intEnv(120000, { min: 0 }),
   })
-  .superRefine((_env, ctx) => {
+  .superRefine((env, ctx) => {
     // Coherence: selecting the s3 driver but leaving the dev defaults in place
     // (localhost endpoint, minioadmin credentials) is almost always a misconfig
     // in production — require them to be set explicitly. We look at the raw env
@@ -335,6 +365,15 @@ const EnvSchema = z
           });
         }
       }
+    }
+    // Immich push without a key would only fail later, one export job at a
+    // time, with a 401 buried in the job result — fail at boot instead.
+    if (env.IMMICH_ENABLED && !env.IMMICH_API_KEY) {
+      ctx.addIssue({
+        path: ["IMMICH_API_KEY"],
+        code: z.ZodIssueCode.custom,
+        message: "must be set when IMMICH_ENABLED=true",
+      });
     }
   });
 
@@ -400,6 +439,18 @@ function loadConfig() {
     // Reclaim-space (purge) capability. `enabled=false` makes /api/purge 403.
     purge: {
       enabled: e.PURGE_ENABLED,
+    },
+
+    // Immich push target (cf. lib/immich.ts). `enabled=false` makes the
+    // `immich` export target unavailable in the API and hidden in the UI.
+    immich: {
+      enabled: e.IMMICH_ENABLED,
+      baseUrl: e.IMMICH_BASE_URL,
+      apiKey: e.IMMICH_API_KEY,
+      albumMode: e.IMMICH_ALBUM_MODE,
+      albumName: e.IMMICH_ALBUM_NAME,
+      precheck: e.IMMICH_PRECHECK,
+      timeoutMs: e.IMMICH_TIMEOUT_MS,
     },
 
     // Burst / bracket stacking thresholds (cf. lib/bursts.ts).

@@ -6,6 +6,9 @@ import { formatBytes } from "@/lib/format";
 import ExportFilePicker, {
   type ExportPickerState,
 } from "@/app/exports/ExportFilePicker";
+import ExportTargetPicker, {
+  type ExportTargetId,
+} from "@/app/exports/ExportTargetPicker";
 
 // Custom, reusable export modal for a session — replaces the old browser
 // prompt()/alert() flow. It drives the same POST /api/export (copy of the
@@ -49,6 +52,7 @@ export default function ExportSessionModal({
   // What the file picker currently has checked (per-category include + live
   // file/byte totals). Null until its scan resolves.
   const [picker, setPicker] = useState<ExportPickerState | null>(null);
+  const [target, setTarget] = useState<ExportTargetId>("capture_one");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,7 +83,7 @@ export default function ExportSessionModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
-          target: "capture_one",
+          target,
           filter: { session_id: session.id, verdict: "pick" },
           include: picker.include,
         }),
@@ -111,10 +115,16 @@ export default function ExportSessionModal({
         });
       }
 
-      const bits = [`Export #${data.export_job_id} queued`];
+      const bits = [
+        `${target === "immich" ? "Push" : "Export"} #${data.export_job_id} queued`,
+      ];
       if (trashed > 0) bits.push(`${trashed} moved to trash`);
       if (ignoreAfter) bits.push("session ignored");
-      onSubmitted(`${bits.join(" · ")}. Run the worker to copy the files.`);
+      onSubmitted(
+        `${bits.join(" · ")}. Run the worker to ${
+          target === "immich" ? "upload the files" : "copy the files"
+        }.`,
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -133,12 +143,20 @@ export default function ExportSessionModal({
       >
         <h2 className="modal-title">Export “{session.name}”</h2>
         <p className="hint" style={{ marginTop: 0 }}>
-          Copies the files of the {session.pick_count} pick(s) to the export
-          folder — {picker?.loaded
+          {target === "immich"
+            ? `Uploads the files of the ${session.pick_count} pick(s) to Immich — `
+            : `Copies the files of the ${session.pick_count} pick(s) to the export folder — `}
+          {picker?.loaded
             ? `${picker.files} file(s) · ${formatBytes(picker.bytes)} selected`
             : "scanning the selection"}
           . The originals are never touched.
         </p>
+
+        <ExportTargetPicker
+          value={target}
+          disabled={busy}
+          onChange={setTarget}
+        />
 
         <label className="modal-label" htmlFor="export-name">
           Export name
@@ -227,9 +245,11 @@ export default function ExportSessionModal({
             disabled={busy || !picker?.loaded || picker.files === 0}
           >
             {busy
-              ? "Exporting…"
+              ? target === "immich"
+                ? "Pushing…"
+                : "Exporting…"
               : picker?.loaded
-                ? `Export ${picker.files} file(s)`
+                ? `${target === "immich" ? "Push" : "Export"} ${picker.files} file(s)`
                 : "Export"}
           </button>
         </div>

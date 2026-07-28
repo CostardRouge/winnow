@@ -48,6 +48,21 @@ async function fullHash(absPath: string): Promise<string> {
   return h.digest("hex");
 }
 
+// Full (whole-file) SHA-1, hex. Streamed like fullHash above, so a 60 MB RAW
+// never sits in memory. SHA-1 is not a security choice here: it is the digest
+// Immich indexes its library by, so this is the only hash that can answer "do
+// you already have this file?" before we upload it (cf. lib/immich.ts).
+export async function sha1File(absPath: string): Promise<string> {
+  const h = createHash("sha1");
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(absPath);
+    stream.on("data", (chunk) => h.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve());
+  });
+  return h.digest("hex");
+}
+
 // Confirms whether two paths hold byte-identical content. Called ONLY when a
 // partial-hash collision is detected, to tell a genuine duplicate from a false
 // collision before discarding a file.
