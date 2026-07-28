@@ -9,6 +9,7 @@ import ExportFilePicker, {
 import ExportTargetPicker, {
   type ExportTargetId,
 } from "@/app/exports/ExportTargetPicker";
+import { useOverlayDismiss } from "@/app/exports/useOverlayDismiss";
 
 // Custom, reusable export modal for a session — replaces the old browser
 // prompt()/alert() flow. It drives the same POST /api/export (copy of the
@@ -58,6 +59,7 @@ export default function ExportSessionModal({
 
   const rejectCount = Number(session.reject_count) || 0;
   const unratedCount = Number(session.unrated_count) || 0;
+  const backdrop = useOverlayDismiss<HTMLDivElement>(onClose);
 
   // Close on Escape (unless a request is in flight).
   useEffect(() => {
@@ -133,13 +135,12 @@ export default function ExportSessionModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
+    <div className="modal-overlay" role="presentation" {...backdrop}>
       <div
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-label="Export session"
-        onClick={(e) => e.stopPropagation()}
       >
         <h2 className="modal-title">Export “{session.name}”</h2>
         <p className="hint" style={{ marginTop: 0 }}>
@@ -163,7 +164,7 @@ export default function ExportSessionModal({
         </label>
         <input
           id="export-name"
-          className="input"
+          className="input modal-input"
           type="text"
           value={name}
           autoFocus
