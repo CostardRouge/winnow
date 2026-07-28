@@ -3653,6 +3653,11 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mb-1.5 mt-3.5 block text-xs font-semibold uppercase tracking-wide;
     color: var(--color-muted);
   }
+  /* A modal's own text fields span the dialog — an input left at its default
+     ~20-character width reads as a stray half-empty box under its label. */
+  .modal-input {
+    @apply block w-full;
+  }
   .modal-warn {
     @apply mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm;
     color: var(--color-reject);

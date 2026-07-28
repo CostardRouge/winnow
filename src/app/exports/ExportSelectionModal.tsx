@@ -6,6 +6,7 @@ import ExportFilePicker, {
   type ExportPickerState,
 } from "./ExportFilePicker";
 import ExportTargetPicker, { type ExportTargetId } from "./ExportTargetPicker";
+import { useOverlayDismiss } from "./useOverlayDismiss";
 
 // Export modal for an ad-hoc selection (gallery bulk bar, context menu, map
 // area). The gallery used to fire POST /api/export silently, with no options;
@@ -31,6 +32,7 @@ export default function ExportSelectionModal({
   const [target, setTarget] = useState<ExportTargetId>("capture_one");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const backdrop = useOverlayDismiss<HTMLDivElement>(onClose);
 
   // Close on Escape (unless a request is in flight).
   useEffect(() => {
@@ -76,13 +78,12 @@ export default function ExportSelectionModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
+    <div className="modal-overlay" role="presentation" {...backdrop}>
       <div
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-label="Export selection"
-        onClick={(e) => e.stopPropagation()}
       >
         <h2 className="modal-title">
           Export {ids.length === 1 ? "1 media" : `${ids.length} media`}
@@ -108,7 +109,7 @@ export default function ExportSelectionModal({
         </label>
         <input
           id="export-sel-name"
-          className="input"
+          className="input modal-input"
           type="text"
           value={name}
           autoFocus
