@@ -4754,9 +4754,32 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-head {
     @apply flex flex-wrap items-center gap-3;
   }
-  .gear-section h2 {
-    @apply m-0 mb-5;
-    font-size: 2rem;
+  /* One body and its glass. The camera stands on the left as the heading of its
+     own row — it's the thing the lenses belong to — and the lens grid flows
+     beside it. Below the breakpoint the two stack, camera first. */
+  .gear-body {
+    @apply grid items-start gap-x-7 gap-y-4;
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+    padding-top: 26px;
+    border-top: 1px solid var(--color-border);
+  }
+  /* The first body sits right under the toolbar: no rule above it. */
+  .gear-body:first-of-type {
+    @apply border-t-0 pt-0;
+  }
+  /* The camera card rides along as the row scrolls past — the lens grid can be
+     long, and "which body am I looking at" must never need a scroll back up. */
+  .gear-body-figure {
+    @apply sticky self-start;
+    top: 12px;
+  }
+  .gear-body-glass {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+  .gear-body-glass-head {
+    @apply m-0 text-xs font-semibold uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
   }
   .gear-grid {
     @apply grid;
@@ -4816,14 +4839,28 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
+/* Tablets: the sticky side column costs more than it gives once the lens grid
+   is only two cards wide — stack the body over its glass instead. */
+@media (max-width: 900px) {
+  .gear-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gear-body-figure {
+    @apply static;
+    max-width: 260px;
+  }
+}
+
 /* Phones: tighter shelf, two cards per row on the narrowest screens. */
 @media (max-width: 767px) {
   .gear-shelf {
     gap: 26px;
   }
-  .gear-section h2 {
-    font-size: 1.6rem;
-    margin-bottom: 14px;
+  .gear-body {
+    padding-top: 20px;
+  }
+  .gear-body-figure {
+    max-width: 200px;
   }
   .gear-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
