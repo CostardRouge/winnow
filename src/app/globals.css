@@ -4900,3 +4900,61 @@ html[data-theme="dark"] .btn-primary:hover {
     right: 0;
   }
 }
+
+/* Users table: .vol-path's word-break: break-all is meant for filesystem
+   paths — on a person's name it cuts mid-word ("Bertran/d"). Break between
+   words, and only break within one as a last resort. */
+.users-table .vol-path {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Phones: the Users table folds into stacked cards — one per account — instead
+   of scrolling sideways. Cells become labelled rows (data-th), the role select
+   goes full-width, actions wrap. Scoped to .users-table so the Volumes table
+   keeps its horizontal-scroll behaviour. */
+@media (max-width: 640px) {
+  .users-table,
+  .users-table tbody {
+    display: block;
+  }
+  .users-table thead {
+    display: none;
+  }
+  .users-table tbody tr {
+    display: block;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .users-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .users-table tbody tr:hover {
+    background: transparent;
+  }
+  .users-table td {
+    display: block;
+    padding: 5px 0;
+    border-bottom: 0;
+  }
+  .users-table td.num {
+    text-align: left;
+  }
+  .users-table td[data-th]::before {
+    content: attr(data-th);
+    display: block;
+    margin-bottom: 3px;
+    font-family: var(--font-sans);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .users-table .select {
+    width: 100%;
+  }
+  .users-table .vol-actions {
+    padding-top: 4px;
+  }
+}
