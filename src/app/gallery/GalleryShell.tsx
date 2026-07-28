@@ -32,6 +32,8 @@ import {
   mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
+  selectionDownloadFiles,
+  selectionZipHref,
 } from "@/lib/assetActions";
 import ExportSelectionModal from "../exports/ExportSelectionModal";
 import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
@@ -1043,6 +1045,15 @@ export default function GalleryShell({
           onStar={(n) => rateMany([...selected], { star: n })}
           onTag={(name, add) => assignTags([...selected], name, add)}
           onExport={() => exportSelection([...selected])}
+          download={{
+            zipHref: selectionZipHref([...selected]),
+            zipName: "winnow-selection.zip",
+            listFiles: () =>
+              Promise.resolve(
+                selectionDownloadFiles(items.filter((a) => selected.has(a.id))),
+              ),
+            onMessage: setNotice,
+          }}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
           onGeotag={() => geotagSelection([...selected])}

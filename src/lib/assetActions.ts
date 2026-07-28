@@ -76,6 +76,32 @@ export async function sessionDownloadFiles(
   return [...files, ...sidecars];
 }
 
+// The per-file manifest of an ad-hoc grid selection, built from the rows the
+// grid already holds (no extra fetch): each asset through its own /download
+// endpoint, any sidecars the row carries riding along — the same shape the
+// session manifest resolves to, so the shared Download menu drives both.
+export function selectionDownloadFiles(
+  rows: {
+    id: number;
+    filename: string;
+    sidecars?: { id: number; filename: string }[] | null;
+  }[],
+): DownloadFile[] {
+  return rows.flatMap((a) => [
+    { filename: a.filename, href: `/api/assets/${a.id}/download` },
+    ...(a.sidecars ?? []).map((s) => ({
+      filename: s.filename,
+      href: `/api/sidecars/${s.id}/download`,
+    })),
+  ]);
+}
+
+// The matching whole-selection ZIP URL (api/assets/download): every id in the
+// query string, streamed back as one archive with the sidecars included.
+export function selectionZipHref(ids: number[]): string {
+  return `/api/assets/download?ids=${ids.join(",")}`;
+}
+
 // Add (or remove) a single tag by name across the given assets.
 export async function tagAssets(
   ids: number[],
