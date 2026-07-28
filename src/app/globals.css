@@ -2178,15 +2178,96 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply px-1 text-xs font-semibold;
     color: var(--color-text);
   }
-  /* Thumbnail popup on a marker */
-  .map-pop-wrap .leaflet-popup-content {
-    @apply m-0;
-  }
+  /* ---- Marker popover -------------------------------------------------- */
+  /* Our content inside Leaflet's bubble. The bubble itself (its wrapper, tip and
+     close button) is re-skinned at the end of this file — those rules target
+     Leaflet's own classes and must live OUTSIDE @layer components to win. */
   .map-pop {
-    @apply block leading-none;
+    @apply flex w-full flex-col;
   }
-  .map-pop img {
-    @apply block h-auto w-40 rounded-[var(--radius-sm)];
+  /* Media band: the thumbnail button, or the clip playing in place. Same box in
+     both states so starting playback doesn't resize the card. */
+  .map-pop-media {
+    @apply relative block w-full border-0 p-0;
+    /* A fixed box (the commonest capture ratio) rather than the media's own, so
+       the card doesn't jump size when playback replaces the poster — anything
+       else is letterboxed against the viewer's frame colour, never cropped. */
+    aspect-ratio: 3 / 2;
+    background: var(--color-frame);
+  }
+  .map-pop-thumb {
+    @apply cursor-pointer;
+  }
+  /* The image fills the band; the <video> IS the band (it keeps the same
+     aspect-ratio box, letterboxing whatever the clip's own shape is). */
+  .map-pop-media img {
+    @apply block h-full w-full;
+    object-fit: contain;
+  }
+  video.map-pop-media {
+    object-fit: contain;
+  }
+  .map-pop-noThumb {
+    @apply flex h-full w-full items-center justify-center text-xs;
+    color: var(--color-faint);
+  }
+  /* Play affordance / duration chip — same language as a grid tile's badges. */
+  .map-pop-play {
+    @apply absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2
+      items-center justify-center rounded-full text-sm text-white;
+    background: rgba(16, 15, 13, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+  .map-pop-thumb:hover .map-pop-play {
+    background: rgba(16, 15, 13, 0.72);
+  }
+  .map-pop-dur {
+    @apply absolute bottom-1 right-1 rounded-[var(--radius-sm)] px-1.5 py-0.5
+      text-[0.65rem] font-medium text-white;
+    background: rgba(16, 15, 13, 0.6);
+    pointer-events: none;
+  }
+  .map-pop-body {
+    @apply flex flex-col gap-1.5 p-2.5;
+  }
+  .map-pop-name {
+    @apply truncate text-xs font-semibold;
+    color: var(--color-text);
+  }
+  .map-pop-hint {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  /* Capture facts: label above value, so a long place name can wrap without
+     squeezing the column in a 208px card. */
+  .map-pop-facts {
+    @apply m-0 flex flex-col gap-1;
+  }
+  .map-pop-facts dt {
+    @apply text-[0.6rem] font-semibold uppercase tracking-wide;
+    color: var(--color-faint);
+  }
+  .map-pop-facts dd {
+    @apply m-0 text-xs;
+    color: var(--color-text);
+  }
+  .map-pop-open {
+    @apply mt-0.5 w-full justify-center gap-1.5 text-xs;
+  }
+
+  /* Opening a media by id (from a marker popover): a centered "working on it"
+     card while the row is fetched, since the popover is gone by then. */
+  .viewer-boot {
+    @apply fixed left-1/2 top-1/2 z-[1200] flex items-center gap-2
+      rounded-[var(--radius-lg)] border px-3 py-2 text-xs;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    color: var(--color-text);
   }
 
   /* ---- Calendar view --------------------------------------------------- */
@@ -4967,4 +5048,52 @@ html[data-theme="dark"] .btn-primary:hover {
   .users-table .vol-actions {
     padding-top: 4px;
   }
+}
+
+/* =========================================================================
+   Leaflet overrides — DELIBERATELY UNLAYERED
+   -------------------------------------------------------------------------
+   `leaflet/dist/leaflet.css` is imported from the map components (so it ships
+   with the map chunk, not with every page) and therefore lands in the document
+   UNLAYERED. Unlayered rules outrank anything in `@layer components` whatever
+   their specificity — so overrides of Leaflet's own classes have to sit outside
+   the layer, right here, or they simply never apply.
+   ========================================================================= */
+
+/* The marker popover's bubble (cf. MapPopover / the `.map-pop-*` block above),
+   re-skinned as one of our floating cards: Leaflet ships a hardcoded white
+   wrapper with its own radius/shadow, unreadable in the dark theme. */
+.map-pop-wrap .leaflet-popup-content-wrapper {
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+/* The card owns its own padding (its media band is edge to edge). */
+.map-pop-wrap .leaflet-popup-content {
+  margin: 0;
+  line-height: 1.35;
+}
+.map-pop-wrap .leaflet-popup-tip {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border-strong);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+/* ✕ sits over the media band — white with a shadow reads on any photo. */
+.map-pop-wrap .leaflet-popup-close-button,
+.map-pop-wrap .leaflet-popup-close-button:hover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  top: 2px;
+  right: 2px;
+  color: #fff;
+  background: transparent;
+  font-size: 1.1rem;
+  text-shadow: 0 1px 3px rgba(16, 15, 13, 0.9);
 }

@@ -116,7 +116,8 @@ function sidecarLinks(items: SidecarBrief[]): React.ReactNode {
 
 // Join the resolved place into one line, finest → coarsest ("Tour Eiffel · Paris
 // · France"), de-duplicating repeats (a city that equals its département).
-function locationLine(a: AssetMetaInput): string | null {
+// Exported so the map marker popover words a location exactly like the panel.
+export function locationLine(a: AssetMetaInput): string | null {
   const parts: string[] = [];
   for (const p of [
     a.place_poi,
