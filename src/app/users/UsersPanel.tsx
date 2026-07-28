@@ -160,7 +160,9 @@ export default function UsersPanel() {
         />
       ) : (
         <div className="vol-table-wrap">
-          <table className="vol-table">
+          {/* users-table: on phones the rows fold into stacked cards (cf.
+              globals.css) — the data-th attributes become the field labels. */}
+          <table className="vol-table users-table">
             <thead>
               <tr>
                 <th>User</th>
@@ -184,7 +186,7 @@ export default function UsersPanel() {
                     </div>
                     <div className="hint">@{u.username}</div>
                   </td>
-                  <td>
+                  <td data-th="Role">
                     <select
                       className="select"
                       value={u.role}
@@ -200,8 +202,10 @@ export default function UsersPanel() {
                       ))}
                     </select>
                   </td>
-                  <td className="num">{fmtDate(u.lastLoginAt)}</td>
-                  <td>
+                  <td className="num" data-th="Last sign-in">
+                    {fmtDate(u.lastLoginAt)}
+                  </td>
+                  <td data-th="Status">
                     {u.disabled ? (
                       "disabled"
                     ) : u.passwordSet ? (
