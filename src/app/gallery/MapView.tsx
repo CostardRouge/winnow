@@ -1,18 +1,34 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Icons } from "@/app/ui";
 import { TILE_URL, TILE_ATTRIBUTION } from "@/app/mapTiles";
+import MapPopover from "./MapPopover";
 
 // Map view for the gallery: plots every geotagged asset (a point per asset),
 // and lets the user carve out a zone — either the current viewport or a
 // hand-drawn box — to pick / reject / export the media inside it. The zone is
 // expressed as a bounding box that the rest of the app treats as just another
 // cumulative filter (see lib/filter.ts `bbox`).
+//
+// Clicking a point opens a preview popover (MapPopover: thumbnail or inline
+// video, capture facts, and a hand-off to the full-screen viewer). It is ONE
+// standalone Leaflet popup moved from marker to marker rather than a popup bound
+// to each of the (up to 10k) markers: the content is React, portalled into the
+// popup's DOM node, so it survives the marker layer being cleared and rebuilt
+// whenever the filters change the point set.
 
-export type GeoPoint = { id: number; lat: number; lon: number };
+export type GeoPoint = {
+  id: number;
+  lat: number;
+  lon: number;
+  /** Clip rather than still (cf. api/assets/geo) — drives the popover's play
+   *  affordance before its detail fetch resolves. Absent on photos. */
+  video?: boolean;
+};
 export type Bbox = { w: number; s: number; e: number; n: number };
 
 // Normalize a longitude into [-180, 180] (Leaflet hands back wrapped values when
@@ -28,6 +44,7 @@ export default function MapView({
   onRejectArea,
   onExportArea,
   onShowInGrid,
+  onOpenAsset,
 }: {
   points: GeoPoint[];
   truncated?: boolean;
@@ -37,17 +54,28 @@ export default function MapView({
   onRejectArea: (ids: number[]) => void;
   onExportArea: (ids: number[]) => void;
   onShowInGrid: (bbox: Bbox, ids: number[]) => void;
+  /** Show one media full size (from the marker popover). */
+  onOpenAsset: (id: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const groupRef = useRef<L.LayerGroup | null>(null);
   const rectRef = useRef<L.Rectangle | null>(null);
+  const popupRef = useRef<L.Popup | null>(null);
   // Latest points, read by the (stable) selection handlers without re-binding.
   const pointsRef = useRef<GeoPoint[]>(points);
   pointsRef.current = points;
 
   const [drawing, setDrawing] = useState(false);
   const [area, setArea] = useState<{ bbox: Bbox; ids: number[] } | null>(null);
+  // The point whose popover is open, and the popup's own DOM node (the React
+  // portal target). Both null when no marker is open.
+  const [active, setActive] = useState<GeoPoint | null>(null);
+  const [popHost, setPopHost] = useState<HTMLDivElement | null>(null);
+  // Read by the marker click handler, which is bound per redraw and must not go
+  // stale on the drawing toggle.
+  const drawingRef = useRef(drawing);
+  drawingRef.current = drawing;
 
   // Which point ids fall inside a bounds (longitude wrap aware).
   const idsInBounds = useCallback((b: L.LatLngBounds): { bbox: Bbox; ids: number[] } => {
@@ -106,6 +134,33 @@ export default function MapView({
     groupRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
+    // The single reusable marker popover. Its content is an empty node React
+    // portals into (see `popHost`), and it is auto-panned clear of the floating
+    // toolbar/zoom cards so a marker near the top edge stays readable.
+    const host = document.createElement("div");
+    // Leaflet decides whether a click was "on the map" by walking up from the
+    // event's target to see if it came out of a popup — and React may already
+    // have swapped that node out (starting playback replaces the thumbnail
+    // <button> with a <video>), which leaves the walk starting from a detached
+    // node, failing, and the map closing the popup mid-interaction. Stopping the
+    // click at the popover's own root, natively, keeps the card's clicks the
+    // card's business whatever React does to the DOM underneath.
+    host.addEventListener("click", (e) => e.stopPropagation());
+    const popup = L.popup({
+      className: "map-pop-wrap",
+      minWidth: 208,
+      maxWidth: 240,
+      closeButton: true,
+      autoPanPadding: [16, 64],
+    }).setContent(host);
+    popupRef.current = popup;
+    setPopHost(host);
+    // Closing from the popup's own ✕ (or a click on the map) has to unmount the
+    // React content too, or a playing video would keep running unseen.
+    map.on("popupclose", (e: L.PopupEvent) => {
+      if (e.popup === popup) setActive(null);
+    });
+
     // The container is created already sized, but a tab/toggle switch can leave
     // Leaflet with a stale size — recompute on resize.
     const ro = new ResizeObserver(() => map.invalidateSize());
@@ -117,6 +172,9 @@ export default function MapView({
       mapRef.current = null;
       groupRef.current = null;
       rectRef.current = null;
+      popupRef.current = null;
+      setPopHost(null);
+      setActive(null);
     };
   }, []);
 
@@ -135,11 +193,11 @@ export default function MapView({
         fillColor: "#3aa99a",
         fillOpacity: 0.85,
       });
-      m.bindPopup(
-        `<a class="map-pop" href="/api/assets/${p.id}/proxy" target="_blank" rel="noreferrer">` +
-          `<img src="/api/assets/${p.id}/thumb" alt="" loading="lazy"/></a>`,
-        { className: "map-pop-wrap", minWidth: 160, closeButton: false },
-      );
+      // Opening the preview is a click on the dot — except while a box is being
+      // drawn, where every gesture belongs to the zone.
+      m.on("click", () => {
+        if (!drawingRef.current) setActive(p);
+      });
       group.addLayer(m);
       latlngs.push([p.lat, p.lon]);
     }
@@ -154,6 +212,33 @@ export default function MapView({
     // `area` intentionally omitted: we only want to refit on data change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points]);
+
+  // --- Marker popover ------------------------------------------------------
+  // Move/open the one popup to follow the active point (and close it when the
+  // point is cleared). `openOn` is a no-op reposition when it's already open, so
+  // hopping marker to marker never fires a spurious close.
+  useEffect(() => {
+    const map = mapRef.current;
+    const popup = popupRef.current;
+    if (!map || !popup) return;
+    if (!active) {
+      if (map.hasLayer(popup)) map.closePopup(popup);
+      return;
+    }
+    popup.setLatLng([active.lat, active.lon]);
+    if (!map.hasLayer(popup)) popup.openOn(map);
+  }, [active, popHost]);
+
+  // A filter change can drop the media the popover is describing — don't leave a
+  // card floating over a dot that is no longer plotted.
+  useEffect(() => {
+    setActive((cur) => (cur && !points.some((p) => p.id === cur.id) ? null : cur));
+  }, [points]);
+
+  // Drawing a box owns the whole canvas: fold the popover away as it starts.
+  useEffect(() => {
+    if (drawing) setActive(null);
+  }, [drawing]);
 
   // --- Draw-a-box mode -----------------------------------------------------
   // Bound with native Pointer events on the map container rather than Leaflet's
@@ -218,6 +303,30 @@ export default function MapView({
   return (
     <div className={`map-wrap${drawing ? " is-drawing" : ""}`}>
       <div ref={containerRef} className="map-canvas" />
+
+      {/* The popover's content, rendered into the Leaflet popup. Keyed by point
+          so switching markers remounts it (fresh fetch, no stale playback). */}
+      {popHost &&
+        active &&
+        createPortal(
+          <MapPopover
+            key={active.id}
+            id={active.id}
+            video={active.video}
+            // The popup is opened empty (React fills it a tick later), so
+            // Leaflet's own sizing/auto-pan would measure nothing. Re-run it
+            // whenever the card's shape changes — on mount, when the facts land,
+            // when playback starts — so it never sits clipped by the map edge.
+            onLayout={() => popupRef.current?.update()}
+            onOpen={(id) => {
+              // Hand over to the full-screen viewer and fold the card away —
+              // leaving it open would keep a clip playing behind the overlay.
+              setActive(null);
+              onOpenAsset(id);
+            }}
+          />,
+          popHost,
+        )}
 
       <div className="map-toolbar">
         <button className="btn" onClick={selectVisible} disabled={!points.length}>
