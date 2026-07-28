@@ -42,32 +42,12 @@ const NAV: NavItem[] = [
     icon: Icons.gear,
     match: (p) => p.startsWith("/gear"),
   },
-  {
-    href: "/import",
-    label: "Import",
-    icon: Icons.inbox,
-    match: (p) => p.startsWith("/import"),
-  },
-  {
-    href: "/volumes",
-    label: "Volumes",
-    icon: Icons.volumes,
-    match: (p) => p.startsWith("/volumes"),
-  },
-  {
-    href: "/pipeline",
-    label: "Pipeline",
-    icon: Icons.pipeline,
-    // Failures now lives under /pipeline, so the rail entry covers it too.
-    match: (p) => p.startsWith("/pipeline"),
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    icon: Icons.gear,
-    match: (p) => p.startsWith("/settings"),
-  },
 ];
+// Pipeline, Volumes and Import used to sit here too. They're configuration
+// rather than day-to-day work, so they moved into the Settings section (reached
+// from the account popover below) and the rail keeps only the four places you
+// actually spend time. Their routes are untouched: the pipeline triage lists are
+// still deep-linked from the counters bento and the Library stats strip.
 
 type Me = {
   id: number;
@@ -147,7 +127,7 @@ function AccountChip() {
             onClick={() => setOpen(false)}
           >
             <span className="account-item-ic" aria-hidden>
-              {Icons.gear}
+              {Icons.settings}
             </span>
             Settings
           </Link>
@@ -225,9 +205,11 @@ export default function AppRail() {
           </Link>
         ))}
       </div>
+      {/* Theme switch first, account chip last — the account is the end of the
+          rail on desktop and the right-most chip in the phone header. */}
       <div className="rail-foot">
-        <AccountChip />
         <ThemeToggle />
+        <AccountChip />
       </div>
     </nav>
   );

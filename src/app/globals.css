@@ -246,9 +246,24 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mt-auto flex w-full items-center justify-center;
     padding-top: 8px;
   }
+  /* A bare glyph — no pill, no border, no shadow — in every viewport. It used
+     to be an .icon-toggle (a bordered square well) on desktop while the phone
+     header already showed it bare; the bare treatment reads quieter next to the
+     account chip, so it's now the only treatment. */
   .theme-toggle {
+    @apply inline-flex items-center justify-center rounded-[var(--radius)]
+      border-0 p-0 transition duration-150;
     width: 44px;
     height: 44px;
+    background: transparent;
+    color: var(--color-muted);
+    transition-timing-function: var(--ease-out);
+  }
+  .theme-toggle:hover {
+    color: var(--color-text);
+  }
+  .theme-toggle:active {
+    transform: scale(0.97);
   }
   /* Show the glyph that matches the active theme, driven purely by the
      <html data-theme> marker (seeded pre-paint) — never by JS state — so the
@@ -265,19 +280,6 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   html[data-theme="dark"] .theme-toggle .theme-ic-sun {
     @apply inline-flex;
-  }
-  /* Remove the background and border from theme toggle — just show the icon */
-  .theme-toggle.icon-toggle {
-    background: transparent;
-    border-color: transparent;
-    color: var(--color-muted);
-  }
-  .theme-toggle.icon-toggle:hover {
-    background: transparent;
-    color: var(--color-text);
-  }
-  .theme-toggle.icon-toggle:active {
-    background: transparent;
   }
 
   /* ---- Page header bar -------------------------------------------------- */
@@ -3338,19 +3340,10 @@ html[data-theme="dark"] .btn-primary:hover {
     align-items: center;
     z-index: 45;
   }
-  /* Bare in the header: no pill, no border, no shadow — just the glyph. */
+  /* Tighter in the phone header; the bare look is the base style now. */
   .theme-toggle {
     width: 34px;
     height: 34px;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    color: var(--color-muted);
-  }
-  .theme-toggle:hover,
-  .theme-toggle:active {
-    background: transparent;
-    box-shadow: none;
   }
   .theme-toggle .theme-ic svg {
     width: 19px;
@@ -4819,10 +4812,10 @@ html[data-theme="dark"] .btn-primary:hover {
     width: 100%;
   }
 
-  /* Rail foot now stacks the theme toggle above the account chip (desktop),
-     putting theme first and account last per the design. */
+  /* Rail foot stacks the theme toggle above the account chip (desktop), so the
+     account sits at the very end of the rail. Order comes from the JSX. */
   .rail-foot {
-    @apply flex-col-reverse gap-2;
+    @apply flex-col gap-2;
   }
   .account-wrap {
     position: relative;
@@ -4873,6 +4866,9 @@ html[data-theme="dark"] .btn-primary:hover {
     padding: 7px 8px;
     color: var(--color-text);
     text-align: left;
+    /* The popover's min-width is a floor, not a cap — let the longest label
+       ("Change password") set the width instead of wrapping onto two lines. */
+    white-space: nowrap;
   }
   .account-item:hover {
     background: var(--color-surface-2);
@@ -4880,52 +4876,6 @@ html[data-theme="dark"] .btn-primary:hover {
   .account-item-ic {
     @apply inline-flex items-center justify-center;
     color: var(--color-muted);
-  }
-
-  /* Settings page: stacked sections for pipeline, volumes, and import. */
-  .settings-container {
-    @apply flex flex-col gap-5;
-  }
-  .settings-section {
-    @apply flex flex-col gap-3 rounded-[var(--radius-xl)] border p-5;
-    background: var(--color-surface);
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-card);
-  }
-  .settings-section-head {
-    @apply flex items-center gap-2;
-  }
-  .settings-section-ic {
-    @apply flex items-center justify-center;
-    color: var(--color-muted);
-  }
-  .settings-section-ic svg {
-    width: 20px;
-    height: 20px;
-  }
-  .settings-section h2 {
-    @apply text-lg font-semibold;
-    margin: 0;
-  }
-  .settings-section-desc {
-    @apply text-sm;
-    color: var(--color-muted);
-    margin: 0;
-  }
-  .settings-section-body {
-    @apply mt-2;
-  }
-  .settings-section-link {
-    @apply text-sm;
-    color: var(--color-muted);
-    margin: 0;
-  }
-  .settings-section-link a {
-    color: var(--color-accent);
-    text-decoration: none;
-  }
-  .settings-section-link a:hover {
-    color: var(--color-accent-hover);
   }
 
   /* One-time invite link (Users page modal): URL + copy button side by side. */

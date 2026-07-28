@@ -389,6 +389,14 @@ export const Icons = {
       <path d="M6 9.6h.01" />
     </svg>
   ),
+  // A cog — app configuration (the Settings section). Deliberately distinct from
+  // `gear` above, which is a camera body (the Gear shelf of bodies + lenses).
+  settings: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M12 2.6h0a1.9 1.9 0 0 1 1.9 1.9v.3a1.6 1.6 0 0 0 2.7 1.1l.2-.2a1.9 1.9 0 1 1 2.7 2.7l-.2.2a1.6 1.6 0 0 0 1.1 2.7h.3a1.9 1.9 0 1 1 0 3.8h-.3a1.6 1.6 0 0 0-1.1 2.7l.2.2a1.9 1.9 0 1 1-2.7 2.7l-.2-.2a1.6 1.6 0 0 0-2.7 1.1v.3a1.9 1.9 0 1 1-3.8 0v-.3a1.6 1.6 0 0 0-2.7-1.1l-.2.2a1.9 1.9 0 1 1-2.7-2.7l.2-.2a1.6 1.6 0 0 0-1.1-2.7h-.3a1.9 1.9 0 1 1 0-3.8h.3a1.6 1.6 0 0 0 1.1-2.7l-.2-.2a1.9 1.9 0 1 1 2.7-2.7l.2.2a1.6 1.6 0 0 0 2.7-1.1v-.3A1.9 1.9 0 0 1 12 2.6Z" />
+    </svg>
+  ),
   // Stacked drives — the Volumes section (registered directories/mounts).
   volumes: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
