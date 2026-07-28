@@ -716,10 +716,15 @@ jump between *before* and *after* at a glance.
   disturbed, and a file that arrives later is picked up on the next pass.
 - **Where it shows.** The viewer gains a **Before/After** toggle (swap the
   on-screen media between the edit and its source, like the RAW/JPEG toggle), and
-  the gallery filters **Has edit** / **Is an edit** (`has_edit` / `is_edit`) let
-  you pull up exactly the shots you've published, or the edits themselves. The
-  link lives on `assets.original_asset_id` (`edit_match` records how it was made:
-  `name_date` / `name`).
+  the panel's **Before / after** facet filters each side. The link has a
+  direction, so each surface only sees one end of it and the facet shows only
+  the half that can match: on **Incoming** (the captures) **Has an edit** /
+  **Not edited yet** (`has_edit=1|0`) — the shots you've published, and the
+  backlog you haven't; on the **Gallery** (the finals) **Linked to an original**
+  / **No original found** (`is_edit=1|0`), the second listing the edits
+  reconciliation couldn't match. Each axis is hidden entirely until its count is
+  non-zero in scope. The link lives on `assets.original_asset_id` (`edit_match`
+  records how it was made: `name_date` / `name`).
 
 ## Failures: list + retry (page `/pipeline/failures`)
 

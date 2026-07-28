@@ -195,8 +195,10 @@ function toQuery(
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
   if (f.group_kind) sp.set("group_kind", f.group_kind);
-  if (f.has_edit) sp.set("has_edit", "true");
-  if (f.is_edit) sp.set("is_edit", "true");
+  // Finals ↔ sources (cf. lib/reconcile.ts) — tri-state, like has_faces/stacked:
+  // `false` asks for the complement (not edited yet / no original found).
+  if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "true" : "false");
+  if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "true" : "false");
   // ML analysis (faces + OCR, cf. lib/ml.ts).
   arr("face_count", f.face_count);
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
@@ -239,8 +241,8 @@ function countActiveFilters(f: Filters): number {
   if (f.sharpness_min != null || f.sharpness_max != null) n++;
   if (f.has_gps) n++;
   if (f.group_kind) n++;
-  if (f.has_edit) n++;
-  if (f.is_edit) n++;
+  if (f.has_edit != null) n++;
+  if (f.is_edit != null) n++;
   if (f.near_dup) n++;
   if (f.stacked != null) n++;
   if (f.bbox) n++;

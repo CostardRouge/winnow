@@ -40,7 +40,10 @@ const NUMS = [
   "sharpness_max",
 ] as const;
 const STRS = ["date_from", "date_to", "q"] as const;
-const BOOLS = ["has_gps", "show_ignored", "has_edit", "is_edit", "has_text", "near_dup"] as const;
+// Truthy-only flags. `has_edit`/`is_edit` deliberately live OUTSIDE this list:
+// they're tri-state (cf. below), and this list's decode tests the *string's*
+// truthiness — `?has_edit=0` would come back as `true`.
+const BOOLS = ["has_gps", "show_ignored", "has_text", "near_dup"] as const;
 
 export function encodeFilters(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();
@@ -59,6 +62,12 @@ export function encodeFilters(f: Filters): URLSearchParams {
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "1" : "0");
   // Same tri-state for burst piles: "only stacked" / "only standalone".
   if (f.stacked != null) sp.set("stacked", f.stacked ? "1" : "0");
+  // Finals ↔ sources (cf. lib/reconcile.ts), tri-state on both directions:
+  // "has an edit" / "not edited yet", and "linked to an original" / "no original
+  // found". The `false` side is what surfaces the unpublished backlog and the
+  // reconciliation misses. Old `?has_edit=1` deep links keep their meaning.
+  if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "1" : "0");
+  if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "1" : "0");
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
@@ -109,6 +118,14 @@ export function decodeFilters(params: URLSearchParams): Filters {
   const stacked = params.get("stacked");
   if (stacked === "1") f.stacked = true;
   else if (stacked === "0") f.stacked = false;
+
+  const hasEdit = params.get("has_edit");
+  if (hasEdit === "1") f.has_edit = true;
+  else if (hasEdit === "0") f.has_edit = false;
+
+  const isEdit = params.get("is_edit");
+  if (isEdit === "1") f.is_edit = true;
+  else if (isEdit === "0") f.is_edit = false;
 
   const verdict = params.get("verdict");
   if (verdict === "pick" || verdict === "reject" || verdict === "unrated")
