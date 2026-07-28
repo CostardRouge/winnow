@@ -35,6 +35,8 @@ import {
   mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
+  selectionDownloadFiles,
+  selectionZipHref,
   sessionDownloadFiles,
   sessionGeotagAssets,
   tagAssets,
@@ -851,6 +853,17 @@ export default function SessionGrid({
             onStar={(n) => rateMany([...selected], { star: n })}
             onTag={(name, add) => tagSelection([...selected], name, add)}
             onExport={() => exportSelection([...selected])}
+            download={{
+              zipHref: selectionZipHref([...selected]),
+              zipName: "winnow-selection.zip",
+              listFiles: () =>
+                Promise.resolve(
+                  selectionDownloadFiles(
+                    assets.filter((a) => selected.has(a.id)),
+                  ),
+                ),
+              onMessage: setNotice,
+            }}
             onRegenerate={() => regenerate([...selected])}
             onGeocode={() => geocode([...selected])}
             onGeotag={() => openGeotag([...selected])}
