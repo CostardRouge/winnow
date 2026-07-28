@@ -5,6 +5,7 @@ import { formatBytes } from "@/lib/format";
 import ExportFilePicker, {
   type ExportPickerState,
 } from "./ExportFilePicker";
+import ExportTargetPicker, { type ExportTargetId } from "./ExportTargetPicker";
 
 // Export modal for an ad-hoc selection (gallery bulk bar, context menu, map
 // area). The gallery used to fire POST /api/export silently, with no options;
@@ -27,6 +28,7 @@ export default function ExportSelectionModal({
     ids.length === 1 ? `Export ${stamp}` : `Selection ${ids.length} · ${stamp}`,
   );
   const [picker, setPicker] = useState<ExportPickerState | null>(null);
+  const [target, setTarget] = useState<ExportTargetId>("capture_one");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +56,7 @@ export default function ExportSelectionModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
-          target: "capture_one",
+          target,
           filter: { ids },
           include: picker.include,
         }),
@@ -63,7 +65,9 @@ export default function ExportSelectionModal({
       if (!r.ok || !data.export_job_id) {
         throw new Error(data.error ?? "Couldn’t queue the export.");
       }
-      onSubmitted(`Export #${data.export_job_id} queued (${picker.files} file(s))`);
+      onSubmitted(
+        `${target === "immich" ? "Push" : "Export"} #${data.export_job_id} queued (${picker.files} file(s))`,
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -84,12 +88,20 @@ export default function ExportSelectionModal({
           Export {ids.length === 1 ? "1 media" : `${ids.length} media`}
         </h2>
         <p className="hint" style={{ marginTop: 0 }}>
-          Copies the selection’s files to the export folder —{" "}
+          {target === "immich"
+            ? "Uploads the selection’s files to Immich — "
+            : "Copies the selection’s files to the export folder — "}
           {picker?.loaded
             ? `${picker.files} file(s) · ${formatBytes(picker.bytes)} selected`
             : "scanning the selection"}
           . The originals are never touched.
         </p>
+
+        <ExportTargetPicker
+          value={target}
+          disabled={busy}
+          onChange={setTarget}
+        />
 
         <label className="modal-label" htmlFor="export-sel-name">
           Export name
@@ -126,9 +138,11 @@ export default function ExportSelectionModal({
             disabled={busy || !picker?.loaded || picker.files === 0}
           >
             {busy
-              ? "Exporting…"
+              ? target === "immich"
+                ? "Pushing…"
+                : "Exporting…"
               : picker?.loaded
-                ? `Export ${picker.files} file(s)`
+                ? `${target === "immich" ? "Push" : "Export"} ${picker.files} file(s)`
                 : "Export"}
           </button>
         </div>

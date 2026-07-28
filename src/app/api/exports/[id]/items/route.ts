@@ -3,6 +3,7 @@
 // Thumbnails/proxies are served by asset id (the export reuses the source's
 // derivatives), so the client renders them via /api/assets/:source_asset_id/*.
 import { many } from "@/lib/db";
+import { immichAssetUrl } from "@/lib/immich";
 import { json, badRequest, serverError } from "@/lib/api";
 
 // DB-backed route: never pre-rendered/cached at build time.
@@ -13,6 +14,7 @@ type Row = {
   source_asset_id: number;
   kind: string;
   output_path: string | null;
+  output_key: string | null;
   filename: string;
   ext: string | null;
   media_type: "photo" | "video";
@@ -43,7 +45,7 @@ export async function GET(
     if (!Number.isFinite(jobId)) return badRequest("invalid id");
 
     const rows = await many<Row>(
-      `SELECT e.id, e.source_asset_id, e.kind, e.output_path,
+      `SELECT e.id, e.source_asset_id, e.kind, e.output_path, e.output_key,
               a.filename, a.ext, a.media_type, a.derivative_status,
               a.file_size, a.width, a.height, a.duration_s, a.captured_at,
               a.camera_model, a.lens, a.iso, a.shutter, a.aperture,
@@ -57,9 +59,13 @@ export async function GET(
 
     // Never leak the server-side absolute path: the client only needs to know a
     // file can be downloaded (and downloads it through /items/:itemId).
-    const items = rows.map(({ output_path, ...rest }) => ({
+    // An `immich` row has no local copy — its output_key is the remote asset id,
+    // which becomes a deep link into the Immich library instead.
+    const items = rows.map(({ output_path, output_key, ...rest }) => ({
       ...rest,
       downloadable: Boolean(output_path),
+      remote_url:
+        rest.kind === "immich" && output_key ? immichAssetUrl(output_key) : null,
     }));
 
     return json({ items });

@@ -24,7 +24,8 @@ NAS (HDD, RAW/video, RO)  ──►  Indexer  ──►  Postgres (sessions, ass
                                   └─enqueue──►  Derivative workers ──► Storage (disk/MinIO)
                                                    (exiftool + sharp)   thumbs + proxies
 Next.js (cull UI + API) ◄── Postgres + Storage
-   └─► Export worker ──► RAW copy for Capture One  (+ source→export lineage)
+   └─► Export worker ──┬─► RAW copy for Capture One   (+ source→export lineage)
+                       └─► Push to Immich (REST API)  (+ same lineage)
 ```
 
 Everything (Postgres, Redis, derivatives, exports, inbox) lives on the
@@ -153,6 +154,9 @@ See `.env.dist`. Main ones:
 - `DATABASE_URL`, `REDIS_URL`
 - `STORAGE_DRIVER=disk|s3`, `STORAGE_DISK_PATH`, and the `S3_*` for MinIO
 - `EXPORT_DIR`: folder where the "RAW copy" export drops the originals
+- `IMMICH_*`: push a culled session's keepers to Immich — `IMMICH_ENABLED` (off
+  by default), `IMMICH_BASE_URL` + `IMMICH_API_KEY`, `IMMICH_ALBUM_MODE`.
+  See [Push to Immich](#push-to-immich-export-target-immich)
 - `*_CONCURRENCY`: bounded concurrency to spare the NAS's full HDD
 - `THUMB_SIZE` / `PROXY_SIZE` / qualities
 - `GEOCODE_*`: reverse geocoding (GPS → place names) — `GEOCODE_BASE_URL`
@@ -209,7 +213,8 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/:id/similar` `?limit&max_distance` | Visually closest media by perceptual-hash (Hamming) distance — the near-duplicates of a shot (feeds the viewer's **Similar** strip) |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
-| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
+| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection). `target` ∈ `capture_one` (copy to the export folder) · `immich` ([push](#push-to-immich-export-target-immich), 400 unless configured) |
+| `GET /api/export/targets` `?probe=1` | Destinations this deployment offers (drives the modal's **Destination** picker); `probe=1` also pings Immich and validates the key |
 | `GET /api/export/:id` | Status + result |
 | `POST /api/upload` (multipart `files`) | Upload from the phone → inbox → import |
 | `POST /api/import/offload` `{ path }` | Offload from a mounted card (source kept) |
@@ -738,6 +743,76 @@ jump between *before* and *after* at a glance.
   non-zero in scope. The link lives on `assets.original_asset_id` (`edit_match`
   records how it was made: `name_date` / `name`).
 
+## Push to Immich (export target `immich`)
+
+An export answers "where do the keepers go?", and there are two honest answers.
+The **export folder** target hands you the files you go on to *develop* (Capture
+One, Lightroom…). The **Immich** target uploads them to the library you go on to
+*look at* — the one on your phone, the one you share from. Winnow stays the
+darkroom; Immich stays the archive.
+
+This closes the loop the rest of the app already assumes: the **Final** volumes
+Winnow indexes read-only *are* Immich's output ([Volumes](#volumes-directories-attached-to-the-project)),
+and the ML analysis already borrows Immich's machine-learning sidecar
+([Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)). Until now
+the last hop — getting the picks *into* Immich — was the manual one.
+
+**Setup.** Off by default. Point it at your server and give it a key (Immich →
+Account Settings → API Keys):
+
+```bash
+IMMICH_ENABLED=true
+IMMICH_BASE_URL=http://immich-server:2283   # server root, WITHOUT /api
+IMMICH_API_KEY=<your key>
+IMMICH_ALBUM_MODE=job                       # job | fixed | none
+```
+
+`IMMICH_ENABLED=true` without a key **fail-fasts at boot**, like every other
+incoherent variable. Once it's set, the export modals grow a **Destination**
+choice (session picks, gallery selection, map area — the same modal everywhere);
+with Immich off there is only one destination, so the picker stays hidden and the
+flow is exactly as it was.
+
+**What it does.**
+
+- **Uploads copies through the public REST API** — never into Immich's storage,
+  its database or its filesystem layout. It's the documented, versioned API with
+  an ordinary API key, so an Immich upgrade can't corrupt anything: the worst
+  case is an HTTP error on the export job. (Contrast `ML_BASE_URL`, which speaks
+  Immich's *internal* ML endpoint and has to pin a container tag.) The NAS
+  originals are read, never moved or modified.
+- **Albums.** `job` (default) files each push into an album **named after the
+  export**, `fixed` always uses `IMMICH_ALBUM_NAME`, `none` uploads to the
+  timeline only. An album of that name is **reused**, so re-exporting a session
+  tops it up instead of littering the library with "session-picks (2)".
+- **Idempotent.** Immich dedups by checksum: a file it already holds comes back
+  as the *existing* asset id, so re-pushing an export never duplicates anything.
+  `IMMICH_PRECHECK` (on by default) asks first — one SHA-1 per file against
+  `/assets/bulk-upload-check` — so a re-push sends **no bytes at all**. Turn it
+  off when Winnow and Immich share a disk and the hashing costs more than the
+  transfer.
+- **Live Photos stay live.** Winnow already treats an iPhone still + its `.mov`
+  as [one logical media](#scope--next-steps); the push uploads the motion clip
+  first and links it to the still, so the pair lands in Immich **as a Live
+  Photo** — not as a JPEG and an unrelated video.
+- **Sidecars don't travel.** Immich's upload only accepts an XMP sidecar, and a
+  DJI `.SRT` flight log or a Sony `.XML` isn't that. They're **skipped and
+  counted** in the job result rather than failing it — they still ride along with
+  the export-folder target, which is where they're actually useful.
+- **Sequential**, like the copy target: the NAS is one spinning disk and
+  `EXPORT_CONCURRENCY` already bounds how many jobs run at once, so parallel
+  reads would cost more in seeks than they'd win in upload overlap.
+
+**Same lineage, different output.** A push writes the usual `exports` rows —
+`kind='immich'`, `output_path` NULL (nothing local to download), `output_key` =
+the remote asset id — and marks each source `exported`. On the **Exports** page
+the card reports `N uploaded, M already there`, links to the album, and each file
+links through to the media **in Immich**. Deleting the export drops Winnow's
+record and reverts the shots to `triaged`; **the media stay in Immich** (the
+confirmation says so). The destination is probed while the modal is open, so an
+unreachable server or a bad key is reported *there* rather than as a job that
+fails ten minutes later.
+
 ## Failures: list + retry (page `/pipeline/failures`)
 
 Everything that failed is listed in one place, with the **error message** to
@@ -883,10 +958,16 @@ restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
 immich-machine-learning container, paced backfill, Faces facet + OCR search —
 see [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)).
 
+**Also implemented**: **Immich push** (export target `immich`: uploads the
+keepers to the Immich library through its public REST API, filed in an album,
+deduplicated, Live Photos kept live — see
+[Push to Immich](#push-to-immich-export-target-immich)).
+
 **V2/V3 (not included)**: advanced ratings/colors/tags, **person clustering**
 (grouping the stored face embeddings into named people), **closed-eyes
 detection** (needs a facial-landmarks model the ML container doesn't expose),
-web export + Immich push, adaptive throttling, agent-on-NAS, n8n automations.
+web export (browser-ready renders, target `web`), adaptive throttling,
+agent-on-NAS, n8n automations.
 
 ---
 
