@@ -33,11 +33,38 @@ only the `incoming` zone (where imports land) is mounted **read/write**.
 
 ### Authentication / access
 
-Auth is handled **upstream** (no application login): **Traefik** (basic-auth)
-+ **Cloudflare Tunnel** expose the app behind a domain. Winnow therefore runs on
-the internal network and trusts the reverse proxy; do not publish ports
-`3000`/`5432`/`6379` directly on the Internet — only Traefik routes to the app.
-(For off-LAN mobile access, uploads go through the tunnel.)
+Winnow now carries its **own login and multi-user accounts** (the old
+upstream-only Traefik basic-auth is no longer required — the layers stack fine
+if you keep it). One shared library, per-user roles:
+
+| Role | Can |
+|------|-----|
+| `viewer` | browse everything (grid, viewer, search, downloads) — change nothing |
+| `editor` | viewer + cull (picks/stars/tags/trash), geotag, import/upload, export |
+| `admin`  | editor + volumes, settings, scan control, pipeline, purge, **user management** |
+
+How it works:
+
+* **First run**: with no account in the database, `/login` becomes a one-time
+  "create the administrator" form (`/api/auth/setup`), which locks itself as
+  soon as one user exists. Admins then invite the others from **Users** (rail →
+  account chip → Users).
+* **Sessions**: local accounts (scrypt-hashed passwords), a 30-day sliding
+  cookie session (`httpOnly`, `SameSite=Lax`, `Secure` behind https). Postgres
+  stores only the SHA-256 of the session token. Logout, password changes and
+  account disabling revoke sessions server-side.
+* **Enforcement** is central (`src/proxy.ts` + `src/lib/authz.ts`): every page
+  and API request is validated against the session; viewers are read-only,
+  mutations need `editor`, infrastructure verbs (`/api/roots`, `/api/settings`,
+  `/api/scan`, `/api/pipeline`, `/api/purge`, …) need `admin`. Only `/login`,
+  the auth handshake and `/api/health` (Docker healthcheck) stay public.
+* **Attribution**: ratings and export jobs record which account made them
+  (`ratings.rated_by`, `export_jobs.created_by`).
+
+The network posture is unchanged: **Traefik** + **Cloudflare Tunnel** expose
+the app behind a domain; do not publish ports `3000`/`5432`/`6379` directly on
+the Internet — only Traefik routes to the app. (For off-LAN mobile access,
+uploads go through the tunnel.)
 
 ### §12 decisions adopted
 
