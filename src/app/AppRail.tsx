@@ -61,6 +61,12 @@ const NAV: NavItem[] = [
     // Failures now lives under /pipeline, so the rail entry covers it too.
     match: (p) => p.startsWith("/pipeline"),
   },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: Icons.gear,
+    match: (p) => p.startsWith("/settings"),
+  },
 ];
 
 type Me = {
@@ -134,6 +140,17 @@ function AccountChip() {
             <span className="account-name">{name}</span>
             <span className="account-role">{me.role}</span>
           </div>
+          <Link
+            href="/settings"
+            className="account-item"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            <span className="account-item-ic" aria-hidden>
+              {Icons.gear}
+            </span>
+            Settings
+          </Link>
           {me.role === "admin" && (
             <Link
               href="/users"
