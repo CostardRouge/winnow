@@ -190,7 +190,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
-| `GET /api/gear` | The **shelf**: every camera body + lens the library was shot with, each with its media count, photo/video split, date span, and companion piece of gear (top lens per body, top body per lens). Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
+| `GET /api/gear` | The **shelf**: every camera body the library was shot with and, nested under each, the lenses used on it — media count, photo/video split and date span **tallied separately for Incoming and the Gallery**. Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
 | `DELETE /api/sessions/:id` `?files=true` | Deletes the session (cascade: assets/ratings/picks) + its derivative cache. `files=true` also removes the originals from disk (incoming only, confined to the session folder) — to clear an orphaned import |
@@ -542,21 +542,33 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
 
 ## Gear: what the library was shot with (page `/gear`)
 
-The **Gear** page (`/gear`, in the rail) is the shelf: every **camera body** and
-every **lens** the library was shot with, each **drawn** and counted. It is the
-inverse of the gallery's device/lens filter chips — instead of *"narrow the grid
-by camera"* it answers *"what have I shot with, and how much"* at a glance, then
-links each piece of gear back to its frames (`/library/incoming/grid?device=…`,
-`?lens=…`).
+The **Gear** page (`/gear`, in the rail) is the shelf: every **camera body** the
+library was shot with and, hanging off each one, **the glass it was used with** —
+all of it **drawn** and counted. Bodies come first because that is how the kit is
+actually held: a lens count only means something once you know which body it was
+mounted on. It is the inverse of the gallery's device/lens filter chips — instead
+of *"narrow the grid by camera"* it answers *"what have I shot with, and how
+much"* at a glance, then links each piece of gear back to its frames.
 
+- **Incoming / Gallery, like the Library tabs.** The library has two halves and
+  most gear has frames in **both**, so a merged tally would always promise media
+  the linked grid can't show. The shelf carries the same segmented tabs, and the
+  choice drives *both* the counts and where every card points
+  (`/library/incoming/grid?device=…&lens=…` or `/library/gallery?device=…&lens=…`;
+  both tabs seed their filters from the query string). Gear with nothing in the
+  active half is dropped rather than drawn at zero — its card would open an empty
+  grid — and each card names what the *other* half still holds ("3 more in the
+  Gallery"). The choice is remembered between visits.
 - **Counted like every other counter** (`GET /api/gear`, `src/lib/gear.ts`): live
   assets only (a trashed frame stops inflating a body's tally) and **logical
-  media**, so a RAW+JPEG pair counts once. Grouping stays on the **raw EXIF
-  string** — the value the gallery filters on — so a card's count and the grid it
-  opens can never drift; prettifying (`lib/cameraLabels.ts`) happens on display
-  only. Each card also carries the **date span** it was in service, the
-  photo/video split, and its most-used companion (top lens per body, top body per
-  lens).
+  media**, so a RAW+JPEG pair counts once. Only roots the Library can actually
+  show are counted — an `export` staging root belongs to neither tab. Grouping
+  stays on the **raw EXIF string** — the value the gallery filters on — so a
+  card's count and the grid it opens can never drift; prettifying
+  (`lib/cameraLabels.ts`) happens on display only. Each card also carries the
+  **date span** it was in service and the photo/video split; frames whose files
+  carry no lens tag are named under the body ("3 frames without a lens tag")
+  rather than hidden, so the numbers add up.
 - **The artwork is generated, not drawn** (`src/lib/gearArt.ts`). A library can
   hold any camera anyone ever pointed at anything, so per-model illustrations are
   a losing game: each EXIF name is classified into a body **archetype** (reflex ·
