@@ -6,6 +6,7 @@ import { enqueueExport } from "@/lib/queue";
 import { FilterSchema } from "@/lib/filter";
 import { EXPORT_CATEGORIES, type ExportCategory } from "@/lib/exportTypes";
 import { getSettings } from "@/lib/settings";
+import { identityFromHeaders } from "@/lib/auth";
 import { json, badRequest, serverError } from "@/lib/api";
 
 // Per-category file selection (cf. lib/exportTypes.ts) — what the redesigned
@@ -82,8 +83,8 @@ export async function POST(req: NextRequest) {
     const sessionId = filter.session_id ?? null;
 
     const job = await one<{ id: number }>(
-      `INSERT INTO export_jobs (name, target, filter_query, params, status, session_id)
-       VALUES ($1, $2, $3, $4, 'queued', $5) RETURNING id`,
+      `INSERT INTO export_jobs (name, target, filter_query, params, status, session_id, created_by)
+       VALUES ($1, $2, $3, $4, 'queued', $5, $6) RETURNING id`,
       [
         name,
         target,
@@ -98,6 +99,8 @@ export async function POST(req: NextRequest) {
           include_live_video: includeLiveVideo,
         }),
         sessionId,
+        // Attribution: which account launched the export (cf. migration 0032).
+        identityFromHeaders(req.headers)?.id ?? null,
       ],
     );
     await enqueueExport(job!.id);

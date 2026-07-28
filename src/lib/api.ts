@@ -1,5 +1,5 @@
 // Helpers common to the route handlers.
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -17,6 +17,22 @@ export function serverError(err: unknown) {
   console.error("API error:", err);
   const message = err instanceof Error ? err.message : "Internal error";
   return NextResponse.json({ error: message }, { status: 500 });
+}
+
+// Best-effort client address for throttling: behind Traefik/Cloudflare the
+// real client is the first hop of x-forwarded-for.
+export function clientIp(req: NextRequest): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  return fwd?.split(",")[0]?.trim() || "local";
+}
+
+// Whether the session cookie should carry Secure: yes as soon as the request
+// travelled over https (directly or via the reverse proxy/tunnel).
+export function cookieSecure(req: NextRequest): boolean {
+  return (
+    req.headers.get("x-forwarded-proto") === "https" ||
+    req.nextUrl.protocol === "https:"
+  );
 }
 
 // Grid page size: `?limit=` clamped to [1, PAGE_MAX], default PAGE. Lets the

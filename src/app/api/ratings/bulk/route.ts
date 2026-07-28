@@ -7,6 +7,7 @@ import { z } from "zod";
 import { q } from "@/lib/db";
 import { groupExpandCTE } from "@/lib/pairing";
 import { burstExpandCTE } from "@/lib/bursts";
+import { identityFromHeaders } from "@/lib/auth";
 import { json, badRequest, serverError } from "@/lib/api";
 
 const Body = z.object({
@@ -28,16 +29,20 @@ export async function POST(req: NextRequest) {
     // RAW+JPEG / Live pair companion (cf. lib/pairing.ts); and — only on the
     // explicit pile action — to every live frame of the id's burst stack too.
     const expand = expand_bursts ? burstExpandCTE : groupExpandCTE;
+    // Attribution: the account acting is stamped on every touched rating
+    // (kept when the identity is somehow absent — cf. migration 0032).
+    const userId = identityFromHeaders(req.headers)?.id ?? null;
     await q(
       `WITH ${expand("$1")}
-       INSERT INTO ratings (asset_id, verdict, star, reviewed_at)
-       SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), now()
+       INSERT INTO ratings (asset_id, verdict, star, reviewed_at, rated_by)
+       SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), now(), $4
        FROM target_ids
        ON CONFLICT (asset_id) DO UPDATE SET
          verdict     = COALESCE($2, ratings.verdict),
          star        = COALESCE($3, ratings.star),
-         reviewed_at = now()`,
-      [ids, verdict ?? null, star ?? null],
+         reviewed_at = now(),
+         rated_by    = COALESCE($4, ratings.rated_by)`,
+      [ids, verdict ?? null, star ?? null, userId],
     );
 
     await q(
