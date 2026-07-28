@@ -14,7 +14,11 @@ export default function PipelineLayout({
         <h1>Pipeline</h1>
         <span className="hint">scan · analyze · queues</span>
       </div>
-      <PipelineNav />
+      <div className="shell-head">
+        <div className="shell-head-row">
+          <PipelineNav />
+        </div>
+      </div>
       <div className="pipeline-body">{children}</div>
     </div>
   );
