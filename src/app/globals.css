@@ -1617,6 +1617,31 @@ html[data-theme="dark"] .btn-primary:hover {
     transform-origin: center center;
     will-change: transform;
   }
+  /* Swipe track: the stage's media rides a three-pane strip (previous ·
+     current · next) that follows a one-finger drag at fit zoom, phone-gallery
+     style — the current photo slides out while its neighbour slides in. The
+     neighbour panes sit one stage-width plus a 32px gutter to either side
+     (mirrored as PANE_GAP in MediaViewer.tsx — keep in step) and, being
+     rendered offscreen, double as a preload of the adjacent proxies. While
+     the finger is down the track follows it with no transition; `is-settling`
+     turns the transition on for the release animation (slide over and commit,
+     or spring back to centre — duration mirrored as SETTLE_MS). */
+  .viewer .stage-track {
+    @apply absolute inset-0;
+    will-change: transform;
+  }
+  .viewer .stage-track.is-settling {
+    transition: transform 0.26s var(--ease-out);
+  }
+  .viewer .stage-pane {
+    @apply absolute inset-0 flex min-h-0 items-center justify-center;
+  }
+  .viewer .stage-pane.is-prev {
+    transform: translateX(calc(-100% - 32px));
+  }
+  .viewer .stage-pane.is-next {
+    transform: translateX(calc(100% + 32px));
+  }
   /* Metadata side panel (replaces the old floating .exif box). Bottom sheet on
      mobile, fixed-width sidebar on desktop. No top padding: the sticky header
      owns the top edge so it can sit flush and stay opaque as content scrolls
