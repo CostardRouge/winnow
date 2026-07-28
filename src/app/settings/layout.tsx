@@ -18,7 +18,11 @@ export default function SettingsLayout({
           pipeline · volumes · import
         </span>
       </div>
-      <SettingsNav />
+      <div className="shell-head">
+        <div className="shell-head-row">
+          <SettingsNav />
+        </div>
+      </div>
       <div className="pipeline-body">{children}</div>
     </div>
   );
