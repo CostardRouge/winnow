@@ -337,6 +337,13 @@ export const Icons = {
       <path d="M17 8.5 20.5 12 17 15.5" />
     </svg>
   ),
+  key: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="14" r="4.5" />
+      <path d="M11.5 10.5 20 2" />
+      <path d="M16 6l3 3" />
+    </svg>
+  ),
   alert: (
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />

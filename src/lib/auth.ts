@@ -54,6 +54,9 @@ export type UserRow = {
   last_login_at: string | null;
 };
 
+// NULL password_hash = account created but invite not yet accepted; such an
+// account cannot sign in (authenticate() falls through to the dummy hash).
+
 // --- Cookie / identity plumbing -------------------------------------------
 
 export const SESSION_COOKIE = "winnow_session";
@@ -265,12 +268,12 @@ export async function authenticate(
   username: string,
   password: string,
 ): Promise<UserRow | null> {
-  const user = await one<UserRow & { password_hash: string }>(
+  const user = await one<UserRow & { password_hash: string | null }>(
     "SELECT * FROM users WHERE username = $1",
     [normalizeUsername(username)],
   );
-  // Hash even when the user is unknown so the response time does not reveal
-  // which usernames exist.
+  // Hash even when the user is unknown (or has no password yet — invite not
+  // accepted) so the response time does not reveal which usernames exist.
   const ok = await verifyPassword(
     password,
     user?.password_hash ??
@@ -278,6 +281,89 @@ export async function authenticate(
   );
   if (!user || user.disabled || !ok) return null;
   return user;
+}
+
+// --- Invites (one-time "set your password" links) ---------------------------
+//
+// The admin never chooses nor sees anyone's password: creating an account (or
+// resetting a lost password) yields a single-use /invite/<token> URL to hand
+// over out of band. Opening it lets the user set their own password. Only the
+// token's SHA-256 is stored; re-issuing replaces the previous link (at most
+// one live invite per user); accepting deletes the row and revokes every
+// pre-existing session of the account.
+
+const INVITE_TTL_MS = 7 * 24 * 3600_000;
+
+export type InviteInfo = {
+  userId: number;
+  username: string;
+  displayName: string | null;
+};
+
+export async function createInvite(
+  userId: number,
+  createdBy: number | null,
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+  // ON CONFLICT (user_id): re-issuing an invite invalidates the previous link.
+  await q(
+    `INSERT INTO user_invites (token_hash, user_id, created_by, expires_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id) DO UPDATE
+       SET token_hash = EXCLUDED.token_hash,
+           created_by = EXCLUDED.created_by,
+           created_at = now(),
+           expires_at = EXCLUDED.expires_at`,
+    [sha256hex(token), userId, createdBy, expiresAt.toISOString()],
+  );
+  // Opportunistic pruning, same pattern as sessions — no cron needed.
+  q("DELETE FROM user_invites WHERE expires_at < now()").catch(() => {});
+  return { token, expiresAt };
+}
+
+// Valid = not expired, account still enabled. Returns who the link is for
+// (shown on the accept screen), never anything sensitive.
+export async function validateInvite(token: string): Promise<InviteInfo | null> {
+  const row = await one<{
+    user_id: number;
+    username: string;
+    display_name: string | null;
+  }>(
+    `SELECT u.id AS user_id, u.username, u.display_name
+       FROM user_invites i
+       JOIN users u ON u.id = i.user_id
+      WHERE i.token_hash = $1
+        AND i.expires_at > now()
+        AND NOT u.disabled`,
+    [sha256hex(token)],
+  );
+  return row
+    ? { userId: row.user_id, username: row.username, displayName: row.display_name }
+    : null;
+}
+
+// Sets the password and burns the link. Re-validates inside so a link cannot
+// be used twice even by racing requests (the DELETE arbitrates: only the call
+// that actually removes the row proceeds). Any session the account had before
+// (e.g. pre-reset, possibly compromised) is revoked.
+export async function acceptInvite(
+  token: string,
+  password: string,
+): Promise<InviteInfo | null> {
+  const info = await validateInvite(token);
+  if (!info) return null;
+  const burned = await one<{ user_id: number }>(
+    "DELETE FROM user_invites WHERE token_hash = $1 RETURNING user_id",
+    [sha256hex(token)],
+  );
+  if (!burned) return null; // lost the race — the other request won the link
+  await q("UPDATE users SET password_hash = $2 WHERE id = $1", [
+    info.userId,
+    await hashPassword(password),
+  ]);
+  await destroyUserSessions(info.userId);
+  return info;
 }
 
 export async function usersExist(): Promise<boolean> {

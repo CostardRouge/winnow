@@ -1,17 +1,19 @@
 // Per-account admin actions (admin-only — enforced centrally in src/proxy.ts).
-//   PATCH  /api/auth/users/:id { role?, disabled?, password?, displayName? }
+//   PATCH  /api/auth/users/:id { role?, disabled?, displayName? }
 //   DELETE /api/auth/users/:id
+// Passwords are deliberately NOT settable here: an admin never types anyone's
+// password — resets go through a fresh invite link (./invite) that lets the
+// person choose their own.
 // Invariants:
 //   * the library can never end up without an active admin — the last one
 //     cannot be demoted, disabled or deleted;
 //   * deleting your own account is refused (sign in as another admin to do it);
-//   * a password reset or a disable revokes every session of the target.
+//   * a disable revokes every session of the target.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one } from "@/lib/db";
 import {
   destroyUserSessions,
-  hashPassword,
   identityFromHeaders,
   type UserRow,
 } from "@/lib/auth";
@@ -22,7 +24,6 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   role: z.enum(["admin", "editor", "viewer"]).optional(),
   disabled: z.boolean().optional(),
-  password: z.string().min(8).max(1024).optional(),
   displayName: z.string().max(100).nullable().optional(),
 });
 
@@ -50,7 +51,7 @@ export async function PATCH(
     if (!Number.isFinite(id)) return badRequest("Invalid id");
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
-    const { role, disabled, password, displayName } = parsed.data;
+    const { role, disabled, displayName } = parsed.data;
 
     const target = await getUser(id);
     if (!target) return notFound("No such user");
@@ -73,13 +74,6 @@ export async function PATCH(
     if (disabled !== undefined) {
       await one("UPDATE users SET disabled = $2 WHERE id = $1", [id, disabled]);
       if (disabled) await destroyUserSessions(id);
-    }
-    if (password !== undefined) {
-      await one("UPDATE users SET password_hash = $2 WHERE id = $1", [
-        id,
-        await hashPassword(password),
-      ]);
-      await destroyUserSessions(id); // the old password's sessions die with it
     }
     // A role change must reach the proxy's short-lived session cache promptly.
     if (role !== undefined && role !== target.role) await destroyUserSessions(id);

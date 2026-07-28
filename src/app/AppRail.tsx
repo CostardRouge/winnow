@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand, Icons } from "./ui";
 import ThemeToggle from "./ThemeToggle";
+import ChangePasswordModal from "./ChangePasswordModal";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 // Persistent navigation rail: vertical on desktop (left edge), a bottom tab bar
@@ -75,6 +76,7 @@ function AccountChip() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [open, setOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -149,6 +151,20 @@ function AccountChip() {
             type="button"
             className="account-item"
             role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              setChangingPassword(true);
+            }}
+          >
+            <span className="account-item-ic" aria-hidden>
+              {Icons.key}
+            </span>
+            Change password
+          </button>
+          <button
+            type="button"
+            className="account-item"
+            role="menuitem"
             onClick={signOut}
           >
             <span className="account-item-ic" aria-hidden>
@@ -158,6 +174,9 @@ function AccountChip() {
           </button>
         </div>
       )}
+      {changingPassword && (
+        <ChangePasswordModal onClose={() => setChangingPassword(false)} />
+      )}
     </div>
   );
 }
@@ -165,8 +184,9 @@ function AccountChip() {
 export default function AppRail() {
   const pathname = usePathname() ?? "/";
 
-  // The login screen stands alone — no navigation chrome around it.
-  if (pathname === "/login") return null;
+  // The login and invite screens stand alone — no navigation chrome around
+  // them (an invitee is not signed in yet).
+  if (pathname === "/login" || pathname.startsWith("/invite/")) return null;
 
   return (
     <nav className="rail" aria-label="Primary">

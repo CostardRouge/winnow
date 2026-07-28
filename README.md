@@ -49,15 +49,26 @@ How it works:
   "create the administrator" form (`/api/auth/setup`), which locks itself as
   soon as one user exists. Admins then invite the others from **Users** (rail →
   account chip → Users).
+* **Invites — passwords never travel**: an admin creates an account *without*
+  a password and gets a **one-time link** (`/invite/<token>`, single-use,
+  7-day expiry) to hand over on a channel they trust. Opening it lets the
+  person choose their own password — the admin never knows nor types it, and
+  a link that leaks *after* use is worthless. Lost password? Same mechanism:
+  **Reset link** issues a fresh invite; accepting it sets the new password and
+  revokes every old session. Only the SHA-256 of invite tokens is stored;
+  re-issuing replaces the pending link, and a pending link can be revoked.
 * **Sessions**: local accounts (scrypt-hashed passwords), a 30-day sliding
   cookie session (`httpOnly`, `SameSite=Lax`, `Secure` behind https). Postgres
   stores only the SHA-256 of the session token. Logout, password changes and
-  account disabling revoke sessions server-side.
+  account disabling revoke sessions server-side. Everyone can change their own
+  password from the account chip (current password re-proved; other sessions
+  revoked).
 * **Enforcement** is central (`src/proxy.ts` + `src/lib/authz.ts`): every page
   and API request is validated against the session; viewers are read-only,
   mutations need `editor`, infrastructure verbs (`/api/roots`, `/api/settings`,
   `/api/scan`, `/api/pipeline`, `/api/purge`, …) need `admin`. Only `/login`,
-  the auth handshake and `/api/health` (Docker healthcheck) stay public.
+  `/invite/<token>` (the token *is* the credential), the auth handshake and
+  `/api/health` (Docker healthcheck) stay public.
 * **Attribution**: ratings and export jobs record which account made them
   (`ratings.rated_by`, `export_jobs.created_by`).
 

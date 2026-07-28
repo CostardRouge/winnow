@@ -1,9 +1,13 @@
 "use client";
 
 // User management table (admin-only page): create accounts, change roles,
-// enable/disable, reset passwords, delete. The server enforces the invariants
-// (last-active-admin protection, no self-delete) — the UI just surfaces them.
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+// enable/disable, send invite links, delete. Nobody — not even the admin —
+// types anyone else's password: creating an account (or resetting a lost
+// password) yields a one-time /invite/<token> link to hand over out of band,
+// and the person chooses their own password by opening it. The server enforces
+// the invariants (last-active-admin protection, no self-delete) — the UI just
+// surfaces them.
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { ConfirmDialog, EmptyState, Icons, LoadingState } from "../ui";
 import type { UserRole } from "@/lib/authz";
@@ -16,6 +20,8 @@ type UserItem = {
   disabled: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  passwordSet: boolean;
+  inviteExpiresAt: string | null; // live (non-expired) invite only
 };
 
 const ROLES: UserRole[] = ["viewer", "editor", "admin"];
@@ -39,8 +45,13 @@ export default function UsersPanel() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
-  const [resetting, setResetting] = useState<UserItem | null>(null);
   const [deleting, setDeleting] = useState<UserItem | null>(null);
+  // The one place a clear invite token ever lives client-side: this modal.
+  const [inviteLink, setInviteLink] = useState<{
+    username: string;
+    url: string;
+    expiresAt: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,6 +104,42 @@ export default function UsersPanel() {
     }
   }
 
+  // (Re-)issue the one-time link — onboarding not opened in time, or a
+  // password reset. Replaces any previous link for the account.
+  async function issueInvite(u: UserItem) {
+    setBusyId(u.id);
+    setError(null);
+    try {
+      const r = await fetchJson<{
+        username: string;
+        invite: { token: string; expiresAt: string };
+      }>(`/api/auth/users/${u.id}/invite`, { method: "POST" });
+      setInviteLink({
+        username: r.username,
+        url: `${window.location.origin}/invite/${r.invite.token}`,
+        expiresAt: r.invite.expiresAt,
+      });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function revokeInvite(u: UserItem) {
+    setBusyId(u.id);
+    setError(null);
+    try {
+      await fetchJson(`/api/auth/users/${u.id}/invite`, { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (loading) return <LoadingState label="Loading users…" />;
 
   return (
@@ -101,7 +148,7 @@ export default function UsersPanel() {
 
       <div className="filterbar" style={{ justifyContent: "flex-end" }}>
         <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          + Add user
+          + Invite a user
         </button>
       </div>
 
@@ -154,16 +201,49 @@ export default function UsersPanel() {
                     </select>
                   </td>
                   <td className="num">{fmtDate(u.lastLoginAt)}</td>
-                  <td>{u.disabled ? "disabled" : "active"}</td>
+                  <td>
+                    {u.disabled ? (
+                      "disabled"
+                    ) : u.passwordSet ? (
+                      "active"
+                    ) : u.inviteExpiresAt ? (
+                      <>
+                        invited
+                        <div className="hint">
+                          link expires {fmtDate(u.inviteExpiresAt)}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        no password
+                        <div className="hint">send a new invite link</div>
+                      </>
+                    )}
+                  </td>
                   <td>
                     <div className="vol-actions">
                       <button
                         className="btn btn-sm"
-                        disabled={busyId === u.id}
-                        onClick={() => setResetting(u)}
+                        disabled={busyId === u.id || u.disabled}
+                        onClick={() => issueInvite(u)}
+                        title={
+                          u.passwordSet
+                            ? "One-time link that lets them set a NEW password (their old sessions are revoked when it is used)"
+                            : "One-time link that lets them choose their password"
+                        }
                       >
-                        Reset password
+                        {u.passwordSet ? "Reset link" : "Invite link"}
                       </button>
+                      {u.inviteExpiresAt && (
+                        <button
+                          className="btn btn-sm"
+                          disabled={busyId === u.id}
+                          onClick={() => revokeInvite(u)}
+                          title="Invalidate the pending link without issuing a new one"
+                        >
+                          Revoke link
+                        </button>
+                      )}
                       <button
                         className="btn btn-sm"
                         disabled={busyId === u.id || me?.id === u.id}
@@ -198,38 +278,18 @@ export default function UsersPanel() {
       )}
 
       {creating && (
-        <UserFormModal
-          title="Add a user"
-          submitLabel="Create user"
-          withRole
+        <CreateUserModal
           onClose={() => setCreating(false)}
-          onSubmit={async (v) => {
-            await fetchJson("/api/auth/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(v),
-            });
+          onCreated={async (invite) => {
             setCreating(false);
+            setInviteLink(invite);
             await load();
           }}
         />
       )}
 
-      {resetting && (
-        <UserFormModal
-          title={`Reset password — @${resetting.username}`}
-          submitLabel="Set new password"
-          passwordOnly
-          onClose={() => setResetting(null)}
-          onSubmit={async (v) => {
-            await fetchJson(`/api/auth/users/${resetting.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ password: v.password }),
-            });
-            setResetting(null);
-          }}
-        />
+      {inviteLink && (
+        <InviteLinkModal invite={inviteLink} onClose={() => setInviteLink(null)} />
       )}
 
       <ConfirmDialog
@@ -252,31 +312,21 @@ export default function UsersPanel() {
   );
 }
 
-// Shared modal for "create user" and "reset password": a few fields + inline
-// error, styled with the app's modal classes.
-function UserFormModal({
-  title,
-  submitLabel,
-  withRole = false,
-  passwordOnly = false,
+// "Invite a user": username + display name + role — deliberately NO password
+// field. Submitting returns the one-time link, handed to InviteLinkModal.
+function CreateUserModal({
   onClose,
-  onSubmit,
+  onCreated,
 }: {
-  title: string;
-  submitLabel: string;
-  withRole?: boolean;
-  passwordOnly?: boolean;
   onClose: () => void;
-  onSubmit: (v: {
+  onCreated: (invite: {
     username: string;
-    displayName?: string;
-    password: string;
-    role: UserRole;
+    url: string;
+    expiresAt: string;
   }) => Promise<void>;
 }) {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("editor");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -287,15 +337,25 @@ function UserFormModal({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit({
-        username,
-        displayName: displayName.trim() || undefined,
-        password,
-        role,
+      const r = await fetchJson<{
+        user: { username: string };
+        invite: { token: string; expiresAt: string };
+      }>("/api/auth/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          displayName: displayName.trim() || undefined,
+          role,
+        }),
+      });
+      await onCreated({
+        username: r.user.username,
+        url: `${window.location.origin}/invite/${r.invite.token}`,
+        expiresAt: r.invite.expiresAt,
       });
     } catch (err) {
       setError((err as Error).message);
-    } finally {
       setBusy(false);
     }
   }
@@ -306,73 +366,55 @@ function UserFormModal({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-label="Invite a user"
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
       >
-        <h2 className="modal-title">{title}</h2>
+        <h2 className="modal-title">Invite a user</h2>
+        <p className="hint">
+          No password to type here: you&apos;ll get a one-time link to send them
+          — they choose their own password when they open it.
+        </p>
 
-        {!passwordOnly && (
-          <>
-            <label className="modal-label" htmlFor="uf-username">
-              Username
-            </label>
-            <input
-              id="uf-username"
-              className="input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoCapitalize="none"
-              autoCorrect="off"
-              minLength={3}
-              maxLength={32}
-              required
-            />
-            <label className="modal-label" htmlFor="uf-display">
-              Display name <span className="hint">(optional)</span>
-            </label>
-            <input
-              id="uf-display"
-              className="input"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-          </>
-        )}
-
-        <label className="modal-label" htmlFor="uf-password">
-          {passwordOnly ? "New password" : "Password"}
+        <label className="modal-label" htmlFor="uf-username">
+          Username
         </label>
         <input
-          id="uf-password"
+          id="uf-username"
           className="input"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="new-password"
-          minLength={8}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoCapitalize="none"
+          autoCorrect="off"
+          minLength={3}
+          maxLength={32}
           required
         />
+        <label className="modal-label" htmlFor="uf-display">
+          Display name <span className="hint">(optional)</span>
+        </label>
+        <input
+          id="uf-display"
+          className="input"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
 
-        {withRole && (
-          <>
-            <label className="modal-label" htmlFor="uf-role">
-              Role
-            </label>
-            <select
-              id="uf-role"
-              className="select"
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r} — {ROLE_HINT[r]}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
+        <label className="modal-label" htmlFor="uf-role">
+          Role
+        </label>
+        <select
+          id="uf-role"
+          className="select"
+          value={role}
+          onChange={(e) => setRole(e.target.value as UserRole)}
+        >
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r} — {ROLE_HINT[r]}
+            </option>
+          ))}
+        </select>
 
         {error && <div className="error-box">{error}</div>}
 
@@ -381,10 +423,74 @@ function UserFormModal({
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "…" : submitLabel}
+            {busy ? "…" : "Create & get link"}
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// Shows a freshly issued invite link — the ONLY time the clear token is
+// visible (the server stores just its hash). Copy it now or re-issue later.
+function InviteLinkModal({
+  invite,
+  onClose,
+}: {
+  invite: { username: string; url: string; expiresAt: string };
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(invite.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable (plain-http on the LAN…): select the text
+      // so a manual Ctrl/Cmd-C still works.
+      inputRef.current?.select();
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Invite link for ${invite.username}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal-title">Invite link — @{invite.username}</h2>
+        <p className="hint">
+          Send this link to them over a channel you trust. It is shown only
+          once, works once, and expires {fmtDate(invite.expiresAt)}. If it
+          lapses, issue a new one from the table.
+        </p>
+
+        <div className="invite-link-row">
+          <input
+            ref={inputRef}
+            className="input invite-link-input"
+            readOnly
+            value={invite.url}
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label="Invite link"
+          />
+          <button type="button" className="btn" onClick={copy}>
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

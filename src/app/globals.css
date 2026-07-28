@@ -4867,6 +4867,18 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply inline-flex items-center justify-center;
     color: var(--color-muted);
   }
+
+  /* One-time invite link (Users page modal): URL + copy button side by side. */
+  .invite-link-row {
+    @apply flex items-center gap-2;
+    margin-top: 10px;
+  }
+  .invite-link-input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-jetbrains-mono), monospace;
+    font-size: 0.75rem;
+  }
 }
 
 /* Phones: the rail foot is a fixed top-right chip row — lay the account chip

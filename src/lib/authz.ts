@@ -19,12 +19,15 @@ export function roleAtLeast(role: UserRole, min: UserRole): boolean {
 }
 
 // Paths reachable with NO session at all. Deliberately tiny: the login screen,
-// the auth handshake, the first-run setup, and the Docker healthcheck probe.
+// the auth handshake, the first-run setup, the invite-acceptance screen (its
+// bearer token IS the credential), and the Docker healthcheck probe.
 // (Static assets — /_next, /icons, sw.js… — are excluded by the proxy matcher.)
 const PUBLIC_PREFIXES = [
   "/login",
+  "/invite",
   "/api/auth/login",
   "/api/auth/setup",
+  "/api/auth/invite",
   "/api/health",
 ];
 
