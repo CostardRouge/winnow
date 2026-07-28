@@ -266,6 +266,19 @@ html[data-theme="dark"] .btn-primary:hover {
   html[data-theme="dark"] .theme-toggle .theme-ic-sun {
     @apply inline-flex;
   }
+  /* Remove the background and border from theme toggle — just show the icon */
+  .theme-toggle.icon-toggle {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-muted);
+  }
+  .theme-toggle.icon-toggle:hover {
+    background: transparent;
+    color: var(--color-text);
+  }
+  .theme-toggle.icon-toggle:active {
+    background: transparent;
+  }
 
   /* ---- Page header bar -------------------------------------------------- */
   .topbar {
@@ -4806,9 +4819,10 @@ html[data-theme="dark"] .btn-primary:hover {
     width: 100%;
   }
 
-  /* Rail foot now stacks the account chip above the theme toggle (desktop). */
+  /* Rail foot now stacks the theme toggle above the account chip (desktop),
+     putting theme first and account last per the design. */
   .rail-foot {
-    @apply flex-col gap-2;
+    @apply flex-col-reverse gap-2;
   }
   .account-wrap {
     position: relative;
@@ -4866,6 +4880,52 @@ html[data-theme="dark"] .btn-primary:hover {
   .account-item-ic {
     @apply inline-flex items-center justify-center;
     color: var(--color-muted);
+  }
+
+  /* Settings page: stacked sections for pipeline, volumes, and import. */
+  .settings-container {
+    @apply flex flex-col gap-5;
+  }
+  .settings-section {
+    @apply flex flex-col gap-3 rounded-[var(--radius-xl)] border p-5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .settings-section-head {
+    @apply flex items-center gap-2;
+  }
+  .settings-section-ic {
+    @apply flex items-center justify-center;
+    color: var(--color-muted);
+  }
+  .settings-section-ic svg {
+    width: 20px;
+    height: 20px;
+  }
+  .settings-section h2 {
+    @apply text-lg font-semibold;
+    margin: 0;
+  }
+  .settings-section-desc {
+    @apply text-sm;
+    color: var(--color-muted);
+    margin: 0;
+  }
+  .settings-section-body {
+    @apply mt-2;
+  }
+  .settings-section-link {
+    @apply text-sm;
+    color: var(--color-muted);
+    margin: 0;
+  }
+  .settings-section-link a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .settings-section-link a:hover {
+    color: var(--color-accent-hover);
   }
 
   /* One-time invite link (Users page modal): URL + copy button side by side. */
