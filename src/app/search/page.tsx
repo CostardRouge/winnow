@@ -168,9 +168,9 @@ export default function SearchPage() {
   return (
     <div className="app-shell">
       <div className="topbar">
-        <h1>ML search</h1>
+        <h1>Search</h1>
         <span className="hint max-sm:hidden">
-          describe it — the library ranks itself (CLIP)
+          semantic — describe it, CLIP ranks the library
         </span>
       </div>
 
