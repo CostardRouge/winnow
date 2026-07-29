@@ -188,9 +188,9 @@ export default function ControlPanel() {
         </Link>
         {stats?.mlEnabled && (
           <Link
-            href="/gallery?has_faces=1"
+            href="/settings/pipeline/faces"
             className="stat-link"
-            title="Faces & text detected off the derivatives — click to browse media with faces"
+            title="Faces & text detected off the derivatives — click to triage the ML stage (what's analyzed, pending, failed)"
           >
             <Stat
               label="Faces & text"
@@ -202,9 +202,9 @@ export default function ControlPanel() {
         )}
         {stats?.clipEnabled && stats.clip && (
           <Link
-            href="/search"
+            href="/settings/pipeline/search"
             className="stat-link"
-            title="Media with a CLIP embedding — the pool semantic search ranks. Below the library total? Run “Index for search” below."
+            title="Media with a CLIP embedding — the pool semantic search ranks. Click to see what's missing from the index and fill it."
           >
             <Stat
               label="Search index"

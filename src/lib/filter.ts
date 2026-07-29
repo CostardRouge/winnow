@@ -6,6 +6,7 @@
 // accept min/max bounds. Everything relies on indexed columns (cf.
 // migration 0003) - no on-the-fly computation.
 import { z } from "zod";
+import { config } from "./config";
 import { kindsForRole } from "./roles";
 
 // "a,b,c" | ["a","b"] | "a"  ->  ["a","b","c"]  (empty -> undefined)
@@ -134,6 +135,16 @@ export const FilterSchema = z
     face_count: intList,
     has_faces: boolish,
     has_text: boolish,
+    // ML lifecycle (multi): pending | processing | ready | error | skipped.
+    // Drives the Pipeline "Faces & text" triage page the way derivative_status
+    // drives Media/Pending — `pending,processing` is "still to be analyzed".
+    ml_status: csv,
+    // Semantic-search index membership: true → assets with a CLIP embedding
+    // under the CURRENT model (the pool /api/search ranks), false → the gap an
+    // "Index for search" backfill would fill. Reads asset_clip, which is absent
+    // when pgvector isn't installed — callers must guard with clipTableExists()
+    // (cf. lib/ml.ts) before passing this through, as /api/assets does.
+    clip_indexed: boolish,
     // Perceptual near-duplicates (cf. lib/ml.ts, GET /api/assets/:id/similar):
     // true → only frames that have a look-alike within the same session; false →
     // only the loners (unanalyzed included). A gallery-wide companion to the
@@ -369,6 +380,16 @@ export function buildFilter(
     conditions.push("COALESCE(a.face_count, 0) = 0");
   if (filter.has_text === true) conditions.push("a.ocr_text IS NOT NULL");
   else if (filter.has_text === false) conditions.push("a.ocr_text IS NULL");
+  if (filter.ml_status) inAny("a.ml_status", filter.ml_status);
+  // Search-index membership: an embedding under the current CLIP model only —
+  // stale rows from a previous ML_CLIP_MODEL are dead weight the search ignores
+  // (cf. lib/ml.clipCoverage), so they count as "not indexed" here too.
+  if (filter.clip_indexed === true || filter.clip_indexed === false) {
+    const exists = `EXISTS (SELECT 1 FROM asset_clip cl
+       WHERE cl.asset_id = a.id AND cl.model = $${i++})`;
+    params.push(config.ml.clip.model);
+    conditions.push(filter.clip_indexed ? exists : `NOT ${exists}`);
+  }
 
   if (filter.year) inAny("a.capture_year", filter.year);
   if (filter.month) inAny("a.capture_month", filter.month);
@@ -507,6 +528,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "face_count",
     "has_faces",
     "has_text",
+    "ml_status",
+    "clip_indexed",
     "near_dup",
     "year",
     "month",

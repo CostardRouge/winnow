@@ -33,6 +33,29 @@ export default function PipelineNav() {
       count: a?.pending ?? 0,
       tone: "warn",
     },
+    // The ML stages only exist when the feature is configured server-side —
+    // same gating as the overview tiles (a stage that can never progress isn't
+    // shown). The tabs appear once the first /api/stats poll lands.
+    ...(stats?.mlEnabled
+      ? [
+          {
+            href: "/settings/pipeline/faces",
+            label: "Faces & text",
+            count: a?.ml_pending ?? 0,
+            tone: "warn" as const,
+          },
+        ]
+      : []),
+    ...(stats?.clipEnabled && stats.clip
+      ? [
+          {
+            href: "/settings/pipeline/search",
+            label: "Search index",
+            count: Math.max(0, stats.clip.library - stats.clip.indexed),
+            tone: "warn" as const,
+          },
+        ]
+      : []),
     {
       href: "/settings/pipeline/failures",
       label: "Failures",
