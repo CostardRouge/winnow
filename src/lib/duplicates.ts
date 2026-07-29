@@ -8,8 +8,10 @@
 // scan updates its row + a hits counter instead of accumulating.
 import { rm } from "node:fs/promises";
 import { q, one, many } from "./db";
+import { config } from "./config";
 import { isWithinBrowseRoots } from "./fsbrowse";
 import { getStorage } from "./storage/index";
+import { normalizeRootPath } from "./volumes";
 
 // Thrown for user-fixable problems while resolving a duplicate group (the chosen
 // survivor isn't part of the group, sits outside the browsable area, …) → mapped
@@ -53,6 +55,51 @@ export async function recordDuplicateHit(args: {
     // Never let auditing break a scan/import.
     console.warn("recordDuplicateHit:", (err as Error).message);
   }
+}
+
+// --- View-only volumes ------------------------------------------------------
+//
+// Final (the finished masters, kind 'finals') and Export volumes are view-only
+// everywhere in the app: the purge worker refuses to unlink anything on them
+// (lib/purge.ts, PURGEABLE_KINDS = source/inbox) and DELETE /api/sessions/:id
+// carries the same guard. Deduplication must refuse them too, or it becomes the
+// one path that reaches around that rule and removes a finalized master —
+// "Keep only this" on an incoming copy would relink the library entry off the
+// final and unlink it. A final copy is always the one that survives; the extra
+// copies sitting in the cullable zone are what deduplication removes.
+//
+// Resolution is by PATH, since an on-disk duplicate has no session (hence no
+// root) to join: the registered roots are the source of truth for a volume's
+// kind, with the configured FINALS_DIRS / EXPORT_DIR as a fallback for a
+// directory that is browsable but not registered as a root.
+export const VIEW_ONLY_REASON =
+  "on a view-only volume (Final/Export) — never deleted";
+
+async function viewOnlyRoots(): Promise<string[]> {
+  const rows = await many<{ path: string }>(
+    "SELECT path FROM roots WHERE kind IN ('finals', 'export')",
+  ).catch(() => [] as { path: string }[]);
+  return [
+    ...rows.map((r) => r.path),
+    ...config.import.finalsDirs,
+    config.exportDir,
+  ]
+    .filter(Boolean)
+    .map(normalizeRootPath)
+    .filter((p) => p && p !== "/");
+}
+
+function isUnder(target: string, roots: string[]): boolean {
+  const t = normalizeRootPath(target);
+  return roots.some((r) => t === r || t.startsWith(r + "/"));
+}
+
+// One roots lookup, then a synchronous predicate — for listing a whole page of
+// duplicates (cf. /api/failures) so the UI can mark the protected copies and
+// stop offering an action that would be refused anyway.
+export async function viewOnlyChecker(): Promise<(path: string) => boolean> {
+  const roots = await viewOnlyRoots();
+  return (path: string) => isUnder(path, roots);
 }
 
 // Reclaim the row of a TRASHED asset whose original we just removed while
@@ -123,11 +170,12 @@ export type DeleteDuplicatesResult = {
 
 // Hard-deletes the extra copies recorded in `duplicate_hits` (NOT a soft delete:
 // these files were never indexed, so there is no asset row to hide — the file on
-// disk is the only thing to remove). Three layers of safety, in order:
+// disk is the only thing to remove). Four layers of safety, in order:
 //   1. whitelist  — a path must be a recorded duplicate hit (no arbitrary path),
 //   2. asset guard — never touch a path that is a live indexed asset (a kept
 //      original or a recovered false collision: distinct content, must survive),
-//   3. containment — the path must sit inside the browsable area (incoming/NAS).
+//   3. view-only  — never touch a Final/Export volume (cf. VIEW_ONLY_REASON),
+//   4. containment — the path must sit inside the browsable area (incoming/NAS).
 // `rm(..., force)` treats an already-gone file as success so a stale row still
 // gets cleaned. Resolved rows are dropped (the duplicate no longer exists).
 export async function deleteDuplicateFiles(
@@ -165,6 +213,8 @@ export async function deleteDuplicateFiles(
     ).map((r) => [r.abs_path, r.id] as const),
   );
 
+  const viewOnly = await viewOnlyRoots();
+
   const toDelete: string[] = [];
   for (const p of paths) {
     if (!recorded.has(p))
@@ -174,6 +224,8 @@ export async function deleteDuplicateFiles(
         path: p,
         reason: "indexed in the library (kept) — not deleted",
       });
+    else if (isUnder(p, viewOnly))
+      result.skipped.push({ path: p, reason: VIEW_ONLY_REASON });
     else if (!isWithinBrowseRoots(p))
       result.skipped.push({ path: p, reason: "outside the allowed area" });
     else toDelete.push(p);
@@ -234,6 +286,13 @@ export type KeepOneResult = {
 // the file they just chose to keep one purge away from deletion. It is reclaimed
 // instead — same contract as the purge worker, cf. reclaimTrashedAsset.
 //
+// A copy on a VIEW-ONLY volume can never be a loser. When it's the library copy
+// the whole call is refused up front — accepting it would relink the entry off
+// the final master and then fail to unlink it, leaving the very file we must not
+// touch orphaned on disk. An on-disk copy there is merely skipped, like one
+// outside the browsable area. Either way the final survives; keep IT and the
+// cullable extras are the ones that go.
+//
 // Only verified-identical / unverifiable copies are eligible — a FALSE collision
 // (distinct content sharing a partial hash) is stored with a NULL content_hash
 // and is never pulled in here, so genuinely different shots can't be collapsed.
@@ -287,6 +346,14 @@ export async function keepOneCopy(args: {
   // The library copy, when it is one of the losers.
   const libraryLoser = asset && asset.abs_path !== keepPath ? asset : null;
 
+  const viewOnly = await viewOnlyRoots();
+  // Refuse before touching anything: the library copy is a finalized master, so
+  // there is no way to honour "keep only this other copy" — the master stays.
+  if (libraryLoser && isUnder(libraryLoser.abs_path, viewOnly))
+    throw new DuplicateError(
+      "The library copy sits on a view-only volume (Final/Export) and is never deleted. Keep that copy instead — the extra copies are the ones deduplication removes.",
+    );
+
   // Relink the asset onto the survivor up front, when the user keeps an on-disk
   // copy rather than a LIVE indexed original.
   if (libraryLoser && !libraryLoser.trashed) {
@@ -310,6 +377,10 @@ export async function keepOneCopy(args: {
   // asset already points elsewhere). Containment is re-checked per path.
   for (const p of members) {
     if (p === keepPath) continue;
+    if (isUnder(p, viewOnly)) {
+      result.skipped.push({ path: p, reason: VIEW_ONLY_REASON });
+      continue;
+    }
     if (!isWithinBrowseRoots(p)) {
       result.skipped.push({ path: p, reason: "outside the allowed area" });
       continue;
@@ -364,8 +435,10 @@ export type DiscardCopyResult = {
 //
 // Safety mirrors deleteDuplicateFiles: the asset must be part of a RECORDED
 // duplicate group (so another copy of these bytes is known to exist — this can
-// never be the last one), it must be in the trash, and its path must sit inside
-// the browsable area.
+// never be the last one), it must be in the trash, it must not sit on a
+// view-only Final/Export volume (being in the trash does not make a finalized
+// master deletable — the purge worker refuses it too), and its path must sit
+// inside the browsable area.
 export async function discardTrashedCopy(
   assetId: number,
 ): Promise<DiscardCopyResult> {
@@ -403,6 +476,10 @@ export async function discardTrashedCopy(
       "No other copy of this content is recorded — refusing to remove the only one left.",
     );
 
+  if (isUnder(asset.abs_path, await viewOnlyRoots()))
+    throw new DuplicateError(
+      "That copy sits on a view-only volume (Final/Export) and is never deleted, trash or not.",
+    );
   if (!isWithinBrowseRoots(asset.abs_path))
     throw new DuplicateError("That copy is outside the allowed area.");
 

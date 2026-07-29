@@ -48,7 +48,8 @@ type ImportItem = {
 // (identical) duplicate, and its path/name let the user compare the two. It is
 // not necessarily a *kept* copy: `deleted` marks one already sent to the trash
 // (its file still on disk, hence still a duplicate), `purged` one whose bytes
-// were already reclaimed.
+// were already reclaimed. `view_only` marks a copy on a Final/Export volume —
+// finalized masters, never deleted by deduplication.
 type ExistingAsset = {
   id: number;
   filename: string | null;
@@ -57,6 +58,7 @@ type ExistingAsset = {
   has_thumb: boolean;
   deleted: boolean;
   purged: boolean;
+  view_only: boolean;
 };
 type DuplicateItem = {
   abs_path: string;
@@ -67,6 +69,7 @@ type DuplicateItem = {
   hits: number;
   file_size: number | null;
   updated_at: string;
+  view_only: boolean;
   existing: ExistingAsset | null;
 };
 // An indexed asset whose ORIGINAL is gone from disk (cf. lib/integrity.ts).
@@ -825,6 +828,12 @@ type KeepTarget = {
 // that is already in the trash is a copy like any other — it can be picked, or
 // dropped on its own with its row's Delete. A path filter (e.g. "trash") isolates
 // a folder, and on-disk copies can still be culled one-at-a-time or by selection.
+//
+// One copy is never a candidate for removal: a Final/Export one. Those volumes
+// are view-only across the app, so a copy there is shown locked — no delete, no
+// checkbox — and when it's the library copy, it's the only survivor the group
+// can be collapsed onto.
+//
 // False collisions — distinct content that merely shares a partial hash — are
 // never grouped or collapsed; they're listed apart, for audit only.
 function DedupSection({
@@ -901,8 +910,9 @@ function DedupSection({
 
   // Only on-disk copies are bulk-selectable; the indexed copy is removed via
   // "Keep only this" (which relinks the library entry), never a blind delete.
+  // A copy on a view-only volume is out too — it is never deleted at all.
   const selectableShown = shownGroups.flatMap((g) =>
-    g.copies.map((c) => c.abs_path),
+    g.copies.filter((c) => !c.view_only).map((c) => c.abs_path),
   );
   const allChecked =
     selectableShown.length > 0 && selectableShown.every((p) => sel.has(p));
@@ -923,14 +933,14 @@ function DedupSection({
   // Stage a "keep only this" decision: which copies would be deleted, and what
   // becomes of the library entry when it isn't the survivor — relinked onto the
   // survivor if it's live, reclaimed (file removed, row stamped purged) if it's
-  // already in the trash. A purged entry has no bytes left, so it never appears
-  // among the deletions.
+  // already in the trash. A purged entry has no bytes left and a view-only one
+  // is never deleted, so neither ever appears among the deletions.
   const askKeep = (g: DupGroup, keepPath: string, keepLabel: string) => {
     const lib = g.existing;
     const libLoser = !!(lib?.abs_path && keepPath !== lib.abs_path);
     const members = [
-      ...(lib?.abs_path && !lib.purged ? [lib.abs_path] : []),
-      ...g.copies.map((c) => c.abs_path),
+      ...(lib?.abs_path && !lib.purged && !lib.view_only ? [lib.abs_path] : []),
+      ...g.copies.filter((c) => !c.view_only).map((c) => c.abs_path),
     ];
     const deletions = members.filter((p) => p !== keepPath);
     setKeep({
@@ -1074,10 +1084,12 @@ function DedupSection({
         are removed (the library entry is relinked onto your pick if it’s an
         on-disk copy), leaving a single media. A library copy already in the
         trash is never relinked: its file is removed and the entry marked purged
-        — and it can be dropped on its own with its row’s delete. False
-        collisions — genuinely distinct content that merely shares a partial hash
-        — are indexed separately and never collapsed; they’re listed below for
-        audit only.
+        — and it can be dropped on its own with its row’s delete. Copies on a{" "}
+        <strong>Final or Export volume are never deleted</strong>: those masters
+        are view-only, so they’re shown locked and are the copy the group
+        collapses onto. False collisions — genuinely distinct content that merely
+        shares a partial hash — are indexed separately and never collapsed;
+        they’re listed below for audit only.
         {falseCollisions > 0
           ? ` ${falseCollisions} false collision(s) recovered.`
           : ""}
@@ -1171,6 +1183,12 @@ function DupGroupCard({
   const thumb = existing?.has_thumb ? `/api/assets/${existing.id}/thumb` : null;
   const size = copies.find((c) => c.file_size != null)?.file_size ?? null;
   const total = (existing ? 1 : 0) + copies.length;
+  // The library copy is a finalized master on a view-only volume: it can never
+  // be the one removed, so it's the only survivor this group can collapse onto.
+  // "Keep only this" is left to it alone rather than offered and then refused.
+  const lockedLibrary = !!existing?.view_only;
+  const lockedHint =
+    "The library copy is on a view-only volume (Final/Export) and is never deleted — keep that copy instead";
   // The identical copies share their bytes, so the library copy's preview stands
   // in for the whole group — open it full-size to eyeball before deciding.
   const [preview, setPreview] = useState(false);
@@ -1213,22 +1231,27 @@ function DupGroupCard({
           <MemberRow
             // A trashed entry is still a copy of these bytes — it can be kept,
             // or dropped on its own (its file is removed and the row is stamped
-            // purged; it stays in the trash). A purged one has no bytes left, so
-            // neither action applies: it's shown for context only.
+            // purged; it stays in the trash). A purged one has no bytes left and
+            // a view-only one is never deleted, trash or not: both are shown
+            // without a delete.
             label={
-              existing.purged
-                ? "In library (purged)"
-                : existing.deleted
-                  ? "In library (in trash)"
-                  : "In library"
+              existing.view_only
+                ? "In library (view-only)"
+                : existing.purged
+                  ? "In library (purged)"
+                  : existing.deleted
+                    ? "In library (in trash)"
+                    : "In library"
             }
             primary={`#${existing.id} · ${existing.filename ?? "—"}`}
             sub={
-              existing.purged
-                ? "already reclaimed — no file left on disk"
-                : existing.deleted
-                  ? "soft-deleted, but its file is still on disk"
-                  : undefined
+              existing.view_only
+                ? "on a Final/Export volume — never deleted by deduplication"
+                : existing.purged
+                  ? "already reclaimed — no file left on disk"
+                  : existing.deleted
+                    ? "soft-deleted, but its file is still on disk"
+                    : undefined
             }
             path={existing.abs_path ?? "(path unknown)"}
             downloadHref={`/api/assets/${existing.id}/download`}
@@ -1241,7 +1264,10 @@ function DupGroupCard({
                 );
             }}
             onDelete={
-              existing.deleted && !existing.purged && existing.abs_path
+              existing.deleted &&
+              !existing.purged &&
+              !existing.view_only &&
+              existing.abs_path
                 ? () => onDiscardLibrary(existing)
                 : undefined
             }
@@ -1252,17 +1278,26 @@ function DupGroupCard({
         {copies.map((c) => (
           <MemberRow
             key={c.abs_path}
-            label="On disk"
-            sub={c.source}
+            label={c.view_only ? "On disk (view-only)" : "On disk"}
+            sub={
+              c.view_only
+                ? `${c.source} · on a Final/Export volume — never deleted`
+                : c.source
+            }
             path={c.abs_path}
             downloadHref={`/api/failures/duplicates/file?path=${encodeURIComponent(
               c.abs_path,
             )}`}
-            canKeep
+            canKeep={!lockedLibrary}
+            keepTitle={lockedLibrary ? lockedHint : undefined}
             onKeep={() => onKeep(c.abs_path, c.abs_path)}
-            selected={sel.has(c.abs_path)}
-            onToggleSel={() => onToggleSel(c.abs_path)}
-            onDelete={() => onDeleteCopy(c.abs_path)}
+            // A view-only copy is never removed, so it gets neither the
+            // checkbox nor the delete.
+            selected={c.view_only ? undefined : sel.has(c.abs_path)}
+            onToggleSel={
+              c.view_only ? undefined : () => onToggleSel(c.abs_path)
+            }
+            onDelete={c.view_only ? undefined : () => onDeleteCopy(c.abs_path)}
             busy={busy}
           />
         ))}
@@ -1308,6 +1343,7 @@ function MemberRow({
   path,
   downloadHref,
   canKeep,
+  keepTitle,
   onKeep,
   selected,
   onToggleSel,
@@ -1321,6 +1357,7 @@ function MemberRow({
   path: string;
   downloadHref: string;
   canKeep: boolean;
+  keepTitle?: string;
   onKeep: () => void;
   selected?: boolean;
   onToggleSel?: () => void;
@@ -1372,7 +1409,7 @@ function MemberRow({
           className="btn btn-sm"
           onClick={onKeep}
           disabled={busy || !canKeep}
-          title="Keep only this copy and delete the others"
+          title={keepTitle ?? "Keep only this copy and delete the others"}
         >
           {Icons.keep}
           <span>Keep only this</span>
