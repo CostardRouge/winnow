@@ -3074,6 +3074,29 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply self-start;
   }
 
+  /* ---- Search-index coverage meter (Settings › Pipeline › Search index) - */
+  .pl-coverage {
+    @apply flex flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .pl-coverage-row {
+    @apply flex flex-wrap items-center gap-2 text-[13px];
+    color: var(--color-text);
+  }
+  .pl-meter {
+    @apply h-2 w-full overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .pl-meter-fill {
+    @apply h-full rounded-full;
+    background: var(--color-accent);
+    transition: width 0.3s var(--ease-out);
+  }
+  .pl-meter-fill.ok {
+    background: var(--color-pick);
+  }
+
   /* ---- Pipeline asset card (Media / Pending / Analyzed) ----------------- */
   /* Stacked so the full path is always readable: name + status on line 1, the
      untruncated path on line 2, then thumbnail · details · actions. */

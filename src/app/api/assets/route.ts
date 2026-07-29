@@ -3,6 +3,7 @@
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
+import { clipTableExists } from "@/lib/ml";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import {
   json,
@@ -22,6 +23,15 @@ export async function GET(req: NextRequest) {
       filter = filterFromSearchParams(sp);
     } catch (e) {
       return badRequest("Invalid filter", (e as Error).message);
+    }
+
+    // The search-index facet (clip_indexed) reads asset_clip, which is absent
+    // when pgvector isn't installed (migration 0030 skips the table). Resolve it
+    // here rather than erroring at SQL plan time: with no index, nothing is
+    // indexed — `true` matches nothing, `false` matches everything.
+    if (filter.clip_indexed !== undefined && !(await clipTableExists())) {
+      if (filter.clip_indexed) return json({ assets: [], next_cursor: null });
+      filter.clip_indexed = undefined;
     }
 
     // `?deleted=trash` lists the recycle bin (soft-deleted, not purged); the

@@ -290,29 +290,31 @@ export async function getQueueStats(): Promise<{
   scan: QueueCounts;
   analyze: QueueCounts;
   import: QueueCounts;
+  ml: QueueCounts;
   paused: boolean;
 }> {
-  const { index, derivatives, import: imp } = getQueues();
+  const { index, derivatives, import: imp, ml } = getQueues();
   const states = ["waiting", "active", "prioritized", "delayed", "failed"] as const;
-  const [scan, analyze, importCounts, paused] = await Promise.all([
+  const [scan, analyze, importCounts, mlCounts, paused] = await Promise.all([
     index.getJobCounts(...states),
     derivatives.getJobCounts(...states),
     imp.getJobCounts("waiting", "active", "delayed", "failed"),
+    ml.getJobCounts(...states),
     index.isPaused(),
   ]);
-  return { scan, analyze, import: importCounts, paused };
+  return { scan, analyze, import: importCounts, ml: mlCounts, paused };
 }
 
 // --- Queue introspection / triage (Pipeline pages) --------------------------
 
 // Public queue names used by the Pipeline triage pages. We deliberately expose
-// only scan/analyze (the two queues a human curates); import/export are managed
+// only scan/analyze/ml (the queues a human curates); import/export are managed
 // elsewhere.
-export type PublicQueueName = "scan" | "analyze";
+export type PublicQueueName = "scan" | "analyze" | "ml";
 
 function queueByName(name: PublicQueueName): Queue {
-  const { index, derivatives } = getQueues();
-  return name === "scan" ? index : derivatives;
+  const { index, derivatives, ml } = getQueues();
+  return name === "scan" ? index : name === "ml" ? ml : derivatives;
 }
 
 // A flattened, UI-friendly view of a BullMQ job. `data` carries the job-specific

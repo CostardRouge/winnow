@@ -27,6 +27,7 @@ export async function GET() {
       ml_ready: number;
       ml_pending: number;
       ml_errors: number;
+      ml_skipped: number;
     }>(
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
@@ -47,7 +48,8 @@ export async function GET() {
          count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped,
          count(*) FILTER (WHERE ml_status = 'ready')                         AS ml_ready,
          count(*) FILTER (WHERE ml_status IN ('pending','processing'))       AS ml_pending,
-         count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors
+         count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors,
+         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped
        FROM assets a
        WHERE a.deleted_at IS NULL`,
     );
@@ -87,6 +89,7 @@ export async function GET() {
         ml_ready: 0,
         ml_pending: 0,
         ml_errors: 0,
+        ml_skipped: 0,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,

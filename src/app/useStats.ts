@@ -22,11 +22,13 @@ export type Stats = {
     ml_ready: number;
     ml_pending: number;
     ml_errors: number;
+    ml_skipped: number;
   };
   queues: {
     scan: QueueCounts;
     analyze: QueueCounts;
     import: QueueCounts;
+    ml?: QueueCounts;
     paused: boolean;
   } | null;
   paused: boolean;
