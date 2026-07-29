@@ -12,7 +12,10 @@
 //   - only the cullable Incoming zone (root kind source/inbox) may lose its
 //     originals — Final (Immich) and Export volumes are view-only and refused;
 //   - every removal is confined to its session folder (resolved abs_path must
-//     sit under source_path), so a stray path can't delete anything outside it;
+//     sit under source_path), so a stray path can't delete anything outside it.
+//     Both of those guards only protect BYTES: an original confirmed absent
+//     (re-stat-ed ENOENT right here) has none left to protect, so it is purged
+//     anyway — derivatives cleared, row stamped, nothing touched on disk;
 //   - re-checks the trash state immediately before unlinking, so an asset the
 //     user restored *while the job runs* is left untouched;
 //   - `unlink` of a missing file (ENOENT) is treated as success (idempotent);
@@ -93,33 +96,50 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
     };
 
     for (const asset of assets) {
-      // Guard 1 — only the cullable Incoming zone may lose originals. The one
-      // exception: an original already GONE from disk, re-verified as absent
-      // right here, has no bytes to lose — purging it only clears the cached
-      // derivatives and stamps the row, which is safe on ANY volume. This is
-      // what lets the user reclaim an orphaned Final asset (its file removed by
-      // hand, a junk/@eaDir entry) that would otherwise be stuck forever, while
-      // a Final original that still EXISTS is refused exactly as before.
-      let unlinkOriginal = true;
+      // Is there still an original to protect? Confirmed here, per asset, by
+      // its own stat: ENOENT (and only ENOENT) means gone — an unreachable
+      // mount or a permission error reads as "still there" and keeps every
+      // guard below at full strength. An absent original has no bytes left to
+      // lose, so purging it is a pure bookkeeping operation (leftover
+      // derivatives cleared, row stamped) that touches nothing on disk.
+      const absent = await stat(asset.abs_path).then(
+        () => false,
+        (err) => (err as NodeJS.ErrnoException).code === "ENOENT",
+      );
+
+      // Guard 1 — only the cullable Incoming zone may lose originals. Absent
+      // ones are the exception (nothing to remove), which is what lets the user
+      // reclaim an orphaned Final asset (its file removed by hand, a junk/@eaDir
+      // entry) that would otherwise be stuck forever, while a Final original
+      // that still EXISTS is refused exactly as before.
+      //
+      // `mayRemoveFiles` is the outcome of both guards: whether this purge is
+      // allowed to unlink anything on disk (the original and its sidecars) or
+      // is a bookkeeping-only pass.
+      let mayRemoveFiles = true;
       if (!PURGEABLE_KINDS.has(asset.root_kind)) {
-        const absent = await stat(asset.abs_path).then(
-          () => false,
-          (err) => (err as NodeJS.ErrnoException).code === "ENOENT",
-        );
         if (!absent) {
           await fail(asset, `refused: ${asset.root_kind} volume is view-only`);
           continue;
         }
-        unlinkOriginal = false;
+        mayRemoveFiles = false;
       }
 
       // Guard 2 — confine the removal to the session folder. A resolved path
-      // that escapes source_path is never touched.
+      // that escapes source_path is never touched. Same exception as guard 1:
+      // when the original is already gone there is nothing to confine, and
+      // refusing would strand the row in the trash forever — an asset whose
+      // recorded path legitimately drifted out of its session folder (relinked
+      // by the duplicate arbitration, folder renamed/moved, volume remounted
+      // elsewhere) could then never be purged, with no way to tell why.
       const base = path.resolve(asset.source_path);
       const target = path.resolve(asset.abs_path);
       if (target !== base && !target.startsWith(base + path.sep)) {
-        await fail(asset, `refused: path escapes the session folder`);
-        continue;
+        if (!absent) {
+          await fail(asset, `refused: path escapes the session folder`);
+          continue;
+        }
+        mayRemoveFiles = false;
       }
 
       // Guard 3 — re-check the trash state right before the irreversible step.
@@ -136,9 +156,10 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
 
       try {
         // 1) Remove the original (the point: reclaim NAS space). A file that is
-        //    already gone counts as reclaimed. Skipped on the view-only-missing
-        //    path (nothing on disk, and the volume must never be written).
-        if (unlinkOriginal) {
+        //    already gone counts as reclaimed. Skipped when a guard relaxed for
+        //    an absent original (nothing on disk, and the volume/folder must
+        //    never be written).
+        if (mayRemoveFiles) {
           try {
             await unlink(target);
           } catch (err) {
@@ -149,9 +170,9 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
         // 1b) Remove the clip's Sony sidecars (XML/THM) — they travel with the
         //     video, so reclaiming the clip reclaims them too. Confined to the
         //     same session folder, idempotent on ENOENT, then their rows go.
-        //     Skipped with the original on view-only volumes: their files (if
-        //     any survive) are never touched there.
-        if (unlinkOriginal) {
+        //     Skipped with the original wherever removal is refused: their files
+        //     (if any survive) are never touched there.
+        if (mayRemoveFiles) {
           const sidecars = await many<{
             id: number;
             abs_path: string;
@@ -219,6 +240,10 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
       [
         purgeJobId,
         JSON.stringify({
+          // How many assets the caller explicitly asked for (null = a filter
+          // selection). `total` is how many of them were actually still in the
+          // trash: the gap is what a caller needs to explain "nothing happened".
+          requested: filter.ids?.length ?? null,
           total: assets.length,
           purged,
           freed_bytes: freedBytes,

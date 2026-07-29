@@ -10,6 +10,11 @@
 //   - Otherwise a purge_job is queued and run by the worker (bounded concurrency
 //     to spare the NAS HDD); returns { purge_job_id }.
 //
+// GET /api/purge?job_id=N returns that job (status + result), so a caller that
+// queued one can report what actually happened instead of assuming success —
+// a purge can complete having refused every row (view-only volume, permissions)
+// and the queuing response alone can't tell.
+//
 // Disable the whole capability with PURGE_ENABLED=false (returns 403).
 import { NextRequest } from "next/server";
 import { z } from "zod";
@@ -17,7 +22,28 @@ import { one } from "@/lib/db";
 import { config } from "@/lib/config";
 import { enqueuePurge } from "@/lib/queue";
 import { buildFilter, FilterSchema } from "@/lib/filter";
-import { json, badRequest, serverError } from "@/lib/api";
+import { json, badRequest, notFound, serverError } from "@/lib/api";
+
+// DB-backed route: never pre-rendered/cached at build time.
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  try {
+    const raw = req.nextUrl.searchParams.get("job_id");
+    const id = Number.parseInt(raw ?? "", 10);
+    if (!Number.isFinite(id) || id <= 0)
+      return badRequest("job_id (positive integer) is required");
+    const job = await one(
+      `SELECT id, status, filter_query, result, created_at, finished_at
+         FROM purge_jobs WHERE id = $1`,
+      [id],
+    );
+    if (!job) return notFound("Purge job not found");
+    return json({ job });
+  } catch (err) {
+    return serverError(err);
+  }
+}
 
 const Body = z.object({
   // prefault (not default): the fallback is fed through FilterSchema's parse,
