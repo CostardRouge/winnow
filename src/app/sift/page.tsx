@@ -107,7 +107,7 @@ export default function SiftHub() {
   return (
     <div className="app-shell sift-hub">
       <div className="topbar">
-        <h1 className="sift-hub-title">{Icons.sift} Sift</h1>
+        <h1 className="sift-hub-title">Sift</h1>
         <span className="hint max-sm:hidden">swipe to triage — pick up where you left off</span>
         <span className="spacer" />
       </div>
