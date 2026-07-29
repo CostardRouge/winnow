@@ -44,8 +44,11 @@ type ImportItem = {
   error: string;
   created_at: string;
 };
-// The kept, indexed copy a duplicate matched — its thumbnail stands in for the
-// (identical) duplicate, and its path/name let the user compare the two.
+// The indexed copy a duplicate matched — its thumbnail stands in for the
+// (identical) duplicate, and its path/name let the user compare the two. It is
+// not necessarily a *kept* copy: `deleted` marks one already sent to the trash
+// (its file still on disk, hence still a duplicate), `purged` one whose bytes
+// were already reclaimed.
 type ExistingAsset = {
   id: number;
   filename: string | null;
@@ -53,6 +56,7 @@ type ExistingAsset = {
   media_type: string | null;
   has_thumb: boolean;
   deleted: boolean;
+  purged: boolean;
 };
 type DuplicateItem = {
   abs_path: string;
@@ -799,14 +803,17 @@ type DupGroup = {
 };
 
 // A pending "keep only this" decision, surfaced in the confirm modal: the
-// survivor, what gets deleted, and whether the library entry is being relinked
-// onto it (true when the survivor is an on-disk copy, not the indexed original).
+// survivor, what gets deleted, and what happens to the library entry — relinked
+// onto the survivor (a LIVE entry, when the survivor is an on-disk copy) or
+// reclaimed (an entry already in the trash: its file goes, its row is stamped
+// purged and stays hidden rather than being resurrected onto the survivor).
 type KeepTarget = {
   hash: string;
   keepPath: string;
   keepLabel: string;
   deletions: string[];
   relink: boolean;
+  reclaim: boolean;
 };
 
 // Deduplication audit with hands-on triage. Copies of the same bytes are grouped
@@ -814,11 +821,12 @@ type KeepTarget = {
 // indexed copy (if any) and the extra copies sitting on disk. We make no
 // assumption about which is "the original": the user picks the survivor with
 // "Keep only this" (the rest are deleted; the library entry is relinked onto the
-// survivor when it's an on-disk copy), so a single media remains. A path filter
-// (e.g. "trash") isolates a folder, and on-disk copies can still be culled
-// one-at-a-time or by selection. False collisions — distinct content that merely
-// shares a partial hash — are never grouped or collapsed; they're listed apart,
-// for audit only.
+// survivor when it's an on-disk copy), so a single media remains. A library copy
+// that is already in the trash is a copy like any other — it can be picked, or
+// dropped on its own with its row's Delete. A path filter (e.g. "trash") isolates
+// a folder, and on-disk copies can still be culled one-at-a-time or by selection.
+// False collisions — distinct content that merely shares a partial hash — are
+// never grouped or collapsed; they're listed apart, for audit only.
 function DedupSection({
   count,
   falseCollisions,
@@ -834,9 +842,11 @@ function DedupSection({
 }) {
   const [filter, setFilter] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
-  // Pending confirmations: a list of on-disk paths to delete, or a keep-one pick.
+  // Pending confirmations: a list of on-disk paths to delete, a keep-one pick, or
+  // a trashed library copy to drop on its own.
   const [confirm, setConfirm] = useState<string[] | null>(null);
   const [keep, setKeep] = useState<KeepTarget | null>(null);
+  const [discard, setDiscard] = useState<ExistingAsset | null>(null);
   const [busy, setBusy] = useState(false);
 
   const needle = filter.trim().toLowerCase();
@@ -910,16 +920,27 @@ function DedupSection({
       return n;
     });
 
-  // Stage a "keep only this" decision: which copies would be deleted, and whether
-  // keeping this one relinks the library entry (true when it's an on-disk copy).
+  // Stage a "keep only this" decision: which copies would be deleted, and what
+  // becomes of the library entry when it isn't the survivor — relinked onto the
+  // survivor if it's live, reclaimed (file removed, row stamped purged) if it's
+  // already in the trash. A purged entry has no bytes left, so it never appears
+  // among the deletions.
   const askKeep = (g: DupGroup, keepPath: string, keepLabel: string) => {
+    const lib = g.existing;
+    const libLoser = !!(lib?.abs_path && keepPath !== lib.abs_path);
     const members = [
-      ...(g.existing?.abs_path ? [g.existing.abs_path] : []),
+      ...(lib?.abs_path && !lib.purged ? [lib.abs_path] : []),
       ...g.copies.map((c) => c.abs_path),
     ];
     const deletions = members.filter((p) => p !== keepPath);
-    const relink = !!(g.existing?.abs_path && keepPath !== g.existing.abs_path);
-    setKeep({ hash: g.hash, keepPath, keepLabel, deletions, relink });
+    setKeep({
+      hash: g.hash,
+      keepPath,
+      keepLabel,
+      deletions,
+      relink: libLoser && !lib!.deleted,
+      reclaim: libLoser && !!lib!.deleted,
+    });
   };
 
   async function runDelete(paths: string[]) {
@@ -967,10 +988,43 @@ function DedupSection({
         setMsg(
           `Kept 1 copy; deleted ${d.deleted ?? 0} file(s).${
             d.relinked ? " Library entry relinked to the copy you kept." : ""
+          }${
+            d.purged
+              ? " The library entry was in the trash: its bytes are reclaimed and it stays there."
+              : ""
           }${skipped ? ` ${skipped} skipped (protected).` : ""}`,
         );
       }
       setKeep(null);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Drop just the trashed library copy of a group, leaving the other extras
+  // listed. Only offered for a copy already in the trash — a live one has to go
+  // through "Keep only this", which relinks the entry instead of orphaning it.
+  async function runDiscard(existing: ExistingAsset) {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/failures/duplicates/discard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId: existing.id }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setMsg(`Error: ${d.error ?? "unknown"}`);
+      } else {
+        setMsg(
+          `Removed the trashed library copy #${existing.id}${
+            d.deleted ? "" : " (its bytes were already gone)"
+          }. It stays in the trash, marked purged.`,
+        );
+      }
+      setDiscard(null);
       await onChanged();
     } finally {
       setBusy(false);
@@ -1018,9 +1072,12 @@ function DedupSection({
         and any extra copies on disk. Winnow doesn’t assume which is the original:
         pick the one to keep with <strong>“Keep only this”</strong> and the rest
         are removed (the library entry is relinked onto your pick if it’s an
-        on-disk copy), leaving a single media. False collisions — genuinely
-        distinct content that merely shares a partial hash — are indexed
-        separately and never collapsed; they’re listed below for audit only.
+        on-disk copy), leaving a single media. A library copy already in the
+        trash is never relinked: its file is removed and the entry marked purged
+        — and it can be dropped on its own with its row’s delete. False
+        collisions — genuinely distinct content that merely shares a partial hash
+        — are indexed separately and never collapsed; they’re listed below for
+        audit only.
         {falseCollisions > 0
           ? ` ${falseCollisions} false collision(s) recovered.`
           : ""}
@@ -1044,6 +1101,7 @@ function DedupSection({
               onToggleSel={toggleSel}
               onKeep={(p, label) => askKeep(g, p, label)}
               onDeleteCopy={(p) => setConfirm([p])}
+              onDiscardLibrary={setDiscard}
               busy={busy}
             />
           ))}
@@ -1076,6 +1134,14 @@ function DedupSection({
           onConfirm={() => runKeep(keep)}
         />
       )}
+      {discard && (
+        <ConfirmDiscardModal
+          existing={discard}
+          busy={busy}
+          onCancel={() => setDiscard(null)}
+          onConfirm={() => runDiscard(discard)}
+        />
+      )}
     </section>
   );
 }
@@ -1090,6 +1156,7 @@ function DupGroupCard({
   onToggleSel,
   onKeep,
   onDeleteCopy,
+  onDiscardLibrary,
   busy,
 }: {
   group: DupGroup;
@@ -1097,6 +1164,7 @@ function DupGroupCard({
   onToggleSel: (p: string) => void;
   onKeep: (keepPath: string, keepLabel: string) => void;
   onDeleteCopy: (p: string) => void;
+  onDiscardLibrary: (existing: ExistingAsset) => void;
   busy: boolean;
 }) {
   const { existing, copies, hash } = group;
@@ -1143,13 +1211,28 @@ function DupGroupCard({
       <div className="dup-members">
         {existing && (
           <MemberRow
-            label="In library"
-            primary={`#${existing.id} · ${existing.filename ?? "—"}${
-              existing.deleted ? " (soft-deleted)" : ""
-            }`}
+            // A trashed entry is still a copy of these bytes — it can be kept,
+            // or dropped on its own (its file is removed and the row is stamped
+            // purged; it stays in the trash). A purged one has no bytes left, so
+            // neither action applies: it's shown for context only.
+            label={
+              existing.purged
+                ? "In library (purged)"
+                : existing.deleted
+                  ? "In library (in trash)"
+                  : "In library"
+            }
+            primary={`#${existing.id} · ${existing.filename ?? "—"}`}
+            sub={
+              existing.purged
+                ? "already reclaimed — no file left on disk"
+                : existing.deleted
+                  ? "soft-deleted, but its file is still on disk"
+                  : undefined
+            }
             path={existing.abs_path ?? "(path unknown)"}
             downloadHref={`/api/assets/${existing.id}/download`}
-            canKeep={!!existing.abs_path}
+            canKeep={!!existing.abs_path && !existing.purged}
             onKeep={() => {
               if (existing.abs_path)
                 onKeep(
@@ -1157,6 +1240,12 @@ function DupGroupCard({
                   `#${existing.id} · ${existing.filename ?? existing.abs_path}`,
                 );
             }}
+            onDelete={
+              existing.deleted && !existing.purged && existing.abs_path
+                ? () => onDiscardLibrary(existing)
+                : undefined
+            }
+            deleteTitle="Delete this trashed copy's file"
             busy={busy}
           />
         )}
@@ -1207,9 +1296,11 @@ function DupGroupCard({
   );
 }
 
-// A single copy within a group. The indexed library copy gets no checkbox and no
+// A single copy within a group. The LIVE library copy gets no checkbox and no
 // blind "delete" (removing it has to go through "Keep only this", which relinks
-// the asset); on-disk copies get both, plus the shared "Keep only this".
+// the asset instead of leaving it pointing at nothing); a trashed one is already
+// out of the library, so it gets a delete of its own. On-disk copies get the
+// checkbox and the delete, plus the shared "Keep only this".
 function MemberRow({
   label,
   sub,
@@ -1221,6 +1312,7 @@ function MemberRow({
   selected,
   onToggleSel,
   onDelete,
+  deleteTitle = "Delete just this copy",
   busy,
 }: {
   label: string;
@@ -1233,6 +1325,7 @@ function MemberRow({
   selected?: boolean;
   onToggleSel?: () => void;
   onDelete?: () => void;
+  deleteTitle?: string;
   busy: boolean;
 }) {
   return (
@@ -1269,8 +1362,8 @@ function MemberRow({
             className="btn btn-sm btn-icon btn-danger"
             onClick={onDelete}
             disabled={busy}
-            title="Delete just this copy"
-            aria-label="Delete just this copy"
+            title={deleteTitle}
+            aria-label={deleteTitle}
           >
             {Icons.trash}
           </button>
@@ -1360,6 +1453,9 @@ function ConfirmKeepModal({
               } below will be permanently removed from disk.`}{" "}
           {target.relink
             ? "The library entry (rating, tags, derivatives) is relinked onto the copy you keep — the original file it currently points at is the one being deleted."
+            : ""}
+          {target.reclaim
+            ? "The library entry is already in the trash, so it isn’t relinked onto your pick: its file is removed and the entry is marked purged, staying in the trash where you put it."
             : ""}{" "}
           This is irreversible.
         </p>
@@ -1435,6 +1531,56 @@ async function followPurgeJob(
     return `Purged ${purged} asset(s): leftover derivatives removed, rows stamped purged.`;
   }
   return "The purge is still running — the rows will disappear as they are freed (check Trash › Recent purges if it stays).";
+}
+
+// Removing a group's library copy when it is already in the trash: its file goes
+// and the entry is stamped purged, but the row itself survives (audit + export
+// lineage) and stays hidden, exactly like a purge. The other copies in the group
+// are untouched.
+function ConfirmDiscardModal({
+  existing,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  existing: ExistingAsset;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onCancel} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete the trashed library copy"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal-title">Delete this trashed copy’s file?</h2>
+        <p className="hint" style={{ marginTop: 0 }}>
+          <strong className="dup-cmp-name">
+            #{existing.id} · {existing.filename ?? existing.abs_path}
+          </strong>{" "}
+          is already in the trash — only its file is still taking up space. It
+          will be permanently removed from disk and the entry marked purged; it
+          stays in the trash and the other copies in this group are left as they
+          are. This is irreversible.
+        </p>
+        <div className="dup-confirm-list">
+          <div className="dup-cmp-path">{existing.abs_path}</div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+            {busy ? "Deleting…" : "Delete the file"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Missing originals (cf. lib/integrity.ts): indexed assets whose file is gone
