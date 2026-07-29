@@ -520,7 +520,7 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
 - **Semantic search (CLIP).** The same `/predict` call also returns a **CLIP
   visual embedding** of the derivative (one more task on the existing round trip
   — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**. The
-  **Search** page (in the rail) then takes a **natural-language** query —
+  **ML search** page (in the rail) then takes a **natural-language** query —
   *"sunset over the sea"*, *"people laughing at a table"* — embeds it with the
   **same model's textual head** and ranks the library by cosine distance
   (`GET /api/search`). Toggle with `ML_CLIP_ENABLED`; pick the model with
