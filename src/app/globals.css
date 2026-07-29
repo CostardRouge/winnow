@@ -2443,44 +2443,73 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-text);
   }
 
-  /* Semantic search page (CLIP, cf. src/app/search/page.tsx). */
-  .search-page {
-    @apply mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6;
+  /* ---- Semantic search page (CLIP, cf. src/app/search/page.tsx) ----------
+     The page wears the same chrome as Library/Settings — topbar, header band,
+     controls band, full-bleed body — instead of the centered max-w-5xl column
+     it used to, which left the grid floating in a narrow strip with the rest of
+     the viewport empty. Results render through the gallery's VirtualGrid, so a
+     hit is the same .cell tile it is everywhere else. */
+  .ml-search-bar {
+    @apply flex w-full items-center gap-2;
   }
-  .search-title {
-    @apply text-2xl font-semibold;
+  /* The field takes the row; min-w-0 lets it actually shrink inside the flex
+     parent rather than forcing the Search button off the edge on phones. */
+  .ml-search-bar .search-field {
+    @apply min-w-0 flex-1;
   }
-  .search-bar {
-    @apply relative flex items-center gap-2;
+  .ml-search-bar .btn {
+    @apply flex-shrink-0;
   }
-  .search-bar .search-input {
-    @apply flex-1;
+  /* Example queries + the coverage readout ride the gallery's controls band, so
+     the two surfaces share one horizontal rhythm. Wraps (the gallery's own row
+     doesn't) because the example chips are text of unpredictable width. */
+  .ml-search-controls {
+    @apply flex-wrap;
   }
-  .search-examples {
-    @apply flex flex-wrap gap-2;
+  .ml-search-examples {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
   }
-  .search-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.5rem;
+  .ml-search-examples .chip {
+    @apply shrink-0;
+    height: var(--tb-control-h);
   }
-  .search-cell {
-    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0 cursor-pointer;
-    aspect-ratio: 1 / 1;
-    background: none;
+  .ml-search-label {
+    @apply flex-shrink-0;
   }
-  .search-cell img {
-    @apply h-full w-full;
-    object-fit: cover;
+  /* Right-hand readout: "N matches · searched X of Y". Pushed to the edge by
+     the .spacer, and allowed to sit on its own line once the chips fill the row. */
+  .ml-search-readout {
+    @apply ml-auto text-right;
   }
-  .search-coverage {
-    margin-top: 0.75rem;
+  .ml-search-readout a {
+    color: var(--color-accent);
   }
-  .search-badge {
-    @apply absolute bottom-1 right-1 rounded px-1 text-xs leading-none;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    padding-block: 2px;
+  /* Result zone: full-bleed, mirroring .gallery-main — VirtualGrid measures
+     this box, so it must be a min-h-0 flex child or the list gets no height. */
+  .ml-search-body {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col p-1.5;
+  }
+  /* "How to turn it on" card under the disabled empty state — left-aligned prose
+     inside the centered EmptyState, since it's three ordered steps. */
+  .ml-search-setup {
+    @apply mx-auto max-w-lg rounded-[var(--radius-lg)] border p-4 text-left text-[13px];
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
+  .ml-search-setup p + p {
+    @apply mt-2;
+  }
+  .ml-search-setup strong {
+    color: var(--color-text);
+  }
+  .ml-search-setup code {
+    @apply rounded px-1;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-surface-3);
+    color: var(--color-text);
   }
   .empty-state {
     @apply rounded-[var(--radius-lg)] border p-6 text-sm;
@@ -3450,6 +3479,22 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .shell-head-row {
     @apply flex-nowrap gap-2;
+  }
+  /* ML search: the example queries scroll sideways rather than stacking into
+     three rows, which on a phone pushed the results below the fold. Same
+     hidden-scrollbar rail as .pipeline-tabs. The readout keeps its own line
+     (the band still wraps) so the coverage figure stays readable. */
+  .ml-search-controls {
+    @apply px-3;
+  }
+  .ml-search-examples {
+    /* flex-1 + min-w-0: claim the rest of the line so the rail has a width to
+       scroll inside, instead of overflowing the band at its content width. */
+    @apply min-w-0 flex-1 flex-nowrap overflow-x-auto;
+    scrollbar-width: none;
+  }
+  .ml-search-examples::-webkit-scrollbar {
+    display: none;
   }
   .tabs {
     @apply gap-0.5 p-0.5;
