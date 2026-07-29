@@ -46,8 +46,9 @@ const NAV: NavItem[] = [
 // Pipeline, Volumes and Import used to sit here too. They're configuration
 // rather than day-to-day work, so they moved into the Settings section (reached
 // from the account popover below) and the rail keeps only the four places you
-// actually spend time. Their routes are untouched: the pipeline triage lists are
-// still deep-linked from the counters bento and the Library stats strip.
+// actually spend time. The pipeline triage lists now live under
+// /settings/pipeline/* and are still deep-linked from the counters bento and
+// the Library stats strip.
 
 type Me = {
   id: number;

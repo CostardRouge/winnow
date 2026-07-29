@@ -6,10 +6,10 @@
 // conditional on there being errors).
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { active, totalFailures, useStats } from "../useStats";
+import { active, totalFailures, useStats } from "../../useStats";
 
 export default function PipelineNav() {
-  const pathname = usePathname() ?? "/pipeline";
+  const pathname = usePathname() ?? "/settings/pipeline";
   const { stats } = useStats();
   const a = stats?.assets;
 
@@ -19,22 +19,22 @@ export default function PipelineNav() {
     count?: number;
     tone?: "ok" | "warn" | "bad";
   }[] = [
-    { href: "/pipeline", label: "Overview" },
-    { href: "/pipeline/media", label: "Media", count: a?.total ?? 0 },
+    { href: "/settings/pipeline", label: "Overview" },
+    { href: "/settings/pipeline/media", label: "Media", count: a?.total ?? 0 },
     {
-      href: "/pipeline/scanning",
+      href: "/settings/pipeline/scanning",
       label: "Scanning",
       count: active(stats?.queues?.scan),
       tone: stats?.paused ? "warn" : undefined,
     },
     {
-      href: "/pipeline/pending",
+      href: "/settings/pipeline/pending",
       label: "Pending",
       count: a?.pending ?? 0,
       tone: "warn",
     },
     {
-      href: "/pipeline/failures",
+      href: "/settings/pipeline/failures",
       label: "Failures",
       count: totalFailures(stats),
       tone: "bad",

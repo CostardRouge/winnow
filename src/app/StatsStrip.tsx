@@ -4,7 +4,7 @@
 // the Incoming / Final / Exports tabs. At every width it's a single summary
 // chip ("88K media ▾") that opens the full value+label breakdown in a small
 // popover, so the header stays tight on desktop as well as on phones. Tapping a
-// counter jumps to its dedicated /pipeline triage page.
+// counter jumps to its dedicated Settings › Pipeline triage page.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useStats, active, totalFailures } from "./useStats";
@@ -44,27 +44,27 @@ export default function StatsStrip() {
     tone?: "ok" | "warn" | "bad";
     href: string;
   }[] = [
-    { key: "media", label: "Media", value: a?.total ?? 0, href: "/pipeline/media" },
+    { key: "media", label: "Media", value: a?.total ?? 0, href: "/settings/pipeline/media" },
     {
       key: "scan",
       label: paused ? "Paused" : "Scanning",
       value: active(stats?.queues?.scan),
       tone: paused ? "warn" : undefined,
-      href: "/pipeline/scanning",
+      href: "/settings/pipeline/scanning",
     },
     {
       key: "analyzed",
       label: "Analyzed",
       value: a?.analyzed ?? 0,
       tone: "ok",
-      href: "/pipeline/analyzed",
+      href: "/settings/pipeline/analyzed",
     },
     {
       key: "pending",
       label: "Pending",
       value: a?.pending ?? 0,
       tone: "warn",
-      href: "/pipeline/pending",
+      href: "/settings/pipeline/pending",
     },
   ];
   if (fails > 0) {
@@ -73,7 +73,7 @@ export default function StatsStrip() {
       label: "Failures",
       value: fails,
       tone: "bad",
-      href: "/pipeline/failures",
+      href: "/settings/pipeline/failures",
     });
   }
 
