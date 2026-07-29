@@ -18,7 +18,12 @@ export default function SettingsNav() {
   return (
     <nav className="tabs" aria-label="Settings sections">
       {TABS.map((t) => {
-        const isActive = pathname === t.href;
+        // Prefix match, not exact: Pipeline has its own nested sub-routes
+        // (/settings/pipeline/scanning, /failures, ...) that should still
+        // light up the Pipeline tab, the same way Library's tabs stay active
+        // under their own sub-routes.
+        const isActive =
+          pathname === t.href || pathname.startsWith(`${t.href}/`);
         return (
           <Link
             key={t.href}
