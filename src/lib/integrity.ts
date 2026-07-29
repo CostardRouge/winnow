@@ -102,13 +102,16 @@ async function markMissing(
 
 // Lifts the missing flag on assets whose file is back. The auto-trash is
 // lifted with it (deleted_at = missing_at ⇒ we set it), while a user's own
-// soft-delete (different timestamp) is respected and kept.
+// soft-delete (different timestamp) is respected and kept. Any purge refusal
+// recorded while the file was gone goes too — it described a state that no
+// longer holds.
 export async function restoreMissing(ids: number[]): Promise<number> {
   if (!ids.length) return 0;
   const res = await q(
     `UPDATE assets
         SET deleted_at = CASE WHEN deleted_at = missing_at THEN NULL ELSE deleted_at END,
             missing_at = NULL,
+            purge_error = NULL,
             updated_at = now()
       WHERE id = ANY($1) AND missing_at IS NOT NULL`,
     [ids],
@@ -359,12 +362,15 @@ export type MissingItem = {
   // True when the detector auto-trashed it (reversible); false when the
   // mass-disappearance guard left it flagged in the live library.
   trashed: boolean;
+  // Why the last purge refused this row (cf. lib/purge.ts), if it did. Without
+  // it a refused purge is indistinguishable from nothing happening at all.
+  purge_error: string | null;
 };
 
 export async function listMissing(limit = 200): Promise<MissingItem[]> {
   return many<MissingItem>(
     `SELECT id AS asset_id, filename, abs_path, media_type, session_id,
-            file_size, missing_at,
+            file_size, missing_at, purge_error,
             (deleted_at IS NOT NULL) AS trashed
        FROM assets
       WHERE missing_at IS NOT NULL AND purged_at IS NULL
