@@ -1,16 +1,17 @@
 "use client";
 
 // Centralized list of what has failed (scan / analyze / import), with the
-// error message for debugging. Lives under /pipeline (the section chrome — heading
-// + tabs — is provided by the layout). Retry is available three ways:
+// error message for debugging. Lives under Settings › Pipeline (the section
+// chrome — heading + tabs — is provided by the layout). Retry is available
+// three ways:
 //   - per item   : the "Retry" button on each row,
 //   - selected   : the checked rows ("Retry selected"),
 //   - everything : the whole family ("Retry all").
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { Icons, LazyImage } from "../../ui";
-import PullToRefresh from "../../PullToRefresh";
-import MediaViewer from "../../MediaViewer";
+import { Icons, LazyImage } from "../../../ui";
+import PullToRefresh from "../../../PullToRefresh";
+import MediaViewer from "../../../MediaViewer";
 
 type DerivItem = {
   asset_id: number;

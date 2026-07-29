@@ -142,7 +142,7 @@ export default function SearchPage() {
         (coverage?.indexed === 0 ? (
           <div className="empty-state">
             Nothing is indexed for search yet. Run{" "}
-            <Link href="/pipeline">“Index for search” on the Pipeline page</Link>{" "}
+            <Link href="/settings/pipeline">“Index for search” on the Pipeline page</Link>{" "}
             (or <code>npm run ml-backfill</code>) and let the worker drain the
             queue.
           </div>
@@ -184,7 +184,7 @@ export default function SearchPage() {
             <>
               {" "}
               — the rest aren’t indexed yet.{" "}
-              <Link href="/pipeline">Index for search →</Link>
+              <Link href="/settings/pipeline">Index for search →</Link>
             </>
           )}
         </p>

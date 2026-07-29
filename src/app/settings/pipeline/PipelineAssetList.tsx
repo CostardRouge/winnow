@@ -39,11 +39,11 @@ import {
   skipAssets,
 } from "@/lib/assetActions";
 import type { AssetGridRow } from "@/lib/types";
-import { EmptyState, Icons } from "../ui";
-import MediaViewer from "../MediaViewer";
-import PullToRefresh from "../PullToRefresh";
-import VirtualGrid, { type GalleryAsset } from "../gallery/VirtualGrid";
-import { useStats } from "../useStats";
+import { EmptyState, Icons } from "../../ui";
+import MediaViewer from "../../MediaViewer";
+import PullToRefresh from "../../PullToRefresh";
+import VirtualGrid, { type GalleryAsset } from "../../gallery/VirtualGrid";
+import { useStats } from "../../useStats";
 
 export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
 
