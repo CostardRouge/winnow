@@ -2448,7 +2448,11 @@ html[data-theme="dark"] .btn-primary:hover {
      controls band, full-bleed body — instead of the centered max-w-5xl column
      it used to, which left the grid floating in a narrow strip with the rest of
      the viewport empty. Results render through the gallery's VirtualGrid, so a
-     hit is the same .cell tile it is everywhere else. */
+     hit is the same .cell tile it is everywhere else.
+     The page is called "Search", but these classes keep the ml- prefix: the
+     bare .search-* namespace above already belongs to the filter panel's
+     filename/folder field (.search-field/.search-icon/.search-input/
+     .search-clear), which this page also uses. */
   .ml-search-bar {
     @apply flex w-full items-center gap-2;
   }
@@ -3480,7 +3484,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .shell-head-row {
     @apply flex-nowrap gap-2;
   }
-  /* ML search: the example queries scroll sideways rather than stacking into
+  /* Search page: the example queries scroll sideways rather than stacking into
      three rows, which on a phone pushed the results below the fold. Same
      hidden-scrollbar rail as .pipeline-tabs. The readout keeps its own line
      (the band still wraps) so the coverage figure stays readable. */

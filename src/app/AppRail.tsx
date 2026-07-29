@@ -32,7 +32,7 @@ const NAV: NavItem[] = [
   },
   {
     href: "/search",
-    label: "ML search",
+    label: "Search",
     icon: Icons.search,
     match: (p) => p.startsWith("/search"),
   },

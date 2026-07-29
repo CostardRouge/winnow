@@ -371,7 +371,7 @@ export const Icons = {
       <path d="m4 17 5-5 4 4 3-3 4 4" />
     </svg>
   ),
-  // Photo frame + magnifier — the ML search page's empty states. Distinct from
+  // Photo frame + magnifier — the Search page's empty states. Distinct from
   // `search` above, which is the 16px glyph that rides inside an input.
   photoSearch: (
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
