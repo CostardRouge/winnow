@@ -173,11 +173,26 @@ export async function destroyUserSessions(userId: number): Promise<void> {
 // --- Validation (the per-request hot path) --------------------------------
 
 type CacheEntry = { user: SessionUser | null; at: number };
-const cache = new Map<string, CacheEntry>();
+
+// The proxy and the route handlers are separate bundles: each instantiates
+// its own copy of this module. Anchor the cache on globalThis (same trick as
+// db.ts's pool) so a revocation done in a route (logout, disable, password
+// change) instantly invalidates the entry the proxy reads — otherwise the
+// revoked cookie would keep passing until the TTL lapsed.
+declare global {
+  // eslint-disable-next-line no-var
+  var __winnowAuthCache: Map<string, CacheEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __winnowAuthTouch: Map<string, number> | undefined;
+}
+
+const cache: Map<string, CacheEntry> = (globalThis.__winnowAuthCache ??=
+  new Map());
 const CACHE_TTL_MS = 10_000;
 const CACHE_MAX = 1000;
 
-const lastTouch = new Map<string, number>();
+const lastTouch: Map<string, number> = (globalThis.__winnowAuthTouch ??=
+  new Map());
 
 export async function validateSession(
   token: string,

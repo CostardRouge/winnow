@@ -56,11 +56,19 @@ const ADMIN_WRITE_PREFIXES = [
 // sensitive). The /users management page itself is guarded too.
 const ADMIN_ONLY_PREFIXES = ["/api/auth/users", "/users"];
 
+// Account self-service: any signed-in role, mutations included. Signing out
+// and changing one's OWN password/display name are not library writes — a
+// viewer must be able to do both (the "am I really me" proof is the current
+// password, checked by the route itself, not the role).
+const SELF_SERVICE_PREFIXES = ["/api/auth/logout", "/api/auth/me"];
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export function requiredRole(method: string, pathname: string): UserRole {
   if (ADMIN_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)))
     return "admin";
+  if (SELF_SERVICE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)))
+    return "viewer";
   if (!MUTATING.has(method.toUpperCase())) return "viewer";
   if (ADMIN_WRITE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)))
     return "admin";
