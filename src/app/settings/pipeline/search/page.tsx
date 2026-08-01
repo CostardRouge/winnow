@@ -109,7 +109,7 @@ export default function SearchIndexPage() {
     return (
       <div className="pl-section">
         <EmptyState
-          icon={Icons.search}
+          icon={Icons.photoSearch}
           title="Semantic search is disabled"
           hint="Set ML_ENABLED=true and ML_CLIP_ENABLED=true (with ML_BASE_URL pointing at your machine-learning container) to build the search index."
         />
@@ -124,7 +124,7 @@ export default function SearchIndexPage() {
     return (
       <div className="pl-section">
         <EmptyState
-          icon={Icons.search}
+          icon={Icons.photoSearch}
           title="Search index unavailable"
           hint="Semantic search is enabled but the pgvector extension isn't installed in Postgres, so there is nowhere to store the embeddings. Install pgvector (CREATE EXTENSION vector) and re-run the migrations."
         />
@@ -154,7 +154,7 @@ export default function SearchIndexPage() {
             aria-pressed={panel === "media"}
             title="Browse the media by index membership"
           >
-            {Icons.photos}
+            {Icons.viewMedia}
             <span className="pl-view-label">Media</span>
           </button>
           <button
@@ -163,7 +163,7 @@ export default function SearchIndexPage() {
             aria-pressed={panel === "jobs"}
             title="The ML queue: running, waiting and past analysis jobs"
           >
-            {Icons.pipeline}
+            {Icons.viewJobs}
             <span className="pl-view-label">Jobs</span>
           </button>
         </div>

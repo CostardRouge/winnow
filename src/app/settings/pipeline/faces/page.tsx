@@ -147,7 +147,7 @@ export default function FacesTextPage() {
             aria-pressed={panel === "media"}
             title="Browse the media and their analysis results"
           >
-            {Icons.photos}
+            {Icons.viewMedia}
             <span className="pl-view-label">Media</span>
           </button>
           <button
@@ -156,7 +156,7 @@ export default function FacesTextPage() {
             aria-pressed={panel === "jobs"}
             title="The ML queue: running, waiting and past analysis jobs"
           >
-            {Icons.pipeline}
+            {Icons.viewJobs}
             <span className="pl-view-label">Jobs</span>
           </button>
         </div>

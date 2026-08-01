@@ -456,6 +456,27 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  // Photo frame — the "Media" half of the Media/Jobs panel switch on the ML
+  // pipeline pages. 18px like its `view-toggle` siblings above (the 40px
+  // `photos` below is the empty-state illustration, far too big for a control).
+  viewMedia: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9" r="1.4" />
+      <path d="m4 17 5-5 4 4 3-3 4 4" />
+    </svg>
+  ),
+  // Queue/run history — the "Jobs" half of that same switch.
+  viewJobs: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h10" />
+      <path d="M20 7h-3" />
+      <circle cx="15.5" cy="7" r="1.8" />
+      <path d="M20 17H10" />
+      <path d="M4 17h3" />
+      <circle cx="8.5" cy="17" r="1.8" />
+    </svg>
+  ),
   // Density / thumbnail-size control on the grid toolbar.
   gridSize: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -556,6 +577,17 @@ export const Icons = {
       <path d="M3 21v-5h5" />
       <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
       <path d="M21 3v5h-5" />
+    </svg>
+  ),
+  // Sparkle + magnifier — run the ML analysis on this item (faces · text ·
+  // search embedding). The 16px row-action sibling of `photoSearch`, which is
+  // the 40px empty-state illustration: same idea, action weight.
+  analyze: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 11.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h5.5" />
+      <path d="m3.5 14.5 4-4 2.8 2.8" />
+      <circle cx="16.5" cy="16.5" r="3.5" />
+      <path d="m19.4 19.4 2.1 2.1" />
     </svg>
   ),
   // Prohibit (circle + slash) — take an item out of the analyze pipeline (Skip).

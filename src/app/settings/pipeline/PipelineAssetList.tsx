@@ -134,7 +134,7 @@ const MUTATIONS: Record<
   },
   analyze: {
     label: "Analyze",
-    icon: Icons.photoSearch,
+    icon: Icons.analyze,
     removes: false,
     run: (id) => mlAnalyzeAssets([id]),
     done: "Queued for ML analysis (faces · text · search embedding).",
