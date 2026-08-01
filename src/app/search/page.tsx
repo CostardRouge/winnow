@@ -9,7 +9,12 @@
 // (same size, badges, verdict edge, Live Photo hover). Depends on ML being
 // enabled and the library being indexed — the coverage readout in the controls
 // band says how much of it actually is.
-import { useRef, useState } from "react";
+//
+// The query lives in the query string (`/search?keywords=…`), the way filters do
+// on Library and Incoming: a search is then shareable, reload-safe, and a deep
+// link from anywhere else lands on results rather than on an empty field.
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { EmptyState, Icons, LoadingState } from "../ui";
 import MediaViewer from "../MediaViewer";
@@ -35,8 +40,17 @@ const EXAMPLES = [
 
 const LIMIT = 120;
 
-export default function SearchPage() {
-  const [q, setQ] = useState("");
+// The query-string key the page reads and writes: /search?keywords=a+red+bicycle
+const PARAM = "keywords";
+
+function SearchPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Seeded from the URL once; the page owns the parameter thereafter and
+  // mirrors each run back into it.
+  const [initial] = useState(() => (searchParams.get(PARAM) ?? "").trim());
+  const [q, setQ] = useState(initial);
   // The query the current results answer — the controls band reports on this,
   // not on whatever is being typed into the field.
   const [ran, setRan] = useState("");
@@ -47,39 +61,60 @@ export default function SearchPage() {
   const [viewer, setViewer] = useState<number | null>(null);
   const gridRef = useRef<VirtualGridHandle>(null);
 
-  async function run(query: string) {
-    const text = query.trim();
-    if (!text) return;
-    setState("loading");
-    setMsg("");
-    setRan(text);
-    try {
-      const res = await fetch(
-        `/api/search?q=${encodeURIComponent(text)}&limit=${LIMIT}`,
-      );
-      const data = await res.json();
-      if (data?.enabled === false) {
-        setItems([]);
-        setState("disabled");
-        return;
+  const run = useCallback(
+    async (query: string) => {
+      const text = query.trim();
+      if (!text) return;
+      setState("loading");
+      setMsg("");
+      setRan(text);
+      // Replace, not push: Back steps out of the page rather than through every
+      // query that was tried (same rule as the gallery's filters).
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        sp.set(PARAM, text);
+        router.replace(`/search?${sp.toString()}`, { scroll: false });
+      } catch {
+        /* non-fatal: the results below are what matter */
       }
-      if (!res.ok) {
+      try {
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(text)}&limit=${LIMIT}`,
+        );
+        const data = await res.json();
+        if (data?.enabled === false) {
+          setItems([]);
+          setState("disabled");
+          return;
+        }
+        if (!res.ok) {
+          setState("error");
+          setMsg(data?.detail || data?.error || "Search failed");
+          return;
+        }
+        setItems(data.items ?? []);
+        setCoverage(
+          typeof data.indexed === "number" && typeof data.library === "number"
+            ? { indexed: data.indexed, library: data.library }
+            : null,
+        );
+        setState("idle");
+      } catch (err) {
         setState("error");
-        setMsg(data?.detail || data?.error || "Search failed");
-        return;
+        setMsg((err as Error).message);
       }
-      setItems(data.items ?? []);
-      setCoverage(
-        typeof data.indexed === "number" && typeof data.library === "number"
-          ? { indexed: data.indexed, library: data.library }
-          : null,
-      );
-      setState("idle");
-    } catch (err) {
-      setState("error");
-      setMsg((err as Error).message);
-    }
-  }
+    },
+    [router],
+  );
+
+  // A URL that arrived with ?keywords= searches on its own — once. The page
+  // writes that parameter itself from then on, so this must not re-fire.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !initial) return;
+    seeded.current = true;
+    run(initial);
+  }, [initial, run]);
 
   // The result zone: one of the states, or the grid. Kept in a variable so the
   // shell below reads as the layout it is.
@@ -273,7 +308,10 @@ export default function SearchPage() {
           }}
           renderInfo={(it) => (
             <div className="viewer-tags">
-              <span className="chip" title="CLIP cosine similarity to the query">
+              <span
+                className="chip"
+                title="CLIP cosine similarity to the query"
+              >
                 similarity {(1 - it.distance).toFixed(3)}
               </span>
             </div>
@@ -286,5 +324,15 @@ export default function SearchPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function SearchPageRoute() {
+  // Suspense: the page reads useSearchParams, which opts the route out of
+  // static prerendering unless the read sits behind a boundary.
+  return (
+    <Suspense>
+      <SearchPage />
+    </Suspense>
   );
 }
