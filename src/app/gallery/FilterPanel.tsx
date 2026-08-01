@@ -660,7 +660,7 @@ export default function FilterPanel({
       <RangeSlider
         title="Size"
         unit="MB"
-        step="auto"
+        scale="log"
         bounds={{
           min: toMB(facets.ranges.size_min, Math.floor),
           max: toMB(facets.ranges.size_max, Math.ceil),
@@ -671,7 +671,7 @@ export default function FilterPanel({
       />
       <RangeSlider
         title="Sharpness"
-        step="auto"
+        scale="log"
         bounds={{
           min: facets.ranges.sharpness_min,
           max: facets.ranges.sharpness_max,
