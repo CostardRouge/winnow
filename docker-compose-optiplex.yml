@@ -263,15 +263,47 @@ services:
     image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_worker
     command: ["npm", "run", "worker"]
-    environment: *winnow-env
+    # The shared env, plus a V8 heap cap that only makes sense for the worker
+    # (the web app is short-lived per request). Left alone, Node sizes the old
+    # space from the HOST's RAM (~25% of it), so on a 16 GB Optiplex this
+    # process alone aims for a ~4 GB heap — which under mem_limit would leave
+    # nothing for the page cache. 1 GB is ample: the heap holds job payloads and
+    # metadata, never decoded pixels (sharp works in native memory, and the HEIF
+    # decoder runs out-of-process, writing its JPEG straight to disk — cf.
+    # lib/extract.ts).
+    environment:
+      <<: *winnow-env
+      NODE_OPTIONS: "--max-old-space-size=1024"
     init: true
     restart: unless-stopped
-    # The worker's own footprint is small (~130 MB anonymous), but decoding media
-    # off the NAS to build derivatives fills the kernel page cache, which the
-    # cgroup attributes to the container — so `docker stats` shows multiple GB of
-    # reclaimable cache, not a leak. Capping the cgroup keeps that cache bounded
-    # (the kernel evicts it under the limit) without starving the actual work.
-    mem_limit: 4g
+    # The worker's own footprint is small (~60-130 MB anonymous at rest), but
+    # decoding media off the NAS to build derivatives fills the kernel page
+    # cache, which the cgroup attributes to the container — so `docker stats`
+    # shows multiple GB of reclaimable cache, not a leak. Capping the cgroup
+    # keeps that cache bounded (the kernel evicts it under the limit) without
+    # starving the actual work.
+    #
+    # memswap_limit MUST accompany mem_limit, and be equal to it. Docker reads
+    # `memory-swap` as memory+swap COMBINED and, when unset, defaults it to 2x
+    # mem_limit — so a bare `mem_limit: 4g` silently grants 4 GB of swap on top
+    # of the 4 GB of RAM. The cgroup then satisfies its own reclaim by swapping
+    # the worker's anonymous pages out instead of dropping the reclaimable cache
+    # this limit exists to bound: the exact opposite of the intent, and
+    # invisible from the host (global memory pressure stays at zero while swap
+    # fills). Equal values set memory.swap.max=0 — under pressure the kernel
+    # must evict cache, never swap. Do NOT reach for `mem_swappiness` instead:
+    # Docker rejects it on cgroup v2, which is what this host runs.
+    #
+    # Sizing: the ceiling must clear the worst-case ANONYMOUS peak, not the
+    # resting footprint — DERIVATIVE_CONCURRENCY sharp pipelines (~200-400 MB
+    # each) plus the serialized libheif child, which decodes a 61 MP HEIF to a
+    # full-frame RGBA bitmap re-encoded by a pure-JS JPEG encoder (~1-1.5 GB).
+    # That lands near 3 GB, so 4g would now risk an OOM kill where it used to
+    # quietly swap. Tighten this only after watching `anon` in the cgroup's
+    # memory.stat during a real derivative batch, and check memory.events:
+    # a climbing `oom_kill` means the limit is too low.
+    mem_limit: 6g
+    memswap_limit: 6g
     # Shares the Intel iGPU for hardware video encoding (VAAPI). The worker
     # runs as root → access to device nodes without group_add. If the host has
     # no /dev/dri (no iGPU), REMOVE this block and keep VIDEO_HWACCEL=none.
