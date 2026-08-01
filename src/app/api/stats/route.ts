@@ -27,6 +27,7 @@ export async function GET() {
       ml_ready: number;
       ml_pending: number;
       ml_errors: number;
+      ml_skipped: number;
     }>(
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
@@ -47,7 +48,8 @@ export async function GET() {
          count(*) FILTER (WHERE derivative_status = 'skipped')               AS skipped,
          count(*) FILTER (WHERE ml_status = 'ready')                         AS ml_ready,
          count(*) FILTER (WHERE ml_status IN ('pending','processing'))       AS ml_pending,
-         count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors
+         count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors,
+         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped
        FROM assets a
        WHERE a.deleted_at IS NULL`,
     );
@@ -66,7 +68,12 @@ export async function GET() {
     // Semantic-search coverage: how many media have a CLIP embedding under the
     // current model. Decoupled from ml_status on purpose — an asset analyzed for
     // faces/OCR before CLIP was enabled is "ready" yet absent from the index.
-    const clip = config.ml.clip.enabled ? await clipCoverage() : null;
+    // null (tile hidden) when pgvector isn't installed: "0 of N indexed" would
+    // read as "run a back-fill", which can't store anything without the table.
+    const coverage = config.ml.clip.enabled ? await clipCoverage() : null;
+    const clip = coverage?.available
+      ? { indexed: coverage.indexed, library: coverage.library }
+      : null;
 
     return json({
       assets: counts ?? {
@@ -82,6 +89,7 @@ export async function GET() {
         ml_ready: 0,
         ml_pending: 0,
         ml_errors: 0,
+        ml_skipped: 0,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,

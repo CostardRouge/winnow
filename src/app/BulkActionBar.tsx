@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import DownloadMenu from "./DownloadMenu";
+import type { DownloadFile } from "@/lib/assetActions";
 
 // Shared bulk-action toolbar shown while selecting assets in a grid (the library
 // gallery + the session detail). It owns only the tag-name input; the selection
@@ -16,6 +18,7 @@ export default function BulkActionBar({
   onStar,
   onTag,
   onExport,
+  download,
   onRegenerate,
   onGeocode,
   onGeotag,
@@ -34,6 +37,14 @@ export default function BulkActionBar({
   /** Add (`add`) or remove a tag by name across the selection. */
   onTag: (name: string, add: boolean) => void;
   onExport: () => void;
+  /** Pull the selection's original files down (the shared DownloadMenu: ZIP /
+   * each file / save-to-folder). Omitted when the host doesn't offer it. */
+  download?: {
+    zipHref: string;
+    zipName: string;
+    listFiles: () => Promise<DownloadFile[]>;
+    onMessage?: (msg: string | null) => void;
+  };
   onRegenerate: () => void;
   /** Resolve the GPS coordinates of the selection to place names. */
   onGeocode: () => void;
@@ -104,6 +115,16 @@ export default function BulkActionBar({
       <button className="btn" disabled={none} onClick={onExport}>
         ⤓ Export
       </button>
+      {download && (
+        <DownloadMenu
+          zipHref={download.zipHref}
+          zipName={download.zipName}
+          listFiles={download.listFiles}
+          onMessage={download.onMessage}
+          triggerClassName="btn"
+          disabled={none}
+        />
+      )}
       <button
         className="btn"
         disabled={none}

@@ -322,6 +322,28 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
+  users: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 5.1a3.5 3.5 0 0 1 0 5.9" />
+      <path d="M17.5 13.9a6.5 6.5 0 0 1 4 6.1" />
+    </svg>
+  ),
+  signout: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 4h-8a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8" />
+      <path d="M10 12h10" />
+      <path d="M17 8.5 20.5 12 17 15.5" />
+    </svg>
+  ),
+  key: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="14" r="4.5" />
+      <path d="M11.5 10.5 20 2" />
+      <path d="M16 6l3 3" />
+    </svg>
+  ),
   alert: (
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
@@ -349,6 +371,17 @@ export const Icons = {
       <path d="m4 17 5-5 4 4 3-3 4 4" />
     </svg>
   ),
+  // Photo frame + magnifier — the Search page's empty states. Distinct from
+  // `search` above, which is the 16px glyph that rides inside an input.
+  photoSearch: (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6.5" />
+      <circle cx="8.5" cy="9" r="1.4" />
+      <path d="m3.5 16.5 4.5-4.5 3.2 3.2" />
+      <circle cx="16.6" cy="16.6" r="3.4" />
+      <path d="m19.2 19.2 2.3 2.3" />
+    </svg>
+  ),
   pipeline: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7h10" />
@@ -365,6 +398,14 @@ export const Icons = {
       <path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.2-1.8a1 1 0 0 1 .84-.45h5.12a1 1 0 0 1 .83.45l1.2 1.8H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5Z" />
       <circle cx="12" cy="12.8" r="3.4" />
       <path d="M6 9.6h.01" />
+    </svg>
+  ),
+  // A cog — app configuration (the Settings section). Deliberately distinct from
+  // `gear` above, which is a camera body (the Gear shelf of bodies + lenses).
+  settings: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M12 2.6h0a1.9 1.9 0 0 1 1.9 1.9v.3a1.6 1.6 0 0 0 2.7 1.1l.2-.2a1.9 1.9 0 1 1 2.7 2.7l-.2.2a1.6 1.6 0 0 0 1.1 2.7h.3a1.9 1.9 0 1 1 0 3.8h-.3a1.6 1.6 0 0 0-1.1 2.7l.2.2a1.9 1.9 0 1 1-2.7 2.7l-.2-.2a1.6 1.6 0 0 0-2.7 1.1v.3a1.9 1.9 0 1 1-3.8 0v-.3a1.6 1.6 0 0 0-2.7-1.1l-.2.2a1.9 1.9 0 1 1-2.7-2.7l.2-.2a1.6 1.6 0 0 0-1.1-2.7h-.3a1.9 1.9 0 1 1 0-3.8h.3a1.6 1.6 0 0 0 1.1-2.7l-.2-.2a1.9 1.9 0 1 1 2.7-2.7l.2.2a1.6 1.6 0 0 0 2.7-1.1v-.3A1.9 1.9 0 0 1 12 2.6Z" />
     </svg>
   ),
   // Stacked drives — the Volumes section (registered directories/mounts).
@@ -413,6 +454,27 @@ export const Icons = {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  // Photo frame — the "Media" half of the Media/Jobs panel switch on the ML
+  // pipeline pages. 18px like its `view-toggle` siblings above (the 40px
+  // `photos` below is the empty-state illustration, far too big for a control).
+  viewMedia: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9" r="1.4" />
+      <path d="m4 17 5-5 4 4 3-3 4 4" />
+    </svg>
+  ),
+  // Queue/run history — the "Jobs" half of that same switch.
+  viewJobs: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h10" />
+      <path d="M20 7h-3" />
+      <circle cx="15.5" cy="7" r="1.8" />
+      <path d="M20 17H10" />
+      <path d="M4 17h3" />
+      <circle cx="8.5" cy="17" r="1.8" />
     </svg>
   ),
   // Density / thumbnail-size control on the grid toolbar.
@@ -476,6 +538,15 @@ export const Icons = {
       <path d="M5 19h14" />
     </svg>
   ),
+  // External link (arrow leaving a frame) — "this lives on another server":
+  // an export pushed to Immich, opened in the Immich library.
+  external: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 5h5v5" />
+      <path d="M19 5 11 13" />
+      <path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" />
+    </svg>
+  ),
   // Archive (zip) — "download everything as one .zip".
   archive: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -506,6 +577,17 @@ export const Icons = {
       <path d="M3 21v-5h5" />
       <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
       <path d="M21 3v5h-5" />
+    </svg>
+  ),
+  // Sparkle + magnifier — run the ML analysis on this item (faces · text ·
+  // search embedding). The 16px row-action sibling of `photoSearch`, which is
+  // the 40px empty-state illustration: same idea, action weight.
+  analyze: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 11.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h5.5" />
+      <path d="m3.5 14.5 4-4 2.8 2.8" />
+      <circle cx="16.5" cy="16.5" r="3.5" />
+      <path d="m19.4 19.4 2.1 2.1" />
     </svg>
   ),
   // Prohibit (circle + slash) — take an item out of the analyze pipeline (Skip).

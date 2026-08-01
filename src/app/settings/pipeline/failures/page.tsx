@@ -1,16 +1,17 @@
 "use client";
 
 // Centralized list of what has failed (scan / analyze / import), with the
-// error message for debugging. Lives under /pipeline (the section chrome — heading
-// + tabs — is provided by the layout). Retry is available three ways:
+// error message for debugging. Lives under Settings › Pipeline (the section
+// chrome — heading + tabs — is provided by the layout). Retry is available
+// three ways:
 //   - per item   : the "Retry" button on each row,
 //   - selected   : the checked rows ("Retry selected"),
 //   - everything : the whole family ("Retry all").
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { Icons, LazyImage } from "../../ui";
-import PullToRefresh from "../../PullToRefresh";
-import MediaViewer from "../../MediaViewer";
+import { Icons, LazyImage } from "../../../ui";
+import PullToRefresh from "../../../PullToRefresh";
+import MediaViewer from "../../../MediaViewer";
 
 type DerivItem = {
   asset_id: number;
@@ -75,6 +76,9 @@ type MissingItem = {
   file_size: number | null;
   missing_at: string;
   trashed: boolean;
+  // Why the last purge refused this row (cf. lib/purge.ts), when it did — the
+  // row stays in the trash and would otherwise look like nothing happened.
+  purge_error: string | null;
 };
 type Failures = {
   derivative: { count: number; items: DerivItem[] };
@@ -1382,6 +1386,57 @@ function ConfirmKeepModal({
   );
 }
 
+// What a finished purge job reports back (cf. lib/purge.ts runPurgeJob).
+type PurgeResult = {
+  requested?: number | null;
+  total?: number;
+  purged?: number;
+  skipped?: number;
+  error_count?: number;
+  errors?: { asset_id: number; abs_path: string; error: string }[];
+  error?: string;
+};
+
+// Poll a queued purge job until it finishes, and turn its result into one
+// sentence the user can act on. Queuing succeeds even when every row will be
+// refused (view-only volume, unreadable folder…) or when nothing was still in
+// the trash — reporting "queued" as if it were done is what made a stuck purge
+// look like a dead button.
+const PURGE_POLL_MS = 1500;
+const PURGE_POLL_TRIES = 20; // ~30s, then the 5s list refresh takes over
+
+async function followPurgeJob(
+  jobId: number | undefined,
+  requested: number,
+): Promise<string> {
+  if (!jobId) return `Purge queued for ${requested} asset(s).`;
+  for (let i = 0; i < PURGE_POLL_TRIES; i++) {
+    await new Promise((r) => setTimeout(r, PURGE_POLL_MS));
+    let job: { status: string; result: PurgeResult | null } | undefined;
+    try {
+      const res = await fetch(`/api/purge?job_id=${jobId}`);
+      if (!res.ok) continue;
+      job = (await res.json()).job;
+    } catch {
+      continue; // transient: keep polling
+    }
+    if (!job || job.status === "queued" || job.status === "running") continue;
+    const r = job.result ?? {};
+    if (job.status === "error")
+      return `Purge failed: ${r.error ?? "unknown error"}. Nothing was removed.`;
+    const purged = r.purged ?? 0;
+    const refused = r.error_count ?? 0;
+    if (refused)
+      return `Purged ${purged}/${requested} — ${refused} refused: ${
+        r.errors?.[0]?.error ?? "see the reason on each row"
+      }. The reason is shown on every remaining row.`;
+    if (!purged)
+      return `Nothing purged: none of the ${requested} selected asset(s) were still in the trash (restored or already purged meanwhile).`;
+    return `Purged ${purged} asset(s): leftover derivatives removed, rows stamped purged.`;
+  }
+  return "The purge is still running — the rows will disappear as they are freed (check Trash › Recent purges if it stays).";
+}
+
 // Missing originals (cf. lib/integrity.ts): indexed assets whose file is gone
 // from disk. The detector already auto-trashed them (reversible, `trashed`) —
 // or only flagged them when a mass disappearance looked like an unmounted
@@ -1391,7 +1446,8 @@ function ConfirmKeepModal({
 //   - Restore  : puts the asset back in the library anyway (e.g. the detection
 //     is known-wrong and the file will be back later).
 //   - Purge    : the irreversible cleanup — drops the leftover derivatives and
-//     stamps the row purged (there is no original left to lose).
+//     stamps the row purged (there is no original left to lose). A row that a
+//     purge refused keeps its reason (`purge_error`) visible on the row.
 //   - Verify integrity : queues the full sweep (sources + derivative objects).
 function MissingSection({
   count,
@@ -1511,13 +1567,16 @@ function MissingSection({
         body: JSON.stringify({ filter: { ids } }),
       });
       const d = await r.json();
-      setMsg(
-        r.ok
-          ? `Purge queued for ${ids.length} asset(s) — leftover derivatives are removed and the rows stamped purged.`
-          : `Error: ${d.error ?? "unknown"}`,
-      );
+      if (!r.ok) {
+        setMsg(`Error: ${d.error ?? "unknown"}`);
+        return;
+      }
       setSel(new Set());
       setConfirmPurge(null);
+      setMsg(`Purge queued for ${ids.length} asset(s)…`);
+      // Queued ≠ done: follow the job to its result, so a purge that refused
+      // every row says so instead of silently leaving the list unchanged.
+      setMsg(await followPurgeJob(d.purge_job_id, ids.length));
       await onChanged();
     } finally {
       setBusy(null);
@@ -1661,6 +1720,12 @@ function MissingSection({
               <div className="fail-path">{it.abs_path}</div>
               <div className="fail-err">
                 Original not found on disk (confirmed by stat).
+                {it.purge_error && (
+                  <>
+                    {" "}
+                    <strong>Last purge refused: {it.purge_error}.</strong>
+                  </>
+                )}
               </div>
             </div>
           ))}

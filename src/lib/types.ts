@@ -269,6 +269,8 @@ export type Rating = {
   star: number;
   color_label: string | null;
   reviewed_at: string | null;
+  // Attribution: account that last touched the rating (cf. migration 0032).
+  rated_by: number | null;
 };
 
 export type Tag = {

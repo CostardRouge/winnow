@@ -212,14 +212,42 @@ let textDimLogged = false;
 
 // --- Semantic-search index maintenance ---------------------------------------
 
+// pgvector is OPTIONAL: migration 0030 skips asset_clip where the extension is
+// absent, so EVERY read of that table has to tolerate it not existing — the
+// dashboard tile, the search page and the ML backfill would each 500 on a stock
+// Postgres otherwise. to_regclass returns NULL instead of raising when the
+// relation is missing. Deliberately not memoized: `CREATE EXTENSION vector` +
+// a re-run of migrate makes the table appear under a running app, and a cached
+// `false` would keep search dark until a restart. It's a catalog lookup —
+// sub-ms, and never on a hot path.
+export async function clipTableExists(): Promise<boolean> {
+  const row = await one<{ t: string | null }>(
+    "SELECT to_regclass('public.asset_clip')::text AS t",
+  );
+  return Boolean(row?.t);
+}
+
 // The pool the search actually ranks over vs the searchable library. `indexed`
 // counts embeddings under the CURRENT model only — stale rows from a previous
 // ML_CLIP_MODEL are dead weight the search ignores (cf. api/search). Used by
 // /api/stats (dashboard tile) and /api/search (coverage line under the results).
+// `available` is false when pgvector isn't installed: callers surface "not
+// available" rather than an empty index, which would read as "needs a backfill".
 export async function clipCoverage(): Promise<{
   indexed: number;
   library: number;
+  available: boolean;
 }> {
+  if (!(await clipTableExists())) {
+    // The library total still means something (and drives the same UI copy);
+    // `indexed` is 0 by definition when there is no index to count.
+    const row = await one<{ library: number }>(
+      `SELECT count(*) AS library FROM assets a
+        WHERE a.deleted_at IS NULL
+          AND a.group_role IS DISTINCT FROM 'companion'`,
+    );
+    return { indexed: 0, library: row?.library ?? 0, available: false };
+  }
   const row = await one<{ indexed: number; library: number }>(
     `SELECT
        (SELECT count(*) FROM asset_clip cl
@@ -232,7 +260,7 @@ export async function clipCoverage(): Promise<{
            AND a.group_role IS DISTINCT FROM 'companion')       AS library`,
     [config.ml.clip.model],
   );
-  return row ?? { indexed: 0, library: 0 };
+  return { ...(row ?? { indexed: 0, library: 0 }), available: true };
 }
 
 // Select the assets an ML backfill should (re-)enqueue and flip them back to
@@ -250,19 +278,26 @@ export async function prepareMlBackfill(force: boolean): Promise<number[]> {
   // the ML job feeds on the derivative, never the original.
   const hasDerivative = `(CASE WHEN a.media_type = 'video' THEN a.thumb_key
                                ELSE COALESCE(a.proxy_key, a.thumb_key) END) IS NOT NULL`;
+  // The "missing embedding" arm is dropped entirely when there's nowhere to
+  // store one — Postgres resolves table names at PLAN time, so a NOT EXISTS
+  // over a non-existent asset_clip errors even under a false flag (this used to
+  // be the `$2` boolean, now decided in JS so the SQL itself stays valid).
+  const clipIndexed = config.ml.clip.enabled && (await clipTableExists());
   const where = force
     ? hasDerivative
-    : `${hasDerivative} AND (
-         a.ml_status = 'pending'
-         OR ($2 AND a.ml_status = 'ready' AND NOT EXISTS (
-               SELECT 1 FROM asset_clip cl
-                WHERE cl.asset_id = a.id AND cl.model = $1))
-       )`;
+    : clipIndexed
+      ? `${hasDerivative} AND (
+           a.ml_status = 'pending'
+           OR (a.ml_status = 'ready' AND NOT EXISTS (
+                 SELECT 1 FROM asset_clip cl
+                  WHERE cl.asset_id = a.id AND cl.model = $1))
+         )`
+      : `${hasDerivative} AND a.ml_status = 'pending'`;
   const rows = await many<{ id: number }>(
     `SELECT a.id FROM assets a
       WHERE a.deleted_at IS NULL AND ${where}
       ORDER BY a.id`,
-    force ? [] : [config.ml.clip.model, config.ml.clip.enabled],
+    force || !clipIndexed ? [] : [config.ml.clip.model],
   );
   const ids = rows.map((r) => r.id);
   if (ids.length) {
@@ -436,16 +471,25 @@ export async function runMlJob(assetId: number): Promise<void> {
 
     // CLIP visual embedding → asset_clip (upsert, so a re-analysis refreshes it).
     // Only when the task ran AND returned a vector, so a disabled/failed clip
-    // never wipes an existing embedding.
+    // never wipes an existing embedding. Best-effort: if asset_clip doesn't exist
+    // (pgvector not installed — migration 0030 skips the table there), we must
+    // NOT fail the whole job; faces/OCR are already saved. Each q() is its own
+    // autocommit statement, so a caught error here doesn't poison the rest.
     if (clipRan && result.clipEmbedding) {
-      await q(
-        `INSERT INTO asset_clip (asset_id, embedding, model, updated_at)
-         VALUES ($1, $2::vector, $3, now())
-         ON CONFLICT (asset_id) DO UPDATE
-           SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
-               updated_at = now()`,
-        [assetId, toVectorLiteral(result.clipEmbedding), config.ml.clip.model],
-      );
+      try {
+        await q(
+          `INSERT INTO asset_clip (asset_id, embedding, model, updated_at)
+           VALUES ($1, $2::vector, $3, now())
+           ON CONFLICT (asset_id) DO UPDATE
+             SET embedding = EXCLUDED.embedding, model = EXCLUDED.model,
+                 updated_at = now()`,
+          [assetId, toVectorLiteral(result.clipEmbedding), config.ml.clip.model],
+        );
+      } catch (err) {
+        console.warn(
+          `[ml] clip embedding not stored for ${assetId} (pgvector installed?): ${(err as Error).message}`,
+        );
+      }
     }
 
     // Replace wholesale: a re-analysis (new model, regenerated derivative) must

@@ -32,6 +32,8 @@ import {
   mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
+  selectionDownloadFiles,
+  selectionZipHref,
 } from "@/lib/assetActions";
 import ExportSelectionModal from "../exports/ExportSelectionModal";
 import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
@@ -193,13 +195,17 @@ function toQuery(
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
   if (f.has_gps) sp.set("has_gps", "true");
   if (f.group_kind) sp.set("group_kind", f.group_kind);
-  if (f.has_edit) sp.set("has_edit", "true");
-  if (f.is_edit) sp.set("is_edit", "true");
+  // Finals ↔ sources (cf. lib/reconcile.ts) — tri-state, like has_faces/stacked:
+  // `false` asks for the complement (not edited yet / no original found).
+  if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "true" : "false");
+  if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "true" : "false");
   // ML analysis (faces + OCR, cf. lib/ml.ts).
   arr("face_count", f.face_count);
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
   if (f.has_text) sp.set("has_text", "true");
   if (f.near_dup) sp.set("near_dup", "true");
+  // Burst/bracket piles (cf. lib/bursts.ts) — tri-state, like has_faces.
+  if (f.stacked != null) sp.set("stacked", f.stacked ? "true" : "false");
   // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
@@ -235,9 +241,10 @@ function countActiveFilters(f: Filters): number {
   if (f.sharpness_min != null || f.sharpness_max != null) n++;
   if (f.has_gps) n++;
   if (f.group_kind) n++;
-  if (f.has_edit) n++;
-  if (f.is_edit) n++;
+  if (f.has_edit != null) n++;
+  if (f.is_edit != null) n++;
   if (f.near_dup) n++;
+  if (f.stacked != null) n++;
   if (f.bbox) n++;
   return n;
 }
@@ -295,6 +302,11 @@ export default function GalleryShell({
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
+  // A media opened from a map marker's popover. It gets its own single-item
+  // viewer: the map plots the whole filtered set while the grid feed is
+  // paginated, so the marker's asset usually isn't in `items` at all.
+  const [mapAsset, setMapAsset] = useState<Row | null>(null);
+  const [mapAssetLoading, setMapAssetLoading] = useState(false);
   // The active view is route-controlled when `view`/`onSelectView` are supplied
   // (Library), otherwise held internally (the standalone /gallery).
   const [internalView, setInternalView] = useState<string>(defaultView ?? "grid");
@@ -486,10 +498,32 @@ export default function GalleryShell({
     };
   }, [view, geoQuery]);
 
+  // Open one media full size from a map marker's popover. Served from the grid
+  // feed when it happens to hold that row (same projection), fetched by id
+  // otherwise — the map reaches media the feed hasn't paged in.
+  const openMapAsset = useCallback(
+    (id: number) => {
+      const known = items.find((a) => a.id === id);
+      if (known) {
+        setMapAsset(known);
+        return;
+      }
+      setMapAssetLoading(true);
+      fetchJson<{ asset: Row }>(`/api/assets/${id}`)
+        .then((d) => setMapAsset(d.asset))
+        .catch((e: Error) => setNotice(`Couldn’t open that media: ${e.message}`))
+        .finally(() => setMapAssetLoading(false));
+    },
+    [items],
+  );
+
   const rate = useCallback(
     async (assetId: number, patch: { verdict?: Row["verdict"]; star?: number }) => {
       if (readOnly) return;
       setItems((prev) => prev.map((a) => (a.id === assetId ? { ...a, ...patch } : a)));
+      // The map-opened asset lives outside the feed: patch it too, or its own
+      // rating buttons wouldn't light up.
+      setMapAsset((cur) => (cur && cur.id === assetId ? { ...cur, ...patch } : cur));
       await fetch(`/api/assets/${assetId}/rating`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -510,18 +544,14 @@ export default function GalleryShell({
         body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
       });
       const idset = new Set(ids);
-      setItems((prev) =>
-        prev.map((it) =>
-          idset.has(it.id)
-            ? {
-                ...it,
-                tags: add
-                  ? Array.from(new Set([...(it.tags ?? []), tag])).sort()
-                  : (it.tags ?? []).filter((t) => t !== tag),
-              }
-            : it,
-        ),
-      );
+      const withTag = (it: Row): Row => ({
+        ...it,
+        tags: add
+          ? Array.from(new Set([...(it.tags ?? []), tag])).sort()
+          : (it.tags ?? []).filter((t) => t !== tag),
+      });
+      setItems((prev) => prev.map((it) => (idset.has(it.id) ? withTag(it) : it)));
+      setMapAsset((cur) => (cur && idset.has(cur.id) ? withTag(cur) : cur));
       loadFacets();
     },
     [loadFacets, readOnly],
@@ -542,6 +572,7 @@ export default function GalleryShell({
       if (readOnly || !ids.length) return;
       const idset = new Set(ids);
       setItems((prev) => prev.map((a) => (idset.has(a.id) ? { ...a, ...patch } : a)));
+      setMapAsset((cur) => (cur && idset.has(cur.id) ? { ...cur, ...patch } : cur));
       await rateAssets(ids, patch);
     },
     [readOnly],
@@ -559,6 +590,8 @@ export default function GalleryShell({
       if (!window.confirm(msg)) return false;
       const idset = new Set(ids);
       setItems((prev) => prev.filter((a) => !idset.has(a.id)));
+      // Deleting the map-opened media has nothing left to show: close its viewer.
+      setMapAsset((cur) => (cur && idset.has(cur.id) ? null : cur));
       setSelected((prev) => {
         const next = new Set(prev);
         ids.forEach((i) => next.delete(i));
@@ -760,6 +793,11 @@ export default function GalleryShell({
     [rate, readOnly],
   );
 
+  // What the full-screen viewer is showing: the grid feed (navigable, paged) or
+  // the lone media opened from a map marker, which takes precedence while set.
+  const viewerItems = mapAsset ? [mapAsset] : items;
+  const viewerIndex = mapAsset ? 0 : viewer;
+
   // The shared Filters/Browse aside, available to every filter-aware view
   // (the built-in Grid/Map and any injected view such as Sessions).
   const renderAside = () => (
@@ -832,6 +870,7 @@ export default function GalleryShell({
             onRejectArea={rejectArea}
             onExportArea={exportSelection}
             onShowInGrid={(bbox) => showAreaInGrid(bbox)}
+            onOpenAsset={openMapAsset}
           />
         ) : (
           <>
@@ -1040,6 +1079,15 @@ export default function GalleryShell({
           onStar={(n) => rateMany([...selected], { star: n })}
           onTag={(name, add) => assignTags([...selected], name, add)}
           onExport={() => exportSelection([...selected])}
+          download={{
+            zipHref: selectionZipHref([...selected]),
+            zipName: "winnow-selection.zip",
+            listFiles: () =>
+              Promise.resolve(
+                selectionDownloadFiles(items.filter((a) => selected.has(a.id))),
+              ),
+            onMessage: setNotice,
+          }}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
           onGeotag={() => geotagSelection([...selected])}
@@ -1113,19 +1161,34 @@ export default function GalleryShell({
         current.render(viewCtx)
       )}
 
-      {viewer != null && items[viewer] && (
+      {/* Opening a marker's media by id (not already in the feed) — brief, but
+          the popover has closed by then, so say something is happening. */}
+      {mapAssetLoading && (
+        <div className="viewer-boot" role="status" aria-live="polite">
+          <Spinner sm />
+          Opening…
+        </div>
+      )}
+
+      {/* One viewer, two sources: the navigable grid feed, or the single media
+          opened from a map marker (which takes over while it's set). */}
+      {viewerIndex != null && viewerItems[viewerIndex] && (
         <MediaViewer
-          items={items}
-          index={viewer}
-          onIndexChange={setViewer}
-          hasMore={hasMore}
-          loading={loading}
-          loadMore={() => fetchPage(cursor)}
+          items={viewerItems}
+          index={viewerIndex}
+          onIndexChange={mapAsset ? () => {} : setViewer}
+          hasMore={mapAsset ? false : hasMore}
+          loading={mapAsset ? false : loading}
+          loadMore={mapAsset ? undefined : () => fetchPage(cursor)}
           onClose={() => {
+            if (mapAsset) {
+              setMapAsset(null);
+              return;
+            }
             // Land the grid on the media we were viewing before tearing the
             // overlay down (the list stays mounted underneath, so the scroll
             // takes effect immediately).
-            gridRef.current?.scrollToIndex(viewer);
+            gridRef.current?.scrollToIndex(viewerIndex);
             setViewer(null);
           }}
           onKeyDown={onViewerKey}
@@ -1159,6 +1222,9 @@ export default function GalleryShell({
               <SimilarStrip
                 assetId={it.id}
                 onOpen={(id) => {
+                  // A map-opened media stands alone: swap it for the similar
+                  // shot rather than looking it up in the feed.
+                  if (mapAsset) return void openMapAsset(id);
                   // Jump the viewer when the similar shot is in the current
                   // list; otherwise say why nothing happened.
                   const idx = items.findIndex((x) => x.id === id);
@@ -1207,7 +1273,13 @@ export default function GalleryShell({
         <AssetActionMenu
           x={menu.x}
           y={menu.y}
-          label={items.find((i) => i.id === menu.id)?.filename}
+          label={
+            // Right-clicking inside the viewer can target the map-opened media,
+            // which is not in the feed — look there too.
+            (mapAsset?.id === menu.id
+              ? mapAsset
+              : items.find((i) => i.id === menu.id))?.filename
+          }
           onAction={(action) => onMenuAction(menu.id, action)}
           onClose={() => setMenu(null)}
         />

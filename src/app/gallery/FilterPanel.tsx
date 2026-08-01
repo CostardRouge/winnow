@@ -45,6 +45,18 @@ export type Facets = {
   // "Near-duplicates" toggle so it never shows as a dead filter. Optional so a
   // facets payload predating the feature typechecks.
   with_phash?: number;
+  // Burst/bracket stacks in scope (cf. lib/bursts.ts): `piles` counts the
+  // stacks, `frames` the shots they hold. Drives the "Bursts" filter toggle —
+  // in the collapsed grid the filter yields exactly `piles` tiles (one cover
+  // per burst). Optional so a facets payload predating the feature typechecks.
+  bursts?: { piles: number; frames: number };
+  // Finals → sources reconciliation (cf. lib/reconcile.ts), one count per
+  // direction of the link: `linked` = finals that point at a source, with_edits`
+  // = sources something points back at. Each is only ever non-zero on ONE
+  // surface (a final can't have an edit; a source can't be one), so the panel
+  // gates each axis on its own count and the dead half never renders. Optional
+  // so a facets payload predating the feature still typechecks.
+  edits?: { linked: number; with_edits: number };
   extensions: VC[];
   media_types: VC[];
   derivative_statuses: VC[];
@@ -138,6 +150,9 @@ export type Filters = {
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
   group_kind?: "raw_jpeg" | "live_photo";
+  // Burst/bracket stacks (cf. lib/bursts.ts). Tri-state: true → only frames that
+  // belong to a pile, false → only the standalone shots, undefined → both.
+  stacked?: boolean;
   // Finals → sources reconciliation (cf. lib/reconcile.ts). `has_edit` → sources
   // that have a linked edit; `is_edit` → finals linked back to a source.
   has_edit?: boolean;
@@ -698,30 +713,116 @@ export default function FilterPanel({
         </label>
       </div>
 
-      <div className="facet">
-        <div className="facet-title">Edits (before / after)</div>
-        <div className="chips">
-          <button
-            className={`chip${filters.has_edit ? " active" : ""}`}
-            onClick={() =>
-              u({ has_edit: filters.has_edit ? undefined : true })
-            }
-            title="Source captures that have a linked edit"
-          >
-            Has edit
-          </button>
-          <button
-            className={`chip${filters.is_edit ? " active" : ""}`}
-            onClick={() => u({ is_edit: filters.is_edit ? undefined : true })}
-            title="Edited finals linked back to a source"
-          >
-            Is an edit
-          </button>
+      {/* Finals ↔ sources (cf. lib/reconcile.ts). The link has a direction, and
+          each surface only ever sees one end of it: a source can HAVE an edit,
+          a final IS one. So each axis is gated on its own count — on the finals
+          gallery "has an edit" is always empty, on incoming "is an edit" is,
+          and the half that can't match simply doesn't render. Both pairs are
+          tri-state (re-click the lit chip to clear back to "either"), like the
+          Faces and Bursts toggles above. */}
+      {(!!facets.edits?.with_edits || !!facets.edits?.linked) && (
+        <div className="facet">
+          <div className="facet-title">Before / after</div>
+          <div className="chips">
+            {!!facets.edits?.with_edits && (
+              <>
+                <button
+                  className={`chip${filters.has_edit === true ? " active" : ""}`}
+                  onClick={() =>
+                    u({ has_edit: filters.has_edit === true ? undefined : true })
+                  }
+                  title="Captures you have since edited — the shot has an “after”"
+                >
+                  Has an edit
+                  <span className="chip-count">{facets.edits.with_edits}</span>
+                </button>
+                <button
+                  className={`chip${filters.has_edit === false ? " active" : ""}`}
+                  onClick={() =>
+                    u({
+                      has_edit: filters.has_edit === false ? undefined : false,
+                    })
+                  }
+                  title="Captures with no edit yet — what you have not published"
+                >
+                  Not edited yet
+                  <span className="chip-count">
+                    {facets.total - facets.edits.with_edits}
+                  </span>
+                </button>
+              </>
+            )}
+            {!!facets.edits?.linked && (
+              <>
+                <button
+                  className={`chip${filters.is_edit === true ? " active" : ""}`}
+                  onClick={() =>
+                    u({ is_edit: filters.is_edit === true ? undefined : true })
+                  }
+                  title="Edits matched back to the capture they came from"
+                >
+                  Linked to an original
+                  <span className="chip-count">{facets.edits.linked}</span>
+                </button>
+                <button
+                  className={`chip${filters.is_edit === false ? " active" : ""}`}
+                  onClick={() =>
+                    u({ is_edit: filters.is_edit === false ? undefined : false })
+                  }
+                  title="Edits we could not match to a capture"
+                >
+                  No original found
+                  <span className="chip-count">
+                    {facets.total - facets.edits.linked}
+                  </span>
+                </button>
+              </>
+            )}
+          </div>
+          <div className="hint" style={{ marginTop: 4 }}>
+            Pairs each edited final with the capture it came from — open one and
+            use the viewer’s Original/Edit toggle to compare.
+            {!!facets.edits?.linked &&
+              " “No original found” lists the edits reconciliation couldn’t match: an ambiguous filename, or a source that isn’t indexed."}
+          </div>
         </div>
-        <div className="hint" style={{ marginTop: 4 }}>
-          Links edited finals to the source they came from.
+      )}
+
+      {/* Burst / bracket stacks (cf. lib/bursts.ts). The grid collapses a pile
+          to its cover, so "In a burst" lists one tile per run — the shortlist of
+          every burst shot in scope. Hidden until the library holds a pile. */}
+      {!!facets.bursts?.piles && (
+        <div className="facet">
+          <div className="facet-title">Bursts</div>
+          <div className="chips">
+            <button
+              className={`chip${filters.stacked === true ? " active" : ""}`}
+              onClick={() =>
+                u({ stacked: filters.stacked === true ? undefined : true })
+              }
+              title="Frames that belong to a burst / bracket pile"
+            >
+              In a burst
+              <span className="chip-count">{facets.bursts.piles}</span>
+            </button>
+            <button
+              className={`chip${filters.stacked === false ? " active" : ""}`}
+              onClick={() =>
+                u({ stacked: filters.stacked === false ? undefined : false })
+              }
+              title="Shots taken on their own, outside any pile"
+            >
+              Standalone
+            </button>
+          </div>
+          <div className="hint" style={{ marginTop: 4 }}>
+            {facets.bursts.piles} pile{facets.bursts.piles === 1 ? "" : "s"} ·{" "}
+            {facets.bursts.frames} frame
+            {facets.bursts.frames === 1 ? "" : "s"}. Each pile shows as one
+            cover tile (⧉ N) — open its session grid to expand the run.
+          </div>
         </div>
-      </div>
+      )}
 
       {!!facets.live_photos && (
         <div className="facet">

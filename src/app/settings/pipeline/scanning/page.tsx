@@ -5,8 +5,8 @@
 // as one timeline instead of a flat, hard-to-scan list.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { EmptyState, Icons } from "../../ui";
-import PullToRefresh from "../../PullToRefresh";
+import { EmptyState, Icons } from "../../../ui";
+import PullToRefresh from "../../../PullToRefresh";
 
 type ScanJob = {
   job_id: string;

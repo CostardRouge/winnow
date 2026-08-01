@@ -2,7 +2,7 @@
 
 // Pipeline control surface — the detailed counters bento (media / scan /
 // analyzed / pending / failures) plus pause/resume of the scan and the hourly
-// rate sliders. Lives on the dedicated /pipeline page; the Library header only
+// rate sliders. Lives on the Settings › Pipeline page; the Library header only
 // carries the compact StatsStrip. Auto-refreshes every 5 s via /api/stats.
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -160,14 +160,14 @@ export default function ControlPanel() {
   return (
     <PullToRefresh className="control" onRefresh={reload}>
       <div className="statbar">
-        <Link href="/pipeline/media" className="stat-link">
+        <Link href="/settings/pipeline/media" className="stat-link">
           <Stat
             label="Media"
             value={a?.total}
             sub={`${a?.photos ?? 0} photos · ${a?.videos ?? 0} videos →`}
           />
         </Link>
-        <Link href="/pipeline/scanning" className="stat-link">
+        <Link href="/settings/pipeline/scanning" className="stat-link">
           <Stat
             label="Scanning"
             value={active(stats?.queues?.scan)}
@@ -175,10 +175,10 @@ export default function ControlPanel() {
             tone={paused ? "warn" : undefined}
           />
         </Link>
-        <Link href="/pipeline/media?status=ready&sort=processed" className="stat-link">
+        <Link href="/settings/pipeline/media?status=ready&sort=processed" className="stat-link">
           <Stat label="Analyzed" value={a?.analyzed} sub="derivatives ready →" tone="ok" />
         </Link>
-        <Link href="/pipeline/pending" className="stat-link">
+        <Link href="/settings/pipeline/pending" className="stat-link">
           <Stat
             label="Pending"
             value={a?.pending}
@@ -188,9 +188,9 @@ export default function ControlPanel() {
         </Link>
         {stats?.mlEnabled && (
           <Link
-            href="/gallery?has_faces=1"
+            href="/settings/pipeline/faces"
             className="stat-link"
-            title="Faces & text detected off the derivatives — click to browse media with faces"
+            title="Faces & text detected off the derivatives — click to triage the ML stage (what's analyzed, pending, failed)"
           >
             <Stat
               label="Faces & text"
@@ -202,9 +202,9 @@ export default function ControlPanel() {
         )}
         {stats?.clipEnabled && stats.clip && (
           <Link
-            href="/search"
+            href="/settings/pipeline/search"
             className="stat-link"
-            title="Media with a CLIP embedding — the pool semantic search ranks. Below the library total? Run “Index for search” below."
+            title="Media with a CLIP embedding — the pool semantic search ranks. Click to see what's missing from the index and fill it."
           >
             <Stat
               label="Search index"
@@ -214,7 +214,7 @@ export default function ControlPanel() {
             />
           </Link>
         )}
-        <Link href="/pipeline/failures" className="stat-link">
+        <Link href="/settings/pipeline/failures" className="stat-link">
           <Stat
             label="Failures"
             value={totalFail}

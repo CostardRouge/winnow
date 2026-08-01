@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one, q } from "@/lib/db";
 import { groupExpandCTE } from "@/lib/pairing";
+import { identityFromHeaders } from "@/lib/auth";
 import { json, badRequest, serverError } from "@/lib/api";
 import type { Rating } from "@/lib/types";
 
@@ -26,17 +27,21 @@ export async function PATCH(
 
     // RAW+JPEG pairing: the verdict/star applies to the whole pair, so the
     // upsert targets the asset AND its group companion (cf. lib/pairing.ts).
+    // Attribution: the account acting is stamped on the rating (kept when the
+    // identity is somehow absent, never erased — cf. migration 0032).
+    const userId = identityFromHeaders(req.headers)?.id ?? null;
     await q(
       `WITH ${groupExpandCTE("$1")}
-       INSERT INTO ratings (asset_id, verdict, star, color_label, reviewed_at)
-       SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), $4, now()
+       INSERT INTO ratings (asset_id, verdict, star, color_label, reviewed_at, rated_by)
+       SELECT id, COALESCE($2,'unrated'), COALESCE($3,0), $4, now(), $6
        FROM target_ids
        ON CONFLICT (asset_id) DO UPDATE SET
          verdict     = COALESCE($2, ratings.verdict),
          star        = COALESCE($3, ratings.star),
          color_label = CASE WHEN $5 THEN $4 ELSE ratings.color_label END,
-         reviewed_at = now()`,
-      [[assetId], verdict ?? null, star ?? null, color ?? null, color !== undefined],
+         reviewed_at = now(),
+         rated_by    = COALESCE($6, ratings.rated_by)`,
+      [[assetId], verdict ?? null, star ?? null, color ?? null, color !== undefined, userId],
     );
 
     await q(

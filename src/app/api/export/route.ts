@@ -6,6 +6,8 @@ import { enqueueExport } from "@/lib/queue";
 import { FilterSchema } from "@/lib/filter";
 import { EXPORT_CATEGORIES, type ExportCategory } from "@/lib/exportTypes";
 import { getSettings } from "@/lib/settings";
+import { identityFromHeaders } from "@/lib/auth";
+import { immichConfigured } from "@/lib/immich";
 import { json, badRequest, serverError } from "@/lib/api";
 
 // Per-category file selection (cf. lib/exportTypes.ts) — what the redesigned
@@ -35,6 +37,18 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
     const { name, target, filter, params, include } = parsed.data;
+
+    // Refuse a target the deployment can't run BEFORE queueing: an unconfigured
+    // Immich would otherwise surface as a failed job minutes later, with the
+    // real cause (a missing env var) buried in the job result.
+    if (target === "immich" && !immichConfigured()) {
+      return badRequest(
+        "Immich push is not configured — set IMMICH_ENABLED=true and IMMICH_API_KEY, then restart the worker.",
+      );
+    }
+    if (target === "web") {
+      return badRequest("The `web` export target is not implemented yet.");
+    }
 
     // Pairing: resolve whether to also copy the companion extras now, so the job
     // is self-contained. An explicit params flag wins; otherwise fall back to the
@@ -82,8 +96,8 @@ export async function POST(req: NextRequest) {
     const sessionId = filter.session_id ?? null;
 
     const job = await one<{ id: number }>(
-      `INSERT INTO export_jobs (name, target, filter_query, params, status, session_id)
-       VALUES ($1, $2, $3, $4, 'queued', $5) RETURNING id`,
+      `INSERT INTO export_jobs (name, target, filter_query, params, status, session_id, created_by)
+       VALUES ($1, $2, $3, $4, 'queued', $5, $6) RETURNING id`,
       [
         name,
         target,
@@ -98,6 +112,8 @@ export async function POST(req: NextRequest) {
           include_live_video: includeLiveVideo,
         }),
         sessionId,
+        // Attribution: which account launched the export (cf. migration 0032).
+        identityFromHeaders(req.headers)?.id ?? null,
       ],
     );
     await enqueueExport(job!.id);

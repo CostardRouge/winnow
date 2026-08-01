@@ -1,8 +1,9 @@
 "use client";
 
 // Reusable, paginated media browser for the Pipeline triage pages (Media /
-// Pending). It polls /api/assets with a caller-supplied base query (e.g.
-// derivative_status=pending,processing) and offers three interchangeable views
+// Pending / Faces & text / Search index). It polls /api/assets with a
+// caller-supplied base query (e.g. derivative_status=pending,processing or
+// ml_status=error) and offers three interchangeable views
 // over the same feed — all sharing one MediaViewer, one pagination cursor and
 // one set of row actions:
 //
@@ -22,8 +23,8 @@
 //
 // Actions render as a compact icon "bento" on the list rows and as buttons in
 // the viewer: "View" opens the viewer; "Download" pulls the original file;
-// regenerate / skip / delete sit beside them (delete carries a danger tint).
-// Mutations update the list optimistically.
+// regenerate / analyze (re-queue the ML job) / skip / delete sit beside them
+// (delete carries a danger tint). Mutations update the list optimistically.
 import {
   useCallback,
   useEffect,
@@ -35,17 +36,27 @@ import {
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
+  mlAnalyzeAssets,
   regenerateAssets,
   skipAssets,
 } from "@/lib/assetActions";
 import type { AssetGridRow } from "@/lib/types";
-import { EmptyState, Icons } from "../ui";
-import MediaViewer from "../MediaViewer";
-import PullToRefresh from "../PullToRefresh";
-import VirtualGrid, { type GalleryAsset } from "../gallery/VirtualGrid";
-import { useStats } from "../useStats";
+import { EmptyState, Icons } from "../../ui";
+import MediaViewer from "../../MediaViewer";
+import PullToRefresh from "../../PullToRefresh";
+import VirtualGrid, { type GalleryAsset } from "../../gallery/VirtualGrid";
+import { useStats } from "../../useStats";
 
-export type RowAction = "view" | "download" | "regenerate" | "skip" | "delete";
+export type RowAction =
+  | "view"
+  | "download"
+  | "regenerate"
+  | "analyze"
+  | "skip"
+  | "delete";
+
+// The mutating actions in the order they render (rows + viewer).
+const MUTATION_ORDER = ["regenerate", "analyze", "skip", "delete"] as const;
 
 type Mutation = Exclude<RowAction, "view" | "download">;
 
@@ -120,6 +131,13 @@ const MUTATIONS: Record<
     removes: false,
     run: (id) => regenerateAssets([id]),
     done: "Re-queued derivative generation.",
+  },
+  analyze: {
+    label: "Analyze",
+    icon: Icons.analyze,
+    removes: false,
+    run: (id) => mlAnalyzeAssets([id]),
+    done: "Queued for ML analysis (faces · text · search embedding).",
   },
   skip: {
     label: "Skip",
@@ -228,6 +246,7 @@ export default function PipelineAssetList({
   pollMs = 8000,
   views = ["list", "grid"],
   showStatus = false,
+  showMl = false,
   defaultSort = { field: "captured", dir: "desc" },
   storageKey = "pipeline",
 }: {
@@ -243,6 +262,10 @@ export default function PipelineAssetList({
   views?: View[];
   /** Show the derivative-status facet (the Media browser; folds in "Analyzed"). */
   showStatus?: boolean;
+  /** ML-centric rows (the Faces & text / Search index pages): the status pill
+   *  shows ml_status instead of derivative_status, the meta line reports what
+   *  the analysis found (faces / text), and ml_error is surfaced inline. */
+  showMl?: boolean;
   /** Sort used until the user picks one (persisted thereafter). */
   defaultSort?: Sort;
   /** Namespaces the status query param seeded from the URL. */
@@ -472,6 +495,7 @@ export default function PipelineAssetList({
             key={it.id}
             asset={it}
             actions={actions}
+            ml={showMl}
             busy={busy === it.id}
             disabled={busy != null}
             onRun={run}
@@ -545,18 +569,16 @@ export default function PipelineAssetList({
               <a className="btn" href={`/api/assets/${it.id}/download`} download>
                 {Icons.download} Download
               </a>
-              {(["regenerate", "skip", "delete"] as const)
-                .filter((k) => actions.includes(k))
-                .map((k) => (
-                  <button
-                    key={k}
-                    className={`btn${MUTATIONS[k].danger ? " btn-reject" : ""}`}
-                    disabled={busy != null}
-                    onClick={() => runFromViewer(it.id, k)}
-                  >
-                    {MUTATIONS[k].icon} {MUTATIONS[k].label}
-                  </button>
-                ))}
+              {MUTATION_ORDER.filter((k) => actions.includes(k)).map((k) => (
+                <button
+                  key={k}
+                  className={`btn${MUTATIONS[k].danger ? " btn-reject" : ""}`}
+                  disabled={busy != null}
+                  onClick={() => runFromViewer(it.id, k)}
+                >
+                  {MUTATIONS[k].icon} {MUTATIONS[k].label}
+                </button>
+              ))}
             </>
           )}
         />
@@ -848,6 +870,7 @@ function FsRow({
 function AssetRow({
   asset,
   actions,
+  ml = false,
   busy,
   disabled,
   onRun,
@@ -855,6 +878,7 @@ function AssetRow({
 }: {
   asset: AssetGridRow;
   actions: RowAction[];
+  ml?: boolean;
   busy: boolean;
   disabled: boolean;
   onRun: (id: number, action: Mutation) => void;
@@ -885,7 +909,7 @@ function AssetRow({
     <div className="pl-card">
       <div className="pl-head">
         <span className="pl-name">{asset.filename}</span>
-        <StatusPill status={asset.derivative_status} />
+        <StatusPill status={ml ? asset.ml_status : asset.derivative_status} />
       </div>
 
       <div className="pl-path" title={asset.abs_path}>
@@ -897,6 +921,13 @@ function AssetRow({
         <div className="pl-meta">
           {asset.media_type}
           {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
+          {/* What the analysis found: faces + text once analyzed, "—" before. */}
+          {ml &&
+            ` · ${
+              asset.face_count == null
+                ? "not analyzed"
+                : `${asset.face_count} face${asset.face_count === 1 ? "" : "s"}`
+            }${asset.ocr_text ? " · text" : ""}`}
           {" · "}
           {formatWhen(asset.updated_at)}
         </div>
@@ -922,9 +953,7 @@ function AssetRow({
               {Icons.download}
             </a>
           )}
-          {(["regenerate", "skip", "delete"] as const)
-            .filter((k) => actions.includes(k))
-            .map((k) => {
+          {MUTATION_ORDER.filter((k) => actions.includes(k)).map((k) => {
               const m = MUTATIONS[k];
               return (
                 <button
@@ -938,9 +967,11 @@ function AssetRow({
                   {m.icon}
                 </button>
               );
-            })}
+          })}
         </div>
       </div>
+
+      {ml && asset.ml_error && <div className="pl-err">{asset.ml_error}</div>}
     </div>
   );
 }

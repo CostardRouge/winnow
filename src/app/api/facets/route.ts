@@ -75,6 +75,9 @@ export async function GET(req: NextRequest) {
       faces,
       withText,
       withPhash,
+      bursts,
+      editsLinked,
+      editsWithEdits,
       exts,
       mediaTypes,
       derivativeStatuses,
@@ -156,6 +159,40 @@ export async function GET(req: NextRequest) {
          WHERE a.phash IS NOT NULL${scope}`,
         params,
       ).catch(() => null),
+      // Burst/bracket stacks (cf. lib/bursts.ts): how many piles live in scope
+      // and how many frames they hold. `piles` is what the "Bursts" filter
+      // surfaces in the COLLAPSED gallery (one cover tile per pile), `frames`
+      // what it surfaces uncollapsed — so the panel can state both. Also gates
+      // the toggle, which stays hidden on a library that was never stacked.
+      // Served by assets_burst_idx (migration 0029).
+      one<{ piles: number; frames: number }>(
+        `SELECT count(DISTINCT a.burst_id)::int AS piles,
+                count(*)::int                   AS frames
+         FROM assets a WHERE a.burst_id IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
+      // Finals → sources reconciliation (cf. lib/reconcile.ts), counted once per
+      // DIRECTION of the link, because each direction is only ever non-zero on
+      // ONE surface: a final points at a source (`linked`), a source is pointed
+      // at (`with_edits`). The panel gates each axis on its own count, so the
+      // half that can't match in this scope never renders as a dead filter — on
+      // the finals gallery nothing can "have an edit", on incoming nothing "is
+      // an edit". Kept as two queries rather than one with `count(*) FILTER`:
+      // the EXISTS then sits in WHERE, where the planner turns it into a
+      // semi-join over assets_original_idx (migration 0018) instead of running a
+      // correlated subplan per row. It is the very predicate `has_edit=true`
+      // already runs (cf. filter.ts).
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         WHERE a.original_asset_id IS NOT NULL${scope}`,
+        params,
+      ).catch(() => null),
+      one<{ count: number }>(
+        `SELECT count(*)::int AS count FROM assets a
+         WHERE EXISTS (SELECT 1 FROM assets e
+                        WHERE e.original_asset_id = a.id AND e.deleted_at IS NULL)${scope}`,
+        params,
+      ).catch(() => null),
       settledArray(facet("ext", scope, params)),
       settledArray(facet("media_type", scope, params, "value ASC")),
       settledArray(facet("derivative_status", scope, params, "value ASC")),
@@ -203,6 +240,11 @@ export async function GET(req: NextRequest) {
       faces,
       with_text: withText?.count ?? 0,
       with_phash: withPhash?.count ?? 0,
+      bursts: bursts ?? { piles: 0, frames: 0 },
+      edits: {
+        linked: editsLinked?.count ?? 0,
+        with_edits: editsWithEdits?.count ?? 0,
+      },
       extensions: exts,
       media_types: mediaTypes,
       derivative_statuses: derivativeStatuses,

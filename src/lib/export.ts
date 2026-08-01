@@ -1,6 +1,12 @@
-// Export worker (cf. §8). MVP: target `capture_one` = copies the originals of
-// the picks to a local export folder. This is the ONLY place where we pull
-// large files back over the network. Records the source->export lineage.
+// Export worker (cf. §8). Two targets, one candidate set:
+//   - `capture_one` : copies the picks' originals to a local export folder —
+//     the files you go on to develop. The ONLY place where we pull large files
+//     back over the network.
+//   - `immich`      : uploads them to the Immich library that serves the
+//     browsing/phone side, filed in an album (cf. lib/immich.ts) — the shots you
+//     go on to look at. Nothing is written locally.
+// Both record the same source->export lineage in `exports`; a local copy stores
+// its `output_path`, a push stores the remote asset id in `output_key`.
 //
 // Which files travel is driven by `params.include` — a per-category map over
 // the taxonomy in lib/exportTypes.ts (RAW / photos / videos / pair JPEG / Live
@@ -13,7 +19,15 @@ import path from "node:path";
 import { q, one, many } from "./db";
 import { config, PHOTO_RAW_EXTS } from "./config";
 import { buildFilter, FilterSchema, type AssetFilter } from "./filter";
-import { partialHash } from "./hash";
+import { partialHash, sha1File } from "./hash";
+import {
+  immichAddToAlbum,
+  immichAlbumUrl,
+  immichCheckUploads,
+  immichConfigured,
+  immichFindOrCreateAlbum,
+  immichUpload,
+} from "./immich";
 import type { ExportCategory, ExportInclude } from "./exportTypes";
 
 // Atomic + verified copy: we write to a `.part`, check size + partial hash,
@@ -53,6 +67,12 @@ export type ExportFileRow = {
   abs_path: string;
   file_size: number | null;
   role: string;
+  // Pair identity + capture time. The local copy target ignores both (the file
+  // lands under its own name and keeps its mtime); the Immich push needs them
+  // to send a real capture date and to re-link a Live Photo's two halves.
+  group_id: number | null;
+  group_kind: string | null;
+  captured_at: Date | null;
 };
 
 // Where a candidate media file falls in the picker taxonomy. Pure so the
@@ -102,8 +122,10 @@ export async function collectExportFiles(
     abs_path: string;
     file_size: number | null;
     media_type: string;
+    group_id: number | null;
     group_kind: string | null;
     group_role: string | null;
+    captured_at: Date | null;
   }>(
     `WITH matched AS (
        SELECT a.id, a.group_id
@@ -113,7 +135,7 @@ export async function collectExportFiles(
      ),
      grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
      SELECT a.id, a.ext, a.filename, a.abs_path, a.file_size, a.media_type,
-            g.kind AS group_kind, a.group_role
+            a.group_id, g.kind AS group_kind, a.group_role, a.captured_at
      FROM assets a
      LEFT JOIN asset_groups g ON g.id = a.group_id
      WHERE a.deleted_at IS NULL AND (
@@ -136,6 +158,9 @@ export async function collectExportFiles(
       abs_path: a.abs_path,
       file_size: a.file_size,
       role: lineageRole(a),
+      group_id: a.group_id,
+      group_kind: a.group_kind,
+      captured_at: a.captured_at,
     });
     if (a.media_type === "video") videoIds.push(a.id);
   }
@@ -166,6 +191,9 @@ export async function collectExportFiles(
         abs_path: sc.abs_path,
         file_size: sc.file_size,
         role: "sidecar",
+        group_id: null,
+        group_kind: null,
+        captured_at: null,
       });
     }
   }
@@ -210,99 +238,49 @@ export function includeFromParams(
   return base;
 }
 
+// A queued export, as the worker sees it.
+type ExportJobRow = {
+  id: number;
+  name: string;
+  target: string;
+  filter_query: unknown;
+  params: Record<string, unknown>;
+  session_id: number | null;
+};
+
 export async function runExportJob(exportJobId: number): Promise<void> {
-  const job = await one<{
-    id: number;
-    name: string;
-    target: string;
-    filter_query: unknown;
-    params: Record<string, unknown>;
-    session_id: number | null;
-  }>("SELECT * FROM export_jobs WHERE id = $1", [exportJobId]);
+  const job = await one<ExportJobRow>(
+    "SELECT * FROM export_jobs WHERE id = $1",
+    [exportJobId],
+  );
   if (!job) throw new Error(`export_job not found: ${exportJobId}`);
 
   await q("UPDATE export_jobs SET status='running' WHERE id=$1", [exportJobId]);
 
   try {
-    if (job.target !== "capture_one") {
-      // web / immich: planned for V2.
-      throw new Error(`Export target not yet supported: ${job.target}`);
-    }
-
+    // Every target consumes the SAME candidate set: the selection scanned by
+    // collectExportFiles (what the modal's plan endpoint showed), narrowed to
+    // the categories this job includes. Legacy jobs (no params.include)
+    // reproduce the historical behavior exactly.
     const filter = FilterSchema.parse(job.filter_query ?? {});
-
-    // Scan the selection's full candidate set (same helper the modal's plan
-    // endpoint uses), then keep the categories this job includes. Legacy jobs
-    // (no params.include) reproduce the historical behavior exactly.
     const include = includeFromParams(job.params);
     const files = (await collectExportFiles(filter)).filter(
       (f) => include[f.category],
     );
 
-    const destDir = path.join(config.exportDir, sanitize(job.name));
-    await mkdir(destDir, { recursive: true });
-
-    let copied = 0;
-    let sidecarsCopied = 0;
-    const errors: Array<{ asset_id: number; error: string }> = [];
-
-    for (const file of files) {
-      const dest = path.join(destDir, file.filename);
-      try {
-        await copyVerified(file.abs_path, dest);
-        if (file.sidecar_id == null) {
-          // Media copy. Lineage role records which side of the pair this is
-          // (raw/jpeg, still/live_video, single); `kind` stays 'raw_copy'.
-          await q(
-            `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
-             VALUES ($1, $2, 'raw_copy', $3, $4)`,
-            [file.asset_id, exportJobId, dest, JSON.stringify({ role: file.role })],
-          );
-          await q(
-            "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
-            [file.asset_id],
-          );
-          copied++;
-        } else {
-          // Sidecar copy (SRT flight log, XML/THM metadata) next to its clip —
-          // its filename already tracks the clip's name. A failure is reported
-          // but never discards the media that exported fine.
-          await q(
-            `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
-             VALUES ($1, $2, 'sidecar', $3, $4)`,
-            [
-              file.asset_id,
-              exportJobId,
-              dest,
-              JSON.stringify({ role: "sidecar", sidecar_id: file.sidecar_id }),
-            ],
-          );
-          sidecarsCopied++;
-        }
-      } catch (err) {
-        errors.push({
-          asset_id: file.asset_id,
-          error:
-            file.sidecar_id == null
-              ? (err as Error).message
-              : `sidecar ${file.filename}: ${(err as Error).message}`,
-        });
-      }
+    let result: Record<string, unknown>;
+    if (job.target === "capture_one") {
+      result = await copyToExportFolder(job, files);
+    } else if (job.target === "immich") {
+      result = await pushToImmich(job, files);
+    } else {
+      // `web` (browser-ready renders) is still V2/V3.
+      throw new Error(`Export target not yet supported: ${job.target}`);
     }
-    const mediaTotal = files.filter((f) => f.sidecar_id == null).length;
 
     await q(
       `UPDATE export_jobs SET status='done', finished_at=now(), result=$2 WHERE id=$1`,
-      [
-        exportJobId,
-        JSON.stringify({
-          dest_dir: destDir,
-          total: mediaTotal,
-          copied,
-          sidecars: sidecarsCopied,
-          errors,
-        }),
-      ],
+      [exportJobId, JSON.stringify(result)],
     );
 
     // Persist the session's export history. The job row + its files may be
@@ -323,4 +301,242 @@ export async function runExportJob(exportJobId: number): Promise<void> {
     );
     throw err;
   }
+}
+
+// --- Target: capture_one ----------------------------------------------------
+// Copies the selection's originals into the local export folder. The only place
+// where we pull large files back over the network.
+async function copyToExportFolder(
+  job: ExportJobRow,
+  files: ExportFileRow[],
+): Promise<Record<string, unknown>> {
+  const exportJobId = job.id;
+  const destDir = path.join(config.exportDir, sanitize(job.name));
+  await mkdir(destDir, { recursive: true });
+
+  let copied = 0;
+  let sidecarsCopied = 0;
+  const errors: Array<{ asset_id: number; error: string }> = [];
+
+  for (const file of files) {
+    const dest = path.join(destDir, file.filename);
+    try {
+      await copyVerified(file.abs_path, dest);
+      if (file.sidecar_id == null) {
+        // Media copy. Lineage role records which side of the pair this is
+        // (raw/jpeg, still/live_video, single); `kind` stays 'raw_copy'.
+        await q(
+          `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
+           VALUES ($1, $2, 'raw_copy', $3, $4)`,
+          [file.asset_id, exportJobId, dest, JSON.stringify({ role: file.role })],
+        );
+        await q(
+          "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
+          [file.asset_id],
+        );
+        copied++;
+      } else {
+        // Sidecar copy (SRT flight log, XML/THM metadata) next to its clip —
+        // its filename already tracks the clip's name. A failure is reported
+        // but never discards the media that exported fine.
+        await q(
+          `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, params)
+           VALUES ($1, $2, 'sidecar', $3, $4)`,
+          [
+            file.asset_id,
+            exportJobId,
+            dest,
+            JSON.stringify({ role: "sidecar", sidecar_id: file.sidecar_id }),
+          ],
+        );
+        sidecarsCopied++;
+      }
+    } catch (err) {
+      errors.push({
+        asset_id: file.asset_id,
+        error:
+          file.sidecar_id == null
+            ? (err as Error).message
+            : `sidecar ${file.filename}: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  return {
+    dest_dir: destDir,
+    total: files.filter((f) => f.sidecar_id == null).length,
+    copied,
+    sidecars: sidecarsCopied,
+    errors,
+  };
+}
+
+// --- Target: immich ---------------------------------------------------------
+// Uploads the selection's originals to the Immich library that serves the
+// browsing side, and files them in an album. The counterpart of the RAW copy:
+// Capture One gets the files to work ON, Immich gets the shots to look AT.
+//
+// Three things this does NOT do, deliberately:
+//   - touch the NAS originals (as everywhere else in Winnow, we only read);
+//   - write into Immich's storage/database — everything goes through its public
+//     REST API with an API key (cf. lib/immich.ts);
+//   - carry sidecars. Immich's upload only accepts an XMP sidecar, and a DJI
+//     .SRT flight log or a Sony .XML is not that — those files are skipped and
+//     counted in the result rather than failing the job. They still travel with
+//     the `capture_one` target, which is where they are actually useful.
+async function pushToImmich(
+  job: ExportJobRow,
+  candidates: ExportFileRow[],
+): Promise<Record<string, unknown>> {
+  if (!immichConfigured()) {
+    throw new Error(
+      "Immich push is not configured (set IMMICH_ENABLED=true and IMMICH_API_KEY)",
+    );
+  }
+  const exportJobId = job.id;
+
+  // Sidecars can't travel (see above) — report them instead of erroring.
+  const skippedSidecars = candidates.filter((f) => f.sidecar_id != null).length;
+  const media = candidates.filter((f) => f.sidecar_id == null);
+
+  // A Live Photo's .mov must exist in Immich BEFORE its still, so the still can
+  // reference it and the pair lands as one Live Photo rather than a JPEG plus a
+  // stray clip. Sorting is enough: the rest of the order is untouched.
+  const files = [
+    ...media.filter((f) => f.category === "live_motion"),
+    ...media.filter((f) => f.category !== "live_motion"),
+  ];
+
+  // Pre-flight: hash everything once and ask Immich what it already holds, so a
+  // re-pushed export uploads nothing. Skipped when IMMICH_PRECHECK is off, and
+  // never fatal — a failing pre-check just means we upload and let Immich dedup
+  // on its side (it returns the existing asset id with status 'duplicate').
+  //
+  // Hashed one file at a time, for the same reason the upload loop below is
+  // sequential: a session can hold thousands of files, and reading them all at
+  // once would both thrash the HDD's head and hold thousands of open handles.
+  const known = new Map<number, string>(); // file index → existing Immich id
+  const checksums = new Map<number, string>();
+  if (config.immich.precheck && files.length) {
+    try {
+      const items: Array<{ id: string; checksum: string }> = [];
+      for (const [i, file] of files.entries()) {
+        const checksum = await sha1File(file.abs_path);
+        checksums.set(i, checksum);
+        items.push({ id: String(i), checksum });
+      }
+      for (const [id, assetId] of await immichCheckUploads(items)) {
+        known.set(Number(id), assetId);
+      }
+    } catch (err) {
+      // A file that vanished between the scan and here, or an Immich hiccup:
+      // the upload loop reports it per file instead of failing the whole job.
+      console.warn(
+        `export ${exportJobId}: immich pre-check skipped — ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Album: resolved ONCE, before any upload, so a bad name/permission fails the
+  // job outright instead of after uploading a few gigabytes.
+  const albumName =
+    config.immich.albumMode === "job"
+      ? job.name
+      : config.immich.albumMode === "fixed"
+        ? config.immich.albumName
+        : null;
+  const album = albumName ? await immichFindOrCreateAlbum(albumName) : null;
+
+  let uploaded = 0;
+  let duplicates = 0;
+  const errors: Array<{ asset_id: number; error: string }> = [];
+  const albumIds: string[] = [];
+  // group_id → the Immich id of that Live Photo's motion clip.
+  const liveVideoByGroup = new Map<number, string>();
+
+  // Sequential, like the copy target: the NAS is a single spinning disk and
+  // EXPORT_CONCURRENCY already bounds how many jobs run at once. Parallel reads
+  // here would cost more in seeks than they'd win in upload overlap.
+  for (const [i, file] of files.entries()) {
+    try {
+      const existing = known.get(i);
+      let assetId: string;
+      let status: string;
+
+      if (existing) {
+        assetId = existing;
+        status = "present";
+        duplicates++;
+      } else {
+        // Immich needs a capture date. `captured_at` is EXIF-derived and can be
+        // absent (a scan, a screenshot); the file's mtime is the honest
+        // fallback, and it is what Immich itself would use.
+        const st = await stat(file.abs_path);
+        const res = await immichUpload({
+          absPath: file.abs_path,
+          filename: file.filename,
+          createdAt: file.captured_at ?? st.mtime,
+          modifiedAt: st.mtime,
+          checksum: checksums.get(i),
+          livePhotoVideoId:
+            file.group_kind === "live_photo" && file.group_id != null
+              ? liveVideoByGroup.get(file.group_id)
+              : undefined,
+        });
+        assetId = res.id;
+        status = res.status;
+        if (res.status === "duplicate") duplicates++;
+        else uploaded++;
+      }
+
+      if (file.category === "live_motion" && file.group_id != null) {
+        liveVideoByGroup.set(file.group_id, assetId);
+      }
+      albumIds.push(assetId);
+
+      // Lineage: same shape as a local copy, but the output lives on another
+      // server — `output_path` stays NULL (nothing to download or delete from
+      // here) and `output_key` carries the remote asset id.
+      await q(
+        `INSERT INTO exports (source_asset_id, export_job_id, kind, output_path, output_key, params)
+         VALUES ($1, $2, 'immich', NULL, $3, $4)`,
+        [
+          file.asset_id,
+          exportJobId,
+          assetId,
+          JSON.stringify({
+            role: file.role,
+            status,
+            album_id: album?.id ?? null,
+          }),
+        ],
+      );
+      await q(
+        "UPDATE assets SET processing_state='exported', updated_at=now() WHERE id=$1",
+        [file.asset_id],
+      );
+    } catch (err) {
+      errors.push({ asset_id: file.asset_id, error: (err as Error).message });
+    }
+  }
+
+  // Filing into the album happens last, in bulk: an asset already in it comes
+  // back as a duplicate (a success for us, cf. lib/immich.ts) so re-pushing an
+  // export tops the album up instead of failing.
+  const albumErrors =
+    album && albumIds.length ? await immichAddToAlbum(album.id, albumIds) : [];
+
+  return {
+    server_url: config.immich.baseUrl,
+    album_id: album?.id ?? null,
+    album_name: album?.albumName ?? null,
+    album_url: album ? immichAlbumUrl(album.id) : null,
+    total: files.length,
+    uploaded,
+    duplicates,
+    skipped_sidecars: skippedSidecars,
+    errors: albumErrors.length
+      ? [...errors, { asset_id: 0, error: `album: ${albumErrors.join("; ")}` }]
+      : errors,
+  };
 }

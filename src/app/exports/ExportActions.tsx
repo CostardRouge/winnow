@@ -16,6 +16,7 @@ export default function ExportActions({
   zipName,
   listFiles,
   canDownload,
+  deleteTitle,
   onMessage,
   onDelete,
   deleteBusy,
@@ -26,8 +27,10 @@ export default function ExportActions({
   zipName: string;
   /** Lazily resolve the export's downloadable files. */
   listFiles: () => Promise<DownloadFile[]>;
-  /** Hide the Download segment when the export has no files. */
+  /** Hide the Download segment when the export has no local files. */
   canDownload: boolean;
+  /** Overrides the Delete tooltip — a push has no copied files to remove. */
+  deleteTitle?: string;
   /** Surface transient download status to the card. */
   onMessage?: (msg: string | null) => void;
   onDelete: () => void;
@@ -49,7 +52,10 @@ export default function ExportActions({
         onClick={onDelete}
         disabled={deleteBusy}
         aria-label="Delete export"
-        title="Delete this export (removes the copied files from the export folder)"
+        title={
+          deleteTitle ??
+          "Delete this export (removes the copied files from the export folder)"
+        }
       >
         {deleteBusy ? "…" : Icons.trash}
       </button>

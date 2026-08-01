@@ -6,7 +6,8 @@
 // metadata panel.
 //
 // It owns only what is universal: rendering the current media, prev/next
-// navigation (buttons + arrow keys + touch swipe), zoom (pinch/trackpad,
+// navigation (buttons + arrow keys + a follow-the-finger touch swipe that
+// slides the neighbour in as you drag), zoom (pinch/trackpad,
 // mouse wheel, double-click) with pan (touch drag or mouse drag),
 // Escape-to-close and the (toggleable) metadata bottom panel. Everything
 // contextual (rating controls, tag editing, a download button…) is injected by
@@ -99,6 +100,22 @@ const swapExt = (path: string, ext: string) =>
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 const SWIPE_THRESHOLD = 50; // px a one-finger drag must travel to count as a swipe
+// A shorter but quicker drag also commits: a release within FLICK_MS that
+// travelled at least FLICK_PX reads as a deliberate flick even though it never
+// crossed the distance threshold — matches how phone galleries feel.
+const FLICK_MS = 250;
+const FLICK_PX = 30;
+// The first few px of a one-finger drag decide its axis. Horizontal drives the
+// swipe track; vertical is ignored outright, so a wobbly vertical motion never
+// jiggles the photo sideways.
+const AXIS_LOCK_PX = 8;
+// Gutter between the current media and the neighbour peeking in from the side
+// while dragging. Mirrored in CSS (.stage-pane.is-prev/.is-next) — keep in step.
+const PANE_GAP = 32;
+// How long the release animation runs: the track sliding fully over to the
+// committed neighbour (after which the real index step lands), or springing
+// back to centre on a cancelled drag. Matches .stage-track.is-settling in CSS.
+const SETTLE_MS = 260;
 // How close to the end of the loaded window navigation may get before we ask the
 // host to page in the next batch. Kept a few items ahead of the very last so the
 // fetch overlaps the time spent looking at the current media — reaching the end
@@ -204,6 +221,14 @@ export default function MediaViewer<T extends ViewerItem>({
   const [burstFrameId, setBurstFrameId] = useState<number | null>(null);
   const burstCache = useRef<Map<number, BurstFrame[]>>(new Map());
 
+  // Whether ← → (buttons, arrow keys, swipe) step through a pile's own frames
+  // before moving on to the next item. Off by default: plain component state,
+  // never persisted — a session-only compromise so arrow navigation stays
+  // predictable (one photo per press) unless deliberately opted into for this
+  // viewing session, and stays on across piles once flipped so it doesn't need
+  // re-arming for every burst encountered before the viewer is closed.
+  const [burstArrowNav, setBurstArrowNav] = useState(false);
+
   // Zoom/pan transform applied to the current media. Deliberately *kept* across
   // navigation: stepping to the next/previous item preserves the current zoom
   // level and pan offset, so flicking back and forth compares the same framing
@@ -213,6 +238,31 @@ export default function MediaViewer<T extends ViewerItem>({
   const [ty, setTy] = useState(0);
   const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+
+  // Follow-the-finger swipe (phone-gallery style). While a one-finger drag is
+  // live at fit zoom, the stage's media rides a track translated by `x`, so the
+  // current photo slides out as its neighbour slides in from the side. On
+  // release the track *settles*: "commit" animates the rest of the way to the
+  // neighbour (the real index step lands once the slide finishes), "cancel"
+  // springs back to centre. `settle` also toggles the CSS transition — during
+  // the drag itself the track follows the finger 1:1 with none.
+  const [swipe, setSwipe] = useState<{
+    x: number;
+    settle: "commit" | "cancel" | null;
+  }>({ x: 0, settle: null });
+  // True while a commit slide is mid-flight: blocks new drags and any other
+  // navigation until the pending step lands (the settle timer clears it) —
+  // otherwise an arrow key pressed during the ~quarter-second animation would
+  // double-step. The timer is kept so unmounting mid-slide can drop the
+  // deferred step (it would otherwise call onIndexChange on a closed viewer).
+  const settlingRef = useRef(false);
+  const settleTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (settleTimer.current != null) window.clearTimeout(settleTimer.current);
+    },
+    [],
+  );
 
   // Toggle-to-fit memory for the zoom readout. Clicking the readout snapshots
   // the current zoomed-in transform and drops to fit; clicking again restores
@@ -271,6 +321,102 @@ export default function MediaViewer<T extends ViewerItem>({
       loadMore();
   }, [index, items.length, hasMore, loading, loadMore]);
 
+  // Prev/next stepper behind the buttons, arrow keys and swipe alike. When
+  // `burstArrowNav` is on and the current item's pile is loaded, a step first
+  // walks to the pile's next/previous frame (only swapping the displayed
+  // media, like a filmstrip click); once at either end of the pile it falls
+  // through to the normal host-index step. Off (the default), every step
+  // moves the host index directly, so a pile is one stop — exactly like the
+  // collapsed grid tile it came from.
+  const stepNow = useCallback(
+    (dir: 1 | -1) => {
+      const it = items[index];
+      if (burstArrowNav && burstMembers && burstMembers.length > 1 && it) {
+        const curId = burstFrameId ?? it.id;
+        const pos = burstMembers.findIndex((m) => m.id === curId);
+        const nextPos = pos + dir;
+        if (pos >= 0 && nextPos >= 0 && nextPos < burstMembers.length) {
+          setShowCompanion(false);
+          setShowCounterpart(false);
+          const next = burstMembers[nextPos];
+          setBurstFrameId(next.id === it.id ? null : next.id);
+          return;
+        }
+      }
+      onIndexChange(clamp(index + dir, 0, last));
+    },
+    [items, index, last, burstArrowNav, burstMembers, burstFrameId, onIndexChange],
+  );
+
+  // Public stepper — buttons, arrow keys and swipe all route through here.
+  // While a committed swipe's slide is still landing, other navigation is
+  // ignored (the settle timer performs that step itself, and a second step
+  // arriving mid-flight would double-navigate).
+  const stepBurst = useCallback(
+    (dir: 1 | -1) => {
+      if (settlingRef.current) return;
+      stepNow(dir);
+    },
+    [stepNow],
+  );
+
+  // The media one step to either side of what's on screen — what a drag
+  // reveals. Mirrors stepNow's routing exactly: with burst-aware nav on, the
+  // pile's adjacent frame comes first; otherwise (or at the pile's edge) it's
+  // the neighbouring list item. Null at the true end of the feed, where the
+  // drag rubber-bands instead of revealing anything. `src` is null when the
+  // neighbour exists but its derivative isn't ready (the pane shows the same
+  // placeholder the stage would).
+  const neighborFor = useCallback(
+    (dir: 1 | -1): { key: string; src: string | null } | null => {
+      const it = items[index];
+      if (!it) return null;
+      if (burstArrowNav && burstMembers && burstMembers.length > 1) {
+        const curId = burstFrameId ?? it.id;
+        const pos = burstMembers.findIndex((m) => m.id === curId);
+        const nextPos = pos + dir;
+        if (pos >= 0 && nextPos >= 0 && nextPos < burstMembers.length) {
+          const m = burstMembers[nextPos];
+          const mReady = m.derivative_status ? m.derivative_status === "ready" : true;
+          return {
+            key: `b${m.id}`,
+            src: mReady ? `/api/assets/${m.id}/proxy` : null,
+          };
+        }
+      }
+      const n = items[index + dir];
+      if (!n) return null;
+      const nReady = n.derivative_status ? n.derivative_status === "ready" : true;
+      return {
+        key: `i${n.id}`,
+        // A video neighbour previews as its poster during the slide; the real
+        // <video> mounts once the step commits.
+        src: !nReady ? null : n.media_type === "video" ? posterSrc(n) : mediaSrc(n),
+      };
+    },
+    [items, index, burstArrowNav, burstMembers, burstFrameId, mediaSrc, posterSrc],
+  );
+
+  // Land a committed swipe: slide the track the rest of the way to the
+  // revealed neighbour, then perform the actual step once the slide has
+  // visually finished. Deferring the step means the index change and the
+  // track's instant reset to centre happen in one render *after* the
+  // animation — the neighbour that just slid in is repainted as the new
+  // current media with no flicker (same URL, already decoded).
+  const settleCommit = useCallback(
+    (dir: 1 | -1) => {
+      settlingRef.current = true;
+      const w = (stageRef.current?.clientWidth ?? window.innerWidth) + PANE_GAP;
+      setSwipe({ x: dir === 1 ? -w : w, settle: "commit" });
+      settleTimer.current = window.setTimeout(() => {
+        settlingRef.current = false;
+        stepNow(dir);
+        setSwipe({ x: 0, settle: null });
+      }, SETTLE_MS);
+    },
+    [stepNow],
+  );
+
   const zoomBy = useCallback(
     (factor: number) => setScale((s) => clamp(s * factor, MIN_SCALE, MAX_SCALE)),
     [],
@@ -308,14 +454,14 @@ export default function MediaViewer<T extends ViewerItem>({
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Escape") return onClose();
-      if (e.key === "ArrowRight") return onIndexChange(Math.min(index + 1, last));
-      if (e.key === "ArrowLeft") return onIndexChange(Math.max(index - 1, 0));
+      if (e.key === "ArrowRight") return stepBurst(1);
+      if (e.key === "ArrowLeft") return stepBurst(-1);
       if (e.key === "i" || e.key === "I") return setPanel(!panelOpen);
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, index, last, onIndexChange, onClose, onKeyDown, panelOpen, setPanel]);
+  }, [items, index, stepBurst, onClose, onKeyDown, panelOpen, setPanel]);
 
   // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
   // deltas; a plain mouse wheel sends coarse notches. Both zoom the stage (it
@@ -349,23 +495,37 @@ export default function MediaViewer<T extends ViewerItem>({
     startY: 0,
     startTx: 0,
     startTy: 0,
+    startT: 0, // touchstart timestamp — a fast release reads as a flick
+    axis: "none" as "none" | "h" | "v", // locked-in direction of a swipe drag
   });
 
   const onTouchStart = (e: React.TouchEvent) => {
     const g = touch.current;
     if (e.touches.length === 2) {
+      // A second finger promotes the gesture to a pinch; drop any half-dragged
+      // swipe offset so the stage recentres under the zoom.
+      if (swipe.x !== 0 && !settlingRef.current)
+        setSwipe({ x: 0, settle: "cancel" });
       const [a, b] = [e.touches[0], e.touches[1]];
       g.mode = "pinch";
       g.startDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
       g.startScale = scale;
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
-      // Zoomed in → one finger pans; fitted → one finger is a navigation swipe.
-      g.mode = scale > MIN_SCALE ? "pan" : "swipe";
+      // Zoomed in → one finger pans; fitted → one finger drags the swipe
+      // track. A commit slide mid-flight ignores new touches — the pending
+      // step lands in ~a quarter second and the next drag starts clean.
+      if (scale > MIN_SCALE) g.mode = "pan";
+      else if (settlingRef.current) {
+        g.mode = "none";
+        return;
+      } else g.mode = "swipe";
       g.startX = t.clientX;
       g.startY = t.clientY;
       g.startTx = tx;
       g.startTy = ty;
+      g.startT = e.timeStamp;
+      g.axis = "none";
     }
   };
 
@@ -379,21 +539,55 @@ export default function MediaViewer<T extends ViewerItem>({
       const t = e.touches[0];
       setTx(g.startTx + (t.clientX - g.startX));
       setTy(g.startTy + (t.clientY - g.startY));
+    } else if (g.mode === "swipe" && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - g.startX;
+      const dy = t.clientY - g.startY;
+      // Lock the drag's axis on its first few pixels: a mostly-vertical
+      // movement is not a navigation gesture, so it releases the track
+      // entirely rather than jiggling the photo sideways.
+      if (g.axis === "none" && Math.hypot(dx, dy) >= AXIS_LOCK_PX) {
+        g.axis = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+        if (g.axis === "v") {
+          g.mode = "none";
+          return;
+        }
+      }
+      if (g.axis === "h") {
+        // Follow the finger 1:1. At the end of the feed there is nothing to
+        // reveal, so the track resists instead — a short rubber-band.
+        const stretch = neighborFor(dx < 0 ? 1 : -1) ? 1 : 0.25;
+        setSwipe({ x: dx * stretch, settle: null });
+      }
     }
   };
 
   const onTouchEnd = (e: React.TouchEvent) => {
     const g = touch.current;
-    if (g.mode === "swipe") {
+    if (g.mode === "swipe" && g.axis === "h") {
       const t = e.changedTouches[0];
       const dx = t.clientX - g.startX;
-      const dy = t.clientY - g.startY;
-      if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-        if (dx < 0) onIndexChange(Math.min(index + 1, last));
-        else onIndexChange(Math.max(index - 1, 0));
+      const dir: 1 | -1 = dx < 0 ? 1 : -1;
+      // Commit on either a long-enough drag or a quick flick; otherwise (or
+      // when there's nothing in that direction) spring back to centre.
+      const flick = e.timeStamp - g.startT < FLICK_MS && Math.abs(dx) > FLICK_PX;
+      if ((Math.abs(dx) > SWIPE_THRESHOLD || flick) && neighborFor(dir)) {
+        settleCommit(dir);
+      } else {
+        setSwipe((s) => (s.x !== 0 ? { x: 0, settle: "cancel" } : s));
       }
     }
     if (e.touches.length === 0) g.mode = "none";
+  };
+
+  // The OS can steal a live touch (notification shade, app switch, incoming
+  // call): touchend never fires, so spring any half-dragged track back to
+  // centre rather than leaving it stuck mid-slide.
+  const onTouchCancel = () => {
+    const g = touch.current;
+    if (g.mode === "swipe" && g.axis === "h")
+      setSwipe((s) => (s.x !== 0 ? { x: 0, settle: "cancel" } : s));
+    g.mode = "none";
   };
 
   // Double-click/tap toggles between fit and a 2× zoom.
@@ -492,6 +686,16 @@ export default function MediaViewer<T extends ViewerItem>({
   // ready to display.
   const showable = burstFrame ? burstFrameReady : ready;
 
+  // This item's position within its pile, only meaningful once burst-aware
+  // arrow nav is on — drives whether the prev/next buttons still have a step
+  // left to take even at the host list's own boundary (index 0 / last).
+  const burstPos =
+    burstArrowNav && burstMembers
+      ? burstMembers.findIndex((m) => m.id === (burstFrameId ?? item.id))
+      : -1;
+  const canStepBackInPile = burstPos > 0;
+  const canStepFwdInPile = burstPos >= 0 && burstPos < (burstMembers?.length ?? 0) - 1;
+
   const currentSrc = burstFrame
     ? `/api/assets/${burstFrame.id}/proxy`
     : counterpartShown
@@ -541,6 +745,13 @@ export default function MediaViewer<T extends ViewerItem>({
     cursor: scale > MIN_SCALE ? (dragging ? "grabbing" : "grab") : undefined,
   };
 
+  // The two neighbour panes riding the swipe track beside the current media.
+  // Always rendered (not just mid-drag): offscreen they double as a preload of
+  // the adjacent proxies, so both a drag's reveal and a committed step paint
+  // instantly from cache.
+  const prevNeighbor = neighborFor(-1);
+  const nextNeighbor = neighborFor(1);
+
   // Render through a portal on <body>: the overlay is position:fixed, so any
   // ancestor with a transform (e.g. a card's hover lift) would otherwise become
   // its containing block and shrink/flicker it. The portal keeps it viewport-
@@ -568,73 +779,105 @@ export default function MediaViewer<T extends ViewerItem>({
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
+          onTouchCancel={onTouchCancel}
           onDoubleClick={onDoubleClick}
           onContextMenu={onContextMenu ? (e) => onContextMenu(e, item) : undefined}
         >
-          {burstFrame ? (
-            burstFrameReady ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={`b${burstFrame.id}`}
-                src={currentSrc}
-                alt={displayed.filename}
-                style={transform}
-              />
-            ) : (
-              <div className="placeholder">Derivative unavailable</div>
-            )
-          ) : ready ? (
-            companionShown && companionIsVideo ? (
-              // Live Photo motion: play the companion .mov proxy in place.
-              <video
-                key={`c${item.companion_id}`}
-                src={currentSrc}
-                poster={posterSrc(item)}
-                controls
-                playsInline
-                autoPlay
-                muted
-                loop
-                style={transform}
-                onMouseDown={stopVideoMouse}
-                onTouchStart={stopVideoTouch}
-                onTouchMove={stopVideoTouch}
-                onTouchEnd={stopVideoTouch}
-              />
-            ) : item.media_type === "video" ? (
-              <video
-                key={item.id}
-                src={mediaSrc(item)}
-                poster={posterSrc(item)}
-                controls
-                playsInline
-                autoPlay
-                muted
-                loop
-                style={transform}
-                onMouseDown={stopVideoMouse}
-                onTouchStart={stopVideoTouch}
-                onTouchMove={stopVideoTouch}
-                onTouchEnd={stopVideoTouch}
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={
-                  counterpartShown
-                    ? `e${counterpartId}`
-                    : companionShown
-                      ? `c${item.companion_id}`
-                      : item.id
-                }
-                src={currentSrc}
-                alt={displayed.filename}
-                style={transform}
-              />
-            )
-          ) : (
-            <div className="placeholder">Derivative unavailable</div>
-          )}
+          {/* Swipe track: prev · current · next, translated as one strip so a
+              one-finger drag slides the current media out while the neighbour
+              slides in (see the swipe state above). Badges and the zoom HUD
+              stay outside so they hold still while the media moves. */}
+          <div
+            className={`stage-track${swipe.settle ? " is-settling" : ""}`}
+            style={{ transform: `translate3d(${swipe.x}px, 0, 0)` }}
+          >
+            {prevNeighbor && (
+              <div className="stage-pane is-prev" aria-hidden>
+                {prevNeighbor.src ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={prevNeighbor.key} src={prevNeighbor.src} alt="" draggable={false} />
+                ) : (
+                  <div className="placeholder">Derivative unavailable</div>
+                )}
+              </div>
+            )}
+            <div className="stage-pane">
+              {burstFrame ? (
+                burstFrameReady ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={`b${burstFrame.id}`}
+                    src={currentSrc}
+                    alt={displayed.filename}
+                    style={transform}
+                  />
+                ) : (
+                  <div className="placeholder">Derivative unavailable</div>
+                )
+              ) : ready ? (
+                companionShown && companionIsVideo ? (
+                  // Live Photo motion: play the companion .mov proxy in place.
+                  <video
+                    key={`c${item.companion_id}`}
+                    src={currentSrc}
+                    poster={posterSrc(item)}
+                    controls
+                    playsInline
+                    autoPlay
+                    muted
+                    loop
+                    style={transform}
+                    onMouseDown={stopVideoMouse}
+                    onTouchStart={stopVideoTouch}
+                    onTouchMove={stopVideoTouch}
+                    onTouchEnd={stopVideoTouch}
+                  />
+                ) : item.media_type === "video" ? (
+                  <video
+                    key={item.id}
+                    src={mediaSrc(item)}
+                    poster={posterSrc(item)}
+                    controls
+                    playsInline
+                    autoPlay
+                    muted
+                    loop
+                    style={transform}
+                    onMouseDown={stopVideoMouse}
+                    onTouchStart={stopVideoTouch}
+                    onTouchMove={stopVideoTouch}
+                    onTouchEnd={stopVideoTouch}
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={
+                      counterpartShown
+                        ? `e${counterpartId}`
+                        : companionShown
+                          ? `c${item.companion_id}`
+                          : item.id
+                    }
+                    src={currentSrc}
+                    alt={displayed.filename}
+                    style={transform}
+                  />
+                )
+              ) : (
+                <div className="placeholder">Derivative unavailable</div>
+              )}
+            </div>
+            {nextNeighbor && (
+              <div className="stage-pane is-next" aria-hidden>
+                {nextNeighbor.src ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={nextNeighbor.key} src={nextNeighbor.src} alt="" draggable={false} />
+                ) : (
+                  <div className="placeholder">Derivative unavailable</div>
+                )}
+              </div>
+            )}
+          </div>
           {isLive && showable && !counterpartShown && !burstFrame && (
             // Apple-style LIVE badge sitting on the image: tap to swap between the
             // still and its motion. Mirrors the format toggle in the controls bar.
@@ -718,28 +961,45 @@ export default function MediaViewer<T extends ViewerItem>({
           // stage (and above the info panel, whether or not it's open) so
           // browsing a burst never requires leaving the viewer or expanding the
           // grid. Picking a frame only swaps what's on screen (see burstFrame
-          // above); prev/next below keeps walking the host's list pile-by-pile.
+          // above). The leading toggle opts prev/next/swipe into stepping
+          // through these same frames too (see stepBurst) — off by default so
+          // arrow navigation stays one photo per press.
           <div className="viewer-burst-strip" role="group" aria-label="Burst frames">
-            {burstMembers.map((m) => {
-              const active = (burstFrameId ?? item.id) === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`viewer-burst-thumb${active ? " active" : ""}`}
-                  aria-pressed={active}
-                  title={m.filename}
-                  onClick={() => {
-                    setShowCompanion(false);
-                    setShowCounterpart(false);
-                    setBurstFrameId(m.id === item.id ? null : m.id);
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              className={`viewer-burst-nav-toggle${burstArrowNav ? " active" : ""}`}
+              aria-pressed={burstArrowNav}
+              title={
+                burstArrowNav
+                  ? "Arrow keys, swipe and prev/next step through this pile's frames — click to stop"
+                  : "Include this pile's frames when navigating with ← → / swipe"
+              }
+              onClick={() => setBurstArrowNav((v) => !v)}
+            >
+              ⇄
+            </button>
+            <div className="viewer-burst-thumbs">
+              {burstMembers.map((m) => {
+                const active = (burstFrameId ?? item.id) === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`viewer-burst-thumb${active ? " active" : ""}`}
+                    aria-pressed={active}
+                    title={m.filename}
+                    onClick={() => {
+                      setShowCompanion(false);
+                      setShowCounterpart(false);
+                      setBurstFrameId(m.id === item.id ? null : m.id);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
         {panelOpen && (
@@ -918,8 +1178,8 @@ export default function MediaViewer<T extends ViewerItem>({
         )}
         <button
           className="btn"
-          onClick={() => onIndexChange(Math.max(index - 1, 0))}
-          disabled={index === 0}
+          onClick={() => stepBurst(-1)}
+          disabled={index === 0 && !canStepBackInPile}
           aria-label="Previous"
         >
           ←
@@ -927,10 +1187,12 @@ export default function MediaViewer<T extends ViewerItem>({
         {renderActions?.(item)}
         <button
           className="btn"
-          onClick={() => onIndexChange(Math.min(index + 1, last))}
-          // Only the true end of the feed (no further pages) disables Next; at the
-          // edge of the loaded window the prefetch above is already pulling more.
-          disabled={index === last && !hasMore}
+          onClick={() => stepBurst(1)}
+          // Only the true end of the feed (no further pages, and no further
+          // frame left in the pile when burst-aware nav is on) disables Next;
+          // at the edge of the loaded window the prefetch above is already
+          // pulling more.
+          disabled={index === last && !hasMore && !canStepFwdInPile}
           aria-label="Next"
         >
           →

@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
 // separate tab wasn't earning its place. The route is kept as a redirect so old
 // bookmarks and the overview counter still land on the ready-derivatives view.
 export default function AnalyzedPage() {
-  redirect("/pipeline/media?status=ready&sort=processed");
+  redirect("/settings/pipeline/media?status=ready&sort=processed");
 }

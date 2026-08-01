@@ -36,6 +36,13 @@ export type ExportJob = {
     copied?: number;
     errors?: unknown[];
     error?: string;
+    // `immich` target only: the push landed on another server, so there is no
+    // dest_dir and nothing local to download (cf. lib/export.ts pushToImmich).
+    album_name?: string;
+    album_url?: string;
+    uploaded?: number;
+    duplicates?: number;
+    skipped_sidecars?: number;
   } | null;
   export_count: number;
   sample_asset_ids: number[];
@@ -52,6 +59,8 @@ type ExportItem = ViewerItem & {
   media_type: "photo" | "video";
   derivative_status: string;
   downloadable: boolean;
+  /** `immich` rows: deep link to the uploaded media in the Immich library. */
+  remote_url: string | null;
 };
 
 // "50mm · f/2.8 · 1/200s · ISO 400" — the exposure triangle, blanks dropped.
@@ -143,10 +152,15 @@ export default function ExportCard({
     return () => io.disconnect();
   }, [load]);
 
+  // An Immich push produced no local files: the card is history + lineage only.
+  const isPush = job.target === "immich";
+
   async function del() {
     if (
       !confirm(
-        `Delete export “${job.name}”?\nThis removes the copied RAW files from the export folder and reverts these photos to 'triaged'.`,
+        isPush
+          ? `Delete export “${job.name}”?\nThis only drops Winnow's record of the push and reverts these photos to 'triaged' — the media already uploaded stay in Immich.`
+          : `Delete export “${job.name}”?\nThis removes the copied RAW files from the export folder and reverts these photos to 'triaged'.`,
       )
     )
       return;
@@ -262,7 +276,7 @@ export default function ExportCard({
               {formatBytes(it.file_size)}
             </span>
           )}
-          {it.downloadable && (
+          {it.downloadable ? (
             <a
               className="export-detail-dl"
               href={fileUrl(it)}
@@ -272,7 +286,18 @@ export default function ExportCard({
             >
               {Icons.download}
             </a>
-          )}
+          ) : it.remote_url ? (
+            <a
+              className="export-detail-dl"
+              href={it.remote_url}
+              target="_blank"
+              rel="noreferrer noopener"
+              title={`Open ${it.filename} in Immich`}
+              aria-label={`Open ${it.filename} in Immich`}
+            >
+              {Icons.external}
+            </a>
+          ) : null}
         </div>
       </li>
     );
@@ -284,10 +309,33 @@ export default function ExportCard({
         <div className="card-info">
           <h3>{job.name}</h3>
           <div className="meta">
-            {job.target} · {fmtDate(job.created_at)} · {count} files
-            {job.result?.copied != null
-              ? ` · ${job.result.copied}/${job.result.total ?? job.export_count} copied`
-              : ""}
+            {isPush ? "immich push" : job.target} · {fmtDate(job.created_at)} ·{" "}
+            {count} files
+            {isPush
+              ? job.result?.uploaded != null
+                ? ` · ${job.result.uploaded} uploaded${
+                    job.result.duplicates ? `, ${job.result.duplicates} already there` : ""
+                  }${
+                    job.result.skipped_sidecars
+                      ? `, ${job.result.skipped_sidecars} sidecar(s) skipped`
+                      : ""
+                  }`
+                : ""
+              : job.result?.copied != null
+                ? ` · ${job.result.copied}/${job.result.total ?? job.export_count} copied`
+                : ""}
+            {isPush && job.result?.album_url && job.result.album_name ? (
+              <>
+                {" · "}
+                <a
+                  href={job.result.album_url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {job.result.album_name}
+                </a>
+              </>
+            ) : null}
             {job.result?.error ? ` · ${job.result.error}` : ""}
           </div>
         </div>
@@ -296,7 +344,12 @@ export default function ExportCard({
             zipHref={`/api/exports/${job.id}/download`}
             zipName={`${job.name}.zip`}
             listFiles={listDownloadFiles}
-            canDownload={count > 0}
+            canDownload={count > 0 && !isPush}
+            deleteTitle={
+              isPush
+                ? "Delete this export (only Winnow's record — the media stay in Immich)"
+                : undefined
+            }
             onMessage={setDlMsg}
             onDelete={del}
             deleteBusy={busy}
@@ -367,6 +420,15 @@ export default function ExportCard({
             it.downloadable ? (
               <a className="btn" href={fileUrl(it)} download>
                 {Icons.download} Download
+              </a>
+            ) : it.remote_url ? (
+              <a
+                className="btn"
+                href={it.remote_url}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {Icons.external} Open in Immich
               </a>
             ) : null
           }

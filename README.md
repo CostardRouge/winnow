@@ -24,7 +24,8 @@ NAS (HDD, RAW/video, RO)  ──►  Indexer  ──►  Postgres (sessions, ass
                                   └─enqueue──►  Derivative workers ──► Storage (disk/MinIO)
                                                    (exiftool + sharp)   thumbs + proxies
 Next.js (cull UI + API) ◄── Postgres + Storage
-   └─► Export worker ──► RAW copy for Capture One  (+ source→export lineage)
+   └─► Export worker ──┬─► RAW copy for Capture One   (+ source→export lineage)
+                       └─► Push to Immich (REST API)  (+ same lineage)
 ```
 
 Everything (Postgres, Redis, derivatives, exports, inbox) lives on the
@@ -33,11 +34,49 @@ only the `incoming` zone (where imports land) is mounted **read/write**.
 
 ### Authentication / access
 
-Auth is handled **upstream** (no application login): **Traefik** (basic-auth)
-+ **Cloudflare Tunnel** expose the app behind a domain. Winnow therefore runs on
-the internal network and trusts the reverse proxy; do not publish ports
-`3000`/`5432`/`6379` directly on the Internet — only Traefik routes to the app.
-(For off-LAN mobile access, uploads go through the tunnel.)
+Winnow now carries its **own login and multi-user accounts** (the old
+upstream-only Traefik basic-auth is no longer required — the layers stack fine
+if you keep it). One shared library, per-user roles:
+
+| Role | Can |
+|------|-----|
+| `viewer` | browse everything (grid, viewer, search, downloads) — change nothing |
+| `editor` | viewer + cull (picks/stars/tags/trash), geotag, import/upload, export |
+| `admin`  | editor + volumes, settings, scan control, pipeline, purge, **user management** |
+
+How it works:
+
+* **First run**: with no account in the database, `/login` becomes a one-time
+  "create the administrator" form (`/api/auth/setup`), which locks itself as
+  soon as one user exists. Admins then invite the others from **Users** (rail →
+  account chip → Users).
+* **Invites — passwords never travel**: an admin creates an account *without*
+  a password and gets a **one-time link** (`/invite/<token>`, single-use,
+  7-day expiry) to hand over on a channel they trust. Opening it lets the
+  person choose their own password — the admin never knows nor types it, and
+  a link that leaks *after* use is worthless. Lost password? Same mechanism:
+  **Reset link** issues a fresh invite; accepting it sets the new password and
+  revokes every old session. Only the SHA-256 of invite tokens is stored;
+  re-issuing replaces the pending link, and a pending link can be revoked.
+* **Sessions**: local accounts (scrypt-hashed passwords), a 30-day sliding
+  cookie session (`httpOnly`, `SameSite=Lax`, `Secure` behind https). Postgres
+  stores only the SHA-256 of the session token. Logout, password changes and
+  account disabling revoke sessions server-side. Everyone can change their own
+  password from the account chip (current password re-proved; other sessions
+  revoked).
+* **Enforcement** is central (`src/proxy.ts` + `src/lib/authz.ts`): every page
+  and API request is validated against the session; viewers are read-only,
+  mutations need `editor`, infrastructure verbs (`/api/roots`, `/api/settings`,
+  `/api/scan`, `/api/pipeline`, `/api/purge`, …) need `admin`. Only `/login`,
+  `/invite/<token>` (the token *is* the credential), the auth handshake and
+  `/api/health` (Docker healthcheck) stay public.
+* **Attribution**: ratings and export jobs record which account made them
+  (`ratings.rated_by`, `export_jobs.created_by`).
+
+The network posture is unchanged: **Traefik** + **Cloudflare Tunnel** expose
+the app behind a domain; do not publish ports `3000`/`5432`/`6379` directly on
+the Internet — only Traefik routes to the app. (For off-LAN mobile access,
+uploads go through the tunnel.)
 
 ### §12 decisions adopted
 
@@ -115,6 +154,9 @@ See `.env.dist`. Main ones:
 - `DATABASE_URL`, `REDIS_URL`
 - `STORAGE_DRIVER=disk|s3`, `STORAGE_DISK_PATH`, and the `S3_*` for MinIO
 - `EXPORT_DIR`: folder where the "RAW copy" export drops the originals
+- `IMMICH_*`: push a culled session's keepers to Immich — `IMMICH_ENABLED` (off
+  by default), `IMMICH_BASE_URL` + `IMMICH_API_KEY`, `IMMICH_ALBUM_MODE`.
+  See [Push to Immich](#push-to-immich-export-target-immich)
 - `*_CONCURRENCY`: bounded concurrency to spare the NAS's full HDD
 - `THUMB_SIZE` / `PROXY_SIZE` / qualities
 - `GEOCODE_*`: reverse geocoding (GPS → place names) — `GEOCODE_BASE_URL`
@@ -152,7 +194,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/facets` | Values + counts to build the filters |
-| `GET /api/gear` | The **shelf**: every camera body + lens the library was shot with, each with its media count, photo/video split, date span, and companion piece of gear (top lens per body, top body per lens). Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
+| `GET /api/gear` | The **shelf**: every camera body the library was shot with and, nested under each, the lenses used on it — media count, photo/video split and date span **tallied separately for Incoming and the Gallery**. Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
 | `PATCH /api/sessions/:id` `{ ignored }` | Marks the folder as handled (cascade, stops derivatives) |
 | `DELETE /api/sessions/:id` `?files=true` | Deletes the session (cascade: assets/ratings/picks) + its derivative cache. `files=true` also removes the originals from disk (incoming only, confined to the session folder) — to clear an orphaned import |
@@ -171,7 +213,8 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/:id/similar` `?limit&max_distance` | Visually closest media by perceptual-hash (Hamming) distance — the near-duplicates of a shot (feeds the viewer's **Similar** strip) |
 | `POST /api/assets/skip` `{ ids[] }` | Takes assets out of the analyze pipeline (`derivative_status` → `skipped`); honoured even by an already-queued job |
 | `POST /api/tags/assign` `{ ids[], add?, remove? }` | Add/remove tags (single via `ids:[id]`, or bulk) |
-| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection) |
+| `POST /api/export` `{ name, target, filter }` | Creates + enqueues an export (`filter.ids` exports a precise selection). `target` ∈ `capture_one` (copy to the export folder) · `immich` ([push](#push-to-immich-export-target-immich), 400 unless configured) |
+| `GET /api/export/targets` `?probe=1` | Destinations this deployment offers (drives the modal's **Destination** picker); `probe=1` also pings Immich and validates the key |
 | `GET /api/export/:id` | Status + result |
 | `POST /api/upload` (multipart `files`) | Upload from the phone → inbox → import |
 | `POST /api/import/offload` `{ path }` | Offload from a mounted card (source kept) |
@@ -305,6 +348,11 @@ not 10, and each frame keeps its own rating.
   edge + `⧉ N` badge). **Tap to expand in place**: the frames splice into the
   grid (accent rail, `▴ N` to collapse) and work like any row — viewer,
   selection, context menu. The gallery shows the `⧉ N` badge (display-only).
+- **Find them at a glance**: the gallery filter panel has a **Bursts** section
+  (*In a burst* / *Standalone*, `stacked=`) — combined with the collapse, *In a
+  burst* turns the grid into **one tile per run**, so every burst in scope is
+  listed side by side. It stacks with every other filter (device, date, session,
+  rating…), so "the drone bursts of last July" is one query.
 - **Pile actions** (context menu of any pile frame, incl. inside the viewer),
   all **explicit** — rating a frame normally never cascades to its pile:
   **Keep this one, reject the rest** · **Keep sharpest, reject the rest** (the
@@ -340,6 +388,13 @@ panel (combined with AND):
 - **Size** (MB range), **GPS** present, **verdict**, **min rating**
 - **Live Photos** (`group_kind=live_photo`): show only iPhone Live Photos (the
   still + `.mov` pairs)
+- **Bursts** (`stacked=1` / `stacked=0`): *In a burst* keeps only the frames
+  that belong to a [burst/bracket pile](#burst--bracket-stacks-cull-a-pile-in-one-gesture),
+  *Standalone* only the shots taken on their own. Because the grid collapses a
+  pile to its cover, *In a burst* lists **one tile per run** — the shortlist of
+  every burst shot in scope, ready to review or export. The panel states how
+  many piles and frames are in scope, and the toggle stays hidden on a library
+  that holds no pile.
 
 These dimensions are **materialized and indexed in the database** (migration
 0003: `capture_year/month/day/date` populated by trigger + indexes on device,
@@ -464,15 +519,20 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
   and will need **no re-inference** over the library.
 - **Semantic search (CLIP).** The same `/predict` call also returns a **CLIP
   visual embedding** of the derivative (one more task on the existing round trip
-  — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**
-  (migration 0025; the Postgres image is `pgvector/pgvector:pg16`). The **Search**
-  page (in the rail) then takes a **natural-language** query — *"sunset over the
-  sea"*, *"people laughing at a table"* — embeds it with the **same model's
-  textual head** and ranks the library by cosine distance (`GET /api/search`).
-  Toggle with `ML_CLIP_ENABLED`; pick the model with `ML_CLIP_MODEL`
-  (`ViT-B-32__openai` = 512-dim, CPU-friendly — visual and textual heads must be
-  the same model). Back-fill embeddings over an existing library with
-  `npm run ml-backfill -- --force` after enabling it.
+  — no extra call, no RAW re-read), stored in `asset_clip` via **pgvector**. The
+  **Search** page (in the rail) then takes a **natural-language** query —
+  *"sunset over the sea"*, *"people laughing at a table"* — embeds it with the
+  **same model's textual head** and ranks the library by cosine distance
+  (`GET /api/search`). Toggle with `ML_CLIP_ENABLED`; pick the model with
+  `ML_CLIP_MODEL` (`ViT-B-32__openai` = 512-dim, CPU-friendly — visual and
+  textual heads must be the same model). Back-fill embeddings over an existing
+  library with `npm run ml-backfill -- --force` after enabling it.
+  **pgvector is optional**: the compose Postgres image (`pgvector/pgvector:pg16`,
+  a drop-in superset of `postgres:16` — existing `pgdata` keeps working) provides
+  it, but migration 0030 **skips the table gracefully** on a Postgres without the
+  extension (a stock `postgres:16-alpine`, a managed instance), so nothing else
+  breaks — Search just reports itself unavailable until you install pgvector
+  (`CREATE EXTENSION vector;`, re-run migrate, back-fill).
 - **Not covered (yet): closed eyes.** The container returns face boxes, scores
   and embeddings but **no facial landmarks**, so an eyes-open/closed verdict
   can't be derived from it — that would take a small dedicated landmarks model
@@ -487,21 +547,42 @@ cache, and that's all the models need — face detection looks at ~640 px, OCR a
 
 ## Gear: what the library was shot with (page `/gear`)
 
-The **Gear** page (`/gear`, in the rail) is the shelf: every **camera body** and
-every **lens** the library was shot with, each **drawn** and counted. It is the
-inverse of the gallery's device/lens filter chips — instead of *"narrow the grid
-by camera"* it answers *"what have I shot with, and how much"* at a glance, then
-links each piece of gear back to its frames (`/library/incoming/grid?device=…`,
-`?lens=…`).
+The **Gear** page (`/gear`, in the rail) is the shelf: every **camera body** the
+library was shot with and, hanging off each one, **the glass it was used with** —
+all of it **drawn** and counted. Bodies come first because that is how the kit is
+actually held: a lens count only means something once you know which body it was
+mounted on. It is the inverse of the gallery's device/lens filter chips — instead
+of *"narrow the grid by camera"* it answers *"what have I shot with, and how
+much"* at a glance, then links each piece of gear back to its frames.
 
+- **Incoming / Gallery, like the Library tabs.** The library has two halves and
+  most gear has frames in **both**, so a merged tally would always promise media
+  the linked grid can't show. The shelf carries the same segmented tabs, and the
+  choice drives *both* the counts and where every card points
+  (`/library/incoming/grid?device=…&lens=…` or `/library/gallery?device=…&lens=…`;
+  both tabs seed their filters from the query string). Gear with nothing in the
+  active half is dropped rather than drawn at zero — its card would open an empty
+  grid — and each card names what the *other* half still holds ("3 more in the
+  Gallery"). The choice is remembered between visits.
+- **One lens, one card** (`src/lib/lensLabels.ts`). Bodies and EXIF tools disagree
+  about whether to prefix the maker and whether to append the part number, so the
+  same glass arrives as both `FE 50mm F1.4 GM` and
+  `Sony FE 50mm F1.4 GM (SEL50F14GM)` — drawn twice, with its count split in half.
+  Spellings that normalize to the same lens merge onto one card, which keeps
+  **every** raw string and filters on all of them (`?lens=a,b`), so the count and
+  the grid still agree. An optical difference is never merged away: `+ 2X
+  Teleconverter` stays its own lens. The card's tooltip lists what was folded in,
+  and Sony's `----` placeholder reads as *Unknown lens*.
 - **Counted like every other counter** (`GET /api/gear`, `src/lib/gear.ts`): live
   assets only (a trashed frame stops inflating a body's tally) and **logical
-  media**, so a RAW+JPEG pair counts once. Grouping stays on the **raw EXIF
-  string** — the value the gallery filters on — so a card's count and the grid it
-  opens can never drift; prettifying (`lib/cameraLabels.ts`) happens on display
-  only. Each card also carries the **date span** it was in service, the
-  photo/video split, and its most-used companion (top lens per body, top body per
-  lens).
+  media**, so a RAW+JPEG pair counts once. Only roots the Library can actually
+  show are counted — an `export` staging root belongs to neither tab. Grouping
+  stays on the **raw EXIF string** — the value the gallery filters on — so a
+  card's count and the grid it opens can never drift; prettifying
+  (`lib/cameraLabels.ts`) happens on display only. Each card also carries the
+  **date span** it was in service and the photo/video split; frames whose files
+  carry no lens tag are named under the body ("3 frames without a lens tag")
+  rather than hidden, so the numbers add up.
 - **The artwork is generated, not drawn** (`src/lib/gearArt.ts`). A library can
   hold any camera anyone ever pointed at anything, so per-model illustrations are
   a losing game: each EXIF name is classified into a body **archetype** (reflex ·
@@ -661,10 +742,85 @@ jump between *before* and *after* at a glance.
   disturbed, and a file that arrives later is picked up on the next pass.
 - **Where it shows.** The viewer gains a **Before/After** toggle (swap the
   on-screen media between the edit and its source, like the RAW/JPEG toggle), and
-  the gallery filters **Has edit** / **Is an edit** (`has_edit` / `is_edit`) let
-  you pull up exactly the shots you've published, or the edits themselves. The
-  link lives on `assets.original_asset_id` (`edit_match` records how it was made:
-  `name_date` / `name`).
+  the panel's **Before / after** facet filters each side. The link has a
+  direction, so each surface only sees one end of it and the facet shows only
+  the half that can match: on **Incoming** (the captures) **Has an edit** /
+  **Not edited yet** (`has_edit=1|0`) — the shots you've published, and the
+  backlog you haven't; on the **Gallery** (the finals) **Linked to an original**
+  / **No original found** (`is_edit=1|0`), the second listing the edits
+  reconciliation couldn't match. Each axis is hidden entirely until its count is
+  non-zero in scope. The link lives on `assets.original_asset_id` (`edit_match`
+  records how it was made: `name_date` / `name`).
+
+## Push to Immich (export target `immich`)
+
+An export answers "where do the keepers go?", and there are two honest answers.
+The **export folder** target hands you the files you go on to *develop* (Capture
+One, Lightroom…). The **Immich** target uploads them to the library you go on to
+*look at* — the one on your phone, the one you share from. Winnow stays the
+darkroom; Immich stays the archive.
+
+This closes the loop the rest of the app already assumes: the **Final** volumes
+Winnow indexes read-only *are* Immich's output ([Volumes](#volumes-directories-attached-to-the-project)),
+and the ML analysis already borrows Immich's machine-learning sidecar
+([Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)). Until now
+the last hop — getting the picks *into* Immich — was the manual one.
+
+**Setup.** Off by default. Point it at your server and give it a key (Immich →
+Account Settings → API Keys):
+
+```bash
+IMMICH_ENABLED=true
+IMMICH_BASE_URL=http://immich-server:2283   # server root, WITHOUT /api
+IMMICH_API_KEY=<your key>
+IMMICH_ALBUM_MODE=job                       # job | fixed | none
+```
+
+`IMMICH_ENABLED=true` without a key **fail-fasts at boot**, like every other
+incoherent variable. Once it's set, the export modals grow a **Destination**
+choice (session picks, gallery selection, map area — the same modal everywhere);
+with Immich off there is only one destination, so the picker stays hidden and the
+flow is exactly as it was.
+
+**What it does.**
+
+- **Uploads copies through the public REST API** — never into Immich's storage,
+  its database or its filesystem layout. It's the documented, versioned API with
+  an ordinary API key, so an Immich upgrade can't corrupt anything: the worst
+  case is an HTTP error on the export job. (Contrast `ML_BASE_URL`, which speaks
+  Immich's *internal* ML endpoint and has to pin a container tag.) The NAS
+  originals are read, never moved or modified.
+- **Albums.** `job` (default) files each push into an album **named after the
+  export**, `fixed` always uses `IMMICH_ALBUM_NAME`, `none` uploads to the
+  timeline only. An album of that name is **reused**, so re-exporting a session
+  tops it up instead of littering the library with "session-picks (2)".
+- **Idempotent.** Immich dedups by checksum: a file it already holds comes back
+  as the *existing* asset id, so re-pushing an export never duplicates anything.
+  `IMMICH_PRECHECK` (on by default) asks first — one SHA-1 per file against
+  `/assets/bulk-upload-check` — so a re-push sends **no bytes at all**. Turn it
+  off when Winnow and Immich share a disk and the hashing costs more than the
+  transfer.
+- **Live Photos stay live.** Winnow already treats an iPhone still + its `.mov`
+  as [one logical media](#scope--next-steps); the push uploads the motion clip
+  first and links it to the still, so the pair lands in Immich **as a Live
+  Photo** — not as a JPEG and an unrelated video.
+- **Sidecars don't travel.** Immich's upload only accepts an XMP sidecar, and a
+  DJI `.SRT` flight log or a Sony `.XML` isn't that. They're **skipped and
+  counted** in the job result rather than failing it — they still ride along with
+  the export-folder target, which is where they're actually useful.
+- **Sequential**, like the copy target: the NAS is one spinning disk and
+  `EXPORT_CONCURRENCY` already bounds how many jobs run at once, so parallel
+  reads would cost more in seeks than they'd win in upload overlap.
+
+**Same lineage, different output.** A push writes the usual `exports` rows —
+`kind='immich'`, `output_path` NULL (nothing local to download), `output_key` =
+the remote asset id — and marks each source `exported`. On the **Exports** page
+the card reports `N uploaded, M already there`, links to the album, and each file
+links through to the media **in Immich**. Deleting the export drops Winnow's
+record and reverts the shots to `triaged`; **the media stay in Immich** (the
+confirmation says so). The destination is probed while the modal is open, so an
+unreachable server or a bad key is reported *there* rather than as a job that
+fails ten minutes later.
 
 ## Failures: list + retry (page `/pipeline/failures`)
 
@@ -811,10 +967,16 @@ restore, see [`docs/BACKUP.md`](docs/BACKUP.md)), GitHub Actions **CI**
 immich-machine-learning container, paced backfill, Faces facet + OCR search —
 see [Faces & text](#faces--text-ml-analysis-who-and-what-is-in-frame)).
 
+**Also implemented**: **Immich push** (export target `immich`: uploads the
+keepers to the Immich library through its public REST API, filed in an album,
+deduplicated, Live Photos kept live — see
+[Push to Immich](#push-to-immich-export-target-immich)).
+
 **V2/V3 (not included)**: advanced ratings/colors/tags, **person clustering**
 (grouping the stored face embeddings into named people), **closed-eyes
 detection** (needs a facial-landmarks model the ML container doesn't expose),
-web export + Immich push, adaptive throttling, agent-on-NAS, n8n automations.
+web export (browser-ready renders, target `web`), adaptive throttling,
+agent-on-NAS, n8n automations.
 
 ---
 

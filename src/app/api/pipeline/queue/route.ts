@@ -1,7 +1,7 @@
-// GET /api/pipeline/queue?name=scan|analyze -> the live jobs of a queue, for the
-// Pipeline triage pages (Scanning / Pending). Each job is enriched with the DB
-// row it points at: scan jobs carry a rootId (-> folder path), analyze jobs an
-// assetId (-> filename / media_type).
+// GET /api/pipeline/queue?name=scan|analyze|ml -> the live jobs of a queue, for
+// the Pipeline triage pages (Scanning / Pending / Faces & text / Search index).
+// Each job is enriched with the DB row it points at: scan jobs carry a rootId
+// (-> folder path), analyze and ml jobs an assetId (-> filename / media_type).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many } from "@/lib/db";
@@ -10,12 +10,12 @@ import { json, badRequest, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-const Query = z.enum(["scan", "analyze"]);
+const Query = z.enum(["scan", "analyze", "ml"]);
 
 export async function GET(req: NextRequest) {
   try {
     const parsed = Query.safeParse(req.nextUrl.searchParams.get("name"));
-    if (!parsed.success) return badRequest("name must be scan|analyze");
+    if (!parsed.success) return badRequest("name must be scan|analyze|ml");
     const name: PublicQueueName = parsed.data;
 
     const jobs = await listQueueJobs(name);
@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
       return json({ name, count: items.length, items });
     }
 
-    // analyze
+    // analyze + ml: both queues carry an assetId. The ml enrichment adds the
+    // asset's ML lifecycle (status / error / what was found) so the jobs list
+    // doubles as a result readout.
     const assetIds = [
       ...new Set(
         jobs.map((j) => Number(j.data.assetId)).filter((n) => Number.isFinite(n)),
@@ -67,8 +69,14 @@ export async function GET(req: NextRequest) {
           abs_path: string;
           media_type: string;
           derivative_status: string;
+          ml_status: string;
+          ml_error: string | null;
+          face_count: number | null;
+          has_text: boolean;
         }>(
-          `SELECT id, filename, abs_path, media_type, derivative_status
+          `SELECT id, filename, abs_path, media_type, derivative_status,
+                  ml_status, ml_error, face_count,
+                  (ocr_text IS NOT NULL) AS has_text
              FROM assets WHERE id = ANY($1)`,
           [assetIds],
         )
@@ -89,6 +97,14 @@ export async function GET(req: NextRequest) {
         abs_path: a?.abs_path ?? null,
         media_type: a?.media_type ?? null,
         derivative_status: a?.derivative_status ?? null,
+        ...(name === "ml"
+          ? {
+              ml_status: a?.ml_status ?? null,
+              ml_error: a?.ml_error ?? null,
+              face_count: a?.face_count ?? null,
+              has_text: a?.has_text ?? false,
+            }
+          : {}),
       };
     });
     return json({ name, count: items.length, items });

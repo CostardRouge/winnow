@@ -246,9 +246,24 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mt-auto flex w-full items-center justify-center;
     padding-top: 8px;
   }
+  /* A bare glyph — no pill, no border, no shadow — in every viewport. It used
+     to be an .icon-toggle (a bordered square well) on desktop while the phone
+     header already showed it bare; the bare treatment reads quieter next to the
+     account chip, so it's now the only treatment. */
   .theme-toggle {
+    @apply inline-flex items-center justify-center rounded-[var(--radius)]
+      border-0 p-0 transition duration-150;
     width: 44px;
     height: 44px;
+    background: transparent;
+    color: var(--color-muted);
+    transition-timing-function: var(--ease-out);
+  }
+  .theme-toggle:hover {
+    color: var(--color-text);
+  }
+  .theme-toggle:active {
+    transform: scale(0.97);
   }
   /* Show the glyph that matches the active theme, driven purely by the
      <html data-theme> marker (seeded pre-paint) — never by JS state — so the
@@ -1617,6 +1632,31 @@ html[data-theme="dark"] .btn-primary:hover {
     transform-origin: center center;
     will-change: transform;
   }
+  /* Swipe track: the stage's media rides a three-pane strip (previous ·
+     current · next) that follows a one-finger drag at fit zoom, phone-gallery
+     style — the current photo slides out while its neighbour slides in. The
+     neighbour panes sit one stage-width plus a 32px gutter to either side
+     (mirrored as PANE_GAP in MediaViewer.tsx — keep in step) and, being
+     rendered offscreen, double as a preload of the adjacent proxies. While
+     the finger is down the track follows it with no transition; `is-settling`
+     turns the transition on for the release animation (slide over and commit,
+     or spring back to centre — duration mirrored as SETTLE_MS). */
+  .viewer .stage-track {
+    @apply absolute inset-0;
+    will-change: transform;
+  }
+  .viewer .stage-track.is-settling {
+    transition: transform 0.26s var(--ease-out);
+  }
+  .viewer .stage-pane {
+    @apply absolute inset-0 flex min-h-0 items-center justify-center;
+  }
+  .viewer .stage-pane.is-prev {
+    transform: translateX(calc(-100% - 32px));
+  }
+  .viewer .stage-pane.is-next {
+    transform: translateX(calc(100% + 32px));
+  }
   /* Metadata side panel (replaces the old floating .exif box). Bottom sheet on
      mobile, fixed-width sidebar on desktop. No top padding: the sticky header
      owns the top edge so it can sit flush and stay opaque as content scrolls
@@ -1735,11 +1775,31 @@ html[data-theme="dark"] .btn-primary:hover {
     backdrop-filter: blur(3px);
   }
   .viewer-burst-strip {
-    @apply flex flex-none items-center gap-2 overflow-x-auto px-3 py-2;
+    @apply flex flex-none items-center gap-2 px-3 py-2;
     background: rgba(16, 15, 13, 0.5);
     backdrop-filter: blur(14px) saturate(1.4);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  /* The toggle (below) stays put; only the thumbnails themselves scroll. */
+  .viewer-burst-thumbs {
+    @apply flex min-w-0 flex-1 items-center gap-2 overflow-x-auto;
     touch-action: pan-x;
+  }
+  /* Opts prev/next/arrow-keys/swipe into stepping through the pile's own
+     frames (cf. stepBurst) — off by default, so it reads as a deliberate,
+     session-only choice rather than a persisted preference. */
+  .viewer-burst-nav-toggle {
+    @apply flex h-9 w-9 flex-none items-center justify-center rounded-full
+      border-0 text-base leading-none transition duration-150;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ece7da;
+  }
+  .viewer-burst-nav-toggle:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  .viewer-burst-nav-toggle.active {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .viewer-burst-thumb {
     @apply relative h-14 w-14 flex-none overflow-hidden rounded-[6px] border-0 p-0;
@@ -2118,15 +2178,96 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply px-1 text-xs font-semibold;
     color: var(--color-text);
   }
-  /* Thumbnail popup on a marker */
-  .map-pop-wrap .leaflet-popup-content {
-    @apply m-0;
-  }
+  /* ---- Marker popover -------------------------------------------------- */
+  /* Our content inside Leaflet's bubble. The bubble itself (its wrapper, tip and
+     close button) is re-skinned at the end of this file — those rules target
+     Leaflet's own classes and must live OUTSIDE @layer components to win. */
   .map-pop {
-    @apply block leading-none;
+    @apply flex w-full flex-col;
   }
-  .map-pop img {
-    @apply block h-auto w-40 rounded-[var(--radius-sm)];
+  /* Media band: the thumbnail button, or the clip playing in place. Same box in
+     both states so starting playback doesn't resize the card. */
+  .map-pop-media {
+    @apply relative block w-full border-0 p-0;
+    /* A fixed box (the commonest capture ratio) rather than the media's own, so
+       the card doesn't jump size when playback replaces the poster — anything
+       else is letterboxed against the viewer's frame colour, never cropped. */
+    aspect-ratio: 3 / 2;
+    background: var(--color-frame);
+  }
+  .map-pop-thumb {
+    @apply cursor-pointer;
+  }
+  /* The image fills the band; the <video> IS the band (it keeps the same
+     aspect-ratio box, letterboxing whatever the clip's own shape is). */
+  .map-pop-media img {
+    @apply block h-full w-full;
+    object-fit: contain;
+  }
+  video.map-pop-media {
+    object-fit: contain;
+  }
+  .map-pop-noThumb {
+    @apply flex h-full w-full items-center justify-center text-xs;
+    color: var(--color-faint);
+  }
+  /* Play affordance / duration chip — same language as a grid tile's badges. */
+  .map-pop-play {
+    @apply absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2
+      items-center justify-center rounded-full text-sm text-white;
+    background: rgba(16, 15, 13, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+  .map-pop-thumb:hover .map-pop-play {
+    background: rgba(16, 15, 13, 0.72);
+  }
+  .map-pop-dur {
+    @apply absolute bottom-1 right-1 rounded-[var(--radius-sm)] px-1.5 py-0.5
+      text-[0.65rem] font-medium text-white;
+    background: rgba(16, 15, 13, 0.6);
+    pointer-events: none;
+  }
+  .map-pop-body {
+    @apply flex flex-col gap-1.5 p-2.5;
+  }
+  .map-pop-name {
+    @apply truncate text-xs font-semibold;
+    color: var(--color-text);
+  }
+  .map-pop-hint {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  /* Capture facts: label above value, so a long place name can wrap without
+     squeezing the column in a 208px card. */
+  .map-pop-facts {
+    @apply m-0 flex flex-col gap-1;
+  }
+  .map-pop-facts dt {
+    @apply text-[0.6rem] font-semibold uppercase tracking-wide;
+    color: var(--color-faint);
+  }
+  .map-pop-facts dd {
+    @apply m-0 text-xs;
+    color: var(--color-text);
+  }
+  .map-pop-open {
+    @apply mt-0.5 w-full justify-center gap-1.5 text-xs;
+  }
+
+  /* Opening a media by id (from a marker popover): a centered "working on it"
+     card while the row is fetched, since the popover is gone by then. */
+  .viewer-boot {
+    @apply fixed left-1/2 top-1/2 z-[1200] flex items-center gap-2
+      rounded-[var(--radius-lg)] border px-3 py-2 text-xs;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    color: var(--color-text);
   }
 
   /* ---- Calendar view --------------------------------------------------- */
@@ -2302,44 +2443,77 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-text);
   }
 
-  /* Semantic search page (CLIP, cf. src/app/search/page.tsx). */
-  .search-page {
-    @apply mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6;
+  /* ---- Semantic search page (CLIP, cf. src/app/search/page.tsx) ----------
+     The page wears the same chrome as Library/Settings — topbar, header band,
+     controls band, full-bleed body — instead of the centered max-w-5xl column
+     it used to, which left the grid floating in a narrow strip with the rest of
+     the viewport empty. Results render through the gallery's VirtualGrid, so a
+     hit is the same .cell tile it is everywhere else.
+     The page is called "Search", but these classes keep the ml- prefix: the
+     bare .search-* namespace above already belongs to the filter panel's
+     filename/folder field (.search-field/.search-icon/.search-input/
+     .search-clear), which this page also uses. */
+  .ml-search-bar {
+    @apply flex w-full items-center gap-2;
   }
-  .search-title {
-    @apply text-2xl font-semibold;
+  /* The field takes the row; min-w-0 lets it actually shrink inside the flex
+     parent rather than forcing the Search button off the edge on phones. */
+  .ml-search-bar .search-field {
+    @apply min-w-0 flex-1;
   }
-  .search-bar {
-    @apply relative flex items-center gap-2;
+  .ml-search-bar .btn {
+    @apply flex-shrink-0;
   }
-  .search-bar .search-input {
-    @apply flex-1;
+  /* Example queries + the coverage readout ride the gallery's controls band, so
+     the two surfaces share one horizontal rhythm. Wraps (the gallery's own row
+     doesn't) because the example chips are text of unpredictable width. */
+  .ml-search-controls {
+    @apply flex-wrap;
   }
-  .search-examples {
-    @apply flex flex-wrap gap-2;
+  .ml-search-examples {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
   }
-  .search-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.5rem;
+  .ml-search-examples .chip {
+    @apply shrink-0;
+    height: var(--tb-control-h);
   }
-  .search-cell {
-    @apply relative block overflow-hidden rounded-[var(--radius)] border p-0 cursor-pointer;
-    aspect-ratio: 1 / 1;
-    background: none;
+  .ml-search-label {
+    @apply flex-shrink-0;
   }
-  .search-cell img {
-    @apply h-full w-full;
-    object-fit: cover;
+  /* Right-hand readout: "N matches · searched X of Y". Pushed to the edge by
+     the .spacer, and allowed to sit on its own line once the chips fill the row. */
+  .ml-search-readout {
+    @apply ml-auto text-right;
   }
-  .search-coverage {
-    margin-top: 0.75rem;
+  .ml-search-readout a {
+    color: var(--color-accent);
   }
-  .search-badge {
-    @apply absolute bottom-1 right-1 rounded px-1 text-xs leading-none;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    padding-block: 2px;
+  /* Result zone: full-bleed, mirroring .gallery-main — VirtualGrid measures
+     this box, so it must be a min-h-0 flex child or the list gets no height. */
+  .ml-search-body {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col p-1.5;
+  }
+  /* "How to turn it on" card under the disabled empty state — left-aligned prose
+     inside the centered EmptyState, since it's three ordered steps. */
+  .ml-search-setup {
+    @apply mx-auto max-w-lg rounded-[var(--radius-lg)] border p-4 text-left text-[13px];
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
+  .ml-search-setup p + p {
+    @apply mt-2;
+  }
+  .ml-search-setup strong {
+    color: var(--color-text);
+  }
+  .ml-search-setup code {
+    @apply rounded px-1;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-surface-3);
+    color: var(--color-text);
   }
   .empty-state {
     @apply rounded-[var(--radius-lg)] border p-6 text-sm;
@@ -2720,41 +2894,45 @@ html[data-theme="dark"] .btn-primary:hover {
     border-top: 1px solid var(--color-border);
   }
 
-  /* ---- Pipeline sub-route tabs ------------------------------------------ */
+  /* ---- Pipeline sub-route tabs -------------------------------------------
+     Same compact segmented-control language as .view-toggle/.view-btn (the
+     Sessions/Grid/Calendar/Map switcher), so the two read as one family —
+     just with room for a count badge per tab. Kept as its own class rather
+     than reusing .view-toggle/.view-btn directly so the count-badge styling
+     below stays scoped to this nav and doesn't leak into the other spots
+     .view-toggle is used (gallery, sift, facet-head, pipeline toolbar). */
   .pipeline-tabs {
-    @apply flex items-center gap-1.5 overflow-x-auto px-5 pb-2 pt-1;
+    @apply inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
     scrollbar-width: none;
   }
   .pipeline-tabs::-webkit-scrollbar {
     display: none;
   }
   .pipeline-tab {
-    @apply inline-flex shrink-0 items-center gap-2 rounded-[var(--radius)] border px-3 py-1.5 text-sm font-medium;
-    background: var(--color-surface);
-    border-color: var(--color-border);
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border-0 bg-transparent px-2.5 py-1 text-xs font-medium transition duration-150;
     color: var(--color-muted);
-    transition: border-color 0.15s var(--ease-out),
-      background 0.15s var(--ease-out), color 0.15s var(--ease-out);
   }
   .pipeline-tab:hover {
     color: var(--color-text);
-    border-color: var(--color-border-strong);
+    background: var(--color-surface-2);
   }
   .pipeline-tab.active {
-    background: var(--color-text);
-    border-color: var(--color-text);
-    color: var(--color-bg);
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    box-shadow: inset 0 0 0 1px var(--color-border-strong);
   }
   .pipeline-tab-count {
-    @apply rounded-full px-1.5 py-0.5 text-[11px] leading-none;
+    @apply rounded-full px-1.5 py-0.5 text-[10px] leading-none;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     background: var(--color-surface-2);
     color: var(--color-muted);
   }
   .pipeline-tab.active .pipeline-tab-count {
-    background: color-mix(in srgb, var(--color-bg) 25%, transparent);
-    color: var(--color-bg);
+    background: var(--color-surface);
+    color: var(--color-text);
   }
   .pipeline-tab.ok .pipeline-tab-count {
     color: var(--color-pick);
@@ -2898,6 +3076,29 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .pl-run-more {
     @apply self-start;
+  }
+
+  /* ---- Search-index coverage meter (Settings › Pipeline › Search index) - */
+  .pl-coverage {
+    @apply flex flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .pl-coverage-row {
+    @apply flex flex-wrap items-center gap-2 text-[13px];
+    color: var(--color-text);
+  }
+  .pl-meter {
+    @apply h-2 w-full overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .pl-meter-fill {
+    @apply h-full rounded-full;
+    background: var(--color-accent);
+    transition: width 0.3s var(--ease-out);
+  }
+  .pl-meter-fill.ok {
+    background: var(--color-pick);
   }
 
   /* ---- Pipeline asset card (Media / Pending / Analyzed) ----------------- */
@@ -3280,19 +3481,10 @@ html[data-theme="dark"] .btn-primary:hover {
     align-items: center;
     z-index: 45;
   }
-  /* Bare in the header: no pill, no border, no shadow — just the glyph. */
+  /* Tighter in the phone header; the bare look is the base style now. */
   .theme-toggle {
     width: 34px;
     height: 34px;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    color: var(--color-muted);
-  }
-  .theme-toggle:hover,
-  .theme-toggle:active {
-    background: transparent;
-    box-shadow: none;
   }
   .theme-toggle .theme-ic svg {
     width: 19px;
@@ -3314,6 +3506,22 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .shell-head-row {
     @apply flex-nowrap gap-2;
+  }
+  /* Search page: the example queries scroll sideways rather than stacking into
+     three rows, which on a phone pushed the results below the fold. Same
+     hidden-scrollbar rail as .pipeline-tabs. The readout keeps its own line
+     (the band still wraps) so the coverage figure stays readable. */
+  .ml-search-controls {
+    @apply px-3;
+  }
+  .ml-search-examples {
+    /* flex-1 + min-w-0: claim the rest of the line so the rail has a width to
+       scroll inside, instead of overflowing the band at its content width. */
+    @apply min-w-0 flex-1 flex-nowrap overflow-x-auto;
+    scrollbar-width: none;
+  }
+  .ml-search-examples::-webkit-scrollbar {
+    display: none;
   }
   .tabs {
     @apply gap-0.5 p-0.5;
@@ -3517,6 +3725,11 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mb-1.5 mt-3.5 block text-xs font-semibold uppercase tracking-wide;
     color: var(--color-muted);
   }
+  /* A modal's own text fields span the dialog — an input left at its default
+     ~20-character width reads as a stray half-empty box under its label. */
+  .modal-input {
+    @apply block w-full;
+  }
   .modal-warn {
     @apply mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm;
     color: var(--color-reject);
@@ -3554,6 +3767,15 @@ html[data-theme="dark"] .btn-primary:hover {
   .type-choice.active {
     border-color: var(--color-accent);
     background: var(--color-accent-wash);
+  }
+  /* A destination the server reports as configured but unreachable (cf. the
+     export target picker): still listed, so the cause is visible, but not
+     selectable. */
+  .type-choice.is-disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  .type-choice.is-disabled:hover {
+    border-color: var(--color-border-strong);
   }
   .type-choice input {
     @apply sr-only;
@@ -4622,9 +4844,32 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-head {
     @apply flex flex-wrap items-center gap-3;
   }
-  .gear-section h2 {
-    @apply m-0 mb-5;
-    font-size: 2rem;
+  /* One body and its glass. The camera stands on the left as the heading of its
+     own row — it's the thing the lenses belong to — and the lens grid flows
+     beside it. Below the breakpoint the two stack, camera first. */
+  .gear-body {
+    @apply grid items-start gap-x-7 gap-y-4;
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+    padding-top: 26px;
+    border-top: 1px solid var(--color-border);
+  }
+  /* The first body sits right under the toolbar: no rule above it. */
+  .gear-body:first-of-type {
+    @apply border-t-0 pt-0;
+  }
+  /* The camera card rides along as the row scrolls past — the lens grid can be
+     long, and "which body am I looking at" must never need a scroll back up. */
+  .gear-body-figure {
+    @apply sticky self-start;
+    top: 12px;
+  }
+  .gear-body-glass {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+  .gear-body-glass-head {
+    @apply m-0 text-xs font-semibold uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
   }
   .gear-grid {
     @apply grid;
@@ -4684,14 +4929,28 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
+/* Tablets: the sticky side column costs more than it gives once the lens grid
+   is only two cards wide — stack the body over its glass instead. */
+@media (max-width: 900px) {
+  .gear-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gear-body-figure {
+    @apply static;
+    max-width: 260px;
+  }
+}
+
 /* Phones: tighter shelf, two cards per row on the narrowest screens. */
 @media (max-width: 767px) {
   .gear-shelf {
     gap: 26px;
   }
-  .gear-section h2 {
-    font-size: 1.6rem;
-    margin-bottom: 14px;
+  .gear-body {
+    padding-top: 20px;
+  }
+  .gear-body-figure {
+    max-width: 200px;
   }
   .gear-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -4710,4 +4969,258 @@ html[data-theme="dark"] .btn-primary:hover {
     padding-left: 2px;
     padding-right: 2px;
   }
+}
+
+/* =========================================================================
+   Auth — sign-in screen + account chip (rail foot) + users admin page.
+   ========================================================================= */
+@layer components {
+  /* Full-viewport centred card; the rail is absent on /login. */
+  .login-shell {
+    @apply flex min-h-dvh items-center justify-center;
+    padding: 24px;
+    background: var(--color-bg);
+  }
+  .login-card {
+    @apply flex w-full flex-col;
+    max-width: 380px;
+    padding: 28px 26px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg, 12px);
+  }
+  .login-brand {
+    @apply flex justify-center;
+    margin-bottom: 14px;
+  }
+  .login-title {
+    font-family: var(--font-instrument-serif), serif;
+    font-size: 1.9rem;
+    line-height: 1.15;
+    text-align: center;
+  }
+  .login-sub {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    text-align: center;
+    margin: 4px 0 18px;
+  }
+  .login-label {
+    @apply text-xs font-semibold;
+    color: var(--color-muted);
+    margin: 10px 0 4px;
+  }
+  .login-error {
+    color: var(--color-reject);
+    font-size: 0.85rem;
+    margin-top: 12px;
+  }
+  .login-submit {
+    margin-top: 18px;
+    width: 100%;
+  }
+
+  /* Rail foot stacks the theme toggle above the account chip (desktop), so the
+     account sits at the very end of the rail. Order comes from the JSX. */
+  .rail-foot {
+    @apply flex-col gap-2;
+  }
+  .account-wrap {
+    position: relative;
+  }
+  /* The signed-in initial, sized to sit flush with the theme toggle. */
+  .account-btn {
+    @apply flex items-center justify-center font-semibold;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    font-size: 0.95rem;
+    color: var(--color-accent-fg);
+    background: var(--color-accent);
+    border: 1px solid transparent;
+  }
+  .account-btn:hover {
+    background: var(--color-accent-hover);
+  }
+  .account-pop {
+    position: absolute;
+    bottom: 0;
+    left: calc(100% + 14px);
+    min-width: 168px;
+    padding: 6px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+    z-index: 60;
+  }
+  .account-id {
+    @apply flex flex-col;
+    padding: 6px 8px 8px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 4px;
+  }
+  .account-name {
+    @apply text-sm font-semibold;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+  }
+  .account-role {
+    @apply text-[11px];
+    color: var(--color-muted);
+  }
+  .account-item {
+    @apply flex w-full items-center gap-2 rounded-[var(--radius)] text-sm;
+    padding: 7px 8px;
+    color: var(--color-text);
+    text-align: left;
+    /* The popover's min-width is a floor, not a cap — let the longest label
+       ("Change password") set the width instead of wrapping onto two lines. */
+    white-space: nowrap;
+  }
+  .account-item:hover {
+    background: var(--color-surface-2);
+  }
+  .account-item-ic {
+    @apply inline-flex items-center justify-center;
+    color: var(--color-muted);
+  }
+
+  /* One-time invite link (Users page modal): URL + copy button side by side. */
+  .invite-link-row {
+    @apply flex items-center gap-2;
+    margin-top: 10px;
+  }
+  .invite-link-input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-jetbrains-mono), monospace;
+    font-size: 0.75rem;
+  }
+}
+
+/* Phones: the rail foot is a fixed top-right chip row — lay the account chip
+   next to the theme toggle and drop the popover below, right-aligned. */
+@media (max-width: 767px) {
+  .rail-foot {
+    flex-direction: row;
+    gap: 2px;
+  }
+  .account-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 0.8rem;
+  }
+  .account-pop {
+    bottom: auto;
+    left: auto;
+    top: calc(100% + 8px);
+    right: 0;
+  }
+}
+
+/* Users table: .vol-path's word-break: break-all is meant for filesystem
+   paths — on a person's name it cuts mid-word ("Bertran/d"). Break between
+   words, and only break within one as a last resort. */
+.users-table .vol-path {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Phones: the Users table folds into stacked cards — one per account — instead
+   of scrolling sideways. Cells become labelled rows (data-th), the role select
+   goes full-width, actions wrap. Scoped to .users-table so the Volumes table
+   keeps its horizontal-scroll behaviour. */
+@media (max-width: 640px) {
+  .users-table,
+  .users-table tbody {
+    display: block;
+  }
+  .users-table thead {
+    display: none;
+  }
+  .users-table tbody tr {
+    display: block;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .users-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .users-table tbody tr:hover {
+    background: transparent;
+  }
+  .users-table td {
+    display: block;
+    padding: 5px 0;
+    border-bottom: 0;
+  }
+  .users-table td.num {
+    text-align: left;
+  }
+  .users-table td[data-th]::before {
+    content: attr(data-th);
+    display: block;
+    margin-bottom: 3px;
+    font-family: var(--font-sans);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .users-table .select {
+    width: 100%;
+  }
+  .users-table .vol-actions {
+    padding-top: 4px;
+  }
+}
+
+/* =========================================================================
+   Leaflet overrides — DELIBERATELY UNLAYERED
+   -------------------------------------------------------------------------
+   `leaflet/dist/leaflet.css` is imported from the map components (so it ships
+   with the map chunk, not with every page) and therefore lands in the document
+   UNLAYERED. Unlayered rules outrank anything in `@layer components` whatever
+   their specificity — so overrides of Leaflet's own classes have to sit outside
+   the layer, right here, or they simply never apply.
+   ========================================================================= */
+
+/* The marker popover's bubble (cf. MapPopover / the `.map-pop-*` block above),
+   re-skinned as one of our floating cards: Leaflet ships a hardcoded white
+   wrapper with its own radius/shadow, unreadable in the dark theme. */
+.map-pop-wrap .leaflet-popup-content-wrapper {
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+/* The card owns its own padding (its media band is edge to edge). */
+.map-pop-wrap .leaflet-popup-content {
+  margin: 0;
+  line-height: 1.35;
+}
+.map-pop-wrap .leaflet-popup-tip {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border-strong);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+/* ✕ sits over the media band — white with a shadow reads on any photo. */
+.map-pop-wrap .leaflet-popup-close-button,
+.map-pop-wrap .leaflet-popup-close-button:hover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  top: 2px;
+  right: 2px;
+  color: #fff;
+  background: transparent;
+  font-size: 1.1rem;
+  text-shadow: 0 1px 3px rgba(16, 15, 13, 0.9);
 }
