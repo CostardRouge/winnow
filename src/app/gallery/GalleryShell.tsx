@@ -1219,19 +1219,7 @@ export default function GalleryShell({
                   ))}
                 </div>
               )}
-              <SimilarStrip
-                assetId={it.id}
-                onOpen={(id) => {
-                  // A map-opened media stands alone: swap it for the similar
-                  // shot rather than looking it up in the feed.
-                  if (mapAsset) return void openMapAsset(id);
-                  // Jump the viewer when the similar shot is in the current
-                  // list; otherwise say why nothing happened.
-                  const idx = items.findIndex((x) => x.id === id);
-                  if (idx >= 0) setViewer(idx);
-                  else setNotice("Not in the current view — loosen the filters to reach it");
-                }}
-              />
+              <SimilarStrip assetId={it.id} />
             </>
           )}
           renderActions={

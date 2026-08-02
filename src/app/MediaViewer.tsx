@@ -124,6 +124,13 @@ const PREFETCH_MARGIN = 8;
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
 
+// Viewers can stack: a similar shot opens a second viewer on top of the first
+// (cf. gallery/SimilarStrip). Every mounted viewer registers here, and only the
+// TOP-MOST one reacts to the keyboard — both listen on window, so without this
+// guard one Escape would close every layer at once and the arrow keys would
+// navigate the viewer underneath too.
+const viewerStack: symbol[] = [];
+
 // Persisted "is the info panel open?" preference, shared across every surface
 // that reuses the viewer so the choice sticks between visits.
 const PANEL_PREF_KEY = "winnow.viewer.info";
@@ -183,6 +190,18 @@ export default function MediaViewer<T extends ViewerItem>({
   onContextMenu?: (e: React.MouseEvent, item: T) => void;
 }) {
   const last = items.length - 1;
+
+  // This instance's place in the viewer stack (see viewerStack above): pushed
+  // on mount, removed on unmount, checked before handling any key.
+  const stackId = useRef(Symbol("viewer"));
+  useEffect(() => {
+    const id = stackId.current;
+    viewerStack.push(id);
+    return () => {
+      const i = viewerStack.indexOf(id);
+      if (i >= 0) viewerStack.splice(i, 1);
+    };
+  }, []);
 
   // Metadata bottom panel: toggleable down to a small info icon so it never has
   // to cover the media. The open/closed choice is restored from (and mirrored
@@ -448,6 +467,8 @@ export default function MediaViewer<T extends ViewerItem>({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A viewer stacked on top of this one owns the keyboard (see viewerStack).
+      if (viewerStack[viewerStack.length - 1] !== stackId.current) return;
       const it = items[index];
       if (!it) return;
       // Don't hijack keys while the user is typing in a field (e.g. a tag input).

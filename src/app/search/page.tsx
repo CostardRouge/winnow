@@ -389,11 +389,15 @@ function SearchPage() {
           }}
           renderInfo={(it) => (
             <div className="viewer-tags">
+              {/* CLIP cosine similarity to the query, worded as a percentage
+                  rather than a bare float. Good text↔image matches typically
+                  sit in the 20-35% band, so the figure reads relative to the
+                  other hits, not against 100%. */}
               <span
                 className="chip"
-                title="CLIP cosine similarity to the query"
+                title="How closely this image matches your search terms (CLIP cosine similarity)"
               >
-                similarity {(1 - it.distance).toFixed(3)}
+                Search match · {Math.round((1 - it.distance) * 100)}%
               </span>
             </div>
           )}

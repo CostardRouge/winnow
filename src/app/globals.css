@@ -1853,6 +1853,27 @@ html[data-theme="dark"] .btn-primary:hover {
     color: rgba(236, 231, 218, 0.7);
   }
 
+  /* Similar-photos strip in the viewer panel (cf. gallery/SimilarStrip):
+     same section language as .viewer-pair above — a top rule and an uppercase
+     label — plus a Hamming-distance badge on each thumb. The badge sits on
+     arbitrary photo pixels, so it gets the burst badge's dark translucent
+     pill rather than bare text. */
+  .viewer-similar {
+    @apply mt-2.5 border-t pt-2.5;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .viewer-similar-label {
+    @apply mb-1 text-[0.65rem] font-medium uppercase tracking-wide;
+    color: rgba(236, 231, 218, 0.5);
+  }
+  .viewer-similar-dist {
+    @apply absolute bottom-1 right-1 rounded-full px-1.5 text-[10px] font-semibold leading-4;
+    font-family: var(--font-mono);
+    background: color-mix(in srgb, #000 55%, transparent);
+    color: #fff;
+    backdrop-filter: blur(3px);
+  }
+
   /* ---- Viewer action bar (grouped culling controls) --------------------- */
   /* Lives on the dark frame, so the buttons are translucent light-on-dark.
      Grouped by intent: a verdict segment, a star cluster, an overflow menu. */
