@@ -20,7 +20,7 @@ type Panel = "media" | "jobs";
 
 // The index facet: membership of asset_clip under the current model.
 type IndexKey = "missing" | "indexed" | "all";
-const INDEX_ORDER: IndexKey[] = ["missing", "indexed", "all"];
+const INDEX_ORDER: IndexKey[] = ["all", "indexed", "missing"];
 const INDEX_LABEL: Record<IndexKey, string> = {
   missing: "Missing",
   indexed: "Indexed",
@@ -42,7 +42,7 @@ const INDEX_HINT: Record<IndexKey, string> = {
 export default function SearchIndexPage() {
   const { stats, reload } = useStats();
   const [panel, setPanel] = useState<Panel>("media");
-  const [facet, setFacet] = useState<IndexKey>("missing");
+  const [facet, setFacet] = useState<IndexKey>("all");
   const [mlBusy, setMlBusy] = useState(false);
   const [mlMsg, setMlMsg] = useState<string | null>(null);
 
@@ -60,7 +60,7 @@ export default function SearchIndexPage() {
     setFacet(s);
     try {
       const sp = new URLSearchParams(window.location.search);
-      if (s === "missing") sp.delete("index");
+      if (s === "all") sp.delete("index");
       else sp.set("index", s);
       const qs = sp.toString();
       window.history.replaceState(

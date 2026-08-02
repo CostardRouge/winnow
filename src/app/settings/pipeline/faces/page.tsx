@@ -129,6 +129,10 @@ export default function FacesTextPage() {
   }
 
   const a = stats?.assets;
+  const mlPct =
+    a && a.total > 0
+      ? Math.min(100, Math.round((a.ml_ready / a.total) * 100))
+      : null;
   const count: Record<StatusKey, number | undefined> = {
     all: a?.total,
     ready: a?.ml_ready,
@@ -171,6 +175,36 @@ export default function FacesTextPage() {
         </button>
       </div>
       {mlMsg && <p className="hint">{mlMsg}</p>}
+
+      {/* Coverage: analyzed vs the live library, same meter as Search index. */}
+      {a && (
+        <div className="pl-coverage">
+          <div className="pl-coverage-row">
+            <span>
+              <strong>{a.ml_ready.toLocaleString()}</strong> of{" "}
+              {a.total.toLocaleString()} media analyzed for faces & text
+              {mlPct != null ? ` (${mlPct}%)` : ""}
+            </span>
+            <span className="spacer" />
+            {a.ml_pending > 0 && (
+              <span className="hint">{a.ml_pending.toLocaleString()} pending</span>
+            )}
+          </div>
+          <div
+            className="pl-meter"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={a.total}
+            aria-valuenow={a.ml_ready}
+            aria-label="Faces & text analysis coverage"
+          >
+            <div
+              className={`pl-meter-fill${mlPct === 100 ? " ok" : ""}`}
+              style={{ width: `${mlPct ?? 0}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {panel === "jobs" ? (
         <MlQueuePanel />
