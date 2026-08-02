@@ -6,7 +6,7 @@
 //
 // Upsert by abs_path (like scan_failures): a path re-seen on each incremental
 // scan updates its row + a hits counter instead of accumulating.
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { q, one, many } from "./db";
 import { config } from "./config";
 import { isWithinBrowseRoots } from "./fsbrowse";
@@ -501,4 +501,40 @@ export async function discardTrashedCopy(
     ]);
 
   return { assetId: asset.id, path: asset.abs_path, deleted, resolved };
+}
+
+// Only ENOENT means "gone" — mirrors fileExists in lib/integrity.ts. Any other
+// error (permissions, a flaky/unmounted volume) must never make a row vanish.
+async function fileGone(absPath: string): Promise<boolean> {
+  try {
+    await stat(absPath);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+export type PurgeResolvedResult = { checked: number; purged: number };
+
+// Every duplicate_hits row was recorded against a file that existed on disk at
+// scan time. "Delete"/"Keep only this"/"Discard" above all clear their own rows
+// as they act — but nothing clears a row when its file is removed OUTSIDE the
+// app (by hand, e.g. straight from the incoming folder rather than through this
+// page): the row is left claiming a copy that is already gone, forever, since
+// nothing ever re-visits it. This re-stats every recorded path and drops the
+// rows confirmed gone. No file is touched — there is nothing left to delete —
+// only the stale audit row goes.
+export async function purgeResolvedDuplicateHits(): Promise<PurgeResolvedResult> {
+  const rows = await many<{ abs_path: string }>(
+    "SELECT abs_path FROM duplicate_hits",
+  );
+  const gone: string[] = [];
+  for (const r of rows) {
+    if (await fileGone(r.abs_path)) gone.push(r.abs_path);
+  }
+  if (gone.length > 0)
+    await q("DELETE FROM duplicate_hits WHERE abs_path = ANY($1::text[])", [
+      gone,
+    ]);
+  return { checked: rows.length, purged: gone.length };
 }
