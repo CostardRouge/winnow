@@ -3103,7 +3103,7 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply self-start;
   }
 
-  /* ---- Search-index coverage meter (Settings › Pipeline › Search index) - */
+  /* ---- Coverage meter (Settings › Pipeline › Search index / Faces & text) */
   .pl-coverage {
     @apply flex flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3;
     background: var(--color-surface);
