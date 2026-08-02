@@ -37,8 +37,13 @@ export async function GET(
       64,
     );
 
+    // ::text, NOT the raw bigint: db.ts parses int8 columns into JS numbers,
+    // and a 64-bit hash does not survive a 53-bit double — the low ~11 bits
+    // come back zeroed, which inflated every distance by ~5-7 bits, let
+    // "probably unrelated" images (true distance 17-22) under the threshold
+    // and pushed real near-duplicates past it.
     const source = await one<{ phash: string | null }>(
-      "SELECT phash FROM assets WHERE id = $1",
+      "SELECT phash::text AS phash FROM assets WHERE id = $1",
       [id],
     );
     if (!source) return badRequest("asset not found");

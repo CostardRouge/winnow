@@ -8,7 +8,10 @@ import { config } from "./config";
 // objects, for stable cursor pagination.
 pg.types.setTypeParser(1184, (v) => v); // timestamptz
 pg.types.setTypeParser(1114, (v) => v); // timestamp
-pg.types.setTypeParser(20, (v) => Number.parseInt(v, 10)); // int8 -> number
+// int8 -> number. CAUTION: only safe for values under 2^53 (counts, sizes).
+// A column holding a full 64-bit value — assets.phash — must be selected as
+// ::text so it never rounds through a double (cf. api/assets/[id]/similar).
+pg.types.setTypeParser(20, (v) => Number.parseInt(v, 10));
 
 declare global {
   // eslint-disable-next-line no-var

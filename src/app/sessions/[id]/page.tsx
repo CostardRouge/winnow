@@ -1013,18 +1013,7 @@ export default function SessionGrid({
             e.preventDefault();
             setMenu({ x: e.clientX, y: e.clientY, id: a.id });
           }}
-          renderInfo={(a) => (
-            <SimilarStrip
-              assetId={a.id}
-              onOpen={(id) => {
-                // Jump the viewer when the similar shot belongs to this
-                // session's loaded grid; otherwise say why nothing happened.
-                const idx = assets.findIndex((x) => x.id === id);
-                if (idx >= 0) setViewer(idx);
-                else setNotice("Not in this session — find it from the Gallery");
-              }}
-            />
-          )}
+          renderInfo={(a) => <SimilarStrip assetId={a.id} />}
           renderActions={(a) => (
             <ViewerActions
               verdict={a.verdict}
