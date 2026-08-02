@@ -67,7 +67,13 @@ export default function PipelineNav() {
   return (
     <nav className="pipeline-tabs" aria-label="Pipeline sections">
       {tabs.map((t) => {
-        const isActive = pathname === t.href;
+        // Overview matches exactly (every tab shares its prefix); the others
+        // match by prefix so their own sub-routes — e.g. the failure families
+        // under /settings/pipeline/failures/… — keep their tab lit.
+        const isActive =
+          t.href === "/settings/pipeline"
+            ? pathname === t.href
+            : pathname === t.href || pathname.startsWith(`${t.href}/`);
         return (
           <Link
             key={t.href}

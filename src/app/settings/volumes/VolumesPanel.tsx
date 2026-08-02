@@ -7,8 +7,8 @@
 // free-text "index this path" field (which made it too easy to scan "/").
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { EmptyState, Icons } from "../ui";
-import PullToRefresh from "../PullToRefresh";
+import { EmptyState, Icons } from "@/app/ui";
+import PullToRefresh from "@/app/PullToRefresh";
 import {
   VOLUME_TYPES,
   typeForKind,

@@ -4,7 +4,7 @@
 // both the Pipeline page (full control panel + detailed bento) and the compact
 // stats strip in the Library header. Keeps a single source of truth for the
 // Stats shape and the small derivations on top of it.
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 
 export type QueueCounts = Record<string, number>;
@@ -78,24 +78,64 @@ export function totalFailures(s: Stats | null): number {
   );
 }
 
-// Polls /api/stats on an interval (default 5 s). A transient fetch error keeps
-// the last good snapshot rather than blanking the UI.
-export function useStats(intervalMs = 5000): {
+// One shared /api/stats poll for the whole app. Several components display
+// these counters at once (the pipeline tabs, the control panel, the Library
+// stats strip…); each keeping its own 5 s interval meant N identical requests
+// per tick. Instead a single module-level store polls while at least one
+// component subscribes, and every subscriber renders from the same snapshot.
+const POLL_MS = 5000;
+let snapshot: Stats | null = null;
+let inflight: Promise<void> | null = null;
+let timer: ReturnType<typeof setInterval> | null = null;
+const subscribers = new Set<(s: Stats) => void>();
+
+// A transient fetch error keeps the last good snapshot rather than blanking
+// the UI. Concurrent callers (interval tick + a manual reload after an action)
+// share the same request instead of stacking them.
+function refresh(): Promise<void> {
+  if (!inflight) {
+    inflight = fetchJson<Stats>("/api/stats")
+      .then((s) => {
+        snapshot = s;
+        subscribers.forEach((fn) => fn(s));
+      })
+      .catch(() => {
+        /* transient: keep the current snapshot */
+      })
+      .finally(() => {
+        inflight = null;
+      });
+  }
+  return inflight;
+}
+
+function subscribe(fn: (s: Stats) => void): () => void {
+  subscribers.add(fn);
+  if (subscribers.size === 1) {
+    void refresh();
+    timer = setInterval(refresh, POLL_MS);
+  }
+  return () => {
+    subscribers.delete(fn);
+    if (subscribers.size === 0 && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+}
+
+// Subscribe to the shared poll. `reload` forces an immediate refresh (e.g.
+// right after pause/resume or a settings change) — the new snapshot reaches
+// every subscribed component, not just the caller.
+export function useStats(): {
   stats: Stats | null;
   reload: () => Promise<void>;
 } {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const reload = useCallback(async () => {
-    try {
-      setStats(await fetchJson<Stats>("/api/stats"));
-    } catch {
-      /* transient: keep the current snapshot */
-    }
-  }, []);
+  const [stats, setStats] = useState<Stats | null>(snapshot);
   useEffect(() => {
-    reload();
-    const t = setInterval(reload, intervalMs);
-    return () => clearInterval(t);
-  }, [reload, intervalMs]);
-  return { stats, reload };
+    // Catch up on a snapshot that landed between render and subscription.
+    setStats(snapshot);
+    return subscribe(setStats);
+  }, []);
+  return { stats, reload: refresh };
 }

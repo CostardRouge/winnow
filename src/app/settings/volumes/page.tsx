@@ -1,4 +1,4 @@
-import VolumesPanel from "../../volumes/VolumesPanel";
+import VolumesPanel from "./VolumesPanel";
 
 // Settings › Volumes — the registry of every directory attached to the project
 // (the env-seeded incoming/finals/export plus anything added by hand), each with
