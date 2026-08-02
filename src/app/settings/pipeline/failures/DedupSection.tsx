@@ -227,6 +227,36 @@ export default function DedupSection({
     }
   }
 
+  // Drop every duplicate_hits row whose file is already gone from disk — the
+  // case the app never gets a chance to clear on its own: a copy removed by
+  // hand (e.g. straight from the incoming folder) rather than through
+  // "Delete"/"Keep only this"/"Discard" above. Nothing on disk is touched;
+  // only the stale audit row goes.
+  async function runPurgeResolved() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/failures/duplicates/purge-resolved", {
+        method: "POST",
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setMsg(`Error: ${d.error ?? "unknown"}`);
+      } else {
+        setMsg(
+          d.purged > 0
+            ? `Cleared ${d.purged} entr${
+                d.purged > 1 ? "ies" : "y"
+              } whose file was already gone from disk (checked ${d.checked}).`
+            : `Nothing to clear — every recorded file still exists on disk (checked ${d.checked}).`,
+        );
+      }
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Drop just the trashed library copy of a group, leaving the other extras
   // listed. Only offered for a copy already in the trash — a live one has to go
   // through "Keep only this", which relinks the entry instead of orphaning it.
@@ -283,6 +313,15 @@ export default function DedupSection({
           onChange={(e) => setFilter(e.target.value)}
         />
         <button
+          className="btn"
+          disabled={busy || count === 0}
+          onClick={runPurgeResolved}
+          title="Drop entries whose file no longer exists on disk — already resolved outside this page"
+        >
+          {Icons.reset}
+          <span>Purge resolved</span>
+        </button>
+        <button
           className="btn btn-danger"
           disabled={busy || sel.size === 0}
           onClick={() => setConfirm([...sel])}
@@ -307,7 +346,11 @@ export default function DedupSection({
         they’re listed below for audit only.
         {falseCollisions > 0
           ? ` ${falseCollisions} false collision(s) recovered.`
-          : ""}
+          : ""}{" "}
+        A copy removed by hand outside this page (e.g. straight from incoming)
+        leaves its row behind claiming a file that’s already gone —{" "}
+        <strong>“Purge resolved”</strong> re-checks every entry on disk and
+        drops the ones already gone; nothing on disk is touched.
       </p>
 
       {count === 0 ? (
