@@ -14,7 +14,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/lib/migrate.ts",
-    "worker": "tsx src/worker.ts",
+    "worker": "WINNOW_PROCESS=worker tsx src/worker.ts",
     "scan": "tsx src/scripts/scan.ts",
     "geocode-backfill": "tsx src/scripts/geocode-backfill.ts",
     "ml-backfill": "tsx src/scripts/ml-backfill.ts",

@@ -17,7 +17,7 @@
 import { pool } from "../lib/db";
 import { config } from "../lib/config";
 import { prepareMlBackfill } from "../lib/ml";
-import { enqueueMl } from "../lib/queue";
+import { enqueueMlBulk } from "../lib/queue";
 
 async function main() {
   const force = process.argv.slice(2).includes("--force");
@@ -42,11 +42,7 @@ async function main() {
   console.log(
     `Enqueuing ${ids.length} ml job(s)${force ? " (force: includes already-analyzed)" : ""}…`,
   );
-  let n = 0;
-  for (const id of ids) {
-    await enqueueMl(id);
-    if (++n % 1000 === 0) console.log(`  queued ${n}/${ids.length}`);
-  }
+  const n = await enqueueMlBulk(ids);
   console.log(`Done. Queued ${n}. Run \`npm run worker\` to process them.`);
 
   await pool.end();

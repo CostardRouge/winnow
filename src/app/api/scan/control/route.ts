@@ -1,8 +1,9 @@
 // POST /api/scan/control { action: "pause" | "resume" }
-//   pause  : suspend indexing + derivative generation (persisted in Redis +
-//            DB flag read by the indexer to stop mid-scan).
-//   resume : restart the queues and re-enqueue the source roots to finish any
-//            interrupted scan (incremental -> already-known files are skipped).
+//   pause  : suspend every background queue (indexing, derivatives, ML,
+//            geocoding, integrity, GPS write-back) — persisted in Redis +
+//            DB flag read mid-job by the indexer/ML/geocode throttles.
+//   resume : restart the queues and re-enqueue the indexable roots to finish
+//            any interrupted scan (incremental -> known files are skipped).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many } from "@/lib/db";
@@ -27,9 +28,11 @@ export async function POST(req: NextRequest) {
     await setScanPaused(paused);
 
     if (!paused) {
-      // Resume: re-enqueue the indexable roots, incoming first.
+      // Resume: re-enqueue the indexable roots, incoming first. Same root set
+      // as bootstrap and the periodic rescan — finals included, so a finals
+      // volume paused mid-scan doesn't wait for the next periodic tick.
       const roots = await many<{ id: number; path: string }>(
-        "SELECT id, path FROM roots WHERE kind IN ('source','inbox')",
+        "SELECT id, path FROM roots WHERE kind IN ('source','inbox','finals')",
       );
       for (const r of roots) {
         await enqueueIndex(r.id, {

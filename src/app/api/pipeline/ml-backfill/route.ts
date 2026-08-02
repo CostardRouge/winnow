@@ -11,7 +11,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { config } from "@/lib/config";
 import { prepareMlBackfill } from "@/lib/ml";
-import { enqueueMl } from "@/lib/queue";
+import { enqueueMlBulk } from "@/lib/queue";
 import { json, badRequest, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return badRequest("invalid body", parsed.error.issues);
 
     const ids = await prepareMlBackfill(parsed.data.force ?? false);
-    for (const id of ids) await enqueueMl(id);
+    await enqueueMlBulk(ids);
 
     return json({ queued: ids.length, clipEnabled: config.ml.clip.enabled });
   } catch (err) {

@@ -22,12 +22,28 @@ import { reconcileMissingForRoot } from "./integrity";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
-// the scan (shouldStop) and smoothing its rate (throttle, called before each
-// heavy file read). In CLI/sync, no hooks → nominal behavior.
+// the scan (shouldStop), smoothing its rate (throttle, called before each
+// heavy file read), and reporting live counters (onProgress, called every
+// PROGRESS_EVERY files → job.updateProgress, so a multi-hour scan is not
+// opaque in the UI). In CLI/sync, no hooks → nominal behavior.
 export type IndexHooks = {
   shouldStop?: () => Promise<boolean> | boolean;
   throttle?: () => Promise<void>;
+  onProgress?: (progress: IndexProgress) => Promise<void> | void;
 };
+
+// The live subset of IndexResult worth streaming while the walk runs.
+export type IndexProgress = {
+  scanned: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+};
+
+// How often onProgress fires (in scanned files). Cheap enough to stay
+// responsive, coarse enough that Redis never becomes the bottleneck.
+const PROGRESS_EVERY = 200;
 
 async function* walk(dir: string): AsyncGenerator<string> {
   let entries;
@@ -415,6 +431,16 @@ export async function indexRoot(
       console.warn(`Unable to index ${absPath}:`, msg);
       // Persist the failure so it can be listed/retried from the UI.
       await recordScanFailure(absPath, root.id, msg);
+    }
+
+    if (hooks.onProgress && res.scanned % PROGRESS_EVERY === 0) {
+      await hooks.onProgress({
+        scanned: res.scanned,
+        inserted: res.inserted,
+        updated: res.updated,
+        skipped: res.skipped,
+        failed: res.failed,
+      });
     }
   }
 

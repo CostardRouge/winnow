@@ -227,12 +227,19 @@ export async function searchPlaces(
 // here simply paces the single worker (Nominatim public = ~1 req/s → set
 // geocodePerHour=3600). 0 = unlimited (self-hosted / higher-tier provider).
 async function throttleGeocode(): Promise<void> {
-  const { geocodePerHour } = await getSettings();
-  if (geocodePerHour <= 0) return;
-  let wait = await reserveSlot("geocode", geocodePerHour);
-  while (wait > 0) {
+  for (;;) {
+    // Respect the global pipeline pause: the queue pause only stops NEW
+    // pickups, so a job already in flight idles here (same as the indexer's
+    // mid-scan check) instead of hitting the provider while paused.
+    const { scanPaused, geocodePerHour } = await getSettings();
+    if (scanPaused) {
+      await sleep(3000);
+      continue;
+    }
+    if (geocodePerHour <= 0) return;
+    const wait = await reserveSlot("geocode", geocodePerHour);
+    if (wait <= 0) return;
     await sleep(Math.min(wait, 3000));
-    wait = await reserveSlot("geocode", geocodePerHour);
   }
 }
 

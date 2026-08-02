@@ -46,6 +46,9 @@ export async function GET(req: NextRequest) {
           timestamp: j.timestamp,
           finished_at: j.finishedOn,
           failed_reason: j.failedReason,
+          // Live counters of an active scan ({scanned, inserted, updated,
+          // skipped, failed}), reported by the indexer every ~200 files.
+          progress: j.progress,
           root_id: Number(j.data.rootId) || null,
           path: root?.path ?? null,
           kind: root?.kind ?? null,

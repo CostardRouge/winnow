@@ -103,6 +103,11 @@ const indexWorker = new Worker(
           wait = await reserveSlot("scan", scanPerHour);
         }
       },
+      // Live counters → BullMQ job progress, surfaced by /api/pipeline/queue.
+      // Best-effort: a Redis hiccup must not fail the scan.
+      onProgress: async (p) => {
+        await job.updateProgress(p).catch(() => {});
+      },
     });
     console.log(`[index] done`, res);
 

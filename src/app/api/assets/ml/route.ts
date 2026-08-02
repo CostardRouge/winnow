@@ -10,7 +10,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, q } from "@/lib/db";
 import { config } from "@/lib/config";
-import { enqueueMl } from "@/lib/queue";
+import { enqueueMlBulk } from "@/lib/queue";
 import { json, badRequest, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         "UPDATE assets SET ml_status='pending', ml_error=NULL, updated_at=now() WHERE id = ANY($1)",
         [idList],
       );
-      for (const id of idList) await enqueueMl(id);
+      await enqueueMlBulk(idList);
     }
     return json({ queued: idList.length, skipped: ids.length - idList.length });
   } catch (err) {

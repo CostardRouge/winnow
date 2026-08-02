@@ -20,7 +20,7 @@ import {
   enqueueIndex,
   enqueueDerivative,
   enqueueImport,
-  enqueueMl,
+  enqueueMlBulk,
   PRIORITY,
 } from "@/lib/queue";
 import { quarantineDir } from "@/lib/import";
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
           "UPDATE assets SET ml_status='pending', ml_error=NULL, updated_at=now() WHERE id = ANY($1)",
           [idList],
         );
-        for (const id of idList) await enqueueMl(id);
+        await enqueueMlBulk(idList);
       }
       return json({ kind, retried: idList.length });
     }

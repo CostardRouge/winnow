@@ -223,6 +223,15 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
           skipped++;
           continue;
         }
+        // 4) Reap the ML rows. The derivative is gone, so these embeddings can
+        //    never be regenerated — and the CLIP flat-scan pays for every row it
+        //    keeps. Ratings stay (they are the audit trail of the verdict).
+        //    asset_clip may not exist (pgvector optional — migration 0030 skips
+        //    the table there), so its delete is best-effort like the insert side.
+        await q("DELETE FROM asset_faces WHERE asset_id = $1", [asset.id]);
+        await q("DELETE FROM asset_clip WHERE asset_id = $1", [asset.id]).catch(
+          () => {},
+        );
         await q(
           `INSERT INTO purge_log (asset_id, abs_path, file_size, status)
            VALUES ($1, $2, $3, 'purged')`,
