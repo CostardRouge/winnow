@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
@@ -61,6 +62,7 @@ type Summary = {
 
 type TrashAsset = {
   id: number;
+  session_id: number;
   filename: string;
   ext: string;
   media_type: "photo" | "video";
@@ -333,6 +335,13 @@ export default function TrashTab() {
           onClose={() => setViewer(null)}
           renderActions={(it) => (
             <>
+              <Link
+                className="btn"
+                href={`/sessions/${it.session_id}`}
+                title="Open the session this shot belongs to"
+              >
+                Open session
+              </Link>
               <a className="btn" href={`/api/assets/${it.id}/download`} download>
                 Download
               </a>
