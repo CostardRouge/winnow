@@ -43,6 +43,23 @@ export type GalleryAsset = {
 const TARGET = 175; // target cell width (px)
 const GAP = 6;
 
+// Long-press (touch) opens the same context menu right-click does. 450ms is
+// under the ~500ms at which Android fires its native contextmenu event, so on
+// Android both paths land on the same open menu instead of racing; the slop
+// keeps a scroll that starts on a tile from reading as a press.
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_SLOP = 10;
+
+// What the context-menu callback actually receives: a real right-click
+// MouseEvent satisfies this, and a mobile long-press synthesizes one from the
+// touch position. Hosts only ever read the coordinates and call
+// preventDefault, so this is the whole contract.
+export type TileMenuEvent = {
+  clientX: number;
+  clientY: number;
+  preventDefault: () => void;
+};
+
 // Everything a row needs to paint its slice of the grid. react-window v2 hands
 // these to the row component through the `rowProps` prop (and re-renders rows
 // when they change), which is why Row lives at module scope: an inline
@@ -56,7 +73,13 @@ type RowData = {
   selectedIds?: Set<number>;
   onOpen: (index: number) => void;
   onToggleSelect?: (id: number) => void;
-  onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
+  onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
+  // Long-press plumbing (present only when onContextMenu is): the grid owns
+  // the single shared timer, rows just report the touches.
+  onPressStart?: (e: React.TouchEvent, asset: GalleryAsset) => void;
+  onPressMove?: (e: React.TouchEvent) => void;
+  onPressEnd?: (e: React.TouchEvent) => void;
+  consumePress?: () => boolean;
   liveHoverId: number | null;
   setLiveHoverId: React.Dispatch<React.SetStateAction<number | null>>;
 };
@@ -72,6 +95,10 @@ function Row({
   onOpen,
   onToggleSelect,
   onContextMenu,
+  onPressStart,
+  onPressMove,
+  onPressEnd,
+  consumePress,
   liveHoverId,
   setLiveHoverId,
 }: RowComponentProps<RowData>) {
@@ -88,12 +115,22 @@ function Row({
             key={a.id}
             className={`cell ${a.verdict}${sel ? " selected" : ""}`}
             style={{ width: cell, height: cell, aspectRatio: "auto" }}
-            onClick={() => (selectMode ? onToggleSelect?.(a.id) : onOpen(idx))}
+            onClick={() => {
+              // A long-press that opened the menu also releases into a click
+              // (iOS synthesizes one) — that click must not open the viewer.
+              if (consumePress?.()) return;
+              if (selectMode) onToggleSelect?.(a.id);
+              else onOpen(idx);
+            }}
             onMouseEnter={live ? () => setLiveHoverId(a.id) : undefined}
             onMouseLeave={
               live ? () => setLiveHoverId((p) => (p === a.id ? null : p)) : undefined
             }
             onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
+            onTouchStart={onPressStart ? (e) => onPressStart(e, a) : undefined}
+            onTouchMove={onPressMove}
+            onTouchEnd={onPressEnd}
+            onTouchCancel={onPressEnd}
           >
             {a.derivative_status === "ready" ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -169,7 +206,8 @@ const VirtualGrid = forwardRef<
     selectMode?: boolean;
     selectedIds?: Set<number>;
     onToggleSelect?: (id: number) => void;
-    onContextMenu?: (e: React.MouseEvent, asset: GalleryAsset) => void;
+    /** Right-click on desktop, long-press on touch — one callback for both. */
+    onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
     /** Target cell width (px). Smaller → more media per line. */
     targetWidth?: number;
   }
@@ -195,6 +233,86 @@ const VirtualGrid = forwardRef<
   // place over the still. One at a time; cleared on leave. No-op on touch (no
   // hover) — there the viewer's LIVE toggle plays it.
   const [liveHoverId, setLiveHoverId] = useState<number | null>(null);
+
+  // Long-press → context menu. One finger, held LONG_PRESS_MS without drifting
+  // past LONG_PRESS_SLOP, fires onContextMenu at the touch point. A single
+  // shared record is enough — there is one long-press at a time. After firing,
+  // the record stays (fired: true) until the release's synthesized click is
+  // consumed or the next touch replaces it; iOS Safari never fires contextmenu
+  // on touch, which is why this exists at all.
+  const press = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+    fired: boolean;
+  } | null>(null);
+
+  const onPressStart = useCallback(
+    (e: React.TouchEvent, asset: GalleryAsset) => {
+      if (press.current) clearTimeout(press.current.timer);
+      press.current = null;
+      if (!onContextMenu || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const state = {
+        x: t.clientX,
+        y: t.clientY,
+        fired: false,
+        timer: setTimeout(() => {
+          state.fired = true;
+          onContextMenu(
+            { clientX: state.x, clientY: state.y, preventDefault: () => {} },
+            asset,
+          );
+        }, LONG_PRESS_MS),
+      };
+      press.current = state;
+    },
+    [onContextMenu],
+  );
+
+  const onPressMove = useCallback((e: React.TouchEvent) => {
+    const p = press.current;
+    if (!p || p.fired) return;
+    const t = e.touches[0];
+    if (
+      !t ||
+      Math.abs(t.clientX - p.x) > LONG_PRESS_SLOP ||
+      Math.abs(t.clientY - p.y) > LONG_PRESS_SLOP
+    ) {
+      clearTimeout(p.timer);
+      press.current = null;
+    }
+  }, []);
+
+  const onPressEnd = useCallback((e: React.TouchEvent) => {
+    const p = press.current;
+    if (!p) return;
+    clearTimeout(p.timer);
+    if (p.fired) {
+      // The menu is open; keep the browser from synthesizing mouse events for
+      // this release (they would land outside the menu and dismiss it at once).
+      // touchend is not passive under React, so this is allowed.
+      e.preventDefault();
+    } else {
+      press.current = null;
+    }
+  }, []);
+
+  // Called by the tile's onClick: true (and reset) when the click is the tail
+  // of a long-press that already opened the menu.
+  const consumePress = useCallback(() => {
+    if (press.current?.fired) {
+      press.current = null;
+      return true;
+    }
+    return false;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (press.current) clearTimeout(press.current.timer);
+    };
+  }, []);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -251,6 +369,10 @@ const VirtualGrid = forwardRef<
             onOpen,
             onToggleSelect,
             onContextMenu,
+            onPressStart: onContextMenu ? onPressStart : undefined,
+            onPressMove: onContextMenu ? onPressMove : undefined,
+            onPressEnd: onContextMenu ? onPressEnd : undefined,
+            consumePress: onContextMenu ? consumePress : undefined,
             liveHoverId,
             setLiveHoverId,
           }}
