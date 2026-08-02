@@ -144,6 +144,46 @@ function enumEnv<const T extends readonly [string, ...string[]]>(
   return z.preprocess(blankToUndefined, z.enum(values).default(def));
 }
 
+// Absolute http(s) base URL, trailing slashes stripped; falls back to `def`
+// when unset/blank. Consumers build requests as fetch(`${base}/path`), and a
+// scheme-less value only explodes at JOB time ("Failed to parse URL from
+// host/predict", one error per asset) — this catches it at boot instead.
+// `forbid` rejects a base whose path already ends in the segment the client
+// appends itself (e.g. /predict), which would otherwise double up and surface
+// only as a per-asset HTTP 404.
+function urlEnv(def: string, forbid?: { suffix: string; hint: string }) {
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const v = (raw?.trim() || def).replace(/\/+$/, "");
+      let url: URL;
+      try {
+        url = new URL(v);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must be an absolute URL including the scheme, e.g. "http://host:3003" (got "${raw}")`,
+        });
+        return z.NEVER;
+      }
+      // new URL("host:3003") "succeeds" with protocol "host:" — so an explicit
+      // scheme allowlist, not just parseability.
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `must start with http:// or https:// (got "${raw}")`,
+        });
+        return z.NEVER;
+      }
+      if (forbid && url.pathname.replace(/\/+$/, "").endsWith(forbid.suffix)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: forbid.hint });
+        return z.NEVER;
+      }
+      return v;
+    });
+}
+
 // --- The schema: one entry per recognized environment variable ------------
 
 const EnvSchema = z
@@ -188,7 +228,10 @@ const EnvSchema = z
     // endpoint), this is the documented, versioned API — upgrades are safe.
     IMMICH_ENABLED: boolEnv(false),
     // Server root, WITHOUT the /api suffix (the client appends it).
-    IMMICH_BASE_URL: strEnv("http://immich-server:2283"),
+    IMMICH_BASE_URL: urlEnv("http://immich-server:2283", {
+      suffix: "/api",
+      hint: "must be the Immich server root WITHOUT the /api suffix (the client appends it)",
+    }),
     // Sent as `x-api-key`. Required when IMMICH_ENABLED (cf. superRefine).
     IMMICH_API_KEY: strEnv(""),
     // Where the pushed media land:
@@ -289,7 +332,7 @@ const EnvSchema = z
     // code change. GEOCODE_USER_AGENT is REQUIRED by Nominatim's usage policy.
     GEOCODE_ENABLED: boolEnv(true),
     GEOCODE_PROVIDER: enumEnv(["nominatim"], "nominatim"),
-    GEOCODE_BASE_URL: strEnv("https://nominatim.openstreetmap.org"),
+    GEOCODE_BASE_URL: urlEnv("https://nominatim.openstreetmap.org"),
     GEOCODE_USER_AGENT: strEnv("winnow/0.1 (self-hosted media manager)"),
     // Optional Nominatim etiquette: an email appended to each request so the
     // operator can reach you before rate-limiting. Blank → omitted.
@@ -315,7 +358,13 @@ const EnvSchema = z
     // container image tag and re-check after upgrading it.
     ML_ENABLED: boolEnv(false),
     ML_PROVIDER: enumEnv(["immich"], "immich"),
-    ML_BASE_URL: strEnv("http://immich-machine-learning:3003"),
+    // The container's BASE URL, scheme included — the client appends /predict
+    // itself, so a value already ending in /predict would call
+    // /predict/predict and 404 on every asset (both rejected at boot here).
+    ML_BASE_URL: urlEnv("http://immich-machine-learning:3003", {
+      suffix: "/predict",
+      hint: "must be the machine-learning container's base URL, WITHOUT the /predict suffix (the client appends it)",
+    }),
     // Face detection/recognition (InsightFace). buffalo_l is Immich's default;
     // the container downloads the model on first use.
     ML_FACES_ENABLED: boolEnv(true),

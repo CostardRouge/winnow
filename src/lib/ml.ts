@@ -118,25 +118,38 @@ function parseEmbedding(v: string | number[] | undefined): number[] | null {
   }
 }
 
+// Failed /predict call → one error carrying the EXACT URL called plus, for the
+// statuses with a known usual cause, a hint — these strings land verbatim in
+// ml_error and are read off /pipeline/failures, so they are the whole diagnosis:
+//   422 = the container didn't understand `entries` — most likely an OCR task
+//         sent to a pre-v2.2 image;
+//   404 = nothing serves /predict at that base — usually a reverse proxy in
+//         front of the container that rewrites or doesn't forward the path
+//         (a base URL itself ending in /predict is rejected at boot now).
+function httpError(status: number, url: string): Error {
+  const detail =
+    status === 422
+      ? " (container too old for a requested task? see ML_OCR_ENABLED)"
+      : status === 404
+        ? " (nothing answers /predict at this base — is ML_BASE_URL the machine-learning container's root URL?)"
+        : "";
+  return new Error(`ml HTTP ${status} from ${url}${detail}`);
+}
+
 // One /predict HTTP call: both tasks ride a single request (one image decode
 // container-side, one round trip).
 async function immichPredict(image: Buffer): Promise<MlResult> {
-  const base = config.ml.baseUrl.replace(/\/+$/, "");
+  const url = `${config.ml.baseUrl.replace(/\/+$/, "")}/predict`;
   const form = new FormData();
   form.set("entries", JSON.stringify(buildEntries()));
   form.set("image", new Blob([new Uint8Array(image)]), "image");
 
-  const res = await fetch(`${base}/predict`, {
+  const res = await fetch(url, {
     method: "POST",
     body: form,
     signal: AbortSignal.timeout(config.ml.timeoutMs),
   });
-  if (!res.ok) {
-    // 422 = the container didn't understand `entries` — most likely an OCR task
-    // sent to a pre-v2.2 image. Make that diagnosable from /pipeline/failures.
-    const detail = res.status === 422 ? " (container too old for a requested task? see ML_OCR_ENABLED)" : "";
-    throw new Error(`ml HTTP ${res.status} from ${base}${detail}`);
-  }
+  if (!res.ok) throw httpError(res.status, url);
   const data = (await res.json()) as ImmichPredictResponse;
 
   const faces: DetectedFace[] = (data["facial-recognition"] ?? []).map((f) => ({
@@ -177,7 +190,7 @@ export async function embedText(query: string): Promise<number[]> {
   if (config.ml.provider !== "immich") {
     throw new Error(`Unsupported ml provider: ${config.ml.provider}`);
   }
-  const base = config.ml.baseUrl.replace(/\/+$/, "");
+  const url = `${config.ml.baseUrl.replace(/\/+$/, "")}/predict`;
   const form = new FormData();
   form.set(
     "entries",
@@ -187,12 +200,12 @@ export async function embedText(query: string): Promise<number[]> {
   );
   form.set("text", query);
 
-  const res = await fetch(`${base}/predict`, {
+  const res = await fetch(url, {
     method: "POST",
     body: form,
     signal: AbortSignal.timeout(config.ml.timeoutMs),
   });
-  if (!res.ok) throw new Error(`ml HTTP ${res.status} from ${base}`);
+  if (!res.ok) throw httpError(res.status, url);
   const data = (await res.json()) as ImmichPredictResponse;
   const emb = parseEmbedding(data.clip);
   if (!emb || emb.length === 0) {
