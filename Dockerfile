@@ -7,6 +7,11 @@ FROM node:22-slim
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
 #  - ffmpeg          : video derivatives (poster + mp4 proxy).
+#  - postgresql-client-16 : pg_dump for the on-demand backup download
+#    (GET /api/db/backup, Settings › Database). Debian bookworm only packages
+#    client v15 — which refuses to dump the v16 server — so the client comes
+#    from the PGDG apt repo via postgresql-common's helper script. Keep the
+#    major in lockstep with the compose files' postgres image.
 #  - libjemalloc2    : drop-in malloc (LD_PRELOAD'd below). sharp/libvips churns
 #    through large short-lived buffers; glibc's default allocator fragments under
 #    that and never returns the freed pages to the OS, so the worker's RSS climbs
@@ -21,9 +26,12 @@ FROM node:22-slim
 # add `intel-media-va-driver-non-free` (non-free repo).
 RUN apt-get update \
   && apt-get install -y --no-install-recommends perl ffmpeg libjemalloc2 \
+       postgresql-common ca-certificates \
   && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
        apt-get install -y --no-install-recommends i965-va-driver vainfo; \
      fi \
+  && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+  && apt-get install -y --no-install-recommends postgresql-client-16 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -2,7 +2,7 @@
 
 // Sub-route tab bar for the Settings section, using the same segmented-control
 // .tabs/.tab styling as the Library section's tab bar so the two read as one
-// family. Text-only tabs: these three panes have no meaningful count to badge.
+// family. Text-only tabs: these panes have no meaningful count to badge.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,6 +10,7 @@ const TABS: { href: string; label: string }[] = [
   { href: "/settings/pipeline", label: "Pipeline" },
   { href: "/settings/volumes", label: "Volumes" },
   { href: "/settings/import", label: "Import" },
+  { href: "/settings/database", label: "Database" },
 ];
 
 export default function SettingsNav() {

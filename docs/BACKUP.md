@@ -61,6 +61,31 @@ ls -lh backups/                   # or /opt/winnow/backups on the Optiplex
 >   ```
 >   (The NAS `Computing` share is already mounted RW for imports.)
 
+## From the UI (Settings › Database)
+
+The **Settings › Database** page is the observability + backup surface for all
+of the above, aimed at the "look before you migrate" moment:
+
+- **What the database weighs** — per-table sizes split into data / TOAST /
+  indexes (TOAST is where the face-embedding JSONB and OCR text actually live),
+  plus the exact on-disk weight of the known-heavy columns
+  (`asset_faces.embedding`, `asset_clip.embedding`, `assets.ocr_text`). So you
+  know whether a backup download is 40 MB or 5 GB *before* clicking.
+- **Download backup** (admin-only) — streams a **fresh** `pg_dump` of the whole
+  database to the browser, in the exact same format as the sidecar's dumps
+  (plain SQL, `--no-owner --no-privileges`, gzipped). The restore procedure
+  below applies to it verbatim. The app image ships the matching
+  `postgresql-client`, and the route refuses (with a clear error) if the
+  client/server majors ever diverge.
+- **Scheduled dumps** — the sidecar's dumps are listed and downloadable when
+  their folder is mounted read-only into the app container (the compose files
+  do this: `./backups:/backups:ro`, or `${WINNOW_DATA}/backups:/backups:ro` on
+  the Optiplex). The app only ever reads that folder — writing and pruning stay
+  the sidecar's job.
+
+A dump downloaded from the UI is a *copy on your workstation* — which is
+exactly the off-box property the sidecar's local dumps lack.
+
 ## Manual backup (ad-hoc)
 
 Before a risky migration or a big bulk edit, take a dump on demand. No `pg_dump`

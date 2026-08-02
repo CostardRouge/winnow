@@ -156,6 +156,10 @@ services:
       - inbox:/data/inbox
       - derivatives:/data/derivatives
       - exports:/data/exports
+      # Sidecar dumps, read-only: Settings › Database lists/serves them. The
+      # app never writes here (fresh dumps stream to the browser; retention
+      # stays the backup sidecar's job).
+      - ./backups:/backups:ro
 
   worker:
     build: .

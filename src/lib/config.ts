@@ -151,6 +151,12 @@ const EnvSchema = z
     DATABASE_URL: strEnv("postgres://winnow:winnow@localhost:5432/winnow"),
     REDIS_URL: strEnv("redis://localhost:6379"),
 
+    // Where the `backup` sidecar's pg_dump files land, as seen from THIS
+    // container (compose mounts the host dir read-only into the app). The
+    // Settings › Database page lists/serves them from here; when the dir isn't
+    // mounted the page just says so — nothing else depends on it.
+    BACKUPS_DIR: strEnv("/backups"),
+
     // --- Derivative storage -----------------------------------------------
     // "disk" driver (MVP) or "s3" (MinIO later). The interface is identical
     // on the code side: we manipulate keys, read/write bytes, sign URLs.
@@ -395,6 +401,7 @@ function loadConfig() {
   return {
     databaseUrl: e.DATABASE_URL,
     redisUrl: e.REDIS_URL,
+    backupsDir: e.BACKUPS_DIR,
 
     storage: {
       driver: e.STORAGE_DRIVER,
