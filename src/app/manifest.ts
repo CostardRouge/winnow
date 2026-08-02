@@ -73,7 +73,7 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         name: "Import",
         short_name: "Import",
-        url: "/import",
+        url: "/settings/import",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
     ],

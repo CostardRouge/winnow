@@ -4657,7 +4657,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* =======================================================================
-     Import (/import) — the media intake page. Lives in the shared .pipeline-body
+     Import (/settings/import) — the media intake page. Lives in the shared .pipeline-body
      (same p-5 page margin as Library / Sift / Pipeline / Volumes). A big
      drag-and-drop hero up top, then the live job status, then the secondary
      server-side sources.

@@ -435,7 +435,7 @@ export default function SessionsPane({
           title="No incoming sessions yet"
           hint="Add a NAS folder in Volumes and start a scan to populate the triage queue."
         >
-          <Link href="/volumes" className="btn btn-primary">
+          <Link href="/settings/volumes" className="btn btn-primary">
             {Icons.folderPlus} Add folder
           </Link>
         </EmptyState>

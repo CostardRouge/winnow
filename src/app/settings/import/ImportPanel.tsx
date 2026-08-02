@@ -7,8 +7,8 @@
 // about the always-on watched share. Whatever the source, the server dedupes
 // and files everything by date & device; originals are never modified.
 //
-// Just the panel — no page chrome — so the standalone /import route and the
-// Import tab of /settings render the exact same surface from one source.
+// Just the panel — no page chrome — the Import tab of /settings supplies the
+// surrounding shell.
 //
 // Folder uploads keep their directory structure (webkitRelativePath / dropped
 // directory entries → the "paths" field on /api/upload), so a clip and its
