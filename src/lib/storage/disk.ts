@@ -1,7 +1,7 @@
 // Disk backend (MVP). Keys are mapped to file paths under
 // STORAGE_DISK_PATH. No signed URL: the API route serves the bytes.
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile, rm, stat as fsStat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, rm, stat as fsStat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { config } from "../config";
@@ -22,7 +22,18 @@ export class DiskStorage implements Storage {
   async put(key: string, body: Buffer): Promise<void> {
     const target = safeJoin(this.base, key);
     await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, body);
+    // Write-then-rename (same idiom as the export/import copiers): a crash
+    // mid-write leaves a `.part` file, never a truncated derivative under the
+    // final key that the DB already marks `ready`. rename() is atomic on the
+    // same filesystem.
+    const part = `${target}.part`;
+    try {
+      await writeFile(part, body);
+      await rename(part, target);
+    } catch (err) {
+      await rm(part, { force: true }).catch(() => {});
+      throw err;
+    }
   }
 
   async get(key: string): Promise<Buffer | null> {

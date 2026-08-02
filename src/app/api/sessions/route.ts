@@ -153,9 +153,12 @@ export async function GET(req: NextRequest) {
          COALESCE(samp.sample, '[]'::jsonb) AS sample_assets
        FROM sessions s
        JOIN roots rt ON rt.id = s.root_id
-       LEFT JOIN (
+       -- Per-session tallies as a LATERAL scoped to s.id (like samp below):
+       -- the aggregate walks only that session's index slice instead of
+       -- re-aggregating the entire live library on every page load, which is
+       -- what the previous unscoped GROUP BY session_id subquery did.
+       LEFT JOIN LATERAL (
          SELECT
-           a.session_id,
            count(*)                                                                    AS live,
            count(*) FILTER (WHERE a.derivative_status = 'ready')                       AS ready,
            count(*) FILTER (WHERE a.derivative_status IN ('pending','processing'))     AS pending,
@@ -171,18 +174,16 @@ export async function GET(req: NextRequest) {
              / NULLIF(count(*), 0)                                                     AS frac
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
-         WHERE a.deleted_at IS NULL
-         GROUP BY a.session_id
-       ) d ON d.session_id = s.id
+         WHERE a.session_id = s.id AND a.deleted_at IS NULL
+       ) d ON true
        -- Companion-pair tallies per session, so the export modal can show the
        -- RAW+JPEG / Live Photo options only when the session actually has them.
-       LEFT JOIN (
-         SELECT session_id,
-                count(*) FILTER (WHERE kind = 'raw_jpeg')   AS raw_jpeg_pairs,
+       LEFT JOIN LATERAL (
+         SELECT count(*) FILTER (WHERE kind = 'raw_jpeg')   AS raw_jpeg_pairs,
                 count(*) FILTER (WHERE kind = 'live_photo')  AS live_photo_pairs
          FROM asset_groups
-         GROUP BY session_id
-       ) g ON g.session_id = s.id
+         WHERE session_id = s.id
+       ) g ON true
        -- A handful of ready thumbnails (earliest first) to preview the session,
        -- carrying each file's extension + media type so the strip can badge them.
        LEFT JOIN LATERAL (

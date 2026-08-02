@@ -8,6 +8,14 @@ import { fetchJson } from "@/lib/fetchJson";
 import { EmptyState, Icons } from "../../../ui";
 import PullToRefresh from "../../../PullToRefresh";
 
+type ScanProgress = {
+  scanned?: number;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+  failed?: number;
+};
+
 type ScanJob = {
   job_id: string;
   state: string;
@@ -16,6 +24,8 @@ type ScanJob = {
   timestamp: number | null;
   finished_at: number | null;
   failed_reason: string | null;
+  // Live counters of an active scan, reported by the indexer every ~200 files.
+  progress: ScanProgress | null;
   root_id: number | null;
   path: string | null;
   kind: string | null;
@@ -274,6 +284,17 @@ function RootGroupCard({
               job #{j.job_id}
               {j.attempts ? ` · ${j.attempts} attempt(s)` : ""}
             </span>
+            {/* Live counters while the walk runs: an hours-long scan should
+                read as moving, not as an opaque "active" pill. */}
+            {j.state === "active" && j.progress?.scanned != null && (
+              <span className="pl-run-meta">
+                {j.progress.scanned.toLocaleString()} scanned
+                {j.progress.inserted ? ` · ${j.progress.inserted.toLocaleString()} new` : ""}
+                {j.progress.updated ? ` · ${j.progress.updated.toLocaleString()} updated` : ""}
+                {j.progress.skipped ? ` · ${j.progress.skipped.toLocaleString()} unchanged` : ""}
+                {j.progress.failed ? ` · ${j.progress.failed.toLocaleString()} failed` : ""}
+              </span>
+            )}
             <span className="spacer" />
             <button
               className="btn btn-sm btn-reject"

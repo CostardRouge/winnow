@@ -270,11 +270,15 @@ export async function enqueueDerivative(
 // --- Scan/analyze pipeline control ------------------------------------------
 
 // Global pause/resume (persisted in Redis: workers of all processes
-// respect it). We suspend indexing AND derivative generation.
+// respect it). Suspends every BACKGROUND queue — indexing, derivatives, ML,
+// geocoding, integrity, GPS write-back. import/export/purge stay out: those
+// are explicit user actions, not background churn, and pausing them mid-batch
+// would strand half-moved files.
 export async function setScanPaused(paused: boolean): Promise<void> {
-  const { index, derivatives } = getQueues();
-  if (paused) await Promise.all([index.pause(), derivatives.pause()]);
-  else await Promise.all([index.resume(), derivatives.resume()]);
+  const { index, derivatives, ml, geocode, integrity, gpswrite } = getQueues();
+  const targets = [index, derivatives, ml, geocode, integrity, gpswrite];
+  if (paused) await Promise.all(targets.map((t) => t.pause()));
+  else await Promise.all(targets.map((t) => t.resume()));
 }
 
 // Priority of the next pending scan (smaller = higher priority), or null
@@ -330,6 +334,10 @@ export type QueueJobInfo = {
   processedOn: number | null;
   finishedOn: number | null;
   failedReason: string | null;
+  // Live counters reported by the handler via job.updateProgress() (today:
+  // scans → {scanned, inserted, updated, skipped, failed}). Null when the
+  // handler reports none.
+  progress: Record<string, unknown> | null;
 };
 
 // Includes "completed" so the triage pages can show a job's full run history
@@ -367,6 +375,10 @@ export async function listQueueJobs(
         processedOn: job.processedOn ?? null,
         finishedOn: job.finishedOn ?? null,
         failedReason: job.failedReason ?? null,
+        progress:
+          job.progress && typeof job.progress === "object"
+            ? (job.progress as Record<string, unknown>)
+            : null,
       } satisfies QueueJobInfo;
     }),
   );
@@ -420,6 +432,28 @@ export async function enqueueMl(
     ...defaultJobOpts,
     priority: opts.priority ?? PRIORITY.normal,
   });
+}
+
+// Bulk variant for the backfills: an 80k-asset library is 80 addBulk round
+// trips instead of 80 000 sequential adds inside an HTTP handler. Same job
+// name/options as enqueueMl.
+export async function enqueueMlBulk(
+  assetIds: number[],
+  opts: { priority?: number } = {},
+): Promise<number> {
+  const queue = getQueues().ml;
+  const jobOpts = { ...defaultJobOpts, priority: opts.priority ?? PRIORITY.normal };
+  const CHUNK = 1000;
+  for (let i = 0; i < assetIds.length; i += CHUNK) {
+    await queue.addBulk(
+      assetIds.slice(i, i + CHUNK).map((assetId) => ({
+        name: "ml",
+        data: { assetId } satisfies MlJob,
+        opts: jobOpts,
+      })),
+    );
+  }
+  return assetIds.length;
 }
 
 // Enqueue an integrity sweep (cf. lib/integrity.ts), coalescing like scans do:

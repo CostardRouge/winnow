@@ -22,7 +22,12 @@ export const pool: pg.Pool =
   global.__winnowPool ??
   new pg.Pool({
     connectionString: config.databaseUrl,
-    max: 10,
+    // Per-process cap (DB_POOL_MAX): the app and the worker each run their own
+    // pool. Size against the sum of worker concurrencies.
+    max: config.dbPoolMax,
+    // pg_stat_activity attribution: which process owns a connection/query.
+    application_name:
+      process.env.WINNOW_PROCESS === "worker" ? "winnow-worker" : "winnow-app",
     // Timeouts: prevent a pending query or an unreachable Postgres from
     // exhausting the pool and freezing all the routes.
     connectionTimeoutMillis: 5000, // fail fast if the server does not respond
@@ -55,4 +60,22 @@ export async function many<T extends pg.QueryResultRow = pg.QueryResultRow>(
 ): Promise<T[]> {
   const r = await q<T>(text, params);
   return r.rows;
+}
+
+// Runs `fn` inside a single transaction on a dedicated connection. Everything
+// else in this codebase is deliberately autocommit; reach for this only where a
+// multi-statement write must be all-or-nothing (e.g. replacing a face set).
+export async function tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const out = await fn(client);
+    await client.query("COMMIT");
+    return out;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }

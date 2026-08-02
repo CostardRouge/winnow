@@ -19,7 +19,7 @@
 import sharp from "sharp";
 import { config } from "./config";
 import { getSettings } from "./settings";
-import { many, one, q } from "./db";
+import { many, one, q, tx } from "./db";
 import { reserveSlot, sleep } from "./rate";
 import { getStorage } from "./storage/index";
 
@@ -384,12 +384,19 @@ async function computeImageMetrics(image: Buffer): Promise<ImageMetrics> {
 // shared limiter as scan/analyze/geocode: paces the backfill so the ML box (often
 // the same CPU as everything else) is never pinned. 0 = unlimited.
 async function throttleMl(): Promise<void> {
-  const { mlPerHour } = await getSettings();
-  if (mlPerHour <= 0) return;
-  let wait = await reserveSlot("ml", mlPerHour);
-  while (wait > 0) {
+  for (;;) {
+    // Respect the global pipeline pause: the queue pause only stops NEW
+    // pickups, so a job already in flight idles here (same as the indexer's
+    // mid-scan check) instead of hitting the provider while paused.
+    const { scanPaused, mlPerHour } = await getSettings();
+    if (scanPaused) {
+      await sleep(3000);
+      continue;
+    }
+    if (mlPerHour <= 0) return;
+    const wait = await reserveSlot("ml", mlPerHour);
+    if (wait <= 0) return;
     await sleep(Math.min(wait, 3000));
-    wait = await reserveSlot("ml", mlPerHour);
   }
 }
 
@@ -493,45 +500,55 @@ export async function runMlJob(assetId: number): Promise<void> {
     }
 
     // Replace wholesale: a re-analysis (new model, regenerated derivative) must
-    // never accumulate stale faces next to fresh ones.
-    if (facesRan) {
-      await q("DELETE FROM asset_faces WHERE asset_id=$1", [assetId]);
-      for (const f of result.faces) {
-        await q(
-          `INSERT INTO asset_faces
-             (asset_id, score, x1, y1, x2, y2, img_width, img_height, embedding)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
-          [
-            assetId,
-            f.score,
-            f.x1,
-            f.y1,
-            f.x2,
-            f.y2,
-            result.imgWidth,
-            result.imgHeight,
-            f.embedding ? JSON.stringify(f.embedding) : null,
-          ],
-        );
+    // never accumulate stale faces next to fresh ones. One transaction and one
+    // multi-row INSERT, so a crash can't leave a partial face set (or a
+    // face_count that disagrees with the rows) behind.
+    await tx(async (client) => {
+      if (facesRan) {
+        await client.query("DELETE FROM asset_faces WHERE asset_id=$1", [assetId]);
+        if (result.faces.length) {
+          await client.query(
+            `INSERT INTO asset_faces
+               (asset_id, score, x1, y1, x2, y2, img_width, img_height, embedding)
+             SELECT $1, f.score, f.x1, f.y1, f.x2, f.y2, $2, $3, f.embedding
+             FROM jsonb_to_recordset($4::jsonb)
+               AS f(score real, x1 int, y1 int, x2 int, y2 int, embedding jsonb)`,
+            [
+              assetId,
+              result.imgWidth,
+              result.imgHeight,
+              JSON.stringify(
+                result.faces.map((f) => ({
+                  score: f.score,
+                  x1: f.x1,
+                  y1: f.y1,
+                  x2: f.x2,
+                  y2: f.y2,
+                  embedding: f.embedding,
+                })),
+              ),
+            ],
+          );
+        }
       }
-    }
-    await q(
-      `UPDATE assets SET
-         face_count = CASE WHEN $2::boolean THEN $3::int  ELSE face_count END,
-         ocr_text   = CASE WHEN $4::boolean THEN $5::text ELSE ocr_text   END,
-         sharpness=$6, phash=$7::bigint,
-         ml_status='ready', ml_error=NULL, updated_at=now()
-       WHERE id=$1`,
-      [
-        assetId,
-        facesRan,
-        result.faces.length,
-        ocrRan,
-        result.ocrText,
-        metrics.sharpness,
-        metrics.phash,
-      ],
-    );
+      await client.query(
+        `UPDATE assets SET
+           face_count = CASE WHEN $2::boolean THEN $3::int  ELSE face_count END,
+           ocr_text   = CASE WHEN $4::boolean THEN $5::text ELSE ocr_text   END,
+           sharpness=$6, phash=$7::bigint,
+           ml_status='ready', ml_error=NULL, updated_at=now()
+         WHERE id=$1`,
+        [
+          assetId,
+          facesRan,
+          result.faces.length,
+          ocrRan,
+          result.ocrText,
+          metrics.sharpness,
+          metrics.phash,
+        ],
+      );
+    });
   } catch (err) {
     await q(
       "UPDATE assets SET ml_status='error', ml_error=$2, updated_at=now() WHERE id=$1",

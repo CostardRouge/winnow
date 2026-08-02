@@ -149,6 +149,10 @@ function enumEnv<const T extends readonly [string, ...string[]]>(
 const EnvSchema = z
   .object({
     DATABASE_URL: strEnv("postgres://winnow:winnow@localhost:5432/winnow"),
+    // Per-PROCESS connection cap: the app and the worker each open their own
+    // pool, so Postgres sees up to 2× this. Size it against the sum of the
+    // worker concurrencies (each active job may hold a connection).
+    DB_POOL_MAX: intEnv(10, { min: 1, max: 100 }),
     REDIS_URL: strEnv("redis://localhost:6379"),
 
     // Where the `backup` sidecar's pg_dump files land, as seen from THIS
@@ -400,6 +404,7 @@ function loadConfig() {
 
   return {
     databaseUrl: e.DATABASE_URL,
+    dbPoolMax: e.DB_POOL_MAX,
     redisUrl: e.REDIS_URL,
     backupsDir: e.BACKUPS_DIR,
 
