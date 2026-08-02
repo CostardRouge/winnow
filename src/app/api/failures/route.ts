@@ -6,6 +6,7 @@
 //   - missing    : assets.missing_at (originals gone from disk)            [lib/integrity.ts]
 import { many, one } from "@/lib/db";
 import { failureCounts } from "@/lib/failures";
+import { viewOnlyChecker } from "@/lib/duplicates";
 import { listMissing, type MissingItem } from "@/lib/integrity";
 import { json, serverError } from "@/lib/api";
 
@@ -17,7 +18,7 @@ const LIMIT = 200;
 // Guarded so a missing table (pre-migration) never breaks the other families.
 async function duplicateHits() {
   try {
-    const [rows, counts] = await Promise.all([
+    const [rows, counts, isViewOnly] = await Promise.all([
       many<{
         abs_path: string;
         content_hash: string;
@@ -32,6 +33,7 @@ async function duplicateHits() {
         existing_media_type: string | null;
         existing_has_thumb: boolean | null;
         existing_deleted: boolean | null;
+        existing_purged: boolean | null;
       }>(
         // LEFT JOIN the kept asset so the UI can show its thumbnail (the copies
         // are identical, so its thumbnail stands in for the duplicate) and lay
@@ -44,7 +46,8 @@ async function duplicateHits() {
                 a.abs_path               AS existing_abs_path,
                 a.media_type             AS existing_media_type,
                 (a.thumb_key IS NOT NULL) AS existing_has_thumb,
-                (a.deleted_at IS NOT NULL) AS existing_deleted
+                (a.deleted_at IS NOT NULL) AS existing_deleted,
+                (a.purged_at IS NOT NULL) AS existing_purged
            FROM duplicate_hits d
            LEFT JOIN assets a ON a.id = d.existing_asset_id
           ORDER BY d.updated_at DESC
@@ -55,6 +58,10 @@ async function duplicateHits() {
                 count(*) FILTER (WHERE verified IS FALSE) AS false_collisions
            FROM duplicate_hits`,
       ),
+      // Final/Export volumes are view-only: their files are never deleted (cf.
+      // lib/duplicates). Flagged per copy so the UI stops offering the action
+      // instead of letting the user discover the refusal.
+      viewOnlyChecker(),
     ]);
     const items = rows.map((r) => ({
       abs_path: r.abs_path,
@@ -65,6 +72,7 @@ async function duplicateHits() {
       hits: r.hits,
       file_size: r.file_size,
       updated_at: r.updated_at,
+      view_only: isViewOnly(r.abs_path),
       existing: r.existing_asset_id
         ? {
             id: r.existing_asset_id,
@@ -73,6 +81,10 @@ async function duplicateHits() {
             media_type: r.existing_media_type,
             has_thumb: !!r.existing_has_thumb,
             deleted: !!r.existing_deleted,
+            purged: !!r.existing_purged,
+            view_only: r.existing_abs_path
+              ? isViewOnly(r.existing_abs_path)
+              : false,
           }
         : null,
     }));

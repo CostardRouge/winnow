@@ -2,7 +2,10 @@
 // group of byte-identical copies down to the single copy the user picked. If the
 // survivor is an on-disk copy, the library asset is relinked onto it (preserving
 // its id/rating/tags/derivatives) and the former original is removed; if it's the
-// indexed copy, only the recorded on-disk extras are removed. All the safety
+// indexed copy, only the recorded on-disk extras are removed. A library copy that
+// is already in the trash is never relinked — it is reclaimed instead (file
+// removed, row stamped purged), so a culled media can't be resurrected onto the
+// survivor and then taken down with the next purge. All the safety
 // (eligible members re-derived from the DB, containment checks, false collisions
 // excluded) lives in keepOneCopy.
 import { NextRequest } from "next/server";
@@ -26,6 +29,7 @@ export async function POST(req: NextRequest) {
       kept: r.kept,
       deleted: r.deleted.length,
       relinked: r.relinked,
+      purged: r.purged,
       skipped: r.skipped,
     });
   } catch (err) {
