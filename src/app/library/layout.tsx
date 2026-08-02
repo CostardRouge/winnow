@@ -45,7 +45,7 @@ export default function LibraryLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <div className="topbar">
         <h1>Library</h1>
-        <span className="hint max-sm:hidden">media triage — NAS</span>
+        <span className="hint max-sm:hidden">media triage — organize & review</span>
       </div>
 
       <div className="shell-head">
