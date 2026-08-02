@@ -1393,6 +1393,10 @@ html[data-theme="dark"] .btn-primary:hover {
     background: var(--color-surface-2);
     transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out),
       border-color 0.16s var(--ease-out), opacity 0.16s var(--ease-out);
+    /* Long-press on a tile opens the app's context menu (cf. VirtualGrid) —
+       keep iOS from popping its save-image callout over it. */
+    -webkit-touch-callout: none;
+    user-select: none;
   }
   .cell:hover {
     box-shadow: var(--shadow-card);

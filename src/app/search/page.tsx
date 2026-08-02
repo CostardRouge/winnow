@@ -13,7 +13,14 @@
 // The query lives in the query string (`/search?keywords=…`), the way filters do
 // on Library and Incoming: a search is then shareable, reload-safe, and a deep
 // link from anywhere else lands on results rather than on an empty field.
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { EmptyState, Icons, LoadingState } from "../ui";
@@ -43,6 +50,71 @@ const LIMIT = 120;
 // The query-string key the page reads and writes: /search?keywords=a+red+bicycle
 const PARAM = "keywords";
 
+// Context menu for a search hit — right-click on desktop, long-press on touch
+// (cf. VirtualGrid). A hit lands out of context by construction: the ranking
+// pulls one frame from wherever in the library it lives, so the action search
+// adds over the plain tile is jumping to the session the match belongs to.
+// Clamping and dismissal follow gallery/AssetActionMenu.
+function ResultMenu({
+  x,
+  y,
+  label,
+  onOpenSession,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  onOpenSession: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
+
+  // Clamp into the viewport once the menu has been measured.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      x: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)),
+    });
+  }, [x, y]);
+
+  // Dismiss on outside click, Escape or resize.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="ctx-menu"
+      style={{ left: pos.x, top: pos.y }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="ctx-label">{label}</div>
+      <button className="ctx-item" onClick={onOpenSession}>
+        <span className="ctx-ic">▦</span> Open session
+      </button>
+    </div>
+  );
+}
+
 function SearchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -59,6 +131,11 @@ function SearchPage() {
   const [msg, setMsg] = useState("");
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
+  // Context menu (grid tile or viewer stage): where it sits and which hit it
+  // is for. The one action it offers is opening the hit's session.
+  const [menu, setMenu] = useState<{ x: number; y: number; item: Item } | null>(
+    null,
+  );
   const gridRef = useRef<VirtualGridHandle>(null);
 
   const run = useCallback(
@@ -196,6 +273,10 @@ function SearchPage() {
         loading={false}
         loadMore={() => {}}
         onOpen={setViewer}
+        onContextMenu={(e, a) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, item: a as Item });
+        }}
       />
     );
   };
@@ -317,10 +398,36 @@ function SearchPage() {
             </div>
           )}
           renderActions={(it) => (
-            <a className="btn" href={`/api/assets/${it.id}/download`} download>
-              Download
-            </a>
+            <>
+              <Link
+                className="btn"
+                href={`/sessions/${it.session_id}`}
+                title="Open the session this match belongs to"
+              >
+                Open session
+              </Link>
+              <a className="btn" href={`/api/assets/${it.id}/download`} download>
+                Download
+              </a>
+            </>
           )}
+          onContextMenu={(e, it) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY, item: it });
+          }}
+        />
+      )}
+
+      {menu && (
+        <ResultMenu
+          x={menu.x}
+          y={menu.y}
+          label={menu.item.filename}
+          onOpenSession={() => {
+            setMenu(null);
+            router.push(`/sessions/${menu.item.session_id}`);
+          }}
+          onClose={() => setMenu(null)}
         />
       )}
     </div>
