@@ -252,6 +252,10 @@ services:
       - ${WINNOW_DATA:-/opt/winnow}/inbox:/data/inbox
       - ${WINNOW_DATA:-/opt/winnow}/derivatives:/data/derivatives
       - ${WINNOW_DATA:-/opt/winnow}/exports:/data/exports
+      # Sidecar dumps, read-only: Settings › Database lists/serves them. The
+      # app never writes here (fresh dumps stream to the browser; retention
+      # stays the backup sidecar's job).
+      - ${WINNOW_DATA:-/opt/winnow}/backups:/backups:ro
     labels:
       - traefik.enable=true
       - traefik.http.routers.winnow.rule=Host(`${DOMAIN_NAME}`)

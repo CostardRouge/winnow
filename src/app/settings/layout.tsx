@@ -1,7 +1,7 @@
 import SettingsNav from "./SettingsNav";
 
 // Shared chrome for the Settings section: the heading and the sub-route tab
-// bar (Pipeline / Volumes / Import). The body itself carries no padding/scroll
+// bar (Pipeline / Volumes / Import / Database). The body itself carries no padding/scroll
 // of its own — same as Library's .tab-body — so a section with its own nested
 // sub-nav (Settings › Pipeline) can pin that nav above its own scrolling body
 // instead of scrolling under this one. Plain sections (Volumes, Import) own
@@ -18,7 +18,7 @@ export default function SettingsLayout({
       <div className="topbar">
         <h1>Settings</h1>
         <span className="hint max-sm:hidden">
-          pipeline · volumes · import
+          pipeline · volumes · import · database
         </span>
       </div>
       <div className="shell-head">
