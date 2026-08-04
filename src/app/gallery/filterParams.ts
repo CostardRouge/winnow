@@ -70,6 +70,7 @@ export function encodeFilters(f: Filters): URLSearchParams {
   if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "1" : "0");
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
+  if (f.person_mode === "all") sp.set("person_mode", "all");
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
   return sp;
 }
@@ -135,6 +136,10 @@ export function decodeFilters(params: URLSearchParams): Filters {
   const groupKind = params.get("group_kind");
   if (groupKind === "raw_jpeg" || groupKind === "live_photo")
     f.group_kind = groupKind;
+
+  // People combinator (cf. lib/filter.ts): only "all" is ever encoded ("any"
+  // is the default and stays out of the URL).
+  if (params.get("person_mode") === "all") f.person_mode = "all";
 
   const bbox = csv(params.get("bbox")).map(Number);
   if (bbox.length === 4 && bbox.every((n) => !Number.isNaN(n)))

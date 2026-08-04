@@ -132,9 +132,11 @@ export type Filters = {
   face_count: number[];
   has_faces?: boolean;
   has_text?: boolean;
-  // People (cf. lib/people.ts): keep assets in which ANY selected person
-  // appears. Person ids — labels come from the facet payload.
+  // People (cf. lib/people.ts): keep assets in which the selected people
+  // appear — any of them (default) or all together (`person_mode: "all"`).
+  // Person ids — labels come from the facet payload.
   person: number[];
+  person_mode?: "any" | "all";
   tags: string[];
   year: number[];
   month: number[];
@@ -280,11 +282,15 @@ const PEOPLE_FACET_PAGE = 12;
 function PeopleFacet({
   options,
   selected,
+  mode,
   onToggle,
+  onMode,
 }: {
   options: PersonFacet[];
   selected: number[];
+  mode: "any" | "all";
   onToggle: (id: number) => void;
+  onMode: (mode: "any" | "all") => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Fallback directory for selected ids the facet payload doesn't carry.
@@ -332,7 +338,32 @@ function PeopleFacet({
 
   return (
     <div className="facet">
-      <div className="facet-title">People</div>
+      <div className="facet-title facet-head">
+        People
+        {selected.length > 1 && (
+          // Combinator, meaningful from two picks up: "any of them" (OR, the
+          // categorical default) vs "together" (AND — every picked person in
+          // frame at once).
+          <span className="view-toggle" role="group" aria-label="How the picked people combine">
+            <button
+              className={`view-btn${mode !== "all" ? " active" : ""}`}
+              onClick={() => onMode("any")}
+              aria-pressed={mode !== "all"}
+              title="Media with any of the picked people"
+            >
+              Any
+            </button>
+            <button
+              className={`view-btn${mode === "all" ? " active" : ""}`}
+              onClick={() => onMode("all")}
+              aria-pressed={mode === "all"}
+              title="Media where every picked person is in frame together"
+            >
+              Together
+            </button>
+          </span>
+        )}
+      </div>
       <div className="chips">
         {shown.map((p) => {
           const active = selected.includes(p.id);
@@ -710,7 +741,9 @@ export default function FilterPanel({
         <PeopleFacet
           options={facets.people ?? []}
           selected={filters.person}
+          mode={filters.person_mode ?? "any"}
           onToggle={(id) => u({ person: toggle(filters.person, id) })}
+          onMode={(m) => u({ person_mode: m === "any" ? undefined : m })}
         />
       )}
       {!!facets.with_text && (

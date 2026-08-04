@@ -23,6 +23,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import PersonPicker from "./PersonPicker";
+import SuggestionsModal, { type MergeSuggestion } from "./SuggestionsModal";
 
 export type PersonRow = {
   id: number;
@@ -31,6 +32,9 @@ export type PersonRow = {
   face_count: number;
   asset_count: number;
   cover_face_id: number | null;
+  // Centroid cosine vs the `similar_to` person — only on picker fetches
+  // (GET /api/people?similar_to=), absent from the plain list.
+  similarity?: number;
 };
 
 type PeopleResponse = {
@@ -278,12 +282,20 @@ export default function PeoplePanel() {
     hint?: string;
   } | null>(null);
 
+  // Merge suggestions (near-identical stacks, cf. lib/people.suggestMerges):
+  // best-effort — a failed fetch just means no banner.
+  const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+
   const load = () =>
-    fetchJson<PeopleResponse>("/api/people")
-      .then(setData)
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "Failed to load"),
-      );
+    Promise.all([
+      fetchJson<PeopleResponse>("/api/people").then(setData),
+      fetchJson<{ suggestions: MergeSuggestion[] }>("/api/people/suggestions")
+        .then((d) => setSuggestions(d.suggestions))
+        .catch(() => {}),
+    ]).catch((e: unknown) =>
+      setError(e instanceof Error ? e.message : "Failed to load"),
+    );
 
   useEffect(() => {
     void load();
@@ -511,6 +523,21 @@ export default function PeoplePanel() {
         )}
       </div>
 
+      {suggestions.length > 0 && (
+        // Proposed, never automatic: the banner counts the near-identical
+        // pairs and the modal walks them one merge (or dismissal) at a time.
+        <div className="suggest-banner">
+          <span className="hint">
+            {num(suggestions.length)}{" "}
+            {suggestions.length === 1 ? "pair" : "pairs"} of stacks look like
+            the same person.
+          </span>
+          <button className="btn" onClick={() => setSuggestOpen(true)}>
+            Review
+          </button>
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <EmptyState
           icon={Icons.people}
@@ -545,6 +572,15 @@ export default function PeoplePanel() {
             />
           ))}
         </div>
+      )}
+
+      {suggestOpen && data && (
+        <SuggestionsModal
+          suggestions={suggestions}
+          people={data.people}
+          onClose={() => setSuggestOpen(false)}
+          onMerged={() => void load()}
+        />
       )}
 
       {merging && (
