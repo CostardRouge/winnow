@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
+import { Icons } from "./ui";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { fetchJson } from "@/lib/fetchJson";
 
@@ -182,6 +183,7 @@ export default function MediaViewer<T extends ViewerItem>({
   renderActions,
   onKeyDown,
   onContextMenu,
+  currentPersonId,
 }: {
   items: T[];
   index: number;
@@ -205,6 +207,11 @@ export default function MediaViewer<T extends ViewerItem>({
   /** Extra key handling (e.g. rating shortcuts); skipped while typing. */
   onKeyDown?: (e: KeyboardEvent, item: T) => void;
   onContextMenu?: (e: React.MouseEvent, item: T) => void;
+  /** When the host page IS one person's page (people/[id]), that person's id:
+   *  their own face boxes/chips then CLOSE the viewer (you are already where
+   *  the link would go) instead of dead-navigating to the same route; every
+   *  other person keeps the navigation and wears a link glyph to say so. */
+  currentPersonId?: number;
 }) {
   const last = items.length - 1;
 
@@ -1007,6 +1014,9 @@ export default function MediaViewer<T extends ViewerItem>({
                     };
                     const cls = `face-box${activeFaceId === f.id ? " active" : ""}`;
                     const label = f.person_name ?? "Unnamed";
+                    const isCurrent =
+                      currentPersonId != null &&
+                      f.person_id === currentPersonId;
                     const hover = {
                       onMouseEnter: () => setActiveFaceId(f.id),
                       onMouseLeave: () =>
@@ -1014,6 +1024,23 @@ export default function MediaViewer<T extends ViewerItem>({
                       onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
                       onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
                     };
+                    if (isCurrent) {
+                      // Their page is right behind the viewer: closing IS the
+                      // navigation (a same-route Link would silently no-op).
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          className={cls}
+                          style={style}
+                          title={`${label} — you're on their page; close the viewer`}
+                          onClick={onClose}
+                          {...hover}
+                        >
+                          <span className="face-box-label">{label}</span>
+                        </button>
+                      );
+                    }
                     return f.person_id != null ? (
                       <Link
                         key={f.id}
@@ -1023,7 +1050,12 @@ export default function MediaViewer<T extends ViewerItem>({
                         title={`${label} — open their page`}
                         {...hover}
                       >
-                        <span className="face-box-label">{label}</span>
+                        <span className="face-box-label">
+                          {label}
+                          <span className="face-box-link" aria-hidden>
+                            {Icons.external}
+                          </span>
+                        </span>
                       </Link>
                     ) : (
                       <span key={f.id} className={cls} style={style} {...hover}>
@@ -1309,6 +1341,9 @@ export default function MediaViewer<T extends ViewerItem>({
                   {faces!.map((f) => {
                     const label = f.person_name ?? "Unnamed";
                     const cls = `chip person-chip${activeFaceId === f.id ? " active" : ""}`;
+                    const isCurrent =
+                      currentPersonId != null &&
+                      f.person_id === currentPersonId;
                     const crop = (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -1323,6 +1358,21 @@ export default function MediaViewer<T extends ViewerItem>({
                       onMouseLeave: () =>
                         setActiveFaceId((cur) => (cur === f.id ? null : cur)),
                     };
+                    if (isCurrent) {
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          className={cls}
+                          title={`${label} — you're on their page; close the viewer`}
+                          onClick={onClose}
+                          {...hover}
+                        >
+                          {crop}
+                          {label}
+                        </button>
+                      );
+                    }
                     return f.person_id != null ? (
                       <Link
                         key={f.id}
@@ -1333,6 +1383,9 @@ export default function MediaViewer<T extends ViewerItem>({
                       >
                         {crop}
                         {label}
+                        <span className="chip-link" aria-hidden>
+                          {Icons.external}
+                        </span>
                       </Link>
                     ) : (
                       <span key={f.id} className={cls} title={label} {...hover}>
