@@ -24,7 +24,7 @@
 // The lock serializes writers globally; readers are never blocked.
 import type pg from "pg";
 import { config } from "./config";
-import { many, tx } from "./db";
+import { many, one, tx } from "./db";
 
 // The advisory lock key for every people writer (assignment + merge). One
 // arbitrary constant, distinct from anything else in the app (Postgres advisory
@@ -413,38 +413,91 @@ export async function reassignFaces(
 // threshold — the clusterer's near-misses, almost always one real person split
 // in two (different lighting, glasses on/off, years apart). Surfaced on
 // /people as merge SUGGESTIONS: proposed, never auto-applied — a human clicks
-// each merge. O(n²) over centroids, fine for the bounded people count.
+// each merge.
+//
+// The pair scan is O(n²·512) and a library's long tail of one-face strangers
+// makes n large, so this is engineered to never hurt the page it serves:
+//   * MEMOIZED on a cheap fingerprint of the people table — every mutation
+//     that can change a suggestion also bumps a row's updated_at or the row
+//     count (assign/merge/rename/hide/prune), so an unchanged fingerprint
+//     returns the cached pairs with no centroid load and no math at all.
+//     Repeat /people visits (the common case) cost ~one tiny query.
+//   * COLD RUNS pre-normalize each centroid once into a unit Float64Array
+//     (each pair is then a bare dot product), and the outer loop yields the
+//     event loop every few rows — Node is single-threaded, and an unyielding
+//     scan would stall the people list and every face-crop request the page
+//     fires alongside (exactly the "shelf got slow" regression this fixes).
 const SUGGESTION_MARGIN = 0.1; // how far below the assignment threshold to look
 const SUGGESTION_FLOOR = 0.3; // never suggest below this — noise territory
+const SUGGESTION_YIELD_ROWS = 64; // outer-loop rows between event-loop yields
 
-export async function suggestMerges(
-  limit = 20,
-): Promise<{ a: number; b: number; similarity: number }[]> {
+type SuggestionPair = { a: number; b: number; similarity: number };
+let suggestionCache: { fingerprint: string; pairs: SuggestionPair[] } | null =
+  null;
+
+// Unit-normalize into a Float64Array; null for a degenerate (zero) vector.
+function unitVector(v: number[]): Float64Array | null {
+  let norm = 0;
+  for (let i = 0; i < v.length; i++) norm += v[i] * v[i];
+  norm = Math.sqrt(norm);
+  if (!(norm > 0)) return null;
+  const out = new Float64Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] / norm;
+  return out;
+}
+
+export async function suggestMerges(limit = 20): Promise<SuggestionPair[]> {
+  // Fingerprint before anything heavy: count catches inserts/prunes, the max
+  // updated_at catches every in-place change (centroid drift, merge, rename,
+  // hide). Per-process cache — a second app replica just recomputes once.
+  const fp = await one<{ n: number; ts: string | null }>(
+    `SELECT count(*)::int AS n, max(updated_at)::text AS ts FROM people`,
+  );
+  const fingerprint = `${fp?.n ?? 0}:${fp?.ts ?? ""}`;
+  if (suggestionCache?.fingerprint === fingerprint) {
+    return suggestionCache.pairs.slice(0, limit);
+  }
+
   const rows = await many<{ id: number; centroid: number[] | null }>(
     `SELECT id, centroid FROM people
       WHERE NOT hidden AND centroid IS NOT NULL
       ORDER BY id`,
   );
-  const people = rows.filter(
-    (r) => Array.isArray(r.centroid) && r.centroid.length > 0,
-  );
+  // Normalize once; pairs whose dimensions differ (two face models) are
+  // skipped in the scan, mirroring cosineSimilarity's -1.
+  const people: { id: number; unit: Float64Array }[] = [];
+  for (const r of rows) {
+    if (!Array.isArray(r.centroid) || r.centroid.length === 0) continue;
+    const unit = unitVector(r.centroid);
+    if (unit) people.push({ id: r.id, unit });
+  }
+
   const threshold = Math.max(
     SUGGESTION_FLOOR,
     config.ml.person.minSimilarity - SUGGESTION_MARGIN,
   );
-  const pairs: { a: number; b: number; similarity: number }[] = [];
+  const pairs: SuggestionPair[] = [];
   for (let i = 0; i < people.length; i++) {
+    // Let queued requests (the people list, face crops) interleave with the
+    // scan instead of starving behind it until the whole triangle is done.
+    if (i > 0 && i % SUGGESTION_YIELD_ROWS === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const a = people[i].unit;
     for (let j = i + 1; j < people.length; j++) {
-      const sim = cosineSimilarity(
-        people[i].centroid as number[],
-        people[j].centroid as number[],
-      );
-      if (sim >= threshold) {
-        pairs.push({ a: people[i].id, b: people[j].id, similarity: sim });
+      const b = people[j].unit;
+      if (a.length !== b.length) continue;
+      let dot = 0;
+      for (let k = 0; k < a.length; k++) dot += a[k] * b[k];
+      if (dot >= threshold) {
+        pairs.push({ a: people[i].id, b: people[j].id, similarity: dot });
       }
     }
   }
   pairs.sort((x, y) => y.similarity - x.similarity);
+  // Cache the full sorted set (it's small — threshold-filtered), sliced per
+  // caller so different limits share one computation.
+  suggestionCache = { fingerprint, pairs };
   return pairs.slice(0, limit);
 }
 

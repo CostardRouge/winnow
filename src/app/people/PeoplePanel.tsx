@@ -287,15 +287,24 @@ export default function PeoplePanel() {
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
 
+  // Deliberately SEQUENTIAL: the shelf paints (and its face crops start
+  // loading) before the suggestions request kicks off — a cold suggestion
+  // scan is the heaviest thing this page triggers, and racing it against the
+  // first paint is what made the shelf feel slow. The banner pops in when
+  // (and if) suggestions arrive.
   const load = () =>
-    Promise.all([
-      fetchJson<PeopleResponse>("/api/people").then(setData),
-      fetchJson<{ suggestions: MergeSuggestion[] }>("/api/people/suggestions")
-        .then((d) => setSuggestions(d.suggestions))
-        .catch(() => {}),
-    ]).catch((e: unknown) =>
-      setError(e instanceof Error ? e.message : "Failed to load"),
-    );
+    fetchJson<PeopleResponse>("/api/people")
+      .then((d) => {
+        setData(d);
+        return fetchJson<{ suggestions: MergeSuggestion[] }>(
+          "/api/people/suggestions",
+        )
+          .then((s) => setSuggestions(s.suggestions))
+          .catch(() => {});
+      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Failed to load"),
+      );
 
   useEffect(() => {
     void load();
