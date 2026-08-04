@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
       cities,
       pois,
       faces,
+      people,
       withText,
       withPhash,
       bursts,
@@ -144,6 +145,22 @@ export async function GET(req: NextRequest) {
       // "analyzed, nobody in frame" is a meaningful pick) + how many assets
       // carry OCR-read text (drives the "Has text" toggle).
       settledArray(facet("face_count", scope, params, "value ASC")),
+      // People facet (cf. lib/people.ts): who appears in scope, busiest first,
+      // one chip each (id + name — unnamed people chip as "Unnamed"). Counted
+      // over assets (not faces), because that is what picking the chip filters.
+      // Capped: beyond the top rows the chips are one-off background strangers,
+      // and the /people page is the place to browse ALL of them.
+      many<{ id: number; name: string | null; count: number }>(
+        `SELECT p.id, p.name, count(DISTINCT a.id)::int AS count
+         FROM people p
+         JOIN asset_faces f ON f.person_id = p.id
+         JOIN assets a ON a.id = f.asset_id
+         WHERE true${scope}
+         GROUP BY p.id, p.name
+         ORDER BY count DESC, p.name ASC NULLS LAST, p.id ASC
+         LIMIT 30`,
+        params,
+      ).catch(() => [] as { id: number; name: string | null; count: number }[]),
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a
          WHERE a.ocr_text IS NOT NULL${scope}`,
@@ -238,6 +255,7 @@ export async function GET(req: NextRequest) {
       place_cities: cities,
       place_pois: pois,
       faces,
+      people,
       with_text: withText?.count ?? 0,
       with_phash: withPhash?.count ?? 0,
       bursts: bursts ?? { piles: 0, frames: 0 },

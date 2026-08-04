@@ -23,7 +23,7 @@ const STR_ARRAYS = [
   "place_poi",
   "tags",
 ] as const;
-const NUM_ARRAYS = ["year", "month", "day", "face_count"] as const;
+const NUM_ARRAYS = ["year", "month", "day", "face_count", "person"] as const;
 const NUMS = [
   "root_id",
   "session_id",
@@ -89,6 +89,7 @@ export function decodeFilters(params: URLSearchParams): Filters {
     place_city: [],
     place_poi: [],
     face_count: [],
+    person: [],
     tags: [],
     year: [],
     month: [],

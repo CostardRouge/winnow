@@ -30,6 +30,7 @@ import { runImport } from "./lib/import";
 import { runGeocodeJob } from "./lib/geocode";
 import { runGpsWriteJob } from "./lib/exifWrite";
 import { runMlJob } from "./lib/ml";
+import { assignAllPending } from "./lib/people";
 import { bootstrapRoots } from "./lib/bootstrap";
 import { startInboxWatcher } from "./lib/watcher";
 import { closeExiftool } from "./lib/extract";
@@ -205,10 +206,19 @@ const gpsWriteWorker = new Worker(
 // ML analysis (faces + OCR, cf. lib/ml.ts): sends the existing derivative to the
 // immich-machine-learning container. Concurrency defaults to 1 (the container
 // queues without backpressure) and the call is drip-fed by mlPerHour, so the
-// 80k backfill never pins the box.
+// 80k backfill never pins the box. The same queue also carries the
+// "people-backfill" sweep (cf. lib/people.ts) — pure DB work that clusters the
+// already-stored face embeddings into persons, so it needs neither the
+// container nor the mlPerHour drip; riding this queue just keeps every
+// ML-flavoured job in one place.
 const mlWorker = new Worker(
   QUEUES.ml,
   async (job) => {
+    if (job.name === "people-backfill") {
+      const assigned = await assignAllPending((msg) => console.log(msg));
+      console.log(`[people] backfill done: ${assigned} faces assigned`);
+      return;
+    }
     await runMlJob((job.data as MlJob).assetId);
   },
   { connection, concurrency: config.ml.concurrency },

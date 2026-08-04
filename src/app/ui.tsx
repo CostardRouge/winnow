@@ -330,6 +330,21 @@ export const Icons = {
       <path d="M17.5 13.9a6.5 6.5 0 0 1 4 6.1" />
     </svg>
   ),
+  // A pencil — inline rename (person cards, cf. people/PeoplePanel).
+  pencil: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3.5a2.1 2.1 0 0 1 3 3L8.5 18l-4 1 1-4L17 3.5Z" />
+    </svg>
+  ),
+  // A face in a frame — the People section (faces clustered into persons,
+  // cf. lib/people.ts). Distinct from `users` above (account management).
+  people: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="10" r="3.2" />
+      <path d="M6.2 19a6.5 6.5 0 0 1 11.6 0" />
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    </svg>
+  ),
   signout: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 4h-8a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8" />

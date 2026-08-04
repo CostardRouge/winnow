@@ -37,6 +37,12 @@ const NAV: NavItem[] = [
     match: (p) => p.startsWith("/search"),
   },
   {
+    href: "/people",
+    label: "People",
+    icon: Icons.people,
+    match: (p) => p.startsWith("/people"),
+  },
+  {
     href: "/gear",
     label: "Gear",
     icon: Icons.gear,
@@ -45,7 +51,7 @@ const NAV: NavItem[] = [
 ];
 // Pipeline, Volumes and Import used to sit here too. They're configuration
 // rather than day-to-day work, so they moved into the Settings section (reached
-// from the account popover below) and the rail keeps only the four places you
+// from the account popover below) and the rail keeps only the places you
 // actually spend time. The pipeline triage lists now live under
 // /settings/pipeline/* and are still deep-linked from the counters bento and
 // the Library stats strip.

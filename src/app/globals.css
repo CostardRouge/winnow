@@ -4954,6 +4954,177 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
+/* ---- People: the shelf of clustered faces (page /people) -----------------
+   Same catalogue language as the Gear shelf, but the "artwork" is a circular
+   face crop (GET /api/faces/:id/thumb). Cards stay chrome-less until hover;
+   the pencil floats on the card corner so naming never costs a navigation. */
+@layer components {
+  .people-shelf {
+    @apply flex flex-col gap-5;
+  }
+  .people-grid {
+    @apply grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 22px 12px;
+  }
+  .person-card-wrap {
+    @apply relative;
+  }
+  .person-card {
+    @apply flex flex-col items-center gap-2 rounded-[var(--radius-lg)] border
+      px-2 pb-3 pt-3 text-center transition duration-150;
+    color: var(--color-text);
+    background: transparent;
+    border-color: transparent;
+    transition-timing-function: var(--ease-out);
+  }
+  .person-card:hover {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .person-avatar {
+    @apply block flex-shrink-0 overflow-hidden rounded-full;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+  .person-avatar img {
+    @apply block h-full w-full object-cover;
+  }
+  .person-avatar-md {
+    width: 96px;
+    height: 96px;
+  }
+  .person-avatar-lg {
+    width: 120px;
+    height: 120px;
+  }
+  /* No live face to crop (mid re-analysis): a quiet silhouette placeholder. */
+  .person-avatar-fallback {
+    @apply flex h-full w-full items-center justify-center;
+    color: var(--color-faint);
+  }
+  .person-name {
+    @apply mt-1 max-w-full truncate text-[13px] font-medium;
+    line-height: 1.35;
+  }
+  .person-unnamed {
+    @apply italic;
+    color: var(--color-muted);
+  }
+  .person-count {
+    font-family: var(--font-mono);
+  }
+  /* The rename pencil rides the card's top-right corner, only materializing on
+     hover/focus — the card itself stays a clean link to the person. */
+  .person-rename {
+    @apply absolute right-1 top-1 flex items-center justify-center rounded-full
+      border p-1.5 opacity-0 transition duration-150;
+    color: var(--color-muted);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .person-card-wrap:hover .person-rename,
+  .person-rename:focus-visible {
+    opacity: 1;
+  }
+  .person-rename:hover {
+    color: var(--color-text);
+  }
+  .person-name-input {
+    @apply mt-1 w-full text-[13px];
+  }
+  /* Inline "group N new faces" affordance in the shelf head — a link-shaped
+     button (it queues a job, so an <a> would lie about the verb). */
+  .link-btn {
+    @apply cursor-pointer border-0 bg-transparent p-0 underline;
+    color: var(--color-accent);
+    font: inherit;
+  }
+  .link-btn:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  /* Person detail header: avatar · name/counts · actions. */
+  .person-head {
+    @apply flex flex-wrap items-center gap-4;
+  }
+  .person-head-id {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+  .person-head-name {
+    @apply inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent
+      p-0 text-left text-lg font-semibold;
+    color: var(--color-text);
+  }
+  .person-head-pencil {
+    color: var(--color-faint);
+    opacity: 0;
+    transition: opacity 0.15s var(--ease-out);
+  }
+  .person-head-name:hover .person-head-pencil,
+  .person-head-name:focus-visible .person-head-pencil {
+    opacity: 1;
+  }
+  .person-head-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  /* Cover picker: a modal grid of the person's face crops; the current cover
+     wears the accent ring. */
+  .face-pick-grid {
+    @apply grid max-h-[55vh] gap-2 overflow-y-auto;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  }
+  .face-pick {
+    @apply block cursor-pointer overflow-hidden rounded-full border-2 p-0;
+    border-color: transparent;
+    background: var(--color-surface);
+    aspect-ratio: 1;
+  }
+  .face-pick img {
+    @apply block h-full w-full object-cover;
+  }
+  .face-pick:hover {
+    border-color: var(--color-border);
+  }
+  .face-pick.active {
+    border-color: var(--color-accent);
+  }
+
+  /* Merge picker: one row per candidate person. */
+  .merge-list {
+    @apply flex max-h-[50vh] flex-col gap-1 overflow-y-auto;
+  }
+  .merge-row {
+    @apply flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border
+      px-2 py-1.5 text-left;
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text);
+  }
+  .merge-row:hover {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .merge-row .person-avatar {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Phones: tighter people grid, smaller avatars. */
+@media (max-width: 767px) {
+  .people-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 16px 8px;
+  }
+  .person-avatar-md {
+    width: 76px;
+    height: 76px;
+  }
+}
+
 /* Tablets: the sticky side column costs more than it gives once the lens grid
    is only two cards wide — stack the body over its glass instead. */
 @media (max-width: 900px) {

@@ -370,6 +370,13 @@ const EnvSchema = z
     ML_FACES_ENABLED: boolEnv(true),
     ML_FACE_MODEL: strEnv("buffalo_l"),
     ML_FACE_MIN_SCORE: numEnv(0.7, { min: 0, max: 1 }),
+    // People clustering (cf. lib/people.ts): a face joins the person whose
+    // running-mean embedding it is most cosine-similar to, when that similarity
+    // reaches this threshold — otherwise it founds a new person. 0.5 mirrors
+    // Immich's default recognition distance. MIN_FACES is a pure display
+    // threshold: unnamed persons with fewer faces hide behind "Show all".
+    ML_PERSON_MIN_SIMILARITY: numEnv(0.5, { min: 0, max: 1 }),
+    ML_PERSON_MIN_FACES: intEnv(3, { min: 1 }),
     // OCR (text in images) needs immich-machine-learning >= v2.2.0 (RapidOCR /
     // PP-OCRv5). Set false against an older container so the whole job doesn't fail.
     ML_OCR_ENABLED: boolEnv(true),
@@ -546,6 +553,10 @@ function loadConfig() {
         enabled: e.ML_FACES_ENABLED,
         model: e.ML_FACE_MODEL,
         minScore: e.ML_FACE_MIN_SCORE,
+      },
+      person: {
+        minSimilarity: e.ML_PERSON_MIN_SIMILARITY,
+        minFaces: e.ML_PERSON_MIN_FACES,
       },
       ocr: {
         enabled: e.ML_OCR_ENABLED,

@@ -1,0 +1,310 @@
+// People — groups the faces lib/ml.ts detects into PERSONS (migration 0035),
+// the way Immich's People page does: each face joins the person whose running-
+// mean embedding it is most cosine-similar to (>= ML_PERSON_MIN_SIMILARITY), or
+// founds a new person when nobody is close enough. Incremental and cheap: the
+// 512-dim ArcFace embeddings are already stored per face (0021 kept them for
+// exactly this), people are bounded in the hundreds, so assignment is a JS loop
+// over centroids — no pgvector, no re-inference, no container round trip.
+//
+// Two entry points share one core:
+//   * assignFacesForAsset — chained at the end of runMlJob, right after the
+//     asset's faces are (re-)inserted. This is also what makes person links
+//     SURVIVE re-analysis: runMlJob deletes + re-mints the face rows (their
+//     person_id dies with them), and the fresh faces simply re-match against
+//     the surviving centroids. Names and covers live on `people` and are never
+//     touched here (a lost cover face falls back at read time).
+//   * assignAllPending — the backfill sweep over every unassigned face (the
+//     library analyzed before this feature shipped), batched off the partial
+//     asset_faces_unassigned_idx. Pure DB work: NOT paced by mlPerHour.
+//
+// Concurrency: every writer takes ONE advisory xact lock. Two concurrent
+// assignments would otherwise race the "nobody close enough → create person"
+// branch and mint duplicate people for the same new face cluster (ML worker
+// concurrency is configurable, and a backfill can run next to live analyses).
+// The lock serializes writers globally; readers are never blocked.
+import type pg from "pg";
+import { config } from "./config";
+import { many, tx } from "./db";
+
+// The advisory lock key for every people writer (assignment + merge). One
+// arbitrary constant, distinct from anything else in the app (Postgres advisory
+// locks are a single global namespace per database).
+const PEOPLE_LOCK_KEY = 793_035; // "people / migration 0035"
+
+// Cosine similarity, tolerant of the container's unnormalized vectors. Returns
+// -1 (never matches) on a dimension mismatch — embeddings from two different
+// face models must not be compared, mirroring how asset_clip pins its model.
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return -1;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom > 0 ? dot / denom : -1;
+}
+
+// In-memory view of one person's matchable state during an assignment batch.
+type Cluster = {
+  id: number;
+  centroid: number[];
+  n: number;
+};
+
+type PendingFace = { id: number; embedding: number[] };
+
+// Assign a batch of faces against the current people, inside the caller's
+// locked transaction. Mutates `clusters` in place (so one batch's earlier faces
+// are visible to its later ones) and writes every change back: person_id per
+// face, refreshed centroids, new people. Returns how many faces were assigned.
+async function assignBatch(
+  client: pg.PoolClient,
+  clusters: Cluster[],
+  faces: PendingFace[],
+): Promise<number> {
+  const minSim = config.ml.person.minSimilarity;
+  const touched = new Set<Cluster>();
+  // face id → person id, written in one batched UPDATE at the end.
+  const assignments: [number, number][] = [];
+
+  for (const face of faces) {
+    if (!Array.isArray(face.embedding) || face.embedding.length === 0) continue;
+
+    let best: Cluster | null = null;
+    let bestSim = -1;
+    for (const c of clusters) {
+      const sim = cosineSimilarity(face.embedding, c.centroid);
+      if (sim > bestSim) {
+        bestSim = sim;
+        best = c;
+      }
+    }
+
+    if (best && bestSim >= minSim) {
+      // Fold the face into the running mean: next = (centroid*n + e)/(n+1).
+      // The centroid drifts toward the person's true center as faces accrue.
+      const n = best.n;
+      for (let i = 0; i < best.centroid.length; i++) {
+        best.centroid[i] = (best.centroid[i] * n + face.embedding[i]) / (n + 1);
+      }
+      best.n = n + 1;
+      touched.add(best);
+      assignments.push([face.id, best.id]);
+    } else {
+      // Nobody close enough: this face founds a new person, immediately
+      // matchable by the rest of the batch (bursts of one new person's faces
+      // must land together, not mint one person each).
+      const row = await client.query<{ id: number }>(
+        `INSERT INTO people (centroid, centroid_n) VALUES ($1, 1) RETURNING id`,
+        [JSON.stringify(face.embedding)],
+      );
+      const created: Cluster = {
+        id: row.rows[0].id,
+        centroid: [...face.embedding],
+        n: 1,
+      };
+      clusters.push(created);
+      assignments.push([face.id, created.id]);
+    }
+  }
+
+  if (assignments.length) {
+    await client.query(
+      `UPDATE asset_faces f SET person_id = v.person_id
+         FROM (SELECT unnest($1::bigint[]) AS id,
+                      unnest($2::bigint[]) AS person_id) v
+        WHERE f.id = v.id`,
+      [assignments.map(([f]) => f), assignments.map(([, p]) => p)],
+    );
+  }
+  for (const c of touched) {
+    await client.query(
+      `UPDATE people SET centroid = $2, centroid_n = $3, updated_at = now()
+        WHERE id = $1`,
+      [c.id, JSON.stringify(c.centroid), c.n],
+    );
+  }
+  return assignments.length;
+}
+
+// The people whose centroids a batch matches against. Loaded fresh per locked
+// transaction so concurrent-but-serialized writers always see each other's
+// people.
+async function loadClusters(client: pg.PoolClient): Promise<Cluster[]> {
+  const rows = await client.query<{
+    id: number;
+    centroid: number[] | null;
+    centroid_n: number;
+  }>(`SELECT id, centroid, centroid_n FROM people WHERE centroid IS NOT NULL`);
+  return rows.rows
+    .filter((r) => Array.isArray(r.centroid) && r.centroid.length > 0)
+    .map((r) => ({
+      id: r.id,
+      centroid: r.centroid as number[],
+      n: Math.max(1, r.centroid_n),
+    }));
+}
+
+// Unnamed people whose faces are all gone (purge, re-analysis that no longer
+// sees them, merge leftovers) are noise — delete them so /people never shows an
+// uncoverable empty stack. NAMED people are kept even at zero faces: the name
+// is user data, and the centroid lets a re-analyzed library re-attach to it.
+async function pruneEmptyPeople(client: pg.PoolClient): Promise<void> {
+  await client.query(
+    `DELETE FROM people p
+      WHERE p.name IS NULL
+        AND NOT EXISTS (SELECT 1 FROM asset_faces f WHERE f.person_id = p.id)`,
+  );
+}
+
+// Assign this asset's not-yet-assigned faces to people. Called at the end of
+// every ML job (the faces were just inserted) — a no-op when the asset has no
+// faces or clustering already saw them. Never throws into the ML job's success
+// path lightly: a failure here must not mark the analysis errored (the faces
+// themselves are stored fine), so the caller wraps this in its own try/catch.
+export async function assignFacesForAsset(assetId: number): Promise<number> {
+  return tx(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+    const faces = await client.query<PendingFace>(
+      `SELECT id, embedding FROM asset_faces
+        WHERE asset_id = $1 AND person_id IS NULL AND embedding IS NOT NULL
+        ORDER BY id`,
+      [assetId],
+    );
+    if (faces.rows.length === 0) return 0;
+    const clusters = await loadClusters(client);
+    const assigned = await assignBatch(client, clusters, faces.rows);
+    await pruneEmptyPeople(client);
+    return assigned;
+  });
+}
+
+// Sweep the whole unassigned pool (partial index) in bounded batches — the
+// backfill for a library analyzed before people existed, and the catch-up after
+// re-enabling faces. Each batch is its own short locked transaction so a live
+// per-asset assignment interleaves instead of waiting behind one long lock.
+const BACKFILL_BATCH = 500;
+
+export async function assignAllPending(
+  log?: (msg: string) => void,
+): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const assigned = await tx(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+      const faces = await client.query<PendingFace>(
+        `SELECT id, embedding FROM asset_faces
+          WHERE person_id IS NULL AND embedding IS NOT NULL
+          ORDER BY id
+          LIMIT ${BACKFILL_BATCH}`,
+      );
+      if (faces.rows.length === 0) return 0;
+      const clusters = await loadClusters(client);
+      return assignBatch(client, clusters, faces.rows);
+    });
+    if (assigned === 0) break;
+    total += assigned;
+    log?.(`[people] assigned ${total} faces so far…`);
+  }
+  await tx(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+    await pruneEmptyPeople(client);
+  });
+  return total;
+}
+
+// Merge `sourceId` into `targetId`: the fix for the clusterer splitting one
+// person across two stacks. Faces move over, the centroids fold as a weighted
+// mean (so future faces match the union), the target keeps its name/cover —
+// falling back to the source's when it has none — and the source disappears.
+export async function mergePeople(
+  targetId: number,
+  sourceId: number,
+): Promise<void> {
+  if (targetId === sourceId) throw new Error("cannot merge a person into itself");
+  await tx(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+    const rows = await client.query<{
+      id: number;
+      name: string | null;
+      cover_face_id: number | null;
+      centroid: number[] | null;
+      centroid_n: number;
+    }>(
+      `SELECT id, name, cover_face_id, centroid, centroid_n
+         FROM people WHERE id = ANY($1) FOR UPDATE`,
+      [[targetId, sourceId]],
+    );
+    const target = rows.rows.find((r) => r.id === targetId);
+    const source = rows.rows.find((r) => r.id === sourceId);
+    if (!target || !source) throw new Error("person not found");
+
+    await client.query(
+      `UPDATE asset_faces SET person_id = $1 WHERE person_id = $2`,
+      [targetId, sourceId],
+    );
+
+    // Weighted mean of the two centroids — same dimension only (a mismatch
+    // means two face models; keep the target's space untouched then).
+    let centroid = target.centroid;
+    let n = target.centroid_n;
+    const a = target.centroid;
+    const b = source.centroid;
+    if (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.length > 0
+    ) {
+      const an = Math.max(1, target.centroid_n);
+      const bn = Math.max(1, source.centroid_n);
+      centroid = a.map((v, i) => (v * an + b[i] * bn) / (an + bn));
+      n = an + bn;
+    } else if (!Array.isArray(a) && Array.isArray(b)) {
+      centroid = b;
+      n = source.centroid_n;
+    }
+
+    await client.query(
+      `UPDATE people SET
+         name          = COALESCE(name, $2),
+         cover_face_id = COALESCE(cover_face_id, $3),
+         centroid      = $4,
+         centroid_n    = $5,
+         updated_at    = now()
+       WHERE id = $1`,
+      [
+        targetId,
+        source.name,
+        source.cover_face_id,
+        centroid == null ? null : JSON.stringify(centroid),
+        n,
+      ],
+    );
+    // The ON DELETE SET NULL on cover_face_id/person_id never fires here: the
+    // faces moved and the cover (if adopted) now belongs to the target.
+    await client.query(`DELETE FROM people WHERE id = $1`, [sourceId]);
+  });
+}
+
+// How much of the face pool is clustered — the /people header line and the
+// pipeline Faces & text page. `unassigned` is what a "Group into people"
+// backfill would process.
+export async function peopleCoverage(): Promise<{
+  people: number;
+  assigned: number;
+  unassigned: number;
+}> {
+  const rows = await many<{ people: number; assigned: number; unassigned: number }>(
+    `SELECT
+       (SELECT count(*) FROM people)                                AS people,
+       (SELECT count(*) FROM asset_faces WHERE person_id IS NOT NULL) AS assigned,
+       (SELECT count(*) FROM asset_faces
+         WHERE person_id IS NULL AND embedding IS NOT NULL)          AS unassigned`,
+  );
+  return rows[0] ?? { people: 0, assigned: 0, unassigned: 0 };
+}
