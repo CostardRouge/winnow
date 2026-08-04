@@ -1,33 +1,45 @@
 "use client";
 
-// "Merge into…" — fold one person's stack into another (cf. lib/people.ts,
-// POST /api/people/:id/merge). Shared by the person detail page, the shelf
-// cards' action menu, and the rename flow (renaming a stack to a name another
-// stack already carries offers the merge right away, seeded with that name).
+// Person-picking dialog, shared by every People flow that targets "someone
+// else": merging a stack away (shelf ⋯ menu, detail page, the duplicate-name
+// rename offer) and moving selected media's faces off a stack (the bad-merge
+// repair). The caller says what picking MEANS via `confirm` — this component
+// owns the list, the search, and the busy/error plumbing.
 //
-// Candidates come sorted by the API (named first, then busiest); the search
-// box narrows by name — with hundreds of clustered people, scrolling for
-// "Alice" is not an option.
+// Candidates come sorted by the API (named first, then busiest); hidden people
+// are left out (hiding a stack means not being offered it). The search matches
+// accent/case-insensitively (cf. lib/nameMatch) — "chloe" finds "Chloé" — and
+// unnamed stacks match "unnamed". `pinnedLabel` adds one action row above the
+// list that confirms with null — the "fresh unnamed stack" option of the
+// move flow.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import { PersonAvatar, type PersonRow } from "./PeoplePanel";
 
-export default function MergeModal({
+export default function PersonPicker({
   selfId,
-  initialQuery,
+  title,
   hint,
+  initialQuery,
+  pinnedLabel,
+  pinnedHint,
+  confirm,
   onClose,
-  onMerged,
 }: {
-  /** The stack being folded away — excluded from the candidate list. */
+  /** The stack the action operates on — excluded from the candidates. */
   selfId: number;
+  title: string;
+  hint: string;
   /** Pre-seeded search (the duplicate-name rename flow). */
   initialQuery?: string;
-  /** Context line above the list; defaults to the generic merge explainer. */
-  hint?: string;
+  /** When set, a pinned first row that confirms with `null` (no target). */
+  pinnedLabel?: string;
+  pinnedHint?: string;
+  /** Performs the action; a thrown error is shown and the dialog stays open. */
+  confirm: (target: PersonRow | null) => Promise<void>;
   onClose: () => void;
-  onMerged: (targetId: number) => void;
 }) {
   const [people, setPeople] = useState<PersonRow[] | null>(null);
   const [query, setQuery] = useState(initialQuery ?? "");
@@ -37,7 +49,9 @@ export default function MergeModal({
 
   useEffect(() => {
     fetchJson<{ people: PersonRow[] }>("/api/people")
-      .then((d) => setPeople(d.people.filter((p) => p.id !== selfId)))
+      .then((d) =>
+        setPeople(d.people.filter((p) => p.id !== selfId && !p.hidden)),
+      )
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : "Failed to load"),
       );
@@ -49,23 +63,20 @@ export default function MergeModal({
 
   const shown = useMemo(() => {
     if (!people) return null;
-    const q = query.trim().toLowerCase();
+    const q = normalizeName(query);
     if (!q) return people;
-    return people.filter((p) => (p.name ?? "unnamed").toLowerCase().includes(q));
+    return people.filter((p) =>
+      normalizeName(p.name ?? "unnamed").includes(q),
+    );
   }, [people, query]);
 
-  async function merge(target: PersonRow) {
+  async function pick(target: PersonRow | null) {
     setBusy(true);
     setError(null);
     try {
-      await fetchJson(`/api/people/${target.id}/merge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: selfId }),
-      });
-      onMerged(target.id);
+      await confirm(target);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Merge failed");
+      setError(e instanceof Error ? e.message : "Action failed");
       setBusy(false);
     }
   }
@@ -75,14 +86,11 @@ export default function MergeModal({
       <div
         className="modal"
         role="dialog"
-        aria-label="Merge into another person"
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="modal-title">Merge into…</h2>
-        <p className="hint">
-          {hint ??
-            "Every face of this stack moves to the person you pick; they keep their name and cover. This stack disappears."}
-        </p>
+        <h2 className="modal-title">{title}</h2>
+        <p className="hint">{hint}</p>
         <div className="search-field">
           <span className="search-icon" aria-hidden>
             {Icons.search}
@@ -92,7 +100,7 @@ export default function MergeModal({
             className="input search-input"
             type="search"
             placeholder="Search people…"
-            aria-label="Search people to merge into"
+            aria-label="Search people"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -112,12 +120,30 @@ export default function MergeModal({
             {error}
           </div>
         )}
+        {pinnedLabel && (
+          <button
+            type="button"
+            className="merge-row merge-row-pinned"
+            disabled={busy}
+            onClick={() => pick(null)}
+            title={pinnedHint}
+          >
+            <span className="person-avatar merge-pinned-ic" aria-hidden>
+              <span className="person-avatar-fallback">{Icons.people}</span>
+            </span>
+            <span className="person-name">{pinnedLabel}</span>
+          </button>
+        )}
         {!shown ? (
           <LoadingState label="Loading people…" />
         ) : shown.length === 0 ? (
           <EmptyState
-            title={query ? "No matching person" : "Nobody to merge into"}
-            hint={query ? "Try fewer letters — unnamed stacks match “unnamed”." : undefined}
+            title={query ? "No matching person" : "Nobody else"}
+            hint={
+              query
+                ? "Try fewer letters — unnamed stacks match “unnamed”."
+                : undefined
+            }
           />
         ) : (
           <div className="merge-list">
@@ -127,7 +153,7 @@ export default function MergeModal({
                 type="button"
                 className="merge-row"
                 disabled={busy}
-                onClick={() => merge(p)}
+                onClick={() => pick(p)}
               >
                 <PersonAvatar coverFaceId={p.cover_face_id} name={p.name} />
                 <span className={`person-name${p.name ? "" : " person-unnamed"}`}>

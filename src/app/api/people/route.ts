@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const people = await many(
-      `SELECT p.id, p.name,
+      `SELECT p.id, p.name, p.hidden,
               c.face_count, c.asset_count,
               COALESCE(cov.id, best.id) AS cover_face_id
          FROM people p

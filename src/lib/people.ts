@@ -291,6 +291,123 @@ export async function mergePeople(
   });
 }
 
+// Move the faces `personId` holds in the given ASSETS over to another person —
+// the undo for a bad merge or a bad automatic match ("these photos are not
+// her"). The unit of user intent is the photo, but the unit of truth is the
+// face: for each selected asset, exactly this person's faces in it move; other
+// people detected in the same photo are untouched.
+//
+// `targetId` null means "detach": the faces found a NEW unnamed person instead
+// of joining an existing one. Deliberately NOT a bare person_id=NULL — the
+// next backfill sweep would just hand unassigned faces straight back to the
+// centroid they came from. A fresh person with its own centroid actually
+// diverges from the source over time.
+//
+// Centroids move EXACTLY, not approximately: a mean is recoverable from
+// (mean, n) and the moved members' sum — subtract from the source, fold into
+// the target — so a repaired stack matches future faces as if the strays had
+// never been there. Dimension-mismatched or missing embeddings simply don't
+// contribute (guarded below), mirroring assignBatch.
+export async function reassignFaces(
+  personId: number,
+  assetIds: number[],
+  targetId: number | null,
+): Promise<{ moved: number; targetId: number | null }> {
+  if (targetId === personId) {
+    throw new Error("cannot move faces onto the same person");
+  }
+  return tx(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+
+    const faces = await client.query<{ id: number; embedding: number[] | null }>(
+      `SELECT id, embedding FROM asset_faces
+        WHERE person_id = $1 AND asset_id = ANY($2)`,
+      [personId, assetIds],
+    );
+    if (faces.rows.length === 0) return { moved: 0, targetId: null };
+
+    const rows = await client.query<{
+      id: number;
+      centroid: number[] | null;
+      centroid_n: number;
+    }>(
+      `SELECT id, centroid, centroid_n FROM people
+        WHERE id = ANY($1) FOR UPDATE`,
+      [targetId == null ? [personId] : [personId, targetId]],
+    );
+    const source = rows.rows.find((r) => r.id === personId);
+    if (!source) throw new Error("person not found");
+    if (targetId != null && !rows.rows.some((r) => r.id === targetId)) {
+      throw new Error("person not found");
+    }
+
+    // Sum of the moved embeddings (the dimension the source centroid uses).
+    const dim = Array.isArray(source.centroid) ? source.centroid.length : 0;
+    let sum: number[] | null = dim ? new Array<number>(dim).fill(0) : null;
+    let k = 0;
+    for (const f of faces.rows) {
+      if (!Array.isArray(f.embedding) || f.embedding.length === 0) continue;
+      if (sum === null) sum = new Array<number>(f.embedding.length).fill(0);
+      if (f.embedding.length !== sum.length) continue;
+      for (let i = 0; i < sum.length; i++) sum[i] += f.embedding[i];
+      k++;
+    }
+
+    // The destination: an existing person, or a fresh unnamed one born from
+    // exactly the moved faces.
+    let destId = targetId;
+    if (destId == null) {
+      const born = await client.query<{ id: number }>(
+        `INSERT INTO people (centroid, centroid_n) VALUES ($1, $2) RETURNING id`,
+        [sum && k ? JSON.stringify(sum.map((v) => v / k)) : null, k],
+      );
+      destId = born.rows[0].id;
+    } else if (sum && k) {
+      const target = rows.rows.find((r) => r.id === destId)!;
+      const t = target.centroid;
+      if (Array.isArray(t) && t.length === sum.length) {
+        const tn = Math.max(1, target.centroid_n);
+        const folded = t.map((v, i) => (v * tn + sum![i]) / (tn + k));
+        await client.query(
+          `UPDATE people SET centroid=$2, centroid_n=$3, updated_at=now() WHERE id=$1`,
+          [destId, JSON.stringify(folded), tn + k],
+        );
+      } else if (!Array.isArray(t)) {
+        await client.query(
+          `UPDATE people SET centroid=$2, centroid_n=$3, updated_at=now() WHERE id=$1`,
+          [destId, JSON.stringify(sum.map((v) => v / k)), k],
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE asset_faces SET person_id = $1 WHERE id = ANY($2)`,
+      [destId, faces.rows.map((f) => f.id)],
+    );
+
+    // Un-mix the source mean. When every embedded face left (n <= k), the
+    // centroid is meaningless — clear it rather than divide toward noise.
+    if (sum && k && Array.isArray(source.centroid)) {
+      const n = Math.max(1, source.centroid_n);
+      if (n - k >= 1) {
+        const c = source.centroid.map((v, i) => (v * n - sum![i]) / (n - k));
+        await client.query(
+          `UPDATE people SET centroid=$2, centroid_n=$3, updated_at=now() WHERE id=$1`,
+          [personId, JSON.stringify(c), n - k],
+        );
+      } else {
+        await client.query(
+          `UPDATE people SET centroid=NULL, centroid_n=0, updated_at=now() WHERE id=$1`,
+          [personId],
+        );
+      }
+    }
+
+    await pruneEmptyPeople(client);
+    return { moved: faces.rows.length, targetId: destId };
+  });
+}
+
 // How much of the face pool is clustered — the /people header line and the
 // pipeline Faces & text page. `unassigned` is what a "Group into people"
 // backfill would process.

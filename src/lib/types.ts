@@ -188,6 +188,9 @@ export type AssetFace = {
 export type Person = {
   id: number;
   name: string | null;
+  // Tucked away from every default surface (shelf, facet, pickers) without
+  // deleting — deletion would just re-cluster (cf. migration 0036).
+  hidden: boolean;
   cover_face_id: number | null;
   centroid: number[] | null;
   centroid_n: number;
