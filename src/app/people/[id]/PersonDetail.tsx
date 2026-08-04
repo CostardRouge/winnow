@@ -13,6 +13,7 @@ import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import MediaViewer from "@/app/MediaViewer";
 import VirtualGrid, { type VirtualGridHandle } from "@/app/gallery/VirtualGrid";
 import { PersonAvatar, type PersonRow } from "../PeoplePanel";
+import MergeModal from "../MergeModal";
 import type { AssetGridRow } from "@/lib/types";
 
 type FaceRow = { id: number; asset_id: number; score: number };
@@ -67,97 +68,6 @@ function CoverPicker({
   );
 }
 
-/** Fold this stack into another person. The target keeps its name and cover
- *  (adopting this one's where it has none) and inherits every face. */
-function MergePicker({
-  selfId,
-  onClose,
-  onMerged,
-}: {
-  selfId: number;
-  onClose: () => void;
-  onMerged: (targetId: number) => void;
-}) {
-  const [people, setPeople] = useState<PersonRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    fetchJson<{ people: PersonRow[] }>("/api/people")
-      .then((d) => setPeople(d.people.filter((p) => p.id !== selfId)))
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "Failed to load"),
-      );
-  }, [selfId]);
-
-  async function merge(target: PersonRow) {
-    setBusy(true);
-    setError(null);
-    try {
-      await fetchJson(`/api/people/${target.id}/merge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: selfId }),
-      });
-      onMerged(target.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Merge failed");
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
-      <div
-        className="modal"
-        role="dialog"
-        aria-label="Merge into another person"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="modal-title">Merge into…</h2>
-        <p className="hint">
-          Every face of this stack moves to the person you pick; they keep their
-          name and cover. This stack disappears.
-        </p>
-        {error && (
-          <div className="empty-state error" role="alert">
-            {error}
-          </div>
-        )}
-        {!people ? (
-          <LoadingState label="Loading people…" />
-        ) : people.length === 0 ? (
-          <EmptyState title="Nobody to merge into" />
-        ) : (
-          <div className="merge-list">
-            {people.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="merge-row"
-                disabled={busy}
-                onClick={() => merge(p)}
-              >
-                <PersonAvatar coverFaceId={p.cover_face_id} name={p.name} />
-                <span className={`person-name${p.name ? "" : " person-unnamed"}`}>
-                  {p.name ?? "Unnamed"}
-                </span>
-                <span className="pill person-count">
-                  {p.asset_count.toLocaleString()} media
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function PersonDetail({ personId }: { personId: number }) {
   const router = useRouter();
@@ -172,7 +82,12 @@ export default function PersonDetail({ personId }: { personId: number }) {
 
   const [viewer, setViewer] = useState<number | null>(null);
   const [coverOpen, setCoverOpen] = useState(false);
-  const [mergeOpen, setMergeOpen] = useState(false);
+  // Open merge dialog; the duplicate-name rename flow seeds the search with
+  // the twin's name and explains why the dialog appeared.
+  const [merge, setMerge] = useState<{
+    initialQuery?: string;
+    hint?: string;
+  } | null>(null);
 
   const [editingName, setEditingName] = useState(false);
   const [draft, setDraft] = useState("");
@@ -262,6 +177,26 @@ export default function PersonDetail({ personId }: { personId: number }) {
       });
       setPerson({ ...person, name });
       setEditingName(false);
+      // The new name already fronts ANOTHER stack? Almost always the clusterer
+      // split one person — offer the merge right away, pre-searched on it.
+      if (name) {
+        try {
+          const d = await fetchJson<{ people: PersonRow[] }>("/api/people");
+          const twin = d.people.find(
+            (p) =>
+              p.id !== person.id &&
+              p.name?.toLowerCase() === name.toLowerCase(),
+          );
+          if (twin) {
+            setMerge({
+              initialQuery: name,
+              hint: `Another stack is already named “${twin.name}” — same person? Merging moves every face of this stack over there.`,
+            });
+          }
+        } catch {
+          /* the rename itself succeeded; the merge offer is best-effort */
+        }
+      }
     } catch {
       /* keep the input open to retry or Esc out */
     }
@@ -362,7 +297,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
               >
                 Choose cover
               </button>
-              <button className="btn" onClick={() => setMergeOpen(true)}>
+              <button className="btn" onClick={() => setMerge({})}>
                 Merge into…
               </button>
               <Link
@@ -428,10 +363,12 @@ export default function PersonDetail({ personId }: { personId: number }) {
               onClose={() => setCoverOpen(false)}
             />
           )}
-          {mergeOpen && (
-            <MergePicker
+          {merge && (
+            <MergeModal
               selfId={person.id}
-              onClose={() => setMergeOpen(false)}
+              initialQuery={merge.initialQuery}
+              hint={merge.hint}
+              onClose={() => setMerge(null)}
               onMerged={(targetId) => router.replace(`/people/${targetId}`)}
             />
           )}
