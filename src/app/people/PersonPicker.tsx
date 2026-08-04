@@ -12,6 +12,13 @@
 // unnamed stacks match "unnamed". `pinnedLabel` adds one action row above the
 // list that confirms with null — the "fresh unnamed stack" option of the
 // move flow.
+//
+// MULTI mode (`multi` prop, merge flows only): each row grows a checkbox in
+// its spare right edge. Ticking flips the dialog's direction — instead of
+// folding the current stack into ONE clicked row, the CHECKED rows fold into
+// the current stack ("these four are also her"), all in one confirm. The
+// proximity ranking makes this fast: the look-alikes to tick are the top rows.
+// With nothing ticked, a row click keeps the classic single merge-into.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import { normalizeName } from "@/lib/nameMatch";
@@ -27,6 +34,7 @@ export default function PersonPicker({
   pinnedLabel,
   pinnedHint,
   confirm,
+  multi,
   onClose,
 }: {
   /** The stack the action operates on — excluded from the candidates, and the
@@ -43,12 +51,20 @@ export default function PersonPicker({
   pinnedHint?: string;
   /** Performs the action; a thrown error is shown and the dialog stays open. */
   confirm: (target: PersonRow | null) => Promise<void>;
+  /** Multi-check mode: rows grow checkboxes, and confirming folds every
+   *  CHECKED stack into the current one (reverse of the single-click flow). */
+  multi?: {
+    /** Confirm-button label for n checked rows. */
+    label: (n: number) => string;
+    confirm: (ids: number[]) => Promise<void>;
+  };
   onClose: () => void;
 }) {
   const [people, setPeople] = useState<PersonRow[] | null>(null);
   const [query, setQuery] = useState(initialQuery ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checked, setChecked] = useState<Set<number>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -83,6 +99,26 @@ export default function PersonPicker({
     setError(null);
     try {
       await confirm(target);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed");
+      setBusy(false);
+    }
+  }
+
+  const toggleCheck = (id: number) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  async function confirmChecked() {
+    if (!multi || checked.size === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await multi.confirm([...checked]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Action failed");
       setBusy(false);
@@ -159,9 +195,13 @@ export default function PersonPicker({
               <button
                 key={p.id}
                 type="button"
-                className="merge-row"
+                className={`merge-row${checked.has(p.id) ? " is-checked" : ""}`}
                 disabled={busy}
-                onClick={() => pick(p)}
+                onClick={() =>
+                  // Once anything is ticked, rows toggle instead of merging —
+                  // no accidental single merge mid-way through a multi pick.
+                  multi && checked.size > 0 ? toggleCheck(p.id) : pick(p)
+                }
               >
                 <PersonAvatar coverFaceId={p.cover_face_id} name={p.name} />
                 <span className={`person-name${p.name ? "" : " person-unnamed"}`}>
@@ -178,11 +218,35 @@ export default function PersonPicker({
                 <span className="pill person-count">
                   {p.asset_count.toLocaleString()} media
                 </span>
+                {multi && (
+                  <span
+                    className={`merge-check${checked.has(p.id) ? " active" : ""}`}
+                    role="checkbox"
+                    aria-checked={checked.has(p.id)}
+                    aria-label={`Select ${p.name ?? "unnamed"} to fold into this stack`}
+                    title="Tick several stacks to fold them ALL into this one"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!busy) toggleCheck(p.id);
+                    }}
+                  >
+                    {Icons.pick}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         )}
         <div className="modal-actions">
+          {multi && checked.size > 0 && (
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void confirmChecked()}
+            >
+              {multi.label(checked.size)}
+            </button>
+          )}
           <button className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>

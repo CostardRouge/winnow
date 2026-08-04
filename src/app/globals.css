@@ -5306,6 +5306,33 @@ html[data-theme="dark"] .btn-primary:hover {
     font-family: var(--font-mono);
     color: var(--color-accent);
   }
+  /* Multi-check on picker rows: parked in the row's spare right edge. Ticking
+     flips the dialog's direction (checked stacks fold into the current one) —
+     the accent fill marks membership, mirroring the shelf's card check. */
+  .merge-check {
+    @apply ml-auto flex flex-shrink-0 cursor-pointer items-center
+      justify-center rounded-full border p-1 transition duration-150;
+    color: var(--color-faint);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .merge-check svg {
+    width: 14px;
+    height: 14px;
+  }
+  .merge-check:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+  }
+  .merge-check.active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  .merge-row.is-checked {
+    background: var(--color-surface);
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+  }
 
   /* Merge-suggestions banner on the shelf + the pair rows in its modal. */
   .suggest-banner {

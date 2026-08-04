@@ -440,7 +440,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
               title="Merge into…"
               hint={
                 merge.hint ??
-                "Every face of this stack moves to the person you pick; they keep their name and cover. This stack disappears."
+                "Click a person to fold this stack into them — or tick several stacks to fold those into THIS one instead."
               }
               initialQuery={merge.initialQuery}
               onClose={() => setMerge(null)}
@@ -452,6 +452,23 @@ export default function PersonDetail({ personId }: { personId: number }) {
                   body: JSON.stringify({ source_id: person.id }),
                 });
                 router.replace(`/people/${target.id}`);
+              }}
+              multi={{
+                label: (n) =>
+                  `Merge ${n} into “${person.name ?? "this stack"}”`,
+                confirm: async (ids) => {
+                  for (const sourceId of ids) {
+                    await fetchJson(`/api/people/${person.id}/merge`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ source_id: sourceId }),
+                    });
+                  }
+                  // This page's person absorbed the checked stacks: counts,
+                  // faces and the media grid all grew.
+                  setMerge(null);
+                  setRefreshKey((k) => k + 1);
+                },
               }}
             />
           )}
