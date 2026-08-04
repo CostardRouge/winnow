@@ -245,6 +245,9 @@ export default function PeoplePanel() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [showAll, setShowAll] = useState(false);
+  // Free-text name search. A match beats the small-stack threshold: someone
+  // typing a name is looking for a specific person, not browsing.
+  const [query, setQuery] = useState("");
   // The one-click backfill (library analyzed before People existed): idle →
   // queued (the worker sweeps in the background; a reload shows the result).
   const [grouping, setGrouping] = useState<"idle" | "queued" | "error">("idle");
@@ -297,14 +300,24 @@ export default function PeoplePanel() {
   const grouped = useMemo(() => {
     const people = data?.people ?? [];
     const minFaces = data?.minFaces ?? 1;
-    const inTab = people.filter((p) =>
-      tab === "named" ? p.name != null : tab === "unnamed" ? p.name == null : true,
+    const q = query.trim().toLowerCase();
+    const inTab = people.filter(
+      (p) =>
+        (tab === "named"
+          ? p.name != null
+          : tab === "unnamed"
+            ? p.name == null
+            : true) &&
+        (!q || (p.name ?? "unnamed").toLowerCase().includes(q)),
     );
     // Named people always show; unnamed ones must clear the face threshold
-    // unless the toggle is on. The Named tab has nothing to hide by definition.
-    const visible = inTab.filter((p) => p.name != null || p.face_count >= minFaces);
+    // unless the toggle is on — or a search is running (a searched person must
+    // never hide). The Named tab has nothing to hide by definition.
+    const visible = q
+      ? inTab
+      : inTab.filter((p) => p.name != null || p.face_count >= minFaces);
     return { inTab, visible, hidden: inTab.length - visible.length };
-  }, [data, tab]);
+  }, [data, tab, query]);
 
   async function groupNow() {
     try {
@@ -402,6 +415,29 @@ export default function PeoplePanel() {
           )}
         </span>
         <span className="spacer" />
+        <div className="search-field people-search">
+          <span className="search-icon" aria-hidden>
+            {Icons.search}
+          </span>
+          <input
+            className="input search-input"
+            type="search"
+            placeholder="Search people…"
+            aria-label="Search people by name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              className="search-clear"
+              aria-label="Clear the search"
+              onClick={() => setQuery("")}
+            >
+              ×
+            </button>
+          )}
+        </div>
         {grouped.hidden > 0 && (
           <button
             className={`view-btn${showAll ? " active" : ""}`}
@@ -417,13 +453,21 @@ export default function PeoplePanel() {
       {shown.length === 0 ? (
         <EmptyState
           icon={Icons.people}
-          title={tab === "named" ? "Nobody named yet" : "Nothing here"}
+          title={
+            query.trim()
+              ? "No matching person"
+              : tab === "named"
+                ? "Nobody named yet"
+                : "Nothing here"
+          }
           hint={
-            tab === "named"
-              ? "Use the pencil on a card to put a name on a stack."
-              : grouped.inTab.length > 0
-                ? "Every stack here is below the small-stack threshold — use “Show all”."
-                : "Try another tab."
+            query.trim()
+              ? "Try fewer letters — unnamed stacks match “unnamed”."
+              : tab === "named"
+                ? "Use the pencil on a card to put a name on a stack."
+                : grouped.inTab.length > 0
+                  ? "Every stack here is below the small-stack threshold — use “Show all”."
+                  : "Try another tab."
           }
         />
       ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { Icons } from "../ui";
 import RangeSlider from "./RangeSlider";
@@ -40,10 +40,10 @@ export type Facets = {
   // count (0 = analyzed, nobody in frame); `with_text` counts assets whose OCR
   // read some text. Optional so a facets payload predating the feature typechecks.
   faces?: VC[];
-  // People in scope (cf. lib/people.ts): id + name + asset count, busiest
-  // first, capped server-side. Optional so a facets payload predating the
-  // feature typechecks.
-  people?: { id: number; name: string | null; count: number }[];
+  // People in scope (cf. lib/people.ts): id + name + asset count + cover face
+  // (the chip's crop), named first then busiest, capped server-side. Optional
+  // so a facets payload predating the feature typechecks.
+  people?: PersonFacet[];
   with_text?: number;
   // How many assets carry a perceptual hash (were analyzed). Gates the
   // "Near-duplicates" toggle so it never shows as a dead filter. Optional so a
@@ -72,6 +72,14 @@ export type Facets = {
   session_status?: { active: number; ignored: number };
 };
 type VC = { value: string | number; count: number };
+export type PersonFacet = {
+  id: number;
+  name: string | null;
+  // Absent on a fallback-resolved chip (a deep-linked person outside the
+  // facet's cap): the chip then shows no count rather than a wrong one.
+  count?: number;
+  cover_face_id?: number | null;
+};
 
 // Size is the one facet whose stored unit isn't the unit on screen: the column
 // (and the API's `size_min`/`size_max` params) is bytes, while the panel shows —
@@ -249,6 +257,122 @@ function SearchBox({
             title="Clear search"
           >
             ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The People facet: one chip per person, wearing their cover face crop.
+// Multi-pick (ORed server-side, like every categorical dimension). Two rules
+// keep it compact and honest:
+//   * PAGINATED — the first page shows PEOPLE_FACET_PAGE chips and a "+N more"
+//     chip expands the rest; a library's long tail of background strangers
+//     must not swallow the panel.
+//   * SELECTED CHIPS ALWAYS SHOW — active picks are hoisted to the front of
+//     page one, and a pick that isn't in the facet payload at all (a deep link
+//     like /library/gallery?person=123 outside the server cap) is resolved
+//     against /api/people once, so the active filter is always visible and
+//     unpickable-blind never happens.
+const PEOPLE_FACET_PAGE = 12;
+
+function PeopleFacet({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: PersonFacet[];
+  selected: number[];
+  onToggle: (id: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // Fallback directory for selected ids the facet payload doesn't carry.
+  // Fetched lazily, once, only when such an id shows up.
+  const [directory, setDirectory] = useState<PersonFacet[] | null>(null);
+
+  const missing = useMemo(
+    () => selected.filter((id) => !options.some((o) => o.id === id)),
+    [selected, options],
+  );
+
+  useEffect(() => {
+    if (missing.length === 0 || directory !== null) return;
+    let alive = true;
+    fetch("/api/people")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { people?: PersonFacet[] } | null) => {
+        if (alive) setDirectory(d?.people ?? []);
+      })
+      .catch(() => {
+        if (alive) setDirectory([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [missing, directory]);
+
+  const { shown, hidden } = useMemo(() => {
+    const resolvedMissing = missing.map(
+      (id) =>
+        directory?.find((p) => p.id === id) ?? { id, name: null },
+    );
+    // Selected first (facet order, then the resolved strays), rest after.
+    const all = [
+      ...options.filter((o) => selected.includes(o.id)),
+      ...resolvedMissing.map((p) => ({ ...p, count: undefined })),
+      ...options.filter((o) => !selected.includes(o.id)),
+    ];
+    const cut = Math.max(PEOPLE_FACET_PAGE, selected.length);
+    const shown = expanded ? all : all.slice(0, cut);
+    return { shown, hidden: all.length - shown.length };
+  }, [options, selected, missing, directory, expanded]);
+
+  if (shown.length === 0) return null;
+
+  return (
+    <div className="facet">
+      <div className="facet-title">People</div>
+      <div className="chips">
+        {shown.map((p) => {
+          const active = selected.includes(p.id);
+          return (
+            <button
+              key={p.id}
+              className={`chip person-chip${active ? " active" : ""}`}
+              onClick={() => onToggle(p.id)}
+              title={p.name ?? "Unnamed person"}
+            >
+              {p.cover_face_id != null && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="chip-face"
+                  src={`/api/faces/${p.cover_face_id}/thumb`}
+                  alt=""
+                  loading="lazy"
+                />
+              )}
+              {p.name ?? "Unnamed"}
+              {p.count != null && <span className="chip-count">{p.count}</span>}
+            </button>
+          );
+        })}
+        {hidden > 0 && (
+          <button
+            className="chip"
+            onClick={() => setExpanded(true)}
+            title="Show every person in scope"
+          >
+            +{hidden} more
+          </button>
+        )}
+        {expanded && hidden === 0 && shown.length > PEOPLE_FACET_PAGE && (
+          <button
+            className="chip"
+            onClick={() => setExpanded(false)}
+            title="Back to the first page"
+          >
+            Show fewer
           </button>
         )}
       </div>
@@ -580,29 +704,14 @@ export default function FilterPanel({
           </div>
         </div>
       )}
-      {/* People (cf. lib/people.ts): one chip per clustered person in scope,
-          busiest first. Unnamed clusters still chip as "Unnamed" — they are
-          pickable (the /people page is where they get named). */}
-      {!!facets.people?.length && (
-        <div className="facet">
-          <div className="facet-title">People</div>
-          <div className="chips">
-            {facets.people.map((p) => {
-              const active = filters.person.includes(p.id);
-              return (
-                <button
-                  key={p.id}
-                  className={`chip${active ? " active" : ""}`}
-                  onClick={() => u({ person: toggle(filters.person, p.id) })}
-                  title={p.name ?? "Unnamed person"}
-                >
-                  {p.name ?? "Unnamed"}
-                  <span className="chip-count">{p.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {/* People (cf. lib/people.ts): face chips, multi-pickable (ORed, like
+          every categorical dimension). Paginated — see PeopleFacet. */}
+      {(!!facets.people?.length || filters.person.length > 0) && (
+        <PeopleFacet
+          options={facets.people ?? []}
+          selected={filters.person}
+          onToggle={(id) => u({ person: toggle(filters.person, id) })}
+        />
       )}
       {!!facets.with_text && (
         <div className="facet">
