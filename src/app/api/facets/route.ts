@@ -168,7 +168,7 @@ export async function GET(req: NextRequest) {
          FROM people p
          JOIN asset_faces f ON f.person_id = p.id
          JOIN assets a ON a.id = f.asset_id
-         WHERE true${scope}
+         WHERE NOT p.hidden${scope}
          GROUP BY p.id, p.name, p.cover_face_id
          ORDER BY (p.name IS NOT NULL) DESC, count DESC,
                   p.name ASC NULLS LAST, p.id ASC

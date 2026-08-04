@@ -20,12 +20,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
+import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
-import MergeModal from "./MergeModal";
+import PersonPicker from "./PersonPicker";
 
 export type PersonRow = {
   id: number;
   name: string | null;
+  hidden: boolean;
   face_count: number;
   asset_count: number;
   cover_face_id: number | null;
@@ -38,12 +40,13 @@ type PeopleResponse = {
   unassigned: number;
 };
 
-type Tab = "all" | "named" | "unnamed";
+type Tab = "all" | "named" | "unnamed" | "hidden";
 
 const TABS: { key: Tab; label: string; title: string }[] = [
   { key: "all", label: "All", title: "Every person" },
   { key: "named", label: "Named", title: "People you have named" },
   { key: "unnamed", label: "Unnamed", title: "Stacks still waiting for a name" },
+  { key: "hidden", label: "Hidden", title: "Stacks you tucked away" },
 ];
 
 const num = (n: number) => n.toLocaleString();
@@ -94,10 +97,12 @@ function PersonCard({
   person,
   onRenamed,
   onMergeRequest,
+  onToggleHidden,
 }: {
   person: PersonRow;
   onRenamed: (id: number, name: string | null) => void;
   onMergeRequest: (person: PersonRow) => void;
+  onToggleHidden: (person: PersonRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(person.name ?? "");
@@ -223,6 +228,20 @@ function PersonCard({
             </span>
             Merge into…
           </button>
+          <button
+            type="button"
+            className="person-menu-item"
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              onToggleHidden(person);
+            }}
+          >
+            <span className="person-menu-ic" aria-hidden>
+              {person.hidden ? Icons.view : Icons.close}
+            </span>
+            {person.hidden ? "Unhide" : "Hide"}
+          </button>
           <Link
             href={`/library/gallery?person=${person.id}`}
             className="person-menu-item"
@@ -272,6 +291,8 @@ export default function PeoplePanel() {
 
   // A rename settles the card into its new order locally — and when the new
   // name already fronts ANOTHER stack, offers to merge into it right away.
+  // The twin comparison is accent/case-insensitive (cf. lib/nameMatch), so
+  // naming a stack "Chloe" still finds the existing "Chloé".
   const rename = (id: number, name: string | null) => {
     setData((d) =>
       d
@@ -286,7 +307,10 @@ export default function PeoplePanel() {
     if (!name || !data) return;
     const self = data.people.find((p) => p.id === id);
     const twin = data.people.find(
-      (p) => p.id !== id && p.name?.toLowerCase() === name.toLowerCase(),
+      (p) =>
+        p.id !== id &&
+        p.name != null &&
+        normalizeName(p.name) === normalizeName(name),
     );
     if (self && twin) {
       setMerging({
@@ -297,22 +321,59 @@ export default function PeoplePanel() {
     }
   };
 
+  // Hide/unhide from the card menu: instant local flip (the card leaves the
+  // current tab on its own — hidden people only live on the Hidden tab).
+  const toggleHidden = (person: PersonRow) => {
+    const hidden = !person.hidden;
+    setData((d) =>
+      d
+        ? {
+            ...d,
+            people: d.people.map((p) =>
+              p.id === person.id ? { ...p, hidden } : p,
+            ),
+          }
+        : d,
+    );
+    fetchJson(`/api/people/${person.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden }),
+    }).catch(() => {
+      // Roll the optimistic flip back — the server didn't take it.
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              people: d.people.map((p) =>
+                p.id === person.id ? { ...p, hidden: !hidden } : p,
+              ),
+            }
+          : d,
+      );
+    });
+  };
+
   const grouped = useMemo(() => {
     const people = data?.people ?? [];
     const minFaces = data?.minFaces ?? 1;
-    const q = query.trim().toLowerCase();
+    // Accent/case-insensitive search (cf. lib/nameMatch): "chloe" → "Chloé".
+    const q = normalizeName(query);
     const inTab = people.filter(
       (p) =>
-        (tab === "named"
-          ? p.name != null
-          : tab === "unnamed"
-            ? p.name == null
-            : true) &&
-        (!q || (p.name ?? "unnamed").toLowerCase().includes(q)),
+        (tab === "hidden"
+          ? p.hidden
+          : !p.hidden &&
+            (tab === "named"
+              ? p.name != null
+              : tab === "unnamed"
+                ? p.name == null
+                : true)) &&
+        (!q || normalizeName(p.name ?? "unnamed").includes(q)),
     );
     // Named people always show; unnamed ones must clear the face threshold
     // unless the toggle is on — or a search is running (a searched person must
-    // never hide). The Named tab has nothing to hide by definition.
+    // never hide). The Named tab has nothing to tuck away by definition.
     const visible = q
       ? inTab
       : inTab.filter((p) => p.name != null || p.face_count >= minFaces);
@@ -465,9 +526,11 @@ export default function PeoplePanel() {
               ? "Try fewer letters — unnamed stacks match “unnamed”."
               : tab === "named"
                 ? "Use the pencil on a card to put a name on a stack."
-                : grouped.inTab.length > 0
-                  ? "Every stack here is below the small-stack threshold — use “Show all”."
-                  : "Try another tab."
+                : tab === "hidden"
+                  ? "Hide a stack from its card's ⋯ menu — it moves here."
+                  : grouped.inTab.length > 0
+                    ? "Every stack here is below the small-stack threshold — use “Show all”."
+                    : "Try another tab."
           }
         />
       ) : (
@@ -478,18 +541,29 @@ export default function PeoplePanel() {
               person={p}
               onRenamed={rename}
               onMergeRequest={(person) => setMerging({ person })}
+              onToggleHidden={toggleHidden}
             />
           ))}
         </div>
       )}
 
       {merging && (
-        <MergeModal
+        <PersonPicker
           selfId={merging.person.id}
+          title="Merge into…"
+          hint={
+            merging.hint ??
+            "Every face of this stack moves to the person you pick; they keep their name and cover. This stack disappears."
+          }
           initialQuery={merging.initialQuery}
-          hint={merging.hint}
           onClose={() => setMerging(null)}
-          onMerged={() => {
+          confirm={async (target) => {
+            if (!target) return;
+            await fetchJson(`/api/people/${target.id}/merge`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ source_id: merging.person.id }),
+            });
             // The folded stack is gone and the target's counts changed: the
             // server list is the truth now.
             setMerging(null);

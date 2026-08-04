@@ -9,11 +9,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
+import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import MediaViewer from "@/app/MediaViewer";
 import VirtualGrid, { type VirtualGridHandle } from "@/app/gallery/VirtualGrid";
 import { PersonAvatar, type PersonRow } from "../PeoplePanel";
-import MergeModal from "../MergeModal";
+import PersonPicker from "../PersonPicker";
 import type { AssetGridRow } from "@/lib/types";
 
 type FaceRow = { id: number; asset_id: number; score: number };
@@ -88,6 +89,14 @@ export default function PersonDetail({ personId }: { personId: number }) {
     initialQuery?: string;
     hint?: string;
   } | null>(null);
+  // Repairing a bad merge/match: select-mode over the grid, then "Move to…"
+  // relocates THIS person's faces in the selected media (cf. api reassign).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [moveOpen, setMoveOpen] = useState(false);
+  // Bumped after a reassign: re-runs the person fetch AND the grid's first
+  // page, since both changed server-side.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [editingName, setEditingName] = useState(false);
   const [draft, setDraft] = useState("");
@@ -107,7 +116,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
       .catch((e: unknown) =>
         setLoadError(e instanceof Error ? e.message : "Failed to load"),
       );
-  }, [personId]);
+  }, [personId, refreshKey]);
 
   // The media grid: same keyset pagination as the gallery, scoped to this
   // person (collapse=1 so pairs and bursts show as one tile, like everywhere).
@@ -142,7 +151,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
     return () => {
       alive = false;
     };
-  }, [personId]);
+  }, [personId, refreshKey]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore || !cursor) return;
@@ -179,13 +188,15 @@ export default function PersonDetail({ personId }: { personId: number }) {
       setEditingName(false);
       // The new name already fronts ANOTHER stack? Almost always the clusterer
       // split one person — offer the merge right away, pre-searched on it.
+      // Accent/case-insensitive (cf. lib/nameMatch): "Chloe" finds "Chloé".
       if (name) {
         try {
           const d = await fetchJson<{ people: PersonRow[] }>("/api/people");
           const twin = d.people.find(
             (p) =>
               p.id !== person.id &&
-              p.name?.toLowerCase() === name.toLowerCase(),
+              p.name != null &&
+              normalizeName(p.name) === normalizeName(name),
           );
           if (twin) {
             setMerge({
@@ -289,25 +300,74 @@ export default function PersonDetail({ personId }: { personId: number }) {
               </span>
             </div>
             <span className="spacer" />
-            <div className="person-head-actions">
-              <button
-                className="btn"
-                onClick={() => setCoverOpen(true)}
-                disabled={faces.length === 0}
-              >
-                Choose cover
-              </button>
-              <button className="btn" onClick={() => setMerge({})}>
-                Merge into…
-              </button>
-              <Link
-                className="btn"
-                href={`/library/gallery?person=${person.id}`}
-                title="The same filter, in the full gallery (combine with any other filter there)"
-              >
-                Open in gallery
-              </Link>
-            </div>
+            {selectMode ? (
+              // Repair mode: pick the media that don't belong, then move this
+              // person's faces in them somewhere else.
+              <div className="person-head-actions">
+                <span className="hint">
+                  {selectedIds.size} selected — tap media that aren’t{" "}
+                  {person.name ?? "this person"}
+                </span>
+                <button
+                  className="btn btn-primary"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => setMoveOpen(true)}
+                >
+                  Move to…
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setSelectMode(false);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="person-head-actions">
+                <button
+                  className="btn"
+                  onClick={() => setSelectMode(true)}
+                  title="Pick media that landed on the wrong person, then move their faces to the right stack"
+                >
+                  Select
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setCoverOpen(true)}
+                  disabled={faces.length === 0}
+                >
+                  Choose cover
+                </button>
+                <button className="btn" onClick={() => setMerge({})}>
+                  Merge into…
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const hidden = !person.hidden;
+                    setPerson({ ...person, hidden });
+                    fetchJson(`/api/people/${person.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ hidden }),
+                    }).catch(() => setPerson({ ...person, hidden: !hidden }));
+                  }}
+                  title="A hidden stack leaves the shelf, the gallery facet and the pickers; find it again under the Hidden tab"
+                >
+                  {person.hidden ? "Unhide" : "Hide"}
+                </button>
+                <Link
+                  className="btn"
+                  href={`/library/gallery?person=${person.id}`}
+                  title="The same filter, in the full gallery (combine with any other filter there)"
+                >
+                  Open in gallery
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className="ml-search-body">
@@ -325,6 +385,16 @@ export default function PersonDetail({ personId }: { personId: number }) {
                 loading={loading}
                 loadMore={() => void loadMore()}
                 onOpen={setViewer}
+                selectMode={selectMode}
+                selectedIds={selectedIds}
+                onToggleSelect={(id) =>
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
               />
             )}
           </div>
@@ -364,12 +434,49 @@ export default function PersonDetail({ personId }: { personId: number }) {
             />
           )}
           {merge && (
-            <MergeModal
+            <PersonPicker
               selfId={person.id}
+              title="Merge into…"
+              hint={
+                merge.hint ??
+                "Every face of this stack moves to the person you pick; they keep their name and cover. This stack disappears."
+              }
               initialQuery={merge.initialQuery}
-              hint={merge.hint}
               onClose={() => setMerge(null)}
-              onMerged={(targetId) => router.replace(`/people/${targetId}`)}
+              confirm={async (target) => {
+                if (!target) return;
+                await fetchJson(`/api/people/${target.id}/merge`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ source_id: person.id }),
+                });
+                router.replace(`/people/${target.id}`);
+              }}
+            />
+          )}
+          {moveOpen && (
+            <PersonPicker
+              selfId={person.id}
+              title={`Move ${selectedIds.size} media to…`}
+              hint="Only this person’s faces in the selected media move — other people in the same photos are untouched. Pick who these really are, or detach them into a fresh stack."
+              pinnedLabel="New unnamed stack"
+              pinnedHint="Detach these faces into a fresh unnamed person"
+              onClose={() => setMoveOpen(false)}
+              confirm={async (target) => {
+                await fetchJson(`/api/people/${person.id}/reassign`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    asset_ids: [...selectedIds],
+                    ...(target ? { target_person_id: target.id } : {}),
+                  }),
+                });
+                setMoveOpen(false);
+                setSelectMode(false);
+                setSelectedIds(new Set());
+                // Person counts, faces and the media grid all changed.
+                setRefreshKey((k) => k + 1);
+              }}
             />
           )}
         </>

@@ -5191,6 +5191,12 @@ html[data-theme="dark"] .btn-primary:hover {
     width: 40px;
     height: 40px;
   }
+  /* The pinned "New unnamed stack" action of the move flow: dashed ring on the
+     placeholder avatar, so it reads as "somewhere new", not a person. */
+  .merge-row-pinned .person-avatar {
+    border-style: dashed;
+    background: transparent;
+  }
 }
 
 /* Phones: tighter people grid, smaller avatars. */

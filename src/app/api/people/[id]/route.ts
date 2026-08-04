@@ -28,7 +28,7 @@ export async function GET(
     if (!Number.isFinite(personId)) return badRequest("Invalid person id");
 
     const person = await one(
-      `SELECT p.id, p.name,
+      `SELECT p.id, p.name, p.hidden,
               c.face_count, c.asset_count,
               COALESCE(cov.id, best.id) AS cover_face_id
          FROM people p
@@ -77,10 +77,17 @@ const Body = z
   .object({
     name: z.string().trim().max(120).nullable().optional(),
     cover_face_id: z.number().int().nullable().optional(),
+    // Hide the stack from every default surface (shelf tabs, facet, pickers)
+    // without deleting it — deleting would just get re-clustered (cf. 0036).
+    hidden: z.boolean().optional(),
   })
-  .refine((b) => b.name !== undefined || b.cover_face_id !== undefined, {
-    message: "nothing to update",
-  });
+  .refine(
+    (b) =>
+      b.name !== undefined ||
+      b.cover_face_id !== undefined ||
+      b.hidden !== undefined,
+    { message: "nothing to update" },
+  );
 
 export async function PATCH(
   req: NextRequest,
@@ -93,7 +100,7 @@ export async function PATCH(
 
     const parsed = Body.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) return badRequest("invalid body", parsed.error.issues);
-    const { name, cover_face_id } = parsed.data;
+    const { name, cover_face_id, hidden } = parsed.data;
 
     const exists = await one(`SELECT id FROM people WHERE id = $1`, [personId]);
     if (!exists) return notFound("Person not found");
@@ -110,8 +117,9 @@ export async function PATCH(
 
     await q(
       `UPDATE people SET
-         name          = CASE WHEN $2::boolean THEN $3::text   ELSE name          END,
-         cover_face_id = CASE WHEN $4::boolean THEN $5::bigint ELSE cover_face_id END,
+         name          = CASE WHEN $2::boolean THEN $3::text    ELSE name          END,
+         cover_face_id = CASE WHEN $4::boolean THEN $5::bigint  ELSE cover_face_id END,
+         hidden        = CASE WHEN $6::boolean THEN $7::boolean ELSE hidden        END,
          updated_at    = now()
        WHERE id = $1`,
       [
@@ -121,6 +129,8 @@ export async function PATCH(
         name || null,
         cover_face_id !== undefined,
         cover_face_id,
+        hidden !== undefined,
+        hidden ?? false,
       ],
     );
     return json({ ok: true });
