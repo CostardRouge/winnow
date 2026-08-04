@@ -18,6 +18,7 @@
     "scan": "tsx src/scripts/scan.ts",
     "geocode-backfill": "tsx src/scripts/geocode-backfill.ts",
     "ml-backfill": "tsx src/scripts/ml-backfill.ts",
+    "people-backfill": "tsx src/scripts/people-backfill.ts",
     "srt-backfill": "tsx src/scripts/srt-backfill.ts"
   },
   "dependencies": {

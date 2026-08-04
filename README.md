@@ -972,8 +972,11 @@ keepers to the Immich library through its public REST API, filed in an album,
 deduplicated, Live Photos kept live — see
 [Push to Immich](#push-to-immich-export-target-immich)).
 
-**V2/V3 (not included)**: advanced ratings/colors/tags, **person clustering**
-(grouping the stored face embeddings into named people), **closed-eyes
+**Also implemented**: **People** (page `/people`: the stored face embeddings
+are clustered into persons — one stack per person with a cover face, renaming,
+merging, and a `person` gallery filter; cf. `lib/people.ts`, migration 0035).
+
+**V2/V3 (not included)**: advanced ratings/colors/tags, **closed-eyes
 detection** (needs a facial-landmarks model the ML container doesn't expose),
 web export (browser-ready renders, target `web`), adaptive throttling,
 agent-on-NAS, n8n automations.

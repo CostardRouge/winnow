@@ -135,6 +135,11 @@ export const FilterSchema = z
     face_count: intList,
     has_faces: boolish,
     has_text: boolish,
+    // People (cf. lib/people.ts, migration 0035): keep assets in which ANY of
+    // the listed persons appears (multi, OR within the dimension like every
+    // categorical filter). Person cards on /people link into the grids with
+    // this, and the gallery's People facet chips drive it too.
+    person: intList,
     // ML lifecycle (multi): pending | processing | ready | error | skipped.
     // Drives the Pipeline "Faces & text" triage page the way derivative_status
     // drives Media/Pending — `pending,processing` is "still to be analyzed".
@@ -380,6 +385,15 @@ export function buildFilter(
     conditions.push("COALESCE(a.face_count, 0) = 0");
   if (filter.has_text === true) conditions.push("a.ocr_text IS NOT NULL");
   else if (filter.has_text === false) conditions.push("a.ocr_text IS NULL");
+  // Person membership: EXISTS over the clustered faces (asset_faces_person_idx),
+  // same subquery shape as tags — no JOIN to propagate to callers.
+  if (filter.person) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM asset_faces pf
+               WHERE pf.asset_id = a.id AND pf.person_id = ANY($${i++}))`,
+    );
+    params.push(filter.person);
+  }
   if (filter.ml_status) inAny("a.ml_status", filter.ml_status);
   // Search-index membership: an embedding under the current CLIP model only —
   // stale rows from a previous ML_CLIP_MODEL are dead weight the search ignores
@@ -528,6 +542,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "face_count",
     "has_faces",
     "has_text",
+    "person",
     "ml_status",
     "clip_indexed",
     "near_dup",

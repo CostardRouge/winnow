@@ -40,6 +40,10 @@ export type Facets = {
   // count (0 = analyzed, nobody in frame); `with_text` counts assets whose OCR
   // read some text. Optional so a facets payload predating the feature typechecks.
   faces?: VC[];
+  // People in scope (cf. lib/people.ts): id + name + asset count, busiest
+  // first, capped server-side. Optional so a facets payload predating the
+  // feature typechecks.
+  people?: { id: number; name: string | null; count: number }[];
   with_text?: number;
   // How many assets carry a perceptual hash (were analyzed). Gates the
   // "Near-duplicates" toggle so it never shows as a dead filter. Optional so a
@@ -120,6 +124,9 @@ export type Filters = {
   face_count: number[];
   has_faces?: boolean;
   has_text?: boolean;
+  // People (cf. lib/people.ts): keep assets in which ANY selected person
+  // appears. Person ids — labels come from the facet payload.
+  person: number[];
   tags: string[];
   year: number[];
   month: number[];
@@ -179,6 +186,7 @@ export const EMPTY_FILTERS: Filters = {
   place_city: [],
   place_poi: [],
   face_count: [],
+  person: [],
   tags: [],
   year: [],
   month: [],
@@ -569,6 +577,30 @@ export default function FilterPanel({
                   </button>
                 );
               })}
+          </div>
+        </div>
+      )}
+      {/* People (cf. lib/people.ts): one chip per clustered person in scope,
+          busiest first. Unnamed clusters still chip as "Unnamed" — they are
+          pickable (the /people page is where they get named). */}
+      {!!facets.people?.length && (
+        <div className="facet">
+          <div className="facet-title">People</div>
+          <div className="chips">
+            {facets.people.map((p) => {
+              const active = filters.person.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  className={`chip${active ? " active" : ""}`}
+                  onClick={() => u({ person: toggle(filters.person, p.id) })}
+                  title={p.name ?? "Unnamed person"}
+                >
+                  {p.name ?? "Unnamed"}
+                  <span className="chip-count">{p.count}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

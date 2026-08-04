@@ -20,6 +20,7 @@ import sharp from "sharp";
 import { config } from "./config";
 import { getSettings } from "./settings";
 import { many, one, q, tx } from "./db";
+import { assignFacesForAsset } from "./people";
 import { reserveSlot, sleep } from "./rate";
 import { getStorage } from "./storage/index";
 
@@ -562,6 +563,22 @@ export async function runMlJob(assetId: number): Promise<void> {
         ],
       );
     });
+
+    // Cluster the fresh faces into people (cf. lib/people.ts). AFTER the tx:
+    // the wholesale DELETE above also dropped the asset's old person links, and
+    // this re-derives them against the surviving centroids — which is how names
+    // and covers outlive a re-analysis. Best-effort: the analysis itself is
+    // already stored, so a clustering hiccup must not flip ml_status to error
+    // (the face stays unassigned and the next backfill sweep picks it up).
+    if (facesRan && result.faces.length) {
+      try {
+        await assignFacesForAsset(assetId);
+      } catch (err) {
+        console.warn(
+          `[ml] people assignment failed for ${assetId} (faces are stored; a backfill will retry): ${(err as Error).message}`,
+        );
+      }
+    }
   } catch (err) {
     await q(
       "UPDATE assets SET ml_status='error', ml_error=$2, updated_at=now() WHERE id=$1",

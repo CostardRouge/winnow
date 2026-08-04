@@ -456,6 +456,27 @@ export async function enqueueMlBulk(
   return assetIds.length;
 }
 
+// Group every unassigned face into people (cf. lib/people.assignAllPending) —
+// the backfill for a library analyzed before the People feature existed. Rides
+// the ml queue under its own job name (the worker dispatches on it); a fixed
+// jobId coalesces repeat clicks while one sweep is still queued/running, and
+// removeOnComplete/Fail clears that id so the NEXT click enqueues again.
+export async function enqueuePeopleBackfill(): Promise<Job> {
+  return getQueues().ml.add(
+    "people-backfill",
+    {},
+    {
+      ...defaultJobOpts,
+      jobId: "people-backfill",
+      removeOnComplete: true,
+      removeOnFail: true,
+      // The sweep is resumable (it walks whatever is still unassigned), so a
+      // crash needs no retry storm: the next manual run picks up the rest.
+      attempts: 1,
+    },
+  );
+}
+
 // Enqueue an integrity sweep (cf. lib/integrity.ts), coalescing like scans do:
 // the sweep walks the whole scope anyway, so stacking a second pending job is
 // pure wasted NAS I/O — an already-queued sweep of the same scope is returned

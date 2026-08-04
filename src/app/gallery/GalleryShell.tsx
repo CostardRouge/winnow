@@ -199,8 +199,9 @@ function toQuery(
   // `false` asks for the complement (not edited yet / no original found).
   if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "true" : "false");
   if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "true" : "false");
-  // ML analysis (faces + OCR, cf. lib/ml.ts).
+  // ML analysis (faces + OCR + people, cf. lib/ml.ts, lib/people.ts).
   arr("face_count", f.face_count);
+  arr("person", f.person);
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
   if (f.has_text) sp.set("has_text", "true");
   if (f.near_dup) sp.set("near_dup", "true");
@@ -222,7 +223,7 @@ const FILTER_ARRAY_KEYS = [
   "media_type", "ext", "derivative_status", "not_derivative_status",
   "device", "camera_model", "lens",
   "place_country", "place_region", "place_county", "place_city", "place_poi",
-  "tags", "year", "month", "day",
+  "person", "tags", "year", "month", "day",
 ] as const;
 
 function countActiveFilters(f: Filters): number {

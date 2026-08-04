@@ -162,8 +162,9 @@ export type Asset = {
 
 // One face detected in an asset (cf. lib/ml.ts). The bounding box is in pixels
 // of the ANALYZED derivative (img_width/img_height carry its dimensions, so the
-// box scales to any rendition). `embedding` keeps the recognition vector for a
-// future person clustering — no re-inference needed.
+// box scales to any rendition). `embedding` keeps the recognition vector the
+// person clustering matches on (cf. lib/people.ts); `person_id` is the cluster
+// the face landed in (NULL = not yet assigned, or no usable embedding).
 export type AssetFace = {
   id: number;
   asset_id: number;
@@ -175,7 +176,23 @@ export type AssetFace = {
   img_width: number | null;
   img_height: number | null;
   embedding: number[] | null;
+  person_id: number | null;
   created_at: string;
+};
+
+// A person — a cluster of faces (cf. lib/people.ts, migration 0035). `name` is
+// NULL until the user names them; `cover_face_id` is the chosen stack cover
+// (NULL → the reader falls back to the person's best face). The centroid is the
+// running mean of the member embeddings the incremental assignment matches
+// against, with `centroid_n` counting the faces it averages.
+export type Person = {
+  id: number;
+  name: string | null;
+  cover_face_id: number | null;
+  centroid: number[] | null;
+  centroid_n: number;
+  created_at: string;
+  updated_at: string;
 };
 
 // A reverse-geocoded location (cf. lib/geocode.ts), cached once per coordinate
