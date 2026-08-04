@@ -145,22 +145,44 @@ export async function GET(req: NextRequest) {
       // "analyzed, nobody in frame" is a meaningful pick) + how many assets
       // carry OCR-read text (drives the "Has text" toggle).
       settledArray(facet("face_count", scope, params, "value ASC")),
-      // People facet (cf. lib/people.ts): who appears in scope, busiest first,
-      // one chip each (id + name — unnamed people chip as "Unnamed"). Counted
-      // over assets (not faces), because that is what picking the chip filters.
-      // Capped: beyond the top rows the chips are one-off background strangers,
-      // and the /people page is the place to browse ALL of them.
-      many<{ id: number; name: string | null; count: number }>(
-        `SELECT p.id, p.name, count(DISTINCT a.id)::int AS count
+      // People facet (cf. lib/people.ts): who appears in scope, named people
+      // first then busiest first (same order as /api/people), one chip each
+      // wearing its cover face crop. Counted over assets (not faces), because
+      // that is what picking the chip filters. The cover is the person's
+      // chosen face while it is live, else their best live face — resolved by
+      // one ordered subquery per row (people are bounded in the hundreds).
+      // Capped: the panel paginates, and the /people page browses the rest.
+      many<{
+        id: number;
+        name: string | null;
+        count: number;
+        cover_face_id: number | null;
+      }>(
+        `SELECT p.id, p.name, count(DISTINCT a.id)::int AS count,
+                (SELECT f2.id
+                   FROM asset_faces f2
+                   JOIN assets a2 ON a2.id = f2.asset_id AND a2.deleted_at IS NULL
+                  WHERE f2.person_id = p.id
+                  ORDER BY (f2.id = p.cover_face_id) DESC, f2.score DESC, f2.id ASC
+                  LIMIT 1) AS cover_face_id
          FROM people p
          JOIN asset_faces f ON f.person_id = p.id
          JOIN assets a ON a.id = f.asset_id
          WHERE true${scope}
-         GROUP BY p.id, p.name
-         ORDER BY count DESC, p.name ASC NULLS LAST, p.id ASC
-         LIMIT 30`,
+         GROUP BY p.id, p.name, p.cover_face_id
+         ORDER BY (p.name IS NOT NULL) DESC, count DESC,
+                  p.name ASC NULLS LAST, p.id ASC
+         LIMIT 50`,
         params,
-      ).catch(() => [] as { id: number; name: string | null; count: number }[]),
+      ).catch(
+        () =>
+          [] as {
+            id: number;
+            name: string | null;
+            count: number;
+            cover_face_id: number | null;
+          }[],
+      ),
       one<{ count: number }>(
         `SELECT count(*)::int AS count FROM assets a
          WHERE a.ocr_text IS NOT NULL${scope}`,
