@@ -10,16 +10,29 @@
 // still-set cover may point at a face whose asset is now trashed. Each person
 // therefore serves their stored cover only while it is live, falling back to
 // their highest-score live face — so a stack never renders coverless.
-import { many } from "@/lib/db";
+//
+// `?similar_to=<person id>` re-ranks the list by centroid proximity to that
+// person (cosine, cf. lib/people.ts) and attaches `similarity` per row — the
+// merge/move pickers lead with the stacks that LOOK like the one in hand.
+import { NextRequest } from "next/server";
+import { many, one } from "@/lib/db";
 import { config } from "@/lib/config";
-import { peopleCoverage } from "@/lib/people";
+import { cosineSimilarity, peopleCoverage } from "@/lib/people";
 import { json, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const people = await many(
+    const people = await many<{
+      id: number;
+      name: string | null;
+      hidden: boolean;
+      face_count: number;
+      asset_count: number;
+      cover_face_id: number | null;
+      similarity?: number;
+    }>(
       `SELECT p.id, p.name, p.hidden,
               c.face_count, c.asset_count,
               COALESCE(cov.id, best.id) AS cover_face_id
@@ -49,6 +62,40 @@ export async function GET() {
         ORDER BY (p.name IS NOT NULL) DESC, c.asset_count DESC,
                  p.name ASC NULLS LAST, p.id ASC`,
     );
+    // Proximity re-rank: centroids are bounded (hundreds) and live in the
+    // people table, so one extra query + a JS cosine per row is cheap. People
+    // without a comparable centroid sink to the end in their default order.
+    const similarTo = Number.parseInt(
+      req.nextUrl.searchParams.get("similar_to") ?? "",
+      10,
+    );
+    if (Number.isFinite(similarTo)) {
+      const ref = await one<{ centroid: number[] | null }>(
+        `SELECT centroid FROM people WHERE id = $1`,
+        [similarTo],
+      );
+      if (Array.isArray(ref?.centroid) && ref.centroid.length > 0) {
+        const centroids = await many<{ id: number; centroid: number[] | null }>(
+          `SELECT id, centroid FROM people WHERE centroid IS NOT NULL`,
+        );
+        const sim = new Map(
+          centroids.map((c) => [
+            c.id,
+            Array.isArray(c.centroid)
+              ? cosineSimilarity(ref.centroid as number[], c.centroid)
+              : -1,
+          ]),
+        );
+        for (const p of people) {
+          const s = sim.get(p.id) ?? -1;
+          if (s > -1) p.similarity = s;
+        }
+        people.sort(
+          (a, b) => (b.similarity ?? -1) - (a.similarity ?? -1),
+        );
+      }
+    }
+
     // Detected-but-unclustered faces: non-zero on a library analyzed before the
     // People feature existed — the page offers the one-click backfill then.
     const coverage = await peopleCoverage();

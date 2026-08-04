@@ -199,9 +199,12 @@ function toQuery(
   // `false` asks for the complement (not edited yet / no original found).
   if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "true" : "false");
   if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "true" : "false");
-  // ML analysis (faces + OCR + people, cf. lib/ml.ts, lib/people.ts).
+  // ML analysis (faces + OCR + people, cf. lib/ml.ts, lib/people.ts). The
+  // "together" combinator only means something with two or more people picked.
   arr("face_count", f.face_count);
   arr("person", f.person);
+  if (f.person_mode === "all" && f.person.length > 1)
+    sp.set("person_mode", "all");
   if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
   if (f.has_text) sp.set("has_text", "true");
   if (f.near_dup) sp.set("near_dup", "true");

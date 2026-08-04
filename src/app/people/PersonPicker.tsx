@@ -48,7 +48,9 @@ export default function PersonPicker({
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchJson<{ people: PersonRow[] }>("/api/people")
+    // similar_to re-ranks by centroid proximity: the stacks that LOOK like
+    // this person lead the list — for a merge, the twin is usually first.
+    fetchJson<{ people: PersonRow[] }>(`/api/people?similar_to=${selfId}`)
       .then((d) =>
         setPeople(d.people.filter((p) => p.id !== selfId && !p.hidden)),
       )
@@ -159,6 +161,14 @@ export default function PersonPicker({
                 <span className={`person-name${p.name ? "" : " person-unnamed"}`}>
                   {p.name ?? "Unnamed"}
                 </span>
+                {p.similarity != null && p.similarity > 0.3 && (
+                  <span
+                    className="pill merge-sim"
+                    title="How closely this stack's average face matches this person"
+                  >
+                    {Math.round(p.similarity * 100)}% match
+                  </span>
+                )}
                 <span className="pill person-count">
                   {p.asset_count.toLocaleString()} media
                 </span>

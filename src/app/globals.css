@@ -5160,6 +5160,46 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: var(--color-accent);
   }
 
+  /* Face boundaries over the viewer's photo (cf. MediaViewer). The layer is a
+     congruent copy of the image's layout box wearing the same zoom/pan
+     transform, so the boxes track the media exactly; each box stays invisible
+     until hovered — or lit from its chip in the info panel — and clicks
+     through to the person's page. */
+  .face-layer {
+    @apply absolute;
+    pointer-events: none;
+  }
+  .face-box {
+    @apply absolute block rounded-md border-2;
+    border-color: transparent;
+    pointer-events: auto;
+  }
+  .face-box:hover,
+  .face-box.active {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .face-box-label {
+    @apply absolute left-0 hidden whitespace-nowrap rounded px-1.5 py-0.5 text-[11px];
+    top: 100%;
+    margin-top: 4px;
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  .face-box:hover .face-box-label,
+  .face-box.active .face-box-label {
+    display: block;
+  }
+  /* The info panel's face-chip block: same sectioning as .viewer-pair (the
+     panel lives on the dark stage, hence the fixed hairline). */
+  .viewer-faces {
+    @apply mt-2.5 border-t pt-2.5;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .viewer-faces .chips {
+    @apply mt-1.5;
+  }
+
   /* Face chips in the gallery's People facet: the crop rides the chip's left
      edge, bleeding into the rounded end so the chip reads as a tiny person. */
   .person-chip {
@@ -5196,6 +5236,36 @@ html[data-theme="dark"] .btn-primary:hover {
   .merge-row-pinned .person-avatar {
     border-style: dashed;
     background: transparent;
+  }
+  /* Centroid-proximity readout on picker rows and suggestion pairs. */
+  .merge-sim {
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+  }
+
+  /* Merge-suggestions banner on the shelf + the pair rows in its modal. */
+  .suggest-banner {
+    @apply flex items-center gap-3 rounded-[var(--radius)] border px-3 py-2;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .suggest-row {
+    @apply flex items-center gap-2 rounded-[var(--radius)] px-2 py-1.5;
+  }
+  .suggest-row:hover {
+    background: var(--color-surface);
+  }
+  .suggest-row .person-avatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+  .suggest-row .person-name {
+    @apply min-w-0 flex-shrink truncate;
+  }
+  .suggest-arrow {
+    color: var(--color-faint);
+    flex-shrink: 0;
   }
 }
 

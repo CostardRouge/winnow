@@ -34,7 +34,8 @@ const PEOPLE_LOCK_KEY = 793_035; // "people / migration 0035"
 // Cosine similarity, tolerant of the container's unnormalized vectors. Returns
 // -1 (never matches) on a dimension mismatch — embeddings from two different
 // face models must not be compared, mirroring how asset_clip pins its model.
-function cosineSimilarity(a: number[], b: number[]): number {
+// Exported for the proximity features (picker ordering, merge suggestions).
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return -1;
   let dot = 0;
   let na = 0;
@@ -406,6 +407,45 @@ export async function reassignFaces(
     await pruneEmptyPeople(client);
     return { moved: faces.rows.length, targetId: destId };
   });
+}
+
+// Pairs of visible people whose centroids sit just below the assignment
+// threshold — the clusterer's near-misses, almost always one real person split
+// in two (different lighting, glasses on/off, years apart). Surfaced on
+// /people as merge SUGGESTIONS: proposed, never auto-applied — a human clicks
+// each merge. O(n²) over centroids, fine for the bounded people count.
+const SUGGESTION_MARGIN = 0.1; // how far below the assignment threshold to look
+const SUGGESTION_FLOOR = 0.3; // never suggest below this — noise territory
+
+export async function suggestMerges(
+  limit = 20,
+): Promise<{ a: number; b: number; similarity: number }[]> {
+  const rows = await many<{ id: number; centroid: number[] | null }>(
+    `SELECT id, centroid FROM people
+      WHERE NOT hidden AND centroid IS NOT NULL
+      ORDER BY id`,
+  );
+  const people = rows.filter(
+    (r) => Array.isArray(r.centroid) && r.centroid.length > 0,
+  );
+  const threshold = Math.max(
+    SUGGESTION_FLOOR,
+    config.ml.person.minSimilarity - SUGGESTION_MARGIN,
+  );
+  const pairs: { a: number; b: number; similarity: number }[] = [];
+  for (let i = 0; i < people.length; i++) {
+    for (let j = i + 1; j < people.length; j++) {
+      const sim = cosineSimilarity(
+        people[i].centroid as number[],
+        people[j].centroid as number[],
+      );
+      if (sim >= threshold) {
+        pairs.push({ a: people[i].id, b: people[j].id, similarity: sim });
+      }
+    }
+  }
+  pairs.sort((x, y) => y.similarity - x.similarity);
+  return pairs.slice(0, limit);
 }
 
 // How much of the face pool is clustered — the /people header line and the

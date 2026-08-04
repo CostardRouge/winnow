@@ -135,11 +135,14 @@ export const FilterSchema = z
     face_count: intList,
     has_faces: boolish,
     has_text: boolish,
-    // People (cf. lib/people.ts, migration 0035): keep assets in which ANY of
-    // the listed persons appears (multi, OR within the dimension like every
-    // categorical filter). Person cards on /people link into the grids with
-    // this, and the gallery's People facet chips drive it too.
+    // People (cf. lib/people.ts, migration 0035): keep assets in which the
+    // listed persons appear. `person_mode` decides the combinator: "any"
+    // (default — OR within the dimension, like every categorical filter) or
+    // "all" (every listed person is in frame TOGETHER — "the photos of the
+    // two of them"). Person cards on /people link into the grids with this,
+    // and the gallery's People facet chips drive it too.
     person: intList,
+    person_mode: z.enum(["any", "all"]).optional(),
     // ML lifecycle (multi): pending | processing | ready | error | skipped.
     // Drives the Pipeline "Faces & text" triage page the way derivative_status
     // drives Media/Pending — `pending,processing` is "still to be analyzed".
@@ -386,13 +389,25 @@ export function buildFilter(
   if (filter.has_text === true) conditions.push("a.ocr_text IS NOT NULL");
   else if (filter.has_text === false) conditions.push("a.ocr_text IS NULL");
   // Person membership: EXISTS over the clustered faces (asset_faces_person_idx),
-  // same subquery shape as tags — no JOIN to propagate to callers.
+  // same subquery shape as tags — no JOIN to propagate to callers. "all" mode
+  // ANDs one EXISTS per person (everyone in frame together); the bounded chip
+  // selection keeps the subquery count small.
   if (filter.person) {
-    conditions.push(
-      `EXISTS (SELECT 1 FROM asset_faces pf
-               WHERE pf.asset_id = a.id AND pf.person_id = ANY($${i++}))`,
-    );
-    params.push(filter.person);
+    if (filter.person_mode === "all") {
+      for (const personId of filter.person) {
+        conditions.push(
+          `EXISTS (SELECT 1 FROM asset_faces pf
+                   WHERE pf.asset_id = a.id AND pf.person_id = $${i++})`,
+        );
+        params.push(personId);
+      }
+    } else {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM asset_faces pf
+                 WHERE pf.asset_id = a.id AND pf.person_id = ANY($${i++}))`,
+      );
+      params.push(filter.person);
+    }
   }
   if (filter.ml_status) inAny("a.ml_status", filter.ml_status);
   // Search-index membership: an embedding under the current CLIP model only —
@@ -543,6 +558,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "has_faces",
     "has_text",
     "person",
+    "person_mode",
     "ml_status",
     "clip_indexed",
     "near_dup",

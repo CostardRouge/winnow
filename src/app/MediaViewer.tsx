@@ -16,9 +16,26 @@
 // (e.g. an export item keyed by its source asset).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { fetchJson } from "@/lib/fetchJson";
+
+// One face detected in the current asset (GET /api/assets/:id/faces): who it
+// is plus the pixel bbox in the ANALYZED derivative, whose dimensions ride
+// along so the box projects onto the displayed rendition (cf. migration 0021).
+type ViewerFace = {
+  id: number;
+  person_id: number | null;
+  person_name: string | null;
+  score: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  img_width: number | null;
+  img_height: number | null;
+};
 
 export type ViewerItem = AssetMetaInput & {
   id: number;
@@ -766,6 +783,79 @@ export default function MediaViewer<T extends ViewerItem>({
     cursor: scale > MIN_SCALE ? (dragging ? "grabbing" : "grab") : undefined,
   };
 
+  // --- Faces (cf. lib/people.ts) --------------------------------------------
+  // The current asset's detected faces: chips in the info panel, boundaries on
+  // the media itself (hover a chip or the face to reveal its box; clicking a
+  // box opens that person's page). Photos only — boxes over a playing video
+  // would be nonsense, and the analysis ran on the photo proxy anyway.
+  const [faces, setFaces] = useState<ViewerFace[] | null>(null);
+  const [activeFaceId, setActiveFaceId] = useState<number | null>(null);
+  useEffect(() => {
+    setFaces(null);
+    setActiveFaceId(null);
+    if (item.media_type === "video") return;
+    let alive = true;
+    fetchJson<{ faces: ViewerFace[] }>(`/api/assets/${item.id}/faces`)
+      .then((d) => {
+        if (alive) setFaces(d.faces);
+      })
+      .catch(() => {
+        /* no chips/boxes — the media itself is unaffected */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [item.id, item.media_type]);
+
+  // The face layer must sit exactly over the displayed image. offsetWidth/
+  // offsetLeft give the image's UNtransformed layout box relative to its
+  // positioned ancestor (.stage-pane); the layer then wears the very same
+  // transform as the image, so it tracks zoom/pan with no re-measurement.
+  const mainImgRef = useRef<HTMLImageElement | null>(null);
+  const [imgBox, setImgBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const measureImg = useCallback(() => {
+    const el = mainImgRef.current;
+    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) {
+      setImgBox(null);
+      return;
+    }
+    setImgBox({
+      left: el.offsetLeft,
+      top: el.offsetTop,
+      width: el.offsetWidth,
+      height: el.offsetHeight,
+    });
+  }, []);
+  useEffect(() => {
+    measureImg();
+    const el = mainImgRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measureImg);
+    ro.observe(el);
+    window.addEventListener("resize", measureImg);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measureImg);
+    };
+    // Re-hooked whenever the displayed media changes shape or the layout
+    // around it does (panel toggle re-flows the stage).
+  }, [measureImg, index, panelOpen, ready]);
+
+  // Boundaries only over the item's OWN photo: a companion (RAW side), an
+  // edit counterpart or a burst sibling is a different image than the one the
+  // boxes were measured on.
+  const faceLayerOn =
+    !burstFrame &&
+    !companionShown &&
+    !counterpartShown &&
+    item.media_type !== "video" &&
+    (faces?.length ?? 0) > 0;
+
   // The two neighbour panes riding the swipe track beside the current media.
   // Always rendered (not just mid-drag): offscreen they double as a preload of
   // the adjacent proxies, so both a drag's reveal and a committed step paint
@@ -872,6 +962,7 @@ export default function MediaViewer<T extends ViewerItem>({
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
+                    ref={mainImgRef}
                     key={
                       counterpartShown
                         ? `e${counterpartId}`
@@ -882,10 +973,65 @@ export default function MediaViewer<T extends ViewerItem>({
                     src={currentSrc}
                     alt={displayed.filename}
                     style={transform}
+                    onLoad={measureImg}
                   />
                 )
               ) : (
                 <div className="placeholder">Derivative unavailable</div>
+              )}
+              {faceLayerOn && imgBox && (
+                // Face boundaries, projected from analyzed-image pixels onto
+                // the displayed image (percentages of a congruent layer).
+                // Boxes are invisible until hovered — or forced visible by
+                // hovering their chip in the info panel; a click opens the
+                // person's page. mousedown/touchstart stop here so grabbing a
+                // face never starts a pan/swipe.
+                <div
+                  className="face-layer"
+                  style={{
+                    left: imgBox.left,
+                    top: imgBox.top,
+                    width: imgBox.width,
+                    height: imgBox.height,
+                    transform: transform.transform,
+                    transformOrigin: "center center",
+                  }}
+                >
+                  {faces!.map((f) => {
+                    if (!f.img_width || !f.img_height) return null;
+                    const style = {
+                      left: `${(f.x1 / f.img_width) * 100}%`,
+                      top: `${(f.y1 / f.img_height) * 100}%`,
+                      width: `${((f.x2 - f.x1) / f.img_width) * 100}%`,
+                      height: `${((f.y2 - f.y1) / f.img_height) * 100}%`,
+                    };
+                    const cls = `face-box${activeFaceId === f.id ? " active" : ""}`;
+                    const label = f.person_name ?? "Unnamed";
+                    const hover = {
+                      onMouseEnter: () => setActiveFaceId(f.id),
+                      onMouseLeave: () =>
+                        setActiveFaceId((cur) => (cur === f.id ? null : cur)),
+                      onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+                      onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
+                    };
+                    return f.person_id != null ? (
+                      <Link
+                        key={f.id}
+                        href={`/people/${f.person_id}`}
+                        className={cls}
+                        style={style}
+                        title={`${label} — open their page`}
+                        {...hover}
+                      >
+                        <span className="face-box-label">{label}</span>
+                      </Link>
+                    ) : (
+                      <span key={f.id} className={cls} style={style} {...hover}>
+                        <span className="face-box-label">{label}</span>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
             {nextNeighbor && (
@@ -1149,6 +1295,53 @@ export default function MediaViewer<T extends ViewerItem>({
                     {counterpartFilename ?? "—"}
                   </span>
                 </button>
+              </div>
+            )}
+            {(faces?.length ?? 0) > 0 && (
+              // Who is in frame (cf. lib/people.ts): one chip per detected
+              // face, linking to the person's page. Hovering a chip lights up
+              // that face's boundary on the media (and vice versa).
+              <div className="viewer-faces">
+                <div className="viewer-pair-label">
+                  {faces!.length === 1 ? "1 face" : `${faces!.length} faces`}
+                </div>
+                <div className="chips">
+                  {faces!.map((f) => {
+                    const label = f.person_name ?? "Unnamed";
+                    const cls = `chip person-chip${activeFaceId === f.id ? " active" : ""}`;
+                    const crop = (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        className="chip-face"
+                        src={`/api/faces/${f.id}/thumb`}
+                        alt=""
+                        loading="lazy"
+                      />
+                    );
+                    const hover = {
+                      onMouseEnter: () => setActiveFaceId(f.id),
+                      onMouseLeave: () =>
+                        setActiveFaceId((cur) => (cur === f.id ? null : cur)),
+                    };
+                    return f.person_id != null ? (
+                      <Link
+                        key={f.id}
+                        href={`/people/${f.person_id}`}
+                        className={cls}
+                        title={`${label} — open their page`}
+                        {...hover}
+                      >
+                        {crop}
+                        {label}
+                      </Link>
+                    ) : (
+                      <span key={f.id} className={cls} title={label} {...hover}>
+                        {crop}
+                        {label}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {renderInfo?.(item)}
