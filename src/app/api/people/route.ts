@@ -1,6 +1,7 @@
 // GET /api/people → every person with their occurrence counts and effective
-// cover face, busiest first — the payload behind the /people page and the
-// gallery's People facet. Counts follow the app-wide scope rules (live assets
+// cover face — the payload behind the /people page and the merge picker.
+// Named people first (a name is the user's claim that the stack matters),
+// then busiest first within each group. Counts follow the app-wide scope rules (live assets
 // only): purge deletes face rows and trash hides assets, so a person's numbers
 // always match what their filtered grid will actually show.
 //
@@ -45,7 +46,8 @@ export async function GET() {
            LIMIT 1
         ) best ON true
         WHERE c.face_count > 0 OR p.name IS NOT NULL
-        ORDER BY c.asset_count DESC, p.name ASC NULLS LAST, p.id ASC`,
+        ORDER BY (p.name IS NOT NULL) DESC, c.asset_count DESC,
+                 p.name ASC NULLS LAST, p.id ASC`,
     );
     // Detected-but-unclustered faces: non-zero on a library analyzed before the
     // People feature existed — the page offers the one-click backfill then.
