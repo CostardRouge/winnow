@@ -20,6 +20,7 @@ import { PersonAvatar, type PersonRow } from "./PeoplePanel";
 
 export default function PersonPicker({
   selfId,
+  excludeIds,
   title,
   hint,
   initialQuery,
@@ -28,8 +29,11 @@ export default function PersonPicker({
   confirm,
   onClose,
 }: {
-  /** The stack the action operates on — excluded from the candidates. */
+  /** The stack the action operates on — excluded from the candidates, and the
+   *  reference for the proximity ranking. */
   selfId: number;
+  /** Additional stacks to leave out (a bulk merge excludes every source). */
+  excludeIds?: number[];
   title: string;
   hint: string;
   /** Pre-seeded search (the duplicate-name rename flow). */
@@ -50,14 +54,16 @@ export default function PersonPicker({
   useEffect(() => {
     // similar_to re-ranks by centroid proximity: the stacks that LOOK like
     // this person lead the list — for a merge, the twin is usually first.
+    const excluded = new Set([selfId, ...(excludeIds ?? [])]);
     fetchJson<{ people: PersonRow[] }>(`/api/people?similar_to=${selfId}`)
       .then((d) =>
-        setPeople(d.people.filter((p) => p.id !== selfId && !p.hidden)),
+        setPeople(d.people.filter((p) => !excluded.has(p.id) && !p.hidden)),
       )
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : "Failed to load"),
       );
-  }, [selfId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selfId, JSON.stringify(excludeIds ?? [])]);
 
   useEffect(() => {
     searchRef.current?.select();

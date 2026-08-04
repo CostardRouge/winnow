@@ -403,6 +403,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
             <MediaViewer
               items={items}
               index={viewer}
+              currentPersonId={person.id}
               onIndexChange={setViewer}
               onClose={() => {
                 gridRef.current?.scrollToIndex(viewer);

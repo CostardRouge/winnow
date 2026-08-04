@@ -96,14 +96,23 @@ export function PersonAvatar({
 }
 
 /** One stack. The name line carries its own pencil (renaming is THE action
- *  here); the ⋯ button opens the rest — merge, open in gallery. */
+ *  here); the ⋯ button opens the rest — merge, open in gallery. The check on
+ *  the opposite corner joins the card to a bulk selection: appears on hover,
+ *  stays put once ANY card is selected so building a set is click-click-click,
+ *  not hover-hunt. */
 function PersonCard({
   person,
+  selected,
+  selectionActive,
+  onToggleSelect,
   onRenamed,
   onMergeRequest,
   onToggleHidden,
 }: {
   person: PersonRow;
+  selected: boolean;
+  selectionActive: boolean;
+  onToggleSelect: (id: number) => void;
   onRenamed: (id: number, name: string | null) => void;
   onMergeRequest: (person: PersonRow) => void;
   onToggleHidden: (person: PersonRow) => void;
@@ -148,8 +157,22 @@ function PersonCard({
   }
 
   return (
-    <div className="person-card-wrap" ref={wrapRef}>
-      <Link href={`/people/${person.id}`} className="person-card">
+    <div
+      className={`person-card-wrap${selected ? " is-selected" : ""}${selectionActive ? " selection-active" : ""}`}
+      ref={wrapRef}
+    >
+      <Link
+        href={`/people/${person.id}`}
+        className="person-card"
+        onClick={(e) => {
+          // While a selection is being built, tapping a card toggles it
+          // instead of navigating — same behavior as the media grids.
+          if (selectionActive) {
+            e.preventDefault();
+            onToggleSelect(person.id);
+          }
+        }}
+      >
         <PersonAvatar coverFaceId={person.cover_face_id} name={person.name} />
         {!editing && (
           <span className="person-name-row">
@@ -191,6 +214,17 @@ function PersonCard({
           onBlur={() => setEditing(false)}
         />
       )}
+      <button
+        type="button"
+        className={`person-select${selected ? " active" : ""}`}
+        role="checkbox"
+        aria-checked={selected}
+        title={selected ? "Remove from selection" : "Select for bulk merge"}
+        aria-label={`Select ${person.name ?? "unnamed person"}`}
+        onClick={() => onToggleSelect(person.id)}
+      >
+        {Icons.pick}
+      </button>
       <button
         type="button"
         className="person-more"
@@ -286,6 +320,10 @@ export default function PeoplePanel() {
   // best-effort — a failed fetch just means no banner.
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  // Bulk merge: the checked cards, folded into ONE picked target in a single
+  // confirm ("these five strangers are all Léa").
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // Deliberately SEQUENTIAL: the shelf paints (and its face crops start
   // loading) before the suggestions request kicks off — a cold suggestion
@@ -401,6 +439,26 @@ export default function PeoplePanel() {
     return { inTab, visible, hidden: inTab.length - visible.length };
   }, [data, tab, query]);
 
+  // Per-tab population (independent of search/threshold): the tabs wear these
+  // as count badges, so "how many are still unnamed" is answered at a glance.
+  const tabCounts = useMemo(() => {
+    const people = data?.people ?? [];
+    return {
+      all: people.filter((p) => !p.hidden).length,
+      named: people.filter((p) => !p.hidden && p.name != null).length,
+      unnamed: people.filter((p) => !p.hidden && p.name == null).length,
+      hidden: people.filter((p) => p.hidden).length,
+    } satisfies Record<Tab, number>;
+  }, [data]);
+
+  const toggleSelect = (id: number) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   async function groupNow() {
     try {
       await fetchJson("/api/pipeline/people-backfill", { method: "POST" });
@@ -476,6 +534,7 @@ export default function PeoplePanel() {
               title={t.title}
             >
               {t.label}
+              <span className="tab-count">{num(tabCounts[t.key])}</span>
             </button>
           ))}
         </div>
@@ -532,6 +591,28 @@ export default function PeoplePanel() {
         )}
       </div>
 
+      {selectedIds.size > 0 && (
+        // Bulk merge: every checked stack folds into ONE picked target. The
+        // bar sits where the suggestions banner does — it is the same verb,
+        // just human-selected instead of centroid-suggested.
+        <div className="suggest-banner">
+          <span className="hint">
+            {num(selectedIds.size)}{" "}
+            {selectedIds.size === 1 ? "stack" : "stacks"} selected
+          </span>
+          <button
+            className="btn btn-primary"
+            disabled={selectedIds.size === 0}
+            onClick={() => setBulkOpen(true)}
+          >
+            Merge into…
+          </button>
+          <button className="btn" onClick={() => setSelectedIds(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
       {suggestions.length > 0 && (
         // Proposed, never automatic: the banner counts the near-identical
         // pairs and the modal walks them one merge (or dismissal) at a time.
@@ -575,12 +656,40 @@ export default function PeoplePanel() {
             <PersonCard
               key={p.id}
               person={p}
+              selected={selectedIds.has(p.id)}
+              selectionActive={selectedIds.size > 0}
+              onToggleSelect={toggleSelect}
               onRenamed={rename}
               onMergeRequest={(person) => setMerging({ person })}
               onToggleHidden={toggleHidden}
             />
           ))}
         </div>
+      )}
+
+      {bulkOpen && (
+        <PersonPicker
+          selfId={[...selectedIds][0]}
+          excludeIds={[...selectedIds]}
+          title={`Merge ${num(selectedIds.size)} ${selectedIds.size === 1 ? "stack" : "stacks"} into…`}
+          hint="Every face of the selected stacks moves to the person you pick; they keep their name and cover. The selected stacks disappear."
+          onClose={() => setBulkOpen(false)}
+          confirm={async (target) => {
+            if (!target) return;
+            // One merge per source, sequential — each is its own transaction
+            // server-side, and the advisory lock serializes them anyway.
+            for (const sourceId of selectedIds) {
+              await fetchJson(`/api/people/${target.id}/merge`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ source_id: sourceId }),
+              });
+            }
+            setBulkOpen(false);
+            setSelectedIds(new Set());
+            void load();
+          }}
+        />
       )}
 
       {suggestOpen && data && (

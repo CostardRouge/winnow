@@ -5051,6 +5051,56 @@ html[data-theme="dark"] .btn-primary:hover {
   .person-name-input {
     @apply mt-1 w-full text-[13px];
   }
+  /* Per-tab population badge on the People tabs — same chip language as
+     .pipeline-tab-count, restyled for the segmented .tab control. */
+  .tab .tab-count {
+    @apply ml-2 rounded-full px-1.5 py-0.5 text-[10px] leading-none;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    background: var(--color-surface);
+    color: var(--color-muted);
+  }
+  .tab.active .tab-count {
+    background: var(--color-surface-2);
+    color: var(--color-text);
+  }
+
+  /* A modal's loading state (person pickers) needs its own breathing room —
+     without it the spinner sits flush against the search field above. */
+  .modal .zone-loading {
+    @apply py-4;
+  }
+
+  /* Bulk-merge selection check: the card's top-LEFT corner (the ⋯ menu owns
+     the right). Hover-revealed like the ⋯, but pinned visible the moment ANY
+     card is selected — building a set is click-click-click, not hover-hunt. */
+  .person-select {
+    @apply absolute left-1 top-1 flex cursor-pointer items-center
+      justify-center rounded-full border p-1 opacity-0 transition duration-150;
+    color: var(--color-muted);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .person-select svg {
+    width: 14px;
+    height: 14px;
+  }
+  .person-card-wrap:hover .person-select,
+  .person-select:focus-visible,
+  .person-card-wrap.selection-active .person-select,
+  .person-select.active {
+    opacity: 1;
+  }
+  .person-select.active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  .person-card-wrap.is-selected .person-card {
+    background: var(--color-surface);
+    border-color: var(--color-accent);
+  }
+
   /* The ⋯ button rides the card's top-right corner (hover/focus only) and
      opens the action menu below itself — merge, gallery; rename is also here
      for discoverability, though the pencil is the shortcut. */
@@ -5189,6 +5239,20 @@ html[data-theme="dark"] .btn-primary:hover {
   .face-box:hover .face-box-label,
   .face-box.active .face-box-label {
     display: block;
+  }
+  /* The "this goes somewhere" glyph on navigable faces/chips — its absence is
+     the tell that the face belongs to the page you're already on. */
+  .face-box-label .face-box-link svg,
+  .chip-link svg {
+    width: 11px;
+    height: 11px;
+  }
+  .face-box-link {
+    @apply ml-1 inline-flex align-middle;
+  }
+  .chip-link {
+    @apply inline-flex;
+    color: var(--color-faint);
   }
   /* The info panel's face-chip block: same sectioning as .viewer-pair (the
      panel lives on the dark stage, hence the fixed hairline). */
