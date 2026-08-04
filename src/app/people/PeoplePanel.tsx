@@ -592,9 +592,11 @@ export default function PeoplePanel() {
       </div>
 
       {selectedIds.size > 0 && (
-        // Bulk merge: every checked stack folds into ONE picked target. The
-        // bar sits where the suggestions banner does — it is the same verb,
-        // just human-selected instead of centroid-suggested.
+        // Selection actions: bulk merge into one target, and the two library
+        // searches — "together" (every selected person in the SAME media,
+        // person_mode=all, cf. lib/filter.ts) needs two people to mean
+        // anything; "any" works from one up. The bar sits where the
+        // suggestions banner does — same register, human-selected.
         <div className="suggest-banner">
           <span className="hint">
             {num(selectedIds.size)}{" "}
@@ -607,6 +609,22 @@ export default function PeoplePanel() {
           >
             Merge into…
           </button>
+          {selectedIds.size > 1 && (
+            <Link
+              className="btn"
+              href={`/library/gallery?person=${[...selectedIds].join(",")}&person_mode=all`}
+              title="Media where every selected person is in frame together"
+            >
+              View together
+            </Link>
+          )}
+          <Link
+            className="btn"
+            href={`/library/gallery?person=${[...selectedIds].join(",")}`}
+            title="Media with any of the selected people"
+          >
+            View in gallery
+          </Link>
           <button className="btn" onClick={() => setSelectedIds(new Set())}>
             Clear
           </button>
@@ -707,7 +725,7 @@ export default function PeoplePanel() {
           title="Merge into…"
           hint={
             merging.hint ??
-            "Every face of this stack moves to the person you pick; they keep their name and cover. This stack disappears."
+            "Click a person to fold this stack into them — or tick several stacks to fold those into THIS one instead."
           }
           initialQuery={merging.initialQuery}
           onClose={() => setMerging(null)}
@@ -722,6 +740,21 @@ export default function PeoplePanel() {
             // server list is the truth now.
             setMerging(null);
             void load();
+          }}
+          multi={{
+            label: (n) =>
+              `Merge ${num(n)} into “${merging.person.name ?? "this stack"}”`,
+            confirm: async (ids) => {
+              for (const sourceId of ids) {
+                await fetchJson(`/api/people/${merging.person.id}/merge`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ source_id: sourceId }),
+                });
+              }
+              setMerging(null);
+              void load();
+            },
           }}
         />
       )}
