@@ -5276,6 +5276,23 @@ html[data-theme="dark"] .btn-primary:hover {
     margin: -2px 0;
   }
 
+  /* Clickable avatar+name pairing inside a merge/suggest row — opens the
+     person's profile in a new tab without losing the row's own click
+     behavior (picking/merging) or the modal's state. */
+  .person-chip {
+    @apply flex min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius)]
+      no-underline;
+    color: inherit;
+  }
+  .person-chip:hover .person-name,
+  .person-chip:focus-visible .person-name {
+    text-decoration: underline;
+  }
+  .person-chip:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
   /* Merge picker: one row per candidate person. */
   .merge-list {
     @apply flex max-h-[50vh] flex-col gap-1 overflow-y-auto;

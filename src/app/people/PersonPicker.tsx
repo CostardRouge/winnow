@@ -203,9 +203,27 @@ export default function PersonPicker({
                   multi && checked.size > 0 ? toggleCheck(p.id) : pick(p)
                 }
               >
-                <PersonAvatar coverFaceId={p.cover_face_id} name={p.name} />
-                <span className={`person-name${p.name ? "" : " person-unnamed"}`}>
-                  {p.name ?? "Unnamed"}
+                <span
+                  role="link"
+                  tabIndex={0}
+                  className="person-chip"
+                  title={`View ${p.name ?? "Unnamed"}'s profile`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`/people/${p.id}`, "_blank", "noopener,noreferrer");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(`/people/${p.id}`, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  <PersonAvatar coverFaceId={p.cover_face_id} name={p.name} />
+                  <span className={`person-name${p.name ? "" : " person-unnamed"}`}>
+                    {p.name ?? "Unnamed"}
+                  </span>
                 </span>
                 {p.similarity != null && p.similarity > 0.3 && (
                   <span
