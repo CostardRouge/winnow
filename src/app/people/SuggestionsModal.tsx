@@ -11,6 +11,7 @@
 // curation worth keeping), else into the bigger stack — same rule either way:
 // the stack with more invested wins.
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { EmptyState } from "@/app/ui";
 import { PersonAvatar, type PersonRow } from "./PeoplePanel";
@@ -104,27 +105,43 @@ export default function SuggestionsModal({
               const [target, source] = pickTarget(row.a, row.b);
               return (
                 <div key={row.key} className="suggest-row">
-                  <PersonAvatar
-                    coverFaceId={source.cover_face_id}
-                    name={source.name}
-                  />
-                  <span
-                    className={`person-name${source.name ? "" : " person-unnamed"}`}
+                  <Link
+                    href={`/people/${source.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="person-chip"
+                    title={`View ${source.name ?? "Unnamed"}'s profile`}
                   >
-                    {source.name ?? "Unnamed"}
-                  </span>
+                    <PersonAvatar
+                      coverFaceId={source.cover_face_id}
+                      name={source.name}
+                    />
+                    <span
+                      className={`person-name${source.name ? "" : " person-unnamed"}`}
+                    >
+                      {source.name ?? "Unnamed"}
+                    </span>
+                  </Link>
                   <span className="suggest-arrow" aria-hidden>
                     →
                   </span>
-                  <PersonAvatar
-                    coverFaceId={target.cover_face_id}
-                    name={target.name}
-                  />
-                  <span
-                    className={`person-name${target.name ? "" : " person-unnamed"}`}
+                  <Link
+                    href={`/people/${target.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="person-chip"
+                    title={`View ${target.name ?? "Unnamed"}'s profile`}
                   >
-                    {target.name ?? "Unnamed"}
-                  </span>
+                    <PersonAvatar
+                      coverFaceId={target.cover_face_id}
+                      name={target.name}
+                    />
+                    <span
+                      className={`person-name${target.name ? "" : " person-unnamed"}`}
+                    >
+                      {target.name ?? "Unnamed"}
+                    </span>
+                  </Link>
                   <span
                     className="pill merge-sim"
                     title="How closely the two stacks' average faces match"
