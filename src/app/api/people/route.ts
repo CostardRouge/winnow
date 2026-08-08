@@ -13,7 +13,8 @@
 //
 // `?similar_to=<person id>` re-ranks the list by centroid proximity to that
 // person (cosine, cf. lib/people.ts) and attaches `similarity` per row — the
-// merge/move pickers lead with the stacks that LOOK like the one in hand.
+// merge/move pickers lead with the stacks that LOOK like the one in hand,
+// named ones first (a name is worth merging into), then unnamed by similarity.
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import { config } from "@/lib/config";
@@ -90,8 +91,12 @@ export async function GET(req: NextRequest) {
           const s = sim.get(p.id) ?? -1;
           if (s > -1) p.similarity = s;
         }
+        // Named people are the ones worth merging into — lead with them, most
+        // similar first, then the unnamed stacks by similarity.
         people.sort(
-          (a, b) => (b.similarity ?? -1) - (a.similarity ?? -1),
+          (a, b) =>
+            (Number(b.name != null) - Number(a.name != null)) ||
+            ((b.similarity ?? -1) - (a.similarity ?? -1)),
         );
       }
     }
