@@ -6,8 +6,9 @@
 // repair). The caller says what picking MEANS via `confirm` — this component
 // owns the list, the search, and the busy/error plumbing.
 //
-// Candidates come sorted by the API (named first, then busiest); hidden people
-// are left out (hiding a stack means not being offered it). The search matches
+// Candidates come sorted by the API — look-alikes first (centroid proximity),
+// a name only breaking ties; hidden people are left out (hiding a stack means
+// not being offered it). The search matches
 // accent/case-insensitively (cf. lib/nameMatch) — "chloe" finds "Chloé" — and
 // unnamed stacks match "unnamed". `pinnedLabel` adds one action row above the
 // list that confirms with null — the "fresh unnamed stack" option of the
