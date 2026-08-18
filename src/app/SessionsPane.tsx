@@ -178,7 +178,7 @@ function ThumbStack({ samples }: { samples: SampleAsset[] }) {
         return (
           <LazyImage
             key={id}
-            className="thumb-stack-item"
+            className="thumb-stack-item no-pin-hover"
             src={`/api/assets/${id}/thumb`}
             alt=""
             style={{
