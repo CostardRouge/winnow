@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import PeoplePanel from "./PeoplePanel";
+
+export const metadata: Metadata = { title: "People" };
 
 // Dedicated People page: every person the face clustering found in the library
 // (cf. lib/people.ts), one stack per person fronted by a cover face, busiest

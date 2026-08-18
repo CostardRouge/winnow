@@ -29,7 +29,13 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   applicationName: "Winnow",
-  title: "Winnow — media triage",
+  // Every page below sets a plain-string title ("Library", "Scanning ·
+  // Pipeline", …) that the template suffixes with the app name; the default
+  // only covers segments that don't set one.
+  title: {
+    template: "%s — Winnow",
+    default: "Winnow — media triage",
+  },
   description: "Ingest, triage and export of NAS photos/videos.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

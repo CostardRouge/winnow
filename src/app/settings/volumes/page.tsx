@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import VolumesPanel from "./VolumesPanel";
+
+export const metadata: Metadata = { title: "Volumes · Settings" };
 
 // Settings › Volumes — the registry of every directory attached to the project
 // (the env-seeded incoming/finals/export plus anything added by hand), each with
