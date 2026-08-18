@@ -5288,17 +5288,19 @@ html[data-theme="dark"] .btn-primary:hover {
 
   /* Clickable avatar+name pairing inside a merge/suggest row — opens the
      person's profile in a new tab without losing the row's own click
-     behavior (picking/merging) or the modal's state. */
-  .person-chip {
+     behavior (picking/merging) or the modal's state. Distinct from
+     .person-chip above: its `color: inherit` on a .chip would pick up the
+     viewer panel's light text and vanish against the chip's light surface. */
+  .person-link {
     @apply flex min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius)]
       no-underline;
     color: inherit;
   }
-  .person-chip:hover .person-name,
-  .person-chip:focus-visible .person-name {
+  .person-link:hover .person-name,
+  .person-link:focus-visible .person-name {
     text-decoration: underline;
   }
-  .person-chip:focus-visible {
+  .person-link:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }

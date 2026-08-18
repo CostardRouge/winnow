@@ -109,7 +109,7 @@ export default function SuggestionsModal({
                     href={`/people/${source.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="person-chip"
+                    className="person-link"
                     title={`View ${source.name ?? "Unnamed"}'s profile`}
                   >
                     <PersonAvatar
@@ -129,7 +129,7 @@ export default function SuggestionsModal({
                     href={`/people/${target.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="person-chip"
+                    className="person-link"
                     title={`View ${target.name ?? "Unnamed"}'s profile`}
                   >
                     <PersonAvatar

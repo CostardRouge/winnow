@@ -207,7 +207,7 @@ export default function PersonPicker({
                 <span
                   role="link"
                   tabIndex={0}
-                  className="person-chip"
+                  className="person-link"
                   title={`View ${p.name ?? "Unnamed"}'s profile`}
                   onClick={(e) => {
                     e.stopPropagation();
