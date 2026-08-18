@@ -71,6 +71,10 @@ export type Asset = {
   shutter: string | null;
   aperture: number | null;
   focal_length: number | null;
+  // Mechanical shutter actuations at capture, from the MakerNotes (cf.
+  // lib/extract.ts). Sony bodies write it on every frame; NULL wherever the
+  // maker records no such counter (phones, drones, most video).
+  shutter_count: number | null;
   gps: { lat: number; lon: number } | null;
   // Manual geotag (cf. api/assets/geotag): 'manual' when a human set the
   // coordinates through the geotag action, NULL when they came from the file's

@@ -19,6 +19,12 @@ export type Metadata = {
   shutter: string | null;
   aperture: number | null;
   focal_length: number | null;
+  // Mechanical shutter actuations at capture — Sony (and a few other makers)
+  // stamp every frame with the body's counter in the MakerNotes. exiftool's
+  // composite ShutterCount tag absorbs the per-model tag variants
+  // (ShutterCount2/3…), so no per-brand handling here. Null wherever the maker
+  // writes no such counter (phones, drones, video files).
+  shutter_count: number | null;
   gps: { lat: number; lon: number } | null;
   width: number | null;
   height: number | null;
@@ -81,6 +87,13 @@ function num(v: unknown): number | null {
   return m ? Number.parseFloat(m[0]) : null;
 }
 
+// Counter tags are whole numbers by nature; a fractional or negative candidate
+// is garbage, and Postgres would reject a float on an INTEGER column anyway.
+function int(v: unknown): number | null {
+  const n = num(v);
+  return n != null && n >= 0 && Number.isInteger(n) ? n : null;
+}
+
 // Coerce an EXIF tag value into a clean display string, or null. exiftool-vendored
 // normally hands back strings/numbers, but some tags arrive as a plain object —
 // notably certain Sony lens fields on video files, which carry no usable
@@ -129,6 +142,7 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
     shutter: str(t.ShutterSpeed) ?? str(t.ExposureTime),
     aperture: num(t.FNumber ?? (t as any).Aperture),
     focal_length: num(t.FocalLength),
+    shutter_count: int((t as any).ShutterCount),
     gps,
     width: num(t.ImageWidth ?? (t as any).ExifImageWidth),
     height: num(t.ImageHeight ?? (t as any).ExifImageHeight),
@@ -148,6 +162,13 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
     relative_altitude: num((t as any).RelativeAltitude),
     absolute_altitude: num((t as any).AbsoluteAltitude),
   };
+}
+
+// Just the shutter odometer of one file — the shutter-backfill script re-reads
+// a handful of recent frames per body without paying for full re-indexing.
+export async function readShutterCount(absPath: string): Promise<number | null> {
+  const t: Tags = await exiftool.read(absPath);
+  return int((t as any).ShutterCount);
 }
 
 /**
