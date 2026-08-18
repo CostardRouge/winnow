@@ -2620,10 +2620,79 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Selection / bulk action bar -------------------------------------- */
-  .selectbar {
-    @apply flex flex-wrap items-center gap-2 px-4 py-2.5;
-    background: var(--color-accent-wash);
-    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+  /* Floating pill pinned to the bottom of the viewport: the actions stay in
+     reach however deep the grid has scrolled (the old in-flow band scrolled
+     away with the toolbar). z-[55]: over the grid and the mobile bottom nav
+     (z-40), under the viewer/menus/modals (z-50 is fine to lose to — select
+     mode and the viewer never overlap, but menus at z-[60] open above). */
+  .bulk-bar {
+    @apply fixed z-[55] flex flex-wrap items-center justify-center gap-1.5 border px-3 py-2;
+    left: 50%;
+    bottom: 14px;
+    translate: -50% 0;
+    /* A fixed box offset by left:50% would otherwise shrink-to-fit the right
+       half of the viewport and wrap early; size to content, cap to viewport. */
+    width: max-content;
+    max-width: min(96vw, 1040px);
+    border-radius: var(--radius-xl);
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    animation: bulk-in 0.18s var(--ease-out);
+  }
+  @keyframes bulk-in {
+    from {
+      opacity: 0;
+      translate: -50% 10px;
+    }
+  }
+  /* Compact controls: the bar is a floating toolbar, not a form row. */
+  .bulk-bar .btn {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+  .bulk-bar .btn-icon {
+    @apply h-8 w-8 p-0;
+  }
+  .bulk-bar .input {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+  /* Live selection count: the accent dot carries the state, the label whispers. */
+  .bulk-count {
+    @apply inline-flex items-center gap-1.5 pr-0.5 text-xs;
+    color: var(--color-muted);
+  }
+  .bulk-count-num {
+    @apply inline-flex items-center justify-center rounded-full text-xs font-bold;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 7px;
+    font-variant-numeric: tabular-nums;
+    background: var(--color-surface-3);
+    color: var(--color-muted);
+  }
+  .bulk-count-num.has {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  /* Tag popover: anchored to its button, opening upward over the grid. The bar
+     is already fixed, so plain absolute positioning stays glued to it. */
+  .bulk-tag-wrap {
+    @apply relative inline-flex;
+  }
+  .bulk-tag-pop {
+    @apply absolute left-1/2 flex items-center gap-1.5 border p-1.5;
+    bottom: calc(100% + 10px);
+    translate: -50% 0;
+    /* Same shrink-to-fit trap as .bulk-bar: left:50% on a positioned box. */
+    width: max-content;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    animation: ctx-in 0.12s var(--ease-out);
+  }
+  .bulk-tag-pop .input {
+    width: 150px;
   }
   /* Compact star cluster in the bulk bar (5 buttons read as one control) */
   .bulk-stars {
@@ -2632,6 +2701,15 @@ html[data-theme="dark"] .btn-primary:hover {
   .bulk-star {
     @apply rounded-none px-2;
     color: var(--color-star);
+  }
+  /* Wins over the bar's generic .btn compaction so the cluster stays tight. */
+  .bulk-bar .bulk-star {
+    @apply px-1.5;
+  }
+  /* Clearance under a scrolling zone while the bar is up, so the last grid
+     rows can rise above it instead of hiding behind it forever. */
+  .has-bulk-bar {
+    padding-bottom: 76px;
   }
   .bulk-star:first-child {
     border-top-left-radius: var(--radius);
@@ -3530,6 +3608,43 @@ html[data-theme="dark"] .btn-primary:hover {
      content edge) clears the rail instead of tucking under it. */
   .root-main {
     padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The bulk-selection bar rides just above the bottom nav, edge to edge (the
+     centred pill would overflow a phone). Button text labels drop so the row
+     stays one line of glyph buttons; titles still name each action. */
+  .bulk-bar {
+    left: 8px;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    translate: 0 0;
+    width: auto;
+    max-width: none;
+    animation-name: bulk-in-sheet;
+  }
+  @keyframes bulk-in-sheet {
+    from {
+      opacity: 0;
+      translate: 0 10px;
+    }
+  }
+  .bulk-bar .bulk-label,
+  .bulk-bar .seg-label,
+  .bulk-bar .menu-caret {
+    display: none;
+  }
+  /* Re-anchor the tag popover from its (edge-hugging) button to the whole
+     bar: un-positioning the wrap makes the fixed .bulk-bar the containing
+     block, so the popover centres over the pill instead of running offscreen. */
+  .bulk-tag-wrap {
+    position: static;
+  }
+  .bulk-tag-pop {
+    max-width: calc(100vw - 32px);
+  }
+  /* The bar can wrap to two rows here; clear both plus its margin. */
+  .has-bulk-bar {
+    padding-bottom: 132px;
   }
 
   /* Keep the Library header on one line: the tabs and the (compact) media

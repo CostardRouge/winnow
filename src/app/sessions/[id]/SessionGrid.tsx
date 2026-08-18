@@ -883,7 +883,12 @@ export default function SessionGrid({
         {assets.length === 0 && !loading && !error ? (
           <div className="empty">No assets for this filter.</div>
         ) : (
-          <div className="grid" ref={gridRef}>
+          // has-bulk-bar: clearance under the grid while the floating selection
+          // bar is up, so the last rows can scroll past it (cf. globals.css).
+          <div
+            className={`grid${selectMode ? " has-bulk-bar" : ""}`}
+            ref={gridRef}
+          >
             {assets.map((a, i) => {
               const sel = selectMode && selected.has(a.id);
               // Burst pile affordances: a collapsed pile shows as one cover tile
