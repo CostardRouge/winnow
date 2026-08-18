@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import PipelineAssetList from "../PipelineAssetList";
+
+export const metadata: Metadata = { title: "Pending · Pipeline" };
 
 // Media awaiting (or mid-) derivative generation. From here you can re-queue a
 // stuck item (Regenerate), pull it out of the pipeline (Skip) or remove it.

@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import PipelineAssetList from "../PipelineAssetList";
+
+export const metadata: Metadata = { title: "Media · Pipeline" };
 
 // Every indexed media, browsable as a list, a virtualized thumbnail grid, or by
 // folder — with a sort control and a derivative-status facet (All / Ready /

@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import GearPanel from "./GearPanel";
+
+export const metadata: Metadata = { title: "Gear" };
 
 // Dedicated Gear page: the shelf of every camera body and lens the library was
 // shot with, drawn as line-art and counted from the EXIF. The inverse of the

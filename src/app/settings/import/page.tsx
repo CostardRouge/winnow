@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import ImportPanel from "./ImportPanel";
+
+export const metadata: Metadata = { title: "Import · Settings" };
 
 // Settings › Import — the four ingest sources (drop zone, file picker, folder /
 // SD-card picker, a card mounted on the server, plus the always-on watched

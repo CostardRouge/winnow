@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import DatabasePanel from "./DatabasePanel";
+
+export const metadata: Metadata = { title: "Database · Settings" };
 
 // Settings › Database — what Postgres physically holds: per-table sizes with
 // their heap/TOAST/index split, the exact weight of the embedding columns, and
