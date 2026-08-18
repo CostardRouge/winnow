@@ -118,7 +118,7 @@ export default function SiftHub() {
           <Link href={`/sift/${resume.id}`} className="sift-resume">
             <div className="sift-resume-cover">
               {resume.sample_assets?.[0] ? (
-                <LazyImage src={`/api/assets/${resume.sample_assets[0].id}/thumb`} alt="" />
+                <LazyImage className="no-pin-hover" src={`/api/assets/${resume.sample_assets[0].id}/thumb`} alt="" />
               ) : (
                 <span className="sift-resume-cover-empty">{Icons.photos}</span>
               )}
@@ -226,7 +226,7 @@ export default function SiftHub() {
                 <div key={s.id} className="sift-tile">
                   <Link href={`/sift/${s.id}`} className="sift-tile-cover">
                     {s.sample_assets?.[0] ? (
-                      <LazyImage src={`/api/assets/${s.sample_assets[0].id}/thumb`} alt="" />
+                      <LazyImage className="no-pin-hover" src={`/api/assets/${s.sample_assets[0].id}/thumb`} alt="" />
                     ) : (
                       <span className="sift-tile-cover-empty">{Icons.photos}</span>
                     )}

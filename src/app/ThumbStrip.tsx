@@ -102,7 +102,11 @@ export function Thumb({
       title={item.title}
     >
       {ready ? (
-        <LazyImage src={item.thumbSrc as string} alt={item.title ?? ""} />
+        <LazyImage
+          className="no-pin-hover"
+          src={item.thumbSrc as string}
+          alt={item.title ?? ""}
+        />
       ) : (
         <span className="thumb-tile-ph">{item.isVideo ? "🎬" : "⏳"}</span>
       )}

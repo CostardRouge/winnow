@@ -1294,6 +1294,16 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-muted);
   }
 
+  /* Cover thumbnails (session/export card previews, sift covers) are inert to
+     the pointer so the Pinterest browser extension's hover "Save" badge never
+     attaches — it hooks a mouseover on the <img> itself, and the extension
+     ignores its own data-pin-nopin/data-pin-no-hover attributes there
+     (github.com/pinterest/widgets issues #104, #85). Clicks fall through to
+     the clickable parent (card link / tile button), so nothing else changes. */
+  .no-pin-hover {
+    pointer-events: none;
+  }
+
   /* Lazy-loaded thumbnails fade in once decoded (src is set on sight). */
   .lazy-img {
     opacity: 0;
