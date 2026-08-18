@@ -52,6 +52,8 @@ type Row = {
   focal_min: number | null;
   focal_max: number | null;
   aperture_min: number | null;
+  shutter_count: number | null;
+  shutter_count_at: string | null;
 };
 
 // One pass over the live assets, grouped by (body, lens, source). Everything the
@@ -75,7 +77,14 @@ const GEAR_SQL = `
          max(a.captured_at)                                  AS last_capture,
          min(NULLIF(a.focal_length, 0))                      AS focal_min,
          max(NULLIF(a.focal_length, 0))                      AS focal_max,
-         min(NULLIF(a.aperture, 0))                          AS aperture_min
+         min(NULLIF(a.aperture, 0))                          AS aperture_min,
+         -- Shutter odometer (Sony MakerNotes, cf. lib/extract.ts). The counter
+         -- is monotone, so the MAX over indexed frames IS the body's last known
+         -- reading — no "latest photo" lookup. The date says how fresh that
+         -- reading is: the newest frame that actually carried the tag.
+         max(a.shutter_count)                                AS shutter_count,
+         max(a.captured_at)
+           FILTER (WHERE a.shutter_count IS NOT NULL)        AS shutter_count_at
     FROM assets a
     JOIN sessions s ON s.id = a.session_id
     JOIN roots rt   ON rt.id = s.root_id
@@ -135,11 +144,22 @@ export async function listCameras(): Promise<GearCamera[]> {
         incoming: stats(),
         gallery: stats(),
         lenses: [],
+        shutter_count: null,
+        shutter_count_at: null,
       };
       cameras.set(r.device, cam);
       lenses.set(r.device, new Map());
     }
     add(cam[r.source], r);
+    // The odometer belongs to the BODY, not to a source or a lens: the highest
+    // reading across every (lens, source) row is the body's, and the freshest
+    // tagged capture dates it.
+    cam.shutter_count = hi(cam.shutter_count, r.shutter_count);
+    if (
+      r.shutter_count_at &&
+      (!cam.shutter_count_at || r.shutter_count_at > cam.shutter_count_at)
+    )
+      cam.shutter_count_at = r.shutter_count_at;
 
     // A frame with no lens tag still counts towards its body, but there is no
     // lens card to hang it on — the shelf says so instead of inventing one.
