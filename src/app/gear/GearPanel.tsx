@@ -328,13 +328,12 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
           name={camera.name}
           label={camera.label}
           count={countLabel(stats)}
-          extra={[splitLine(stats), elsewhereLine(other, source)]}
-          meta={[
-            years(stats.first_capture, stats.last_capture),
+          extra={[
             splitLine(stats),
             shutterLine(camera),
             elsewhereLine(other, source),
           ]}
+          meta={[years(stats.first_capture, stats.last_capture)]}
         />
       </div>
 
