@@ -1,10 +1,17 @@
 "use client";
 
 // The /gear shelf: every camera body the library was shot with, drawn as
-// line-art (cf. CameraArt) with the glass it was used with underneath (cf.
-// LensArt). Bodies come first and lenses hang off them, because that is how the
-// kit is actually held: a lens count only means something once you know which
-// body it was mounted on.
+// line-art (cf. CameraArt), with the glass it was used with as a compact list
+// of rows (cf. LensArt, in miniature). Bodies come first and lenses hang off
+// them, because that is how the kit is actually held: a lens count only means
+// something once you know which body it was mounted on.
+//
+// The layout is one design at two breakpoints: on desktop the body keeps its
+// catalogue-plate card in a sticky left column with the lens rows alongside;
+// on narrow screens the card collapses into a horizontal band and the rows
+// stack under it behind an indent rule, so a whole kit reads on one phone
+// screen. The rows keep spec + count; secondary meta (split, "more elsewhere",
+// the merged EXIF spellings) folds into the row's tooltip.
 //
 // A gear card is a shortcut, not a museum label — tapping a body opens the grid
 // filtered on it, tapping a lens opens the same grid narrowed to that body AND
@@ -77,13 +84,20 @@ function years(first: string | null, last: string | null): string | null {
   return a === b ? `${a}` : `${a}–${b}`;
 }
 
-/** Photos, videos, or a mixed bag — the pill under the artwork. */
-function countLabel(s: GearStats): string {
+/** Photos, videos, or a mixed bag — number and unit, kept apart so the lens
+ * rows can stack them into an aligned figures column. */
+function countParts(s: GearStats): { n: string; unit: string } {
   if (s.videos === 0)
-    return `${num(s.photos)} ${s.photos === 1 ? "photo" : "photos"}`;
+    return { n: num(s.photos), unit: s.photos === 1 ? "photo" : "photos" };
   if (s.photos === 0)
-    return `${num(s.videos)} ${s.videos === 1 ? "video" : "videos"}`;
-  return `${num(s.count)} media`;
+    return { n: num(s.videos), unit: s.videos === 1 ? "video" : "videos" };
+  return { n: num(s.count), unit: "media" };
+}
+
+/** The same tally as one string — the pill on the camera card. */
+function countLabel(s: GearStats): string {
+  const { n, unit } = countParts(s);
+  return `${n} ${unit}`;
 }
 
 /** Mixed libraries get the split spelled out; single-medium ones don't need it. */
@@ -116,40 +130,53 @@ function elsewhereLine(other: GearStats, source: GearSource): string | null {
   return `${num(other.count)} more in ${where}`;
 }
 
-function Card({
+/**
+ * The body's card: a catalogue-plate portrait in the desktop column, a
+ * horizontal band above its lens list on narrow screens — same markup, the
+ * stylesheet turns the column into a row. `extra` meta (the media split, the
+ * other tab's tally) hides on the band, where the years are all that fit.
+ */
+function CameraCard({
   href,
   art,
-  kind,
   name,
   label,
   count,
   meta,
+  extra,
 }: {
   href: string;
   art: ReactNode;
-  /** Bodies are drawn wide, lenses tall — each artwork gets its own width cap. */
-  kind: "camera" | "lens";
   /** Raw EXIF string — surfaced as the tooltip when the label was prettified. */
   name: string;
   label: string;
   count: string;
   meta: (string | null)[];
+  extra: (string | null)[];
 }) {
   const lines = meta.filter(Boolean) as string[];
+  const extras = extra.filter(Boolean) as string[];
   return (
     <Link href={href} className="gear-card" title={name === label ? undefined : name}>
-      <span className={`gear-art gear-art-${kind}`}>{art}</span>
-      <span className="gear-name">{label}</span>
+      <span className="gear-art gear-art-camera">{art}</span>
+      <span className="gear-card-text">
+        <span className="gear-name">{label}</span>
+        {(lines.length > 0 || extras.length > 0) && (
+          <span className="gear-meta">
+            {lines.map((l) => (
+              <span key={l} className="gear-meta-line">
+                {l}
+              </span>
+            ))}
+            {extras.map((l) => (
+              <span key={l} className="gear-meta-line gear-meta-extra">
+                {l}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
       <span className="pill gear-count">{count}</span>
-      {lines.length > 0 && (
-        <span className="gear-meta">
-          {lines.map((l) => (
-            <span key={l} className="gear-meta-line">
-              {l}
-            </span>
-          ))}
-        </span>
-      )}
     </Link>
   );
 }
@@ -295,13 +322,13 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
   return (
     <section className="gear-body">
       <div className="gear-body-figure">
-        <Card
+        <CameraCard
           href={href(source, camera.name)}
           art={<CameraArt name={camera.name} />}
-          kind="camera"
           name={camera.name}
           label={camera.label}
           count={countLabel(stats)}
+          extra={[splitLine(stats), elsewhereLine(other, source)]}
           meta={[
             years(stats.first_capture, stats.last_capture),
             splitLine(stats),
@@ -324,9 +351,9 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
           )}
         </h3>
         {camera.lenses.length > 0 && (
-          <div className="gear-grid">
+          <div className="gear-rows">
             {camera.lenses.map((l) => (
-              <LensCard key={l.key} lens={l} device={camera.name} source={source} />
+              <LensRow key={l.key} lens={l} device={camera.name} source={source} />
             ))}
           </div>
         )}
@@ -335,7 +362,12 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
   );
 }
 
-function LensCard({
+/**
+ * One lens as a list row: miniature barrel, name + spec, count in an aligned
+ * figures column. The years get a column of their own where the row is wide
+ * enough; everything else the old card spelled out folds into the tooltip.
+ */
+function LensRow({
   lens,
   device,
   source,
@@ -346,37 +378,53 @@ function LensCard({
 }) {
   const stats = lens[source];
   const other = lens[source === "incoming" ? "gallery" : "incoming"];
+  // The spec line is derived, so a lens whose name states nothing ("E 18-55")
+  // still shows the range its frames recorded.
+  const spec =
+    lensSpec(
+      lensArt(lens.label, {
+        focalMin: lens.focal_min,
+        focalMax: lens.focal_max,
+        aperture: lens.aperture_min,
+      }),
+    ) || null;
+  const specLine = [
+    spec,
+    lens.names.length > 1 ? `${lens.names.length} EXIF names` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  // The tooltip carries every raw EXIF spelling this row merged — a merge is
+  // always inspectable rather than something that just happened — plus the
+  // meta the compact row no longer spells out.
+  const tip = [
+    lens.names.join(" · "),
+    splitLine(stats),
+    elsewhereLine(other, source),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const yr = years(stats.first_capture, stats.last_capture);
+  const { n, unit } = countParts(stats);
   return (
-    <Card
-      href={href(source, device, lens.names)}
-      art={
+    <Link href={href(source, device, lens.names)} className="gear-row" title={tip}>
+      <span className="gear-row-art">
         <LensArt
           name={lens.label}
           focalMin={lens.focal_min}
           focalMax={lens.focal_max}
           aperture={lens.aperture_min}
         />
-      }
-      kind="lens"
-      // The tooltip carries every raw EXIF spelling this card merged, so a
-      // merge is always inspectable rather than something that just happened.
-      name={lens.names.join(" · ")}
-      label={lens.label}
-      count={countLabel(stats)}
-      meta={[
-        // The spec line is derived, so a lens whose name states nothing
-        // ("E 18-55") still shows the range its frames recorded.
-        lensSpec(
-          lensArt(lens.label, {
-            focalMin: lens.focal_min,
-            focalMax: lens.focal_max,
-            aperture: lens.aperture_min,
-          }),
-        ) || null,
-        years(stats.first_capture, stats.last_capture),
-        lens.names.length > 1 ? `${lens.names.length} EXIF names` : null,
-        elsewhereLine(other, source),
-      ]}
-    />
+      </span>
+      <span className="gear-row-text">
+        <span className="gear-row-name">{lens.label}</span>
+        {specLine && <span className="gear-row-spec">{specLine}</span>}
+      </span>
+      {yr && <span className="gear-row-years">{yr}</span>}
+      <span className="gear-row-count">
+        {n}
+        <small>{unit}</small>
+      </span>
+    </Link>
   );
 }
