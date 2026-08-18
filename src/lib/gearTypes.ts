@@ -49,6 +49,15 @@ export type GearCamera = {
   gallery: GearStats;
   /** The glass this body was used with, busiest first. */
   lenses: GearLens[];
+  /**
+   * The body's shutter odometer: highest mechanical actuation count any indexed
+   * frame carries in its MakerNotes (Sony bodies stamp every frame with it).
+   * A property of the BODY, not of a source — the same on both tabs. Null when
+   * no frame carries the tag (phones, drones, unsupported makers).
+   */
+  shutter_count: number | null;
+  /** Capture date of the freshest counted frame — how current the reading is. */
+  shutter_count_at: string | null;
 };
 
 export type GearResponse = { cameras: GearCamera[] };

@@ -19,7 +19,8 @@
     "geocode-backfill": "tsx src/scripts/geocode-backfill.ts",
     "ml-backfill": "tsx src/scripts/ml-backfill.ts",
     "people-backfill": "tsx src/scripts/people-backfill.ts",
-    "srt-backfill": "tsx src/scripts/srt-backfill.ts"
+    "srt-backfill": "tsx src/scripts/srt-backfill.ts",
+    "shutter-backfill": "tsx src/scripts/shutter-backfill.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",

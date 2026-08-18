@@ -93,6 +93,22 @@ function splitLine(s: GearStats): string | null {
   return null;
 }
 
+/**
+ * "45,230 shutter actuations · Jul 2026" — the body's odometer, as read off the
+ * newest indexed frame carrying the counter (Sony MakerNotes, cf. lib/gear.ts).
+ * The date says how fresh the reading is: frames shot since but not yet
+ * imported aren't counted. Null-count bodies (phones, drones) show nothing.
+ */
+function shutterLine(c: GearCamera): string | null {
+  if (c.shutter_count == null) return null;
+  const line = `${num(c.shutter_count)} shutter actuations`;
+  if (!c.shutter_count_at) return line;
+  const d = new Date(c.shutter_count_at);
+  if (!Number.isFinite(d.getTime())) return line;
+  const asOf = d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return `${line} · ${asOf}`;
+}
+
 /** "…and 3 more elsewhere" — what the other half of the library still holds. */
 function elsewhereLine(other: GearStats, source: GearSource): string | null {
   if (other.count === 0) return null;
@@ -289,6 +305,7 @@ function Body({ camera, source }: { camera: GearCamera; source: GearSource }) {
           meta={[
             years(stats.first_capture, stats.last_capture),
             splitLine(stats),
+            shutterLine(camera),
             elsewhereLine(other, source),
           ]}
         />
