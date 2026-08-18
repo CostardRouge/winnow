@@ -863,7 +863,13 @@ export default function GalleryShell({
 
   // The filter-driven main for the built-in Grid/Map views.
   const renderGalleryMain = (mode: "grid" | "map") => (
-    <main className="gallery-main">
+    // has-bulk-bar: while the floating selection bar is up, pad the zone so the
+    // grid's last rows can scroll up past it (see .bulk-bar in globals.css).
+    <main
+      className={`gallery-main${
+        mode === "grid" && !readOnly && selectMode ? " has-bulk-bar" : ""
+      }`}
+    >
       {mode === "map" ? (
           <MapView
             points={geoPoints}

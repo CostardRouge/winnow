@@ -502,6 +502,9 @@ export default function MediaViewer<T extends ViewerItem>({
       if (e.key === "ArrowRight") return stepBurst(1);
       if (e.key === "ArrowLeft") return stepBurst(-1);
       if (e.key === "i" || e.key === "I") return setPanel(!panelOpen);
+      // Viewer-wide state (see burstArrowNav), so it can be armed from any
+      // item — not just one whose filmstrip (and its ⇄ toggle) is showing.
+      if (e.key === "b" || e.key === "B") return setBurstArrowNav((v) => !v);
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
@@ -1170,8 +1173,8 @@ export default function MediaViewer<T extends ViewerItem>({
               aria-pressed={burstArrowNav}
               title={
                 burstArrowNav
-                  ? "Arrow keys, swipe and prev/next step through this pile's frames — click to stop"
-                  : "Include this pile's frames when navigating with ← → / swipe"
+                  ? "Arrow keys, swipe and prev/next step through this pile's frames (B) · click to stop"
+                  : "Include this pile's frames when navigating with ← → / swipe (B)"
               }
               onClick={() => setBurstArrowNav((v) => !v)}
             >
