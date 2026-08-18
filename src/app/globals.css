@@ -4981,11 +4981,14 @@ html[data-theme="dark"] .btn-primary:hover {
 
 
 /* ---- Gear: the illustrated shelf of bodies + lenses (page /gear) ---------
-   Cards are deliberately chrome-less on paper — the line-art IS the card, so the
-   grid reads like a plate from a maker's catalogue and the surface/border only
-   appear on hover. Every camera shares one viewBox and one mm→unit scale (cf.
-   CameraArt.tsx), so their drawn sizes are comparable across the grid; the same
-   holds for the lenses. Names are set in mono: they are part numbers, not prose.
+   One design at two breakpoints. Wide: the body keeps its catalogue-plate card
+   (chrome-less on paper, line-art as the hero, surface only on hover) in a
+   sticky column, with its glass as a list of rows beside it. Narrow: the card
+   flattens into a horizontal band and the rows tuck under it behind an indent
+   rule, so a whole kit reads on one phone screen. The lens art rides along in
+   miniature — it is SVG, so it stays sharp and its proportions stay honest
+   (cf. LensArt.tsx: same mm→unit scale for every barrel). Names are set in
+   mono: they are part numbers, not prose.
    -------------------------------------------------------------------------- */
 @layer components {
   .gear-shelf {
@@ -5021,11 +5024,6 @@ html[data-theme="dark"] .btn-primary:hover {
     letter-spacing: 0.08em;
     color: var(--color-muted);
   }
-  .gear-grid {
-    @apply grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    gap: 28px 16px;
-  }
   .gear-card {
     @apply flex flex-col items-center gap-2 rounded-[var(--radius-lg)] border
       px-3 pb-4 pt-3 text-center transition duration-150;
@@ -5040,17 +5038,16 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: var(--color-border);
     box-shadow: var(--shadow-card);
   }
+  .gear-card-text {
+    @apply flex min-w-0 flex-col items-center gap-2;
+  }
   /* The artwork inks itself with currentColor, so it flips with the theme. The
-     width cap is what sets the drawn size: bodies are wide, lenses stand tall,
-     and each keeps a comparable footprint across its own section. */
+     width cap is what sets the drawn size. */
   .gear-art {
     @apply block w-full;
   }
   .gear-art-camera {
     max-width: 250px;
-  }
-  .gear-art-lens {
-    max-width: 140px;
   }
   .gear-art svg {
     @apply block h-auto w-full;
@@ -5076,6 +5073,75 @@ html[data-theme="dark"] .btn-primary:hover {
   /* Long lens/body names truncate rather than reflow the card. */
   .gear-meta-line {
     @apply block max-w-full truncate;
+  }
+
+  /* The glass as a list: hairline-separated rows, one lens each. */
+  .gear-rows {
+    @apply flex min-w-0 flex-col;
+    border-top: 1px solid var(--color-border);
+  }
+  .gear-row {
+    @apply flex items-center gap-3 px-1.5 py-2 transition duration-150;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    transition-timing-function: var(--ease-out);
+  }
+  .gear-row:hover {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+  .gear-row:last-child {
+    border-bottom: none;
+  }
+  /* The barrel in miniature. Strokes stay screen-sized rather than shrinking
+     with the drawing (the linework would fade to hairlines at this scale); the
+     engraved text and the knurl ribs — noise this small — are dropped rather
+     than smudged, leaving the collar outlines to carry the shape. */
+  .gear-row-art {
+    @apply shrink-0;
+    width: 34px;
+  }
+  .gear-row-art svg {
+    @apply block h-auto w-full;
+  }
+  .gear-row-art svg * {
+    vector-effect: non-scaling-stroke;
+  }
+  .gear-row-art svg text,
+  .gear-row-art svg line {
+    display: none;
+  }
+  .gear-row-text {
+    @apply flex-1 flex min-w-0 flex-col gap-0.5;
+  }
+  .gear-row-name {
+    @apply truncate text-[13px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+  .gear-row-spec {
+    @apply truncate text-[11px];
+    color: var(--color-faint);
+  }
+  /* Fixed width so the years line up as a column across the list. */
+  .gear-row-years {
+    @apply shrink-0 text-right text-[11px];
+    width: 76px;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-faint);
+  }
+  /* Counts stack number-over-unit and right-align, so a kit's tallies read as
+     one figures column. */
+  .gear-row-count {
+    @apply ml-auto shrink-0 text-right text-[12px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .gear-row-count small {
+    @apply block text-[10px];
+    color: var(--color-faint);
   }
 }
 
@@ -5516,19 +5582,53 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
-/* Tablets: the sticky side column costs more than it gives once the lens grid
-   is only two cards wide — stack the body over its glass instead. */
+/* Narrow: the side column folds away and the body's card flattens into a
+   horizontal band — small artwork, name and years beside it, count pushed to
+   the far edge — with its lens rows tucked under it behind an indent rule, so
+   "whose glass is this" survives without the two-column vis-à-vis. Same
+   markup as the wide card; only the direction changes. */
 @media (max-width: 900px) {
   .gear-body {
     grid-template-columns: minmax(0, 1fr);
   }
   .gear-body-figure {
     @apply static;
-    max-width: 260px;
+  }
+  .gear-card {
+    @apply flex-row items-center gap-3 px-3 py-2.5 text-left;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .gear-card-text {
+    @apply items-start gap-0.5;
+  }
+  .gear-art-camera {
+    @apply shrink-0;
+    width: 84px;
+  }
+  .gear-name {
+    @apply mt-0;
+  }
+  /* The band has one line of room: the years stay, the split and the other
+     tab's tally wait for the wide card. */
+  .gear-meta-extra {
+    display: none;
+  }
+  .gear-count {
+    @apply ml-auto shrink-0;
+  }
+  /* The indent rule that hangs the rows off their body's band. */
+  .gear-body-glass {
+    border-left: 1px solid var(--color-border);
+    margin-left: 14px;
+    padding-left: 12px;
+  }
+  .gear-rows {
+    border-top: none;
   }
 }
 
-/* Phones: tighter shelf, two cards per row on the narrowest screens. */
+/* Phones: tighter shelf, and the years column cedes its room to the name. */
 @media (max-width: 767px) {
   .gear-shelf {
     gap: 26px;
@@ -5536,12 +5636,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-body {
     padding-top: 20px;
   }
-  .gear-body-figure {
-    max-width: 200px;
-  }
-  .gear-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 20px 10px;
+  .gear-row-years {
+    display: none;
   }
 }
 

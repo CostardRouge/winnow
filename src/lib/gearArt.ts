@@ -235,8 +235,12 @@ export function lensArt(name: string, exif: LensExif = {}): LensArt {
   // "56mm", "XF27mmF2.8" → a prime.
   const single = s.match(/(\d+(?:\.\d+)?)\s*mm/i);
   // "f/1.2", "F2.8", "f1.4" — the first number wins on variable-aperture zooms
-  // ("f/3.5-5.6"), which is what the front of the barrel advertises.
-  const fstop = s.match(/f\/?\s*(\d+(?:\.\d+)?)/i);
+  // ("f/3.5-5.6"), which is what the front of the barrel advertises. The focal
+  // token is cut out first: in "XF35mmF1.4" or "XF 18-55mm", the F of the
+  // mount name fronts the focal length, and without the cut it would read as
+  // f/35 or f/18.
+  const rest = range ? s.replace(range[0], " ") : single ? s.replace(single[0], " ") : s;
+  const fstop = rest.match(/f\/?\s*(\d+(?:\.\d+)?)/i);
   // Manual and third-party glass often states the aperture without the "f"
   // ("35mm 0.95", "18-35 1.8"). Only looked for AFTER the focal length, so a
   // focal digit or a "Mark II" can't pass for an f-number.
