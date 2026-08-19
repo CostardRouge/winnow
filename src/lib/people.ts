@@ -154,12 +154,23 @@ async function loadClusters(client: pg.PoolClient): Promise<Cluster[]> {
 // sees them, merge leftovers) are noise — delete them so /people never shows an
 // uncoverable empty stack. NAMED people are kept even at zero faces: the name
 // is user data, and the centroid lets a re-analyzed library re-attach to it.
-async function pruneEmptyPeople(client: pg.PoolClient): Promise<void> {
-  await client.query(
+async function pruneEmptyPeople(client: pg.PoolClient): Promise<number> {
+  const res = await client.query(
     `DELETE FROM people p
       WHERE p.name IS NULL
         AND NOT EXISTS (SELECT 1 FROM asset_faces f WHERE f.person_id = p.id)`,
   );
+  return res.rowCount ?? 0;
+}
+
+// The prune, callable from OUTSIDE the people flows — the deletion paths that
+// reap face rows without going through an assignment (the purge worker, the
+// session cascade delete). Same advisory lock as every other people writer.
+export async function pruneOrphanPeople(): Promise<number> {
+  return tx(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [PEOPLE_LOCK_KEY]);
+    return pruneEmptyPeople(client);
+  });
 }
 
 // Assign this asset's not-yet-assigned faces to people. Called at the end of
@@ -176,9 +187,14 @@ export async function assignFacesForAsset(assetId: number): Promise<number> {
         ORDER BY id`,
       [assetId],
     );
-    if (faces.rows.length === 0) return 0;
-    const clusters = await loadClusters(client);
-    const assigned = await assignBatch(client, clusters, faces.rows);
+    let assigned = 0;
+    if (faces.rows.length > 0) {
+      const clusters = await loadClusters(client);
+      assigned = await assignBatch(client, clusters, faces.rows);
+    }
+    // Prune even with nothing to assign: a re-analysis that now sees FEWER (or
+    // zero) faces deleted the old rows on its way here, and may have emptied an
+    // unnamed person.
     await pruneEmptyPeople(client);
     return assigned;
   });
@@ -449,19 +465,36 @@ function unitVector(v: number[]): Float64Array | null {
 export async function suggestMerges(limit = 20): Promise<SuggestionPair[]> {
   // Fingerprint before anything heavy: count catches inserts/prunes, the max
   // updated_at catches every in-place change (centroid drift, merge, rename,
-  // hide). Per-process cache — a second app replica just recomputes once.
-  const fp = await one<{ n: number; ts: string | null }>(
-    `SELECT count(*)::int AS n, max(updated_at)::text AS ts FROM people`,
+  // hide), and the live-face count catches the changes that DON'T touch the
+  // people table at all — trash/restore hides or resurfaces a person's media,
+  // and a purge or session delete reaps face rows outright (a NAMED person
+  // emptied that way keeps its row untouched, so only the face side can tell).
+  // Per-process cache — a second app replica just recomputes once.
+  const fp = await one<{ n: number; ts: string | null; live: number }>(
+    `SELECT count(*)::int AS n, max(updated_at)::text AS ts,
+            (SELECT count(*)
+               FROM asset_faces f
+               JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
+              WHERE f.person_id IS NOT NULL)::int AS live
+       FROM people`,
   );
-  const fingerprint = `${fp?.n ?? 0}:${fp?.ts ?? ""}`;
+  const fingerprint = `${fp?.n ?? 0}:${fp?.ts ?? ""}:${fp?.live ?? 0}`;
   if (suggestionCache?.fingerprint === fingerprint) {
     return suggestionCache.pairs.slice(0, limit);
   }
 
+  // Only people who still have at least one LIVE face are suggestible: a
+  // centroid outlives its faces (purge and the session cascade reap face rows,
+  // trash hides their assets), and pairing a ghost stack proposes a merge
+  // whose profile shows no media at all — the target must be reviewable.
   const rows = await many<{ id: number; centroid: number[] | null }>(
-    `SELECT id, centroid FROM people
-      WHERE NOT hidden AND centroid IS NOT NULL
-      ORDER BY id`,
+    `SELECT p.id, p.centroid FROM people p
+      WHERE NOT p.hidden AND p.centroid IS NOT NULL
+        AND EXISTS (SELECT 1
+                      FROM asset_faces f
+                      JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
+                     WHERE f.person_id = p.id)
+      ORDER BY p.id`,
   );
   // Normalize once; pairs whose dimensions differ (two face models) are
   // skipped in the scan, mirroring cosineSimilarity's -1.
