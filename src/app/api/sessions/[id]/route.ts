@@ -19,6 +19,7 @@ import { z } from "zod";
 import { rm, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { many, one, q } from "@/lib/db";
+import { pruneOrphanPeople } from "@/lib/people";
 import { enqueueDerivative } from "@/lib/queue";
 import { getStorage } from "@/lib/storage/index";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
@@ -280,6 +281,11 @@ export async function DELETE(
 
     // Finally drop the row — ON DELETE CASCADE clears assets/ratings/tags/exports.
     await q("DELETE FROM sessions WHERE id = $1", [sessionId]);
+
+    // The cascade also dropped this session's face rows; unnamed people left
+    // with no faces at all are noise now (cf. lib/people pruneEmptyPeople).
+    // Best-effort: the delete itself succeeded whatever happens here.
+    await pruneOrphanPeople().catch(() => 0);
 
     return json({
       deleted: {

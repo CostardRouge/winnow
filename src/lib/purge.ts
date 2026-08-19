@@ -28,6 +28,7 @@ import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { q, one, many } from "./db";
 import { FilterSchema, buildFilter } from "./filter";
+import { pruneOrphanPeople } from "./people";
 import { getStorage } from "./storage";
 import type { Asset } from "./types";
 
@@ -244,6 +245,15 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
       }
     }
 
+    // The reaped face rows may have emptied people; drop the unnamed leftovers
+    // now rather than leaving them to linger until the next assignment sweep
+    // (named ones are kept by design — cf. lib/people pruneEmptyPeople).
+    // Best-effort: the purge itself succeeded whatever happens here.
+    let peoplePruned = 0;
+    if (purged > 0) {
+      peoplePruned = await pruneOrphanPeople().catch(() => 0);
+    }
+
     await q(
       `UPDATE purge_jobs SET status='done', finished_at=now(), result=$2 WHERE id=$1`,
       [
@@ -256,6 +266,7 @@ export async function runPurgeJob(purgeJobId: number): Promise<void> {
           total: assets.length,
           purged,
           freed_bytes: freedBytes,
+          people_pruned: peoplePruned,
           skipped,
           error_count: errorCount,
           errors,

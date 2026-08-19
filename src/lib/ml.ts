@@ -570,7 +570,9 @@ export async function runMlJob(assetId: number): Promise<void> {
     // and covers outlive a re-analysis. Best-effort: the analysis itself is
     // already stored, so a clustering hiccup must not flip ml_status to error
     // (the face stays unassigned and the next backfill sweep picks it up).
-    if (facesRan && result.faces.length) {
+    // Runs even when ZERO faces came back: the DELETE may have just emptied an
+    // unnamed person, and the assignment pass is also what prunes those.
+    if (facesRan) {
       try {
         await assignFacesForAsset(assetId);
       } catch (err) {
