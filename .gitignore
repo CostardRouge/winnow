@@ -5,8 +5,18 @@ build/
 dist/
 *.log
 npm-debug.log*
+# Every local env file stays out; .env.dist is the tracked, documented template.
 .env
-.env.local
+.env.*
+!.env.dist
+# Private keys / certs, wherever they land.
+*.pem
+*.key
+*.p12
+*.keystore
+# Editor state — per-developer, never shared.
+.idea/
+.vscode/
 .DS_Store
 coverage/
 .tsbuildinfo
