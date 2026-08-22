@@ -30,6 +30,8 @@ export async function GET(
     const person = await one(
       `SELECT p.id, p.name, p.hidden,
               c.face_count, c.asset_count,
+              src.incoming_face_count, src.incoming_asset_count,
+              src.gallery_face_count, src.gallery_asset_count,
               COALESCE(cov.id, best.id) AS cover_face_id
          FROM people p
         CROSS JOIN LATERAL (
@@ -39,6 +41,18 @@ export async function GET(
             JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
            WHERE f.person_id = p.id
         ) c
+        CROSS JOIN LATERAL (
+          SELECT
+            count(*) FILTER (WHERE rt.kind <> 'finals')::int              AS incoming_face_count,
+            count(DISTINCT f.asset_id) FILTER (WHERE rt.kind <> 'finals')::int AS incoming_asset_count,
+            count(*) FILTER (WHERE rt.kind = 'finals')::int               AS gallery_face_count,
+            count(DISTINCT f.asset_id) FILTER (WHERE rt.kind = 'finals')::int  AS gallery_asset_count
+            FROM asset_faces f
+            JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
+            JOIN sessions s ON s.id = a.session_id
+            JOIN roots rt ON rt.id = s.root_id
+           WHERE f.person_id = p.id AND rt.kind IN ('source', 'inbox', 'finals')
+        ) src
          LEFT JOIN LATERAL (
           SELECT f.id
             FROM asset_faces f

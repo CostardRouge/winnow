@@ -9,6 +9,12 @@
 // Returns the usual grid rows so the results render like any other gallery.
 // Companions (a pair's RAW, a Live Photo's .mov) are collapsed to the displayed
 // primary. Depends on ML being enabled + a CLIP backfill having run.
+//
+// `?source=incoming|gallery` narrows the ranking to one half of the library —
+// the same Incoming/Gallery split /gear and /people wear (cf. lib/roles.ts):
+// 'source'/'inbox' roots for Incoming, 'finals' for Gallery. Omitted, the
+// ranking runs over the whole library (an 'export' root's frames still never
+// match — they belong to neither half).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { config } from "@/lib/config";
@@ -41,6 +47,14 @@ export async function GET(req: NextRequest) {
       Math.max(Number.parseInt(sp.get("limit") ?? "", 10) || DEFAULT_LIMIT, 1),
       MAX_LIMIT,
     );
+
+    // Unrecognized values behave like "omitted" (the whole library) rather
+    // than erroring — a stale/garbled query string must not break search.
+    const sourceParam = sp.get("source");
+    const source =
+      sourceParam === "incoming" || sourceParam === "gallery"
+        ? sourceParam
+        : null;
 
     // Index coverage, returned with every response: with a partially indexed
     // library the ranking silently runs over a small pool and every query
@@ -87,14 +101,28 @@ export async function GET(req: NextRequest) {
     // GRID_SELECT never run over the whole library. Only compare within the
     // current model's space: a re-embed to a new model leaves stale rows of a
     // different dimension, and mixing dimensions in `<=>` would error.
+    // The Incoming/Gallery split lives on the root, not the asset — only join
+    // sessions/roots (and filter on the kind) when a source was actually asked
+    // for, so the unfiltered search keeps its plain, index-only scan.
+    const sourceJoin = source
+      ? `JOIN sessions s ON s.id = a.session_id JOIN roots rt ON rt.id = s.root_id`
+      : "";
+    const sourceWhere = !source
+      ? ""
+      : source === "gallery"
+        ? `AND rt.kind = 'finals'`
+        : `AND rt.kind IN ('source', 'inbox')`;
+
     const items = await many<SearchRow>(
       `WITH ranked AS (
          SELECT cl.asset_id, (cl.embedding <=> $1::vector) AS distance
          FROM asset_clip cl
          JOIN assets a ON a.id = cl.asset_id
+         ${sourceJoin}
          WHERE a.deleted_at IS NULL
            AND a.group_role IS DISTINCT FROM 'companion'
            AND cl.model = $2
+           ${sourceWhere}
          ORDER BY cl.embedding <=> $1::vector
          LIMIT $3
        )

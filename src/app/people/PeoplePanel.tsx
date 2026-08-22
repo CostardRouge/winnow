@@ -17,6 +17,13 @@
 // Renaming a stack to a name ANOTHER stack already carries almost always means
 // the clusterer split one person — so the rename immediately offers the merge,
 // with the list pre-searched on that name.
+//
+// The Incoming/Gallery toggle is the same one /gear wears: a person's faces
+// usually turn up on both halves of the library, a card can only link one
+// filtered grid at a time, and the two halves need different tallies (cf.
+// lib/gear.ts and api/people). Named stacks with nothing in the active half
+// drop out of view rather than show a zero — same rule as the gear shelf —
+// and reappear the moment the other tab is picked.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
@@ -31,11 +38,45 @@ export type PersonRow = {
   hidden: boolean;
   face_count: number;
   asset_count: number;
+  incoming_face_count: number;
+  incoming_asset_count: number;
+  gallery_face_count: number;
+  gallery_asset_count: number;
   cover_face_id: number | null;
   // Centroid cosine vs the `similar_to` person — only on picker fetches
   // (GET /api/people?similar_to=), absent from the plain list.
   similarity?: number;
 };
+
+// Which half of the library a card's count/link refers to — same split as
+// /gear's GearSource (cf. lib/gearTypes.ts), kept local here since the two
+// pages don't otherwise share code.
+type Source = "incoming" | "gallery";
+
+const SOURCES: { key: Source; label: string; title: string }[] = [
+  { key: "incoming", label: "Incoming", title: "Media still to cull" },
+  { key: "gallery", label: "Gallery", title: "Finalized exports" },
+];
+
+// The chosen half sticks between visits, same convention as winnow.gear.source.
+const SOURCE_KEY = "winnow.people.source";
+
+const faceCountFor = (p: PersonRow, source: Source) =>
+  source === "gallery" ? p.gallery_face_count : p.incoming_face_count;
+const assetCountFor = (p: PersonRow, source: Source) =>
+  source === "gallery" ? p.gallery_asset_count : p.incoming_asset_count;
+
+// Where the active half's filtered grid lives for one or more people — mirrors
+// /gear's href() (cf. GearPanel.tsx).
+function galleryHref(
+  source: Source,
+  personIds: number[],
+  extra?: Record<string, string>,
+): string {
+  const sp = new URLSearchParams({ person: personIds.join(","), ...extra });
+  const base = source === "gallery" ? "/library/gallery" : "/library/incoming/grid";
+  return `${base}?${sp.toString()}`;
+}
 
 type PeopleResponse = {
   people: PersonRow[];
@@ -102,6 +143,7 @@ export function PersonAvatar({
  *  not hover-hunt. */
 function PersonCard({
   person,
+  source,
   selected,
   selectionActive,
   onToggleSelect,
@@ -110,6 +152,7 @@ function PersonCard({
   onToggleHidden,
 }: {
   person: PersonRow;
+  source: Source;
   selected: boolean;
   selectionActive: boolean;
   onToggleSelect: (id: number) => void;
@@ -197,7 +240,9 @@ function PersonCard({
             </button>
           </span>
         )}
-        <span className="pill person-count">{num(person.asset_count)} media</span>
+        <span className="pill person-count">
+          {num(assetCountFor(person, source))} media
+        </span>
       </Link>
       {editing && (
         <input
@@ -281,7 +326,7 @@ function PersonCard({
             {person.hidden ? "Unhide" : "Hide"}
           </button>
           <Link
-            href={`/library/gallery?person=${person.id}`}
+            href={galleryHref(source, [person.id])}
             className="person-menu-item"
             role="menuitem"
             onClick={() => setMenuOpen(false)}
@@ -289,7 +334,7 @@ function PersonCard({
             <span className="person-menu-ic" aria-hidden>
               {Icons.photos}
             </span>
-            Open in gallery
+            {source === "gallery" ? "Open in gallery" : "Open in incoming"}
           </Link>
         </div>
       )}
@@ -301,6 +346,7 @@ export default function PeoplePanel() {
   const [data, setData] = useState<PeopleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
+  const [source, setSource] = useState<Source>("incoming");
   const [showAll, setShowAll] = useState(false);
   // Free-text name search. A match beats the small-stack threshold: someone
   // typing a name is looking for a specific person, not browsing.
@@ -347,6 +393,16 @@ export default function PeoplePanel() {
   useEffect(() => {
     void load();
   }, []);
+
+  // Restore / persist the chosen half of the library (client-only, so the
+  // first render matches the server's) — same pattern as /gear.
+  useEffect(() => {
+    const saved = localStorage.getItem(SOURCE_KEY);
+    if (saved === "incoming" || saved === "gallery") setSource(saved);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(SOURCE_KEY, source);
+  }, [source]);
 
   // A rename settles the card into its new order locally — and when the new
   // name already fronts ANOTHER stack, offers to merge into it right away.
@@ -418,26 +474,32 @@ export default function PeoplePanel() {
     const minFaces = data?.minFaces ?? 1;
     // Accent/case-insensitive search (cf. lib/nameMatch): "chloe" → "Chloé".
     const q = normalizeName(query);
-    const inTab = people.filter(
-      (p) =>
-        (tab === "hidden"
-          ? p.hidden
-          : !p.hidden &&
-            (tab === "named"
-              ? p.name != null
-              : tab === "unnamed"
-                ? p.name == null
-                : true)) &&
-        (!q || normalizeName(p.name ?? "unnamed").includes(q)),
-    );
+    const inTab = people
+      .filter(
+        (p) =>
+          (tab === "hidden"
+            ? p.hidden
+            : !p.hidden &&
+              (tab === "named"
+                ? p.name != null
+                : tab === "unnamed"
+                  ? p.name == null
+                  : true)) &&
+          (!q || normalizeName(p.name ?? "unnamed").includes(q)),
+      )
+      // A stack with nothing in the active half is dropped rather than drawn
+      // at zero — its card would link to an empty grid. Reappears on the
+      // other tab, same rule as /gear.
+      .filter((p) => assetCountFor(p, source) > 0);
     // Named people always show; unnamed ones must clear the face threshold
-    // unless the toggle is on — or a search is running (a searched person must
-    // never hide). The Named tab has nothing to tuck away by definition.
+    // (read off the active half) unless the toggle is on — or a search is
+    // running (a searched person must never hide). The Named tab has nothing
+    // to tuck away by definition.
     const visible = q
       ? inTab
-      : inTab.filter((p) => p.name != null || p.face_count >= minFaces);
+      : inTab.filter((p) => p.name != null || faceCountFor(p, source) >= minFaces);
     return { inTab, visible, hidden: inTab.length - visible.length };
-  }, [data, tab, query]);
+  }, [data, tab, query, source]);
 
   // Per-tab population (independent of search/threshold): the tabs wear these
   // as count badges, so "how many are still unnamed" is answered at a glance.
@@ -556,6 +618,19 @@ export default function PeoplePanel() {
           )}
         </span>
         <span className="spacer" />
+        <div className="view-toggle" role="group" aria-label="Which half of the library">
+          {SOURCES.map((s) => (
+            <button
+              key={s.key}
+              className={`view-btn${source === s.key ? " active" : ""}`}
+              onClick={() => setSource(s.key)}
+              aria-pressed={source === s.key}
+              title={s.title}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         <div className="search-field people-search">
           <span className="search-icon" aria-hidden>
             {Icons.search}
@@ -612,7 +687,7 @@ export default function PeoplePanel() {
           {selectedIds.size > 1 && (
             <Link
               className="btn"
-              href={`/library/gallery?person=${[...selectedIds].join(",")}&person_mode=all`}
+              href={galleryHref(source, [...selectedIds], { person_mode: "all" })}
               title="Media where every selected person is in frame together"
             >
               View together
@@ -620,10 +695,10 @@ export default function PeoplePanel() {
           )}
           <Link
             className="btn"
-            href={`/library/gallery?person=${[...selectedIds].join(",")}`}
+            href={galleryHref(source, [...selectedIds])}
             title="Media with any of the selected people"
           >
-            View in gallery
+            {source === "gallery" ? "View in gallery" : "View in incoming"}
           </Link>
           <button className="btn" onClick={() => setSelectedIds(new Set())}>
             Clear
@@ -674,6 +749,7 @@ export default function PeoplePanel() {
             <PersonCard
               key={p.id}
               person={p}
+              source={source}
               selected={selectedIds.has(p.id)}
               selectionActive={selectedIds.size > 0}
               onToggleSelect={toggleSelect}

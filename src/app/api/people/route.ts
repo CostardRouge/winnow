@@ -15,6 +15,13 @@
 // person (cosine, cf. lib/people.ts) and attaches `similarity` per row — the
 // merge/move pickers lead with the stacks that LOOK like the one in hand,
 // named or not; a name only breaks ties between equally-similar stacks.
+//
+// Every row also carries its face/asset tally SPLIT by library half — the same
+// Incoming/Gallery split the /gear shelf keeps (cf. lib/gear.ts): a person's
+// faces usually land in both, a card can only link to one grid at a time, and
+// a merged count would promise media that grid doesn't hold. Scoped to roots
+// the Library can actually show ('source'/'inbox'/'finals'); an 'export' root
+// belongs to neither half.
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import { config } from "@/lib/config";
@@ -31,11 +38,17 @@ export async function GET(req: NextRequest) {
       hidden: boolean;
       face_count: number;
       asset_count: number;
+      incoming_face_count: number;
+      incoming_asset_count: number;
+      gallery_face_count: number;
+      gallery_asset_count: number;
       cover_face_id: number | null;
       similarity?: number;
     }>(
       `SELECT p.id, p.name, p.hidden,
               c.face_count, c.asset_count,
+              src.incoming_face_count, src.incoming_asset_count,
+              src.gallery_face_count, src.gallery_asset_count,
               COALESCE(cov.id, best.id) AS cover_face_id
          FROM people p
         CROSS JOIN LATERAL (
@@ -45,6 +58,18 @@ export async function GET(req: NextRequest) {
             JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
            WHERE f.person_id = p.id
         ) c
+        CROSS JOIN LATERAL (
+          SELECT
+            count(*) FILTER (WHERE rt.kind <> 'finals')::int              AS incoming_face_count,
+            count(DISTINCT f.asset_id) FILTER (WHERE rt.kind <> 'finals')::int AS incoming_asset_count,
+            count(*) FILTER (WHERE rt.kind = 'finals')::int               AS gallery_face_count,
+            count(DISTINCT f.asset_id) FILTER (WHERE rt.kind = 'finals')::int  AS gallery_asset_count
+            FROM asset_faces f
+            JOIN assets a ON a.id = f.asset_id AND a.deleted_at IS NULL
+            JOIN sessions s ON s.id = a.session_id
+            JOIN roots rt ON rt.id = s.root_id
+           WHERE f.person_id = p.id AND rt.kind IN ('source', 'inbox', 'finals')
+        ) src
          LEFT JOIN LATERAL (
           SELECT f.id
             FROM asset_faces f
