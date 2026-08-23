@@ -344,10 +344,22 @@ is **N distinct shots** — so stacking is a dimension **orthogonal** to pairing
 built over logical media: a pile of RAW+JPEG pairs is 5 tiles' worth of frames,
 not 10, and each frame keeps its own rating.
 
+Once formed, a pile is classified **`action`** (continuous shooting) or
+**`bracket`** (an exposure-bracketed / AEB run), two-tier, in this order: (1) an
+explicit maker bracket tag on any frame (Sony and others stamp one in the
+MakerNotes — exiftool's composite `BracketShotNumber`, absorbing per-brand
+variants), else (2) the frames' exposure compensation (EV) actually spreads by
+more than `BURST_BRACKET_EV_EPSILON` (default 0.05 EV) — the fallback that also
+catches iPhone and DJI drone bracket sequences, which don't stamp the maker tag.
+Anything that clusters as a pile but matches neither is `action`. Classification
+happens once, at pile-creation time; it isn't re-evaluated on its own — a
+**Restack** (see below) after a rescan reclassifies it.
+
 - **In the session grid** a collapsed pile is one *stacked* cover tile (deck
-  edge + `⧉ N` badge). **Tap to expand in place**: the frames splice into the
-  grid (accent rail, `▴ N` to collapse) and work like any row — viewer,
-  selection, context menu. The gallery shows the `⧉ N` badge (display-only).
+  edge + `⧉ N` badge, `± N` in the amber "star" color for a bracket pile).
+  **Tap to expand in place**: the frames splice into the grid (accent rail,
+  `▴ N` to collapse) and work like any row — viewer, selection, context menu.
+  The gallery shows the same badge (display-only).
 - **Find them at a glance**: the gallery filter panel has a **Bursts** section
   (*In a burst* / *Standalone*, `stacked=`) — combined with the collapse, *In a
   burst* turns the grid into **one tile per run**, so every burst in scope is
@@ -394,7 +406,9 @@ panel (combined with AND):
   pile to its cover, *In a burst* lists **one tile per run** — the shortlist of
   every burst shot in scope, ready to review or export. The panel states how
   many piles and frames are in scope, and the toggle stays hidden on a library
-  that holds no pile.
+  that holds no pile. A second **Action / Bracket** toggle (`burst_kind=`)
+  narrows by pile kind; it stays hidden until the library holds at least one
+  bracket pile.
 
 These dimensions are **materialized and indexed in the database** (migration
 0003: `capture_year/month/day/date` populated by trigger + indexes on device,

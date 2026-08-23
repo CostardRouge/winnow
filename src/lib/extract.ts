@@ -25,6 +25,21 @@ export type Metadata = {
   // (ShutterCount2/3…), so no per-brand handling here. Null wherever the maker
   // writes no such counter (phones, drones, video files).
   shutter_count: number | null;
+  // Exposure bias in EV units (e.g. -0.67, +1.0) — exiftool's composite
+  // ExposureCompensation, present on virtually every maker (Sony, iPhone, DJI
+  // included). Read for every photo; used by lib/bursts.ts as the fallback
+  // signal for telling an exposure-bracketed pile from a plain continuous run
+  // when no explicit bracket tag is present.
+  exposure_compensation: number | null;
+  // Explicit "this frame is shot N of an AEB/bracket sequence" MakerNotes tag.
+  // exiftool's composite BracketShotNumber absorbs the per-brand variants, the
+  // same way ShutterCount does above. IMPORTANT: 0 is the maker's "not
+  // bracketing" value, not "shot #0" — a plain photo from a body that stamps
+  // this tag at all still reads 0, so a consumer must test `> 0`, never
+  // `!= null` (cf. lib/bursts.ts). Null on any maker/mode that doesn't stamp
+  // it (most phones, drones) — lib/bursts.ts then falls back to the
+  // exposure_compensation spread.
+  bracket_shot_number: number | null;
   gps: { lat: number; lon: number } | null;
   width: number | null;
   height: number | null;
@@ -143,6 +158,8 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
     aperture: num(t.FNumber ?? (t as any).Aperture),
     focal_length: num(t.FocalLength),
     shutter_count: int((t as any).ShutterCount),
+    exposure_compensation: num(t.ExposureCompensation),
+    bracket_shot_number: int((t as any).BracketShotNumber),
     gps,
     width: num(t.ImageWidth ?? (t as any).ExifImageWidth),
     height: num(t.ImageHeight ?? (t as any).ExifImageHeight),

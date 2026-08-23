@@ -210,6 +210,7 @@ function toQuery(
   if (f.near_dup) sp.set("near_dup", "true");
   // Burst/bracket piles (cf. lib/bursts.ts) — tri-state, like has_faces.
   if (f.stacked != null) sp.set("stacked", f.stacked ? "true" : "false");
+  if (f.burst_kind) sp.set("burst_kind", f.burst_kind);
   // Session-grid status toggle (ignored sessions are hidden by default).
   if (f.show_ignored) sp.set("show_ignored", "true");
   if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
@@ -249,6 +250,7 @@ function countActiveFilters(f: Filters): number {
   if (f.is_edit != null) n++;
   if (f.near_dup) n++;
   if (f.stacked != null) n++;
+  if (f.burst_kind) n++;
   if (f.bbox) n++;
   return n;
 }
