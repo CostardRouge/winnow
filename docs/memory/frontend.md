@@ -52,6 +52,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: when adding an overlay or control inside the viewer/deck, stop its pointer events from reaching the gesture layer, and test on a touch device — the desktop mouse path will not reproduce the failure.
 
+## The Incoming/Gallery toggle is a repeated pattern, not a shared component (2026-08-22)
+
+**Decision**: `/gear` (`GearPanel.tsx`), `/people` (`PeoplePanel.tsx`) and `/search` (`SearchPage.tsx` + `api/search`) each carry their own `Source`/`GearSource` type, `SOURCES` label array, `winnow.<page>.source` localStorage key and `view-toggle`/`view-btn` markup for the same Incoming/Gallery split. `/people`'s API (`api/people`, `api/people/[id]`) now returns `incoming_face_count`/`incoming_asset_count`/`gallery_face_count`/`gallery_asset_count` per person, split with the same `rt.kind = 'finals'` vs. not test `lib/gear.ts` uses; `/search` accepts `?source=incoming|gallery` and only joins `sessions`/`roots` when a source is actually asked for, so the unfiltered path keeps its plain index scan.
+
+**Why**: three call sites is not enough to justify a shared `librarySource.ts` yet (CLAUDE.md: no premature abstraction), and the pages differ in what "the toggle" changes — gear/people drop cards with a zero count in the active half and redirect their links to `/library/incoming/grid` vs `/library/gallery`; search instead re-runs the CLIP ranking scoped to that half. Search deliberately keeps its own `source` in the query string (`&source=`) on top of localStorage, matching the page's existing "the query lives in the URL" rule — gear/people only use localStorage, matching their own no-deep-link precedent.
+
+**How to apply**: a fourth page wanting the same toggle should extract the shared bits (type, labels, localStorage helper) into one file — until then, copy the existing pattern from whichever of the three is closest rather than inventing a new shape. The person-list threshold hiding (`ML_PERSON_MIN_FACES`) and the "drop empty cards" rule now read the count for the *active* half, not the global total — a stack invisible on the Gallery tab reappears on Incoming and vice versa.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.
