@@ -312,6 +312,13 @@ const EnvSchema = z
     // becomes a stack (shorter runs stay standalone).
     BURST_GAP_SECONDS: numEnv(1.5, { min: 0 }),
     BURST_MIN_FRAMES: intEnv(3, { min: 2 }),
+    // A pile is classified 'bracket' (vs plain 'action' continuous shooting)
+    // when either an explicit maker bracket tag is present on a member frame,
+    // or — the fallback that also catches iPhone/DJI bracket sequences, which
+    // don't stamp that tag — its frames' exposure compensation (EV) spreads by
+    // more than this. Keeps metering/rounding noise from flipping an ordinary
+    // action burst (cf. lib/bursts.ts).
+    BURST_BRACKET_EV_EPSILON: numEnv(0.05, { min: 0 }),
 
     // Derivative sizes (cf. §4: grid thumbnail + cull proxy).
     THUMB_SIZE: intEnv(400, { min: 1 }),
@@ -525,6 +532,7 @@ function loadConfig() {
     burst: {
       gapSeconds: e.BURST_GAP_SECONDS,
       minFrames: e.BURST_MIN_FRAMES,
+      bracketEvEpsilon: e.BURST_BRACKET_EV_EPSILON,
     },
 
     thumbSize: e.THUMB_SIZE,

@@ -112,6 +112,9 @@ type AssetRow = {
   burst_seq?: number | null;
   burst_count?: number | null;
   burst_cover_id?: number | null;
+  // 'bracket' (exposure-bracketed / AEB) vs 'action' (continuous shooting) —
+  // cf. Burst.kind, lib/bursts.ts.
+  burst_kind?: "action" | "bracket" | null;
 };
 
 // Session metadata + status breakdown (GET /api/sessions/:id). Postgres returns
@@ -953,19 +956,23 @@ export default function SessionGrid({
                 </span>
                 {!sel && isStackCover && (
                   <button
-                    className="stack-badge"
-                    title={`Burst pile — expand ${a.burst_count} frames`}
+                    className={`stack-badge${a.burst_kind === "bracket" ? " bracket" : ""}`}
+                    title={
+                      a.burst_kind === "bracket"
+                        ? `Exposure-bracketed (AEB) pile — expand ${a.burst_count} frames`
+                        : `Burst pile — expand ${a.burst_count} frames`
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
                       void toggleStack(a);
                     }}
                   >
-                    ⧉ {a.burst_count}
+                    {a.burst_kind === "bracket" ? "±" : "⧉"} {a.burst_count}
                   </button>
                 )}
                 {!sel && isExpandedCover && (
                   <button
-                    className="stack-badge open"
+                    className={`stack-badge open${a.burst_kind === "bracket" ? " bracket" : ""}`}
                     title="Collapse pile"
                     onClick={(e) => {
                       e.stopPropagation();

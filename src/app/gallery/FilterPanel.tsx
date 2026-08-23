@@ -52,8 +52,15 @@ export type Facets = {
   // Burst/bracket stacks in scope (cf. lib/bursts.ts): `piles` counts the
   // stacks, `frames` the shots they hold. Drives the "Bursts" filter toggle —
   // in the collapsed grid the filter yields exactly `piles` tiles (one cover
-  // per burst). Optional so a facets payload predating the feature typechecks.
-  bursts?: { piles: number; frames: number };
+  // per burst). `action_piles`/`bracket_piles` split `piles` by Burst.kind and
+  // drive the Action/Bracket sub-toggle. Optional so a facets payload
+  // predating the feature typechecks.
+  bursts?: {
+    piles: number;
+    frames: number;
+    action_piles: number;
+    bracket_piles: number;
+  };
   // Finals → sources reconciliation (cf. lib/reconcile.ts), one count per
   // direction of the link: `linked` = finals that point at a source, with_edits`
   // = sources something points back at. Each is only ever non-zero on ONE
@@ -170,6 +177,9 @@ export type Filters = {
   // Burst/bracket stacks (cf. lib/bursts.ts). Tri-state: true → only frames that
   // belong to a pile, false → only the standalone shots, undefined → both.
   stacked?: boolean;
+  // Narrows piles by kind (cf. Burst.kind): 'action' (continuous shooting) vs
+  // 'bracket' (exposure-bracketed / AEB).
+  burst_kind?: "action" | "bracket";
   // Finals → sources reconciliation (cf. lib/reconcile.ts). `has_edit` → sources
   // that have a linked edit; `is_edit` → finals linked back to a source.
   has_edit?: boolean;
@@ -989,6 +999,37 @@ export default function FilterPanel({
               Standalone
             </button>
           </div>
+          {/* Action (continuous shooting) vs bracket (exposure-bracketed / AEB)
+              — cf. Burst.kind, lib/bursts.ts. Hidden while the library holds no
+              bracket pile, so the split never shows as a dead toggle. */}
+          {!!facets.bursts.bracket_piles && (
+            <div className="chips" style={{ marginTop: 6 }}>
+              <button
+                className={`chip${filters.burst_kind === "action" ? " active" : ""}`}
+                onClick={() =>
+                  u({
+                    burst_kind: filters.burst_kind === "action" ? undefined : "action",
+                  })
+                }
+                title="Continuous-shooting piles — same exposure across the run"
+              >
+                Action
+                <span className="chip-count">{facets.bursts.action_piles}</span>
+              </button>
+              <button
+                className={`chip${filters.burst_kind === "bracket" ? " active" : ""}`}
+                onClick={() =>
+                  u({
+                    burst_kind: filters.burst_kind === "bracket" ? undefined : "bracket",
+                  })
+                }
+                title="Exposure-bracketed (AEB) piles — frames shot at different exposures"
+              >
+                Bracket
+                <span className="chip-count">{facets.bursts.bracket_piles}</span>
+              </button>
+            </div>
+          )}
           <div className="hint" style={{ marginTop: 4 }}>
             {facets.bursts.piles} pile{facets.bursts.piles === 1 ? "" : "s"} ·{" "}
             {facets.bursts.frames} frame

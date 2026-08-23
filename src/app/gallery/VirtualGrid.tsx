@@ -38,6 +38,9 @@ export type GalleryAsset = {
   // The pile itself, if any — lets the media viewer fetch this cover's sibling
   // frames for its filmstrip (cf. MediaViewer.tsx).
   burst_id?: number | null;
+  // 'bracket' (exposure-bracketed / AEB) vs 'action' (continuous shooting) —
+  // cf. Burst.kind, lib/bursts.ts. Distinguishes the pile badge's style/label.
+  burst_kind?: "action" | "bracket" | null;
 };
 
 const TARGET = 175; // target cell width (px)
@@ -166,10 +169,14 @@ function Row({
             )}
             {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
               <span
-                className="stack-badge"
-                title={`Burst pile of ${a.burst_count} frames — open the session grid to expand it`}
+                className={`stack-badge${a.burst_kind === "bracket" ? " bracket" : ""}`}
+                title={
+                  a.burst_kind === "bracket"
+                    ? `Exposure-bracketed (AEB) pile of ${a.burst_count} frames — open the session grid to expand it`
+                    : `Burst pile of ${a.burst_count} frames — open the session grid to expand it`
+                }
               >
-                ⧉ {a.burst_count}
+                {a.burst_kind === "bracket" ? "±" : "⧉"} {a.burst_count}
               </span>
             )}
             {a.verdict !== "unrated" && (

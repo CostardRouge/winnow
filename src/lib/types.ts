@@ -233,6 +233,9 @@ export type Burst = {
   ended_at: string | null;
   cover_asset_id: number | null;
   member_count: number;
+  // 'bracket' (exposure-bracketed / AEB run) vs 'action' (plain continuous
+  // shooting) — classified once at pile-creation time (cf. lib/bursts.ts).
+  kind: "action" | "bracket";
   created_at: string;
 };
 
@@ -329,6 +332,8 @@ export type AssetGridRow = Asset & {
   // along from Asset).
   burst_count: number | null;
   burst_cover_id: number | null;
+  // 'bracket' vs 'action' (cf. Burst.kind above) — NULL when not stacked.
+  burst_kind: "action" | "bracket" | null;
   // Number of sidecar files (Sony XML/THM, DJI .SRT) tied to this asset (0 for
   // most). Lets the viewer note that a clip carries its companion files.
   sidecar_count: number;

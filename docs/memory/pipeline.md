@@ -54,6 +54,40 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **How to apply**: never bypass the cell cache for a bulk operation. Note the known bug: an upstream HTTP 429 is currently retried with exponential backoff, which is the wrong response to rate limiting (review §3.4).
 
+## Burst piles split into action vs bracket, two-tier detection (2026-08-23)
+
+**Decision**: a pile (migration 0029) is classified `bursts.kind` = `action`
+(continuous shooting) or `bracket` (exposure-bracketed / AEB), once, at
+pile-creation time in `reconcileBurstsForSession` (`src/lib/bursts.ts`).
+Tier 1: any member frame carries a real (`> 0`) `bracket_shot_number` — the
+maker's explicit MakerNotes bracket-sequence index (exiftool's composite
+`BracketShotNumber`, absorbing the per-brand variants the same way
+`ShutterCount` does). Tier 2 fallback: the frames' `exposure_compensation` (EV,
+exiftool's `ExposureCompensation`) spreads by more than
+`BURST_BRACKET_EV_EPSILON` (default 0.05). Both columns land on `assets` via
+migration `0039_burst_kind.sql`.
+
+**Why two tiers**: the explicit tag is only ~4% frequency and Sony/Canon/
+Panasonic-specific; the EV-spread fallback is what makes iPhone and DJI drone
+bracket sequences detectable too, since neither stamps the maker tag. Grouping
+itself (temporal gap + device, unchanged) can't tell the two apart — a
+continuous burst and a bracket sequence cluster identically.
+
+**Trap already fixed once, don't reintroduce it**: `BracketShotNumber` reads
+`0` on an ordinary (non-bracketed) frame from a body that stamps the tag at
+all — 0 is the maker's "not bracketing" sentinel, not "shot #0". A classifier
+that tests `!= null` instead of `> 0` would flag every such frame's pile as a
+bracket. `int()` in `lib/extract.ts` still stores `0` (a real, meaningful
+value) — the `> 0` guard belongs in the consumer, not the extractor.
+
+**How to apply**: classification runs once and is never re-evaluated by an
+ordinary rescan (`reconcileBurstsForSession` only touches `burst_id IS NULL`
+frames, same as clustering itself) — an existing pile only gets reclassified
+via the `restackSession` escape hatch, after its frames' EXIF has actually been
+re-read. `BURST_BRACKET_EV_EPSILON` isn't yet in `docker-compose-optiplex.yml`'s
+`x-winnow-env` anchor — same pre-existing gap as `BURST_GAP_SECONDS`/
+`BURST_MIN_FRAMES`, tracked in `MEMORY.md`'s open items.
+
 ## Thermals and disk noise are a real design constraint (2026-08-20)
 
 **Decision**: `SCAN_CONCURRENCY=1` and sequential exports are what keep the HDD quiet; the ML container is the CPU hog and is paced by `mlPerHour` (default 1200/h ≈ 67 h for an 80k backfill) rather than by concurrency.

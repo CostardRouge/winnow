@@ -107,6 +107,9 @@ export const FilterSchema = z
     // collapse-to-cover, so the grid can expand the pile in place.
     stacked: boolish,
     burst_id: z.coerce.number().int().optional(),
+    // Narrows to piles of one kind: 'bracket' (exposure-bracketed / AEB) vs
+    // 'action' (plain continuous shooting) — cf. Burst.kind, lib/bursts.ts.
+    burst_kind: z.enum(["action", "bracket"]).optional(),
     // Finals → sources reconciliation (cf. lib/reconcile.ts). `is_edit` → finals
     // linked back to a source (true) / not an edit (false). `has_edit` → sources
     // that have at least one linked edit (true) / none (false).
@@ -316,6 +319,12 @@ export function buildFilter(
   if (filter.burst_id != null) eq("a.burst_id", filter.burst_id);
   if (filter.stacked === true) conditions.push("a.burst_id IS NOT NULL");
   else if (filter.stacked === false) conditions.push("a.burst_id IS NULL");
+  if (filter.burst_kind != null) {
+    conditions.push(
+      `a.burst_id IN (SELECT id FROM bursts WHERE kind = $${i++})`,
+    );
+    params.push(filter.burst_kind);
+  }
 
   // Finals → sources reconciliation. `is_edit` keys on the link column directly;
   // `has_edit` on the existence of an edit pointing back at this asset (the
@@ -543,6 +552,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "group_kind",
     "stacked",
     "burst_id",
+    "burst_kind",
     "is_edit",
     "has_edit",
     "device",

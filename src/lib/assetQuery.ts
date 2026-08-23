@@ -30,6 +30,7 @@ export const GRID_SELECT = `a.*,
         comp.height     AS companion_height,
         g.kind          AS group_kind,
         bu.cover_asset_id AS burst_cover_id,
+        bu.kind           AS burst_kind,
         -- Live (non-deleted) size of this frame's burst/bracket pile — badged on
         -- the collapsed cover tile. NULL (no subquery) when the frame isn't
         -- stacked. Counted live, not read off bursts.member_count, so the badge

@@ -20,6 +20,12 @@
 // shorter than the minimum ungrouped. A whole burst normally lands in one import,
 // so it is clustered in a single pass; a stray late frame simply stays standalone
 // rather than retro-growing a pile — a safe, no-churn trade-off for Phase 1.
+//
+// Grouping (temporal gap + device) never tells you WHAT kind of run it is —
+// continuous shooting (action) and an exposure bracket (AEB) cluster exactly
+// the same way. `bursts.kind` classifies that, once, at pile-creation time
+// (never re-evaluated afterwards short of an explicit restack): see
+// classifyKind below for the two-tier detection.
 import { q, many } from "./db";
 import { config } from "./config";
 
@@ -55,7 +61,29 @@ type Frame = {
   // True when this frame opens a new pile: the gap to the previous frame exceeds
   // the threshold, the device changed, or it's the first frame in the session.
   is_break: boolean;
+  // Two-tier bracket signal (cf. classifyKind below): the maker's explicit
+  // bracket-sequence index (0 = "not bracketing", not "shot #0" — see
+  // lib/extract.ts) and the EV exposure bias, both from lib/extract.ts.
+  bracket_shot_number: number | null;
+  exposure_compensation: number | null;
 };
+
+// Classify a pile as 'bracket' (exposure-bracketed run — AEB) or 'action'
+// (plain continuous shooting), tried in this order:
+//   1. Explicit signal: any frame carries a real (> 0) maker bracket index.
+//   2. Fallback: the frames' EV actually spreads by more than the configured
+//      epsilon — this is what catches iPhone/DJI sequences, which don't stamp
+//      the maker-specific tag. Metering noise on a plain burst stays well
+//      under the epsilon, so this doesn't need signal 1 to be absent first.
+function classifyKind(cluster: Frame[]): "action" | "bracket" {
+  if (cluster.some((f) => (f.bracket_shot_number ?? 0) > 0)) return "bracket";
+  const evs = cluster
+    .map((f) => f.exposure_compensation)
+    .filter((v): v is number => v != null);
+  if (evs.length < 2) return "action";
+  const spread = Math.max(...evs) - Math.min(...evs);
+  return spread > config.burst.bracketEvEpsilon ? "bracket" : "action";
+}
 
 // Re-cluster one session from scratch with the CURRENT thresholds: dissolve its
 // piles, then run the normal reconciler over the whole session. This is the
@@ -93,9 +121,10 @@ export async function reconcileBurstsForSession(
   // ordering the grid is keyed on. Sub-second bursts share a second → gap 0 →
   // never a break, exactly what we want (they belong together).
   const frames = await many<Frame>(
-    `SELECT id, device, captured_at, is_break
+    `SELECT id, device, captured_at, is_break,
+            bracket_shot_number, exposure_compensation
      FROM (
-       SELECT id, device, captured_at,
+       SELECT id, device, captured_at, bracket_shot_number, exposure_compensation,
               (
                 lag(captured_at) OVER w IS NULL
                 OR device IS DISTINCT FROM lag(device) OVER w
@@ -130,8 +159,8 @@ export async function reconcileBurstsForSession(
     // the whole session. The first frame is the default cover; seq is 1-based.
     const { rows } = await q<{ id: number }>(
       `INSERT INTO bursts
-         (session_id, device, started_at, ended_at, cover_asset_id, member_count)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+         (session_id, device, started_at, ended_at, cover_asset_id, member_count, kind)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [
         sessionId,
         cluster[0].device,
@@ -139,6 +168,7 @@ export async function reconcileBurstsForSession(
         cluster[cluster.length - 1].captured_at,
         ids[0],
         ids.length,
+        classifyKind(cluster),
       ],
     );
     const bid = rows[0].id;

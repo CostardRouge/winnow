@@ -79,6 +79,9 @@ export type ViewerItem = AssetMetaInput & {
   // itself (see BurstFrame below) to feed the filmstrip.
   burst_id?: number | null;
   burst_count?: number | null;
+  // 'bracket' (exposure-bracketed / AEB) vs 'action' (continuous shooting) —
+  // cf. Burst.kind, lib/bursts.ts.
+  burst_kind?: "action" | "bracket" | null;
 };
 
 // One frame of the current item's burst pile, as returned by
@@ -1102,10 +1105,14 @@ export default function MediaViewer<T extends ViewerItem>({
             // collapsed-cover badge — informational only, the filmstrip below
             // is what actually browses the other frames.
             <div
-              className="viewer-burst-badge"
-              title={`Burst pile of ${item.burst_count} frames`}
+              className={`viewer-burst-badge${item.burst_kind === "bracket" ? " bracket" : ""}`}
+              title={
+                item.burst_kind === "bracket"
+                  ? `Exposure-bracketed (AEB) pile of ${item.burst_count} frames`
+                  : `Burst pile of ${item.burst_count} frames`
+              }
             >
-              ⧉ {item.burst_count}
+              {item.burst_kind === "bracket" ? "±" : "⧉"} {item.burst_count}
             </div>
           )}
           {showable && (

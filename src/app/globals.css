@@ -1505,6 +1505,12 @@ html[data-theme="dark"] .btn-primary:hover {
   .cell .stack-badge.open {
     color: var(--color-accent);
   }
+  /* Exposure-bracketed (AEB) pile, vs the default plain continuous-shooting
+     "action" burst (cf. Burst.kind, lib/bursts.ts) — same badge, recolored so
+     the two read as visibly different at a glance. */
+  .cell .stack-badge.bracket {
+    color: var(--color-star);
+  }
   /* Sharpest frame of an expanded pile (sharpness analysis, cf. lib/ml.ts) —
      a nudge toward the keeper. Top-center: every corner is already taken. */
   .cell .sharpest-badge {
@@ -1787,6 +1793,11 @@ html[data-theme="dark"] .btn-primary:hover {
     background: color-mix(in srgb, #000 50%, transparent);
     color: #fff;
     backdrop-filter: blur(3px);
+  }
+  /* Exposure-bracketed (AEB) pile, vs plain continuous-shooting "action" —
+     same badge, recolored (cf. .stack-badge.bracket in the grid). */
+  .viewer-burst-badge.bracket {
+    color: var(--color-star);
   }
   .viewer-burst-strip {
     @apply flex flex-none items-center gap-2 px-3 py-2;

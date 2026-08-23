@@ -230,6 +230,7 @@ export async function indexRoot(
            gimbal_pitch=$24, gimbal_yaw=$25, gimbal_roll=$26,
            relative_altitude=$27, absolute_altitude=$28,
            shutter_count=$29,
+           exposure_compensation=$30, bracket_shot_number=$31,
            derivative_status=$21,
            processing_state=CASE WHEN $22 THEN 'ignored' ELSE processing_state END,
            updated_at=now()
@@ -264,6 +265,8 @@ export async function indexRoot(
           meta.relative_altitude,
           meta.absolute_altitude,
           meta.shutter_count,
+          meta.exposure_compensation,
+          meta.bracket_shot_number,
         ],
       );
       res.updated++;
@@ -311,10 +314,11 @@ export async function indexRoot(
            iso, shutter, aperture, focal_length, gps, width, height, duration_s,
            derivative_status, processing_state, content_id,
            gimbal_pitch, gimbal_yaw, gimbal_roll,
-           relative_altitude, absolute_altitude, shutter_count
+           relative_altitude, absolute_altitude, shutter_count,
+           exposure_compensation, bracket_shot_number
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -349,6 +353,8 @@ export async function indexRoot(
           meta.relative_altitude,
           meta.absolute_altitude,
           meta.shutter_count,
+          meta.exposure_compensation,
+          meta.bracket_shot_number,
         ],
       );
 

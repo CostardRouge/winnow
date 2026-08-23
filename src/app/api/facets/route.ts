@@ -201,13 +201,26 @@ export async function GET(req: NextRequest) {
       // Burst/bracket stacks (cf. lib/bursts.ts): how many piles live in scope
       // and how many frames they hold. `piles` is what the "Bursts" filter
       // surfaces in the COLLAPSED gallery (one cover tile per pile), `frames`
-      // what it surfaces uncollapsed — so the panel can state both. Also gates
-      // the toggle, which stays hidden on a library that was never stacked.
-      // Served by assets_burst_idx (migration 0029).
-      one<{ piles: number; frames: number }>(
+      // what it surfaces uncollapsed — so the panel can state both.
+      // `action_piles`/`bracket_piles` split that by Burst.kind, so the panel
+      // can show per-kind counts and hide a kind toggle the scope has none of.
+      // Also gates the "Bursts" toggle itself, which stays hidden on a library
+      // that was never stacked. Served by assets_burst_idx (migration 0029).
+      one<{
+        piles: number;
+        frames: number;
+        action_piles: number;
+        bracket_piles: number;
+      }>(
         `SELECT count(DISTINCT a.burst_id)::int AS piles,
-                count(*)::int                   AS frames
-         FROM assets a WHERE a.burst_id IS NOT NULL${scope}`,
+                count(*)::int                   AS frames,
+                count(DISTINCT a.burst_id) FILTER (WHERE bu.kind = 'action')::int
+                  AS action_piles,
+                count(DISTINCT a.burst_id) FILTER (WHERE bu.kind = 'bracket')::int
+                  AS bracket_piles
+         FROM assets a
+         LEFT JOIN bursts bu ON bu.id = a.burst_id
+         WHERE a.burst_id IS NOT NULL${scope}`,
         params,
       ).catch(() => null),
       // Finals → sources reconciliation (cf. lib/reconcile.ts), counted once per
@@ -280,7 +293,7 @@ export async function GET(req: NextRequest) {
       people,
       with_text: withText?.count ?? 0,
       with_phash: withPhash?.count ?? 0,
-      bursts: bursts ?? { piles: 0, frames: 0 },
+      bursts: bursts ?? { piles: 0, frames: 0, action_piles: 0, bracket_piles: 0 },
       edits: {
         linked: editsLinked?.count ?? 0,
         with_edits: editsWithEdits?.count ?? 0,
