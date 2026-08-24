@@ -11,10 +11,11 @@
 // primary. Depends on ML being enabled + a CLIP backfill having run.
 //
 // `?source=incoming|gallery` narrows the ranking to one half of the library —
-// the same Incoming/Gallery split /gear and /people wear (cf. lib/roles.ts):
-// 'source'/'inbox' roots for Incoming, 'finals' for Gallery. Omitted, the
-// ranking runs over the whole library (an 'export' root's frames still never
-// match — they belong to neither half).
+// the same Incoming/Gallery/All split /gear and /people wear (cf.
+// LibrarySourceTabs.tsx, lib/roles.ts): 'source'/'inbox' roots for Incoming,
+// 'finals' for Gallery. `source=all`, an unrecognized value, or the param
+// missing altogether all run the ranking over the whole library (an 'export'
+// root's frames still never match — they belong to neither half).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { config } from "@/lib/config";
@@ -48,8 +49,9 @@ export async function GET(req: NextRequest) {
       MAX_LIMIT,
     );
 
-    // Unrecognized values behave like "omitted" (the whole library) rather
-    // than erroring — a stale/garbled query string must not break search.
+    // "all" (the third LibrarySource option, cf. LibrarySourceTabs.tsx) and
+    // any unrecognized value both behave like "omitted" — the whole library —
+    // rather than erroring, so a stale/garbled query string can't break search.
     const sourceParam = sp.get("source");
     const source =
       sourceParam === "incoming" || sourceParam === "gallery"

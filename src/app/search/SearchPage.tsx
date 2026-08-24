@@ -14,8 +14,11 @@
 // on Library and Incoming: a search is then shareable, reload-safe, and a deep
 // link from anywhere else lands on results rather than on an empty field.
 //
-// The Incoming/Gallery toggle is the same split /gear and /people wear: which
-// half of the library the ranking runs over (cf. api/search, lib/roles.ts).
+// The Incoming/Gallery/All toggle is the shared one /gear and /people wear
+// (cf. LibrarySourceTabs.tsx): which half of the library the ranking runs
+// over (cf. api/search, lib/roles.ts). "All" is simply the unfiltered
+// ranking — api/search already runs over the whole library when no source
+// (or an unrecognized one) is given, so "all" needs no special backend case.
 // Kept in the query string too (`&source=`), so a shared search link reopens
 // scoped the same way; flipping it re-runs the last query.
 import {
@@ -31,6 +34,11 @@ import Link from "next/link";
 import { EmptyState, Icons, LoadingState } from "../ui";
 import MediaViewer from "../MediaViewer";
 import VirtualGrid, { type VirtualGridHandle } from "../gallery/VirtualGrid";
+import {
+  LibrarySourceTabs,
+  useStoredLibrarySource,
+  type LibrarySource,
+} from "../LibrarySourceTabs";
 import type { AssetGridRow } from "@/lib/types";
 
 // The API returns the usual grid rows plus the cosine distance it ranked by.
@@ -54,15 +62,7 @@ const LIMIT = 120;
 
 // The query-string key the page reads and writes: /search?keywords=a+red+bicycle
 const PARAM = "keywords";
-// Which half of the library to rank — same split as GearSource (cf.
-// lib/gearTypes.ts), kept local since this page doesn't otherwise share code
-// with /gear or /people.
-type Source = "incoming" | "gallery";
 const SOURCE_PARAM = "source";
-const SOURCES: { key: Source; label: string; title: string }[] = [
-  { key: "incoming", label: "Incoming", title: "Media still to cull" },
-  { key: "gallery", label: "Gallery", title: "Finalized exports" },
-];
 const SOURCE_KEY = "winnow.search.source";
 
 // Context menu for a search hit — right-click on desktop, long-press on touch
@@ -143,11 +143,12 @@ function SearchPage() {
   const [ran, setRan] = useState("");
   // Which half of the library to rank over. A `&source=` in the URL (a shared
   // link) wins over "wherever I left off"; otherwise the choice sticks between
-  // visits (restored from localStorage below, same as /gear and /people).
-  const [source, setSource] = useState<Source>(() => {
+  // visits, same as /gear and /people.
+  const [urlSource] = useState<LibrarySource | null>(() => {
     const s = searchParams.get(SOURCE_PARAM);
-    return s === "incoming" || s === "gallery" ? s : "incoming";
+    return s === "all" || s === "incoming" || s === "gallery" ? s : null;
   });
+  const [source, setSource] = useStoredLibrarySource(SOURCE_KEY, urlSource);
   const [items, setItems] = useState<Item[] | null>(null);
   const [state, setState] = useState<State>("idle");
   const [msg, setMsg] = useState("");
@@ -160,21 +161,10 @@ function SearchPage() {
   );
   const gridRef = useRef<VirtualGridHandle>(null);
 
-  // Restore the remembered half only when the URL didn't already name one —
-  // seeded once on mount, like the gear/people restore effects.
-  useEffect(() => {
-    if (searchParams.get(SOURCE_PARAM)) return;
-    const saved = localStorage.getItem(SOURCE_KEY);
-    if (saved === "incoming" || saved === "gallery") setSource(saved);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem(SOURCE_KEY, source);
-  }, [source]);
-
   const run = useCallback(
     // `sourceOverride` lets the toggle re-run immediately with the new half
     // rather than the one still in `source` state (state updates are async).
-    async (query: string, sourceOverride?: Source) => {
+    async (query: string, sourceOverride?: LibrarySource) => {
       const text = query.trim();
       if (!text) return;
       const activeSource = sourceOverride ?? source;
@@ -389,22 +379,13 @@ function SearchPage() {
           ))}
         </div>
         <span className="spacer" />
-        <div className="view-toggle" role="group" aria-label="Which half of the library">
-          {SOURCES.map((s) => (
-            <button
-              key={s.key}
-              className={`view-btn${source === s.key ? " active" : ""}`}
-              onClick={() => {
-                setSource(s.key);
-                if (ran) run(ran, s.key);
-              }}
-              aria-pressed={source === s.key}
-              title={s.title}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <LibrarySourceTabs
+          source={source}
+          onChange={(s) => {
+            setSource(s);
+            if (ran) run(ran, s);
+          }}
+        />
         {state === "idle" && items && items.length > 0 && (
           <span className="hint ml-search-readout">
             {items.length === LIMIT
