@@ -18,17 +18,25 @@
 // the clusterer split one person — so the rename immediately offers the merge,
 // with the list pre-searched on that name.
 //
-// The Incoming/Gallery toggle is the same one /gear wears: a person's faces
-// usually turn up on both halves of the library, a card can only link one
-// filtered grid at a time, and the two halves need different tallies (cf.
-// lib/gear.ts and api/people). Named stacks with nothing in the active half
-// drop out of view rather than show a zero — same rule as the gear shelf —
-// and reappear the moment the other tab is picked.
+// The Incoming/Gallery/All toggle is the shared one every library-scoped page
+// wears (cf. LibrarySourceTabs.tsx): a person's faces usually turn up on both
+// halves of the library, a card can only link one filtered grid at a time,
+// and the two halves need different tallies (cf. lib/gear.ts and api/people).
+// Named stacks with nothing in the active half drop out of view rather than
+// show a zero — same rule as the gear shelf — and reappear the moment another
+// tab is picked. "All" sums both halves; a card/link under "All" still needs
+// to pick ONE grid, so it defers to effectiveLibrarySource (Incoming first).
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
+import {
+  effectiveLibrarySource,
+  LibrarySourceTabs,
+  useStoredLibrarySource,
+  type LibrarySource,
+} from "@/app/LibrarySourceTabs";
 import PersonPicker from "./PersonPicker";
 import SuggestionsModal, { type MergeSuggestion } from "./SuggestionsModal";
 
@@ -48,34 +56,37 @@ export type PersonRow = {
   similarity?: number;
 };
 
-// Which half of the library a card's count/link refers to — same split as
-// /gear's GearSource (cf. lib/gearTypes.ts), kept local here since the two
-// pages don't otherwise share code.
-type Source = "incoming" | "gallery";
-
-const SOURCES: { key: Source; label: string; title: string }[] = [
-  { key: "incoming", label: "Incoming", title: "Media still to cull" },
-  { key: "gallery", label: "Gallery", title: "Finalized exports" },
-];
-
 // The chosen half sticks between visits, same convention as winnow.gear.source.
 const SOURCE_KEY = "winnow.people.source";
 
-const faceCountFor = (p: PersonRow, source: Source) =>
-  source === "gallery" ? p.gallery_face_count : p.incoming_face_count;
-const assetCountFor = (p: PersonRow, source: Source) =>
-  source === "gallery" ? p.gallery_asset_count : p.incoming_asset_count;
+const faceCountFor = (p: PersonRow, source: LibrarySource) =>
+  source === "all"
+    ? p.incoming_face_count + p.gallery_face_count
+    : source === "gallery"
+      ? p.gallery_face_count
+      : p.incoming_face_count;
+const assetCountFor = (p: PersonRow, source: LibrarySource) =>
+  source === "all"
+    ? p.incoming_asset_count + p.gallery_asset_count
+    : source === "gallery"
+      ? p.gallery_asset_count
+      : p.incoming_asset_count;
 
 // Where the active half's filtered grid lives for one or more people — mirrors
-// /gear's href() (cf. GearPanel.tsx).
+// /gear's href() (cf. GearPanel.tsx). Under "All", `preferredPerson` (a single
+// card's own row) decides which grid actually has their media; a bulk link
+// covering several people has no single row to defer to, so it falls back to
+// Incoming.
 function galleryHref(
-  source: Source,
+  source: LibrarySource,
   personIds: number[],
   extra?: Record<string, string>,
+  preferredPerson?: PersonRow,
 ): string {
   const sp = new URLSearchParams({ person: personIds.join(","), ...extra });
-  const base = source === "gallery" ? "/library/gallery" : "/library/incoming/grid";
-  return `${base}?${sp.toString()}`;
+  const base = effectiveLibrarySource(source, preferredPerson?.incoming_asset_count ?? 1);
+  const path = base === "gallery" ? "/library/gallery" : "/library/incoming/grid";
+  return `${path}?${sp.toString()}`;
 }
 
 type PeopleResponse = {
@@ -152,7 +163,7 @@ function PersonCard({
   onToggleHidden,
 }: {
   person: PersonRow;
-  source: Source;
+  source: LibrarySource;
   selected: boolean;
   selectionActive: boolean;
   onToggleSelect: (id: number) => void;
@@ -326,7 +337,7 @@ function PersonCard({
             {person.hidden ? "Unhide" : "Hide"}
           </button>
           <Link
-            href={galleryHref(source, [person.id])}
+            href={galleryHref(source, [person.id], undefined, person)}
             className="person-menu-item"
             role="menuitem"
             onClick={() => setMenuOpen(false)}
@@ -334,7 +345,9 @@ function PersonCard({
             <span className="person-menu-ic" aria-hidden>
               {Icons.photos}
             </span>
-            {source === "gallery" ? "Open in gallery" : "Open in incoming"}
+            {effectiveLibrarySource(source, person.incoming_asset_count) === "gallery"
+              ? "Open in gallery"
+              : "Open in incoming"}
           </Link>
         </div>
       )}
@@ -346,7 +359,7 @@ export default function PeoplePanel() {
   const [data, setData] = useState<PeopleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
-  const [source, setSource] = useState<Source>("incoming");
+  const [source, setSource] = useStoredLibrarySource(SOURCE_KEY);
   const [showAll, setShowAll] = useState(false);
   // Free-text name search. A match beats the small-stack threshold: someone
   // typing a name is looking for a specific person, not browsing.
@@ -393,16 +406,6 @@ export default function PeoplePanel() {
   useEffect(() => {
     void load();
   }, []);
-
-  // Restore / persist the chosen half of the library (client-only, so the
-  // first render matches the server's) — same pattern as /gear.
-  useEffect(() => {
-    const saved = localStorage.getItem(SOURCE_KEY);
-    if (saved === "incoming" || saved === "gallery") setSource(saved);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem(SOURCE_KEY, source);
-  }, [source]);
 
   // A rename settles the card into its new order locally — and when the new
   // name already fronts ANOTHER stack, offers to merge into it right away.
@@ -618,19 +621,7 @@ export default function PeoplePanel() {
           )}
         </span>
         <span className="spacer" />
-        <div className="view-toggle" role="group" aria-label="Which half of the library">
-          {SOURCES.map((s) => (
-            <button
-              key={s.key}
-              className={`view-btn${source === s.key ? " active" : ""}`}
-              onClick={() => setSource(s.key)}
-              aria-pressed={source === s.key}
-              title={s.title}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <LibrarySourceTabs source={source} onChange={setSource} />
         <div className="search-field people-search">
           <span className="search-icon" aria-hidden>
             {Icons.search}
