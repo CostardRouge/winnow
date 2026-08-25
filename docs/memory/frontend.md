@@ -67,3 +67,11 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.
 
 **How to apply**: do not treat the size as licence to add more. When touching one of these substantially, extracting the piece you came for is welcome; a wholesale split is a task of its own, not a side effect.
+
+## Modal backdrops dismiss on the *press*, not the click (2026-08-25)
+
+**Decision**: `useOverlayDismiss(onDismiss)` (`src/app/useOverlayDismiss.ts`) is the shared way to close a `.modal-overlay`. It spreads `onPointerDown`/`onClick` onto the overlay and fires only when both ends of the gesture landed on the backdrop itself.
+
+**Why**: a bare `onClick={onClose}` on the overlay also fires when a drag that *started inside* the dialog is released outside of it — the browser dispatches the click on the nearest common ancestor of press and release, which is the overlay. Panning the Leaflet map of `LocationPickerModal` past the modal's edge closed the geotag flow; selecting text in an export-name field did the same. The inner `onClick={(e) => e.stopPropagation()}` on the dialog does not help (the click never travels through it) and is redundant once the hook is used.
+
+**How to apply**: new modals use the hook (`{...backdrop}` on the overlay) instead of `onClick={onClose}`; pass a closure for a guarded close (`() => { if (!busy) onClose(); }`). The hook lives at `src/app/` on purpose — it started under `exports/` and had to move once a third modal needed it. Modals still on the bare `onClick` (users, settings/pipeline, people, `ChangePasswordModal`, `DeleteSessionModal`) carry the same latent bug; convert them when you touch them.
