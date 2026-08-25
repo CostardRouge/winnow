@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { geotagAssets } from "@/lib/assetActions";
 import type { PickedLocation } from "@/app/LocationPickerModal";
+import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
 // Step 2 of the manual geotag flow: the per-media before/after recap. On a bulk
 // apply this is the safety net against silently clobbering coordinates a camera
@@ -54,6 +55,12 @@ export default function GeotagRecapModal({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Same guard as the picker: only a press that started on the backdrop
+  // dismisses, so a drag released outside the dialog does not lose the recap.
+  const backdrop = useOverlayDismiss<HTMLDivElement>(() => {
+    if (!busy) onClose();
+  });
 
   const targetLabel = target.label
     ? `${target.label} · ${fmtCoord(target)}`
@@ -113,17 +120,12 @@ export default function GeotagRecapModal({
   const skippedExisting = withGps.filter((a) => !checked.has(a.id)).length;
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={() => !busy && onClose()}
-      role="presentation"
-    >
+    <div className="modal-overlay" role="presentation" {...backdrop}>
       <div
         className="modal modal-wide"
         role="dialog"
         aria-modal="true"
         aria-label="Confirm geotag"
-        onClick={(e) => e.stopPropagation()}
       >
         <h2 className="modal-title">Confirm the new position</h2>
         <p className="hint" style={{ marginTop: 0 }}>

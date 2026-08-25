@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { searchPlaces, type PlaceSuggestion } from "@/lib/assetActions";
 import { TILE_URL, TILE_ATTRIBUTION } from "@/app/mapTiles";
+import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
 // Step 1 of the manual geotag flow (cf. GeotagRecapModal for step 2): choose
 // the capture location. Three converging inputs, all driving one marker:
@@ -34,6 +35,11 @@ export default function LocationPickerModal({
   /** Called with the confirmed point; the caller opens the recap modal. */
   onPicked: (loc: PickedLocation) => void;
 }) {
+  // Dismiss on the backdrop only for a press that also *started* there:
+  // panning the map often releases the mouse outside the modal, and a plain
+  // onClick on the overlay would take that as a click on the backdrop.
+  const backdrop = useOverlayDismiss<HTMLDivElement>(onClose);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
@@ -211,13 +217,12 @@ export default function LocationPickerModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
+    <div className="modal-overlay" role="presentation" {...backdrop}>
       <div
         className="modal modal-wide"
         role="dialog"
         aria-modal="true"
         aria-label="Choose a location"
-        onClick={(e) => e.stopPropagation()}
       >
         <h2 className="modal-title">
           Geotag {count} {count === 1 ? "media" : "medias"}
