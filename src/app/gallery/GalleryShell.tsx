@@ -1040,8 +1040,12 @@ export default function GalleryShell({
           </button>
         )}
         {galleryActive && filters.bbox && (
-          <button className="chip active" onClick={clearBbox} title="Clear the map zone filter">
-            Zone ✕
+          <button
+            className="chip active toolbar-chip"
+            onClick={clearBbox}
+            title="Clear the map zone filter"
+          >
+            Zone {Icons.close}
           </button>
         )}
         {/* Filtered-view pill: whenever something narrows the library, say so in
@@ -1067,7 +1071,7 @@ export default function GalleryShell({
               aria-label="Clear all filters"
               title="Clear all filters"
             >
-              ×
+              {Icons.close}
             </button>
           </span>
         )}
