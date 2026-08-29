@@ -2122,10 +2122,14 @@ html[data-theme="dark"] .btn-primary:hover {
   .gallery-filter-toggle {
     @apply inline-flex;
   }
-  /* Active-filters pill: shown in the toolbar whenever filters narrow the
-     library, so a reduced view is never mistaken for the whole thing. The body
-     opens the panel; the × clears everything. On phones the wording collapses
-     to funnel + count (see the media query below). */
+  /* Shared height for pill-shaped toolbar buttons (the active-filters pill,
+     the map zone pill), so they line up with the other toolbar controls
+     instead of falling back to the shorter default .chip padding.
+     .filters-chip is the active-filters pill: shown whenever filters narrow
+     the library, so a reduced view is never mistaken for the whole thing —
+     the body opens the panel, the × clears everything (wording collapses to
+     funnel + count on phones, see the media query below). */
+  .toolbar-chip,
   .filters-chip {
     @apply gap-1 py-0 pl-2 pr-1.5;
     height: var(--tb-control-h);
@@ -2626,8 +2630,12 @@ html[data-theme="dark"] .btn-primary:hover {
     opacity: 0.75;
   }
   .chip-x {
-    @apply border-0 bg-transparent pl-0.5 text-[13px] leading-none;
+    @apply inline-flex items-center justify-center border-0 bg-transparent pl-0.5;
     color: inherit;
+  }
+  .chip-x svg {
+    width: 13px;
+    height: 13px;
   }
 
   /* ---- Selection / bulk action bar -------------------------------------- */
