@@ -12,6 +12,11 @@
 //   4. The validated identity is injected as x-winnow-user-* request headers
 //      for handlers that need attribution — after stripping any incoming
 //      spoof attempt of those same headers.
+//   5. A trusted client app on a sibling subdomain (Atelier) gets CORS: its
+//      preflight is answered BEFORE the session check (an OPTIONS carries no
+//      cookie, so it would 401), and every API response it may read carries
+//      the allow-origin/credentials/expose headers (lib/cors.ts). CORS never
+//      grants anything: steps 2–3 still decide who the request is.
 import { NextResponse, type NextRequest } from "next/server";
 import {
   SESSION_COOKIE,
@@ -21,6 +26,13 @@ import {
   validateSession,
 } from "@/lib/auth";
 import { isPublicPath, requiredRole, roleAtLeast } from "@/lib/authz";
+import {
+  corsPreflightHeaders,
+  corsResponseHeaders,
+  isAllowedOrigin,
+  isPreflight,
+} from "@/lib/cors";
+import { config as appConfig } from "@/lib/config";
 
 export const config = {
   // Everything except Next internals and the PWA static files. Keep in sync
@@ -38,6 +50,29 @@ export default async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
 
+  // Cross-origin API access for an allowlisted client app. Only the API: a
+  // page has no business being fetched cross-origin. `cors` is null for every
+  // other origin, and then nothing below adds a header — the browser blocks
+  // the read, exactly as before this existed.
+  const origin = req.headers.get("origin");
+  const cors =
+    isApi && isAllowedOrigin(origin, appConfig.cors.allowedOrigins)
+      ? corsResponseHeaders(origin)
+      : null;
+  if (cors && isPreflight(req.method, req)) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: corsPreflightHeaders(
+        origin as string,
+        req.headers.get("access-control-request-headers"),
+      ),
+    });
+  }
+  const withCors = (res: NextResponse) => {
+    if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+    return res;
+  };
+
   const token = req.cookies.get(SESSION_COOKIE)?.value ?? null;
   const user = token ? await validateSession(token) : null;
 
@@ -45,11 +80,13 @@ export default async function proxy(req: NextRequest) {
     // A signed-in user has no business on the login screen.
     if (user && pathname === "/login")
       return NextResponse.redirect(new URL("/library", req.url));
-    return NextResponse.next();
+    return withCors(NextResponse.next());
   }
 
   if (!user) {
-    if (isApi) return unauthorized("authentication required", 401);
+    // The 401 is readable cross-origin on purpose: a client app must be able
+    // to tell "not signed in" from "blocked", and show a sign-in link.
+    if (isApi) return withCors(unauthorized("authentication required", 401));
     // Bounce to login, remembering where the visit was headed. Path-only
     // (never a full URL) so it cannot be turned into an open redirect.
     const login = new URL("/login", req.url);
@@ -61,7 +98,9 @@ export default async function proxy(req: NextRequest) {
   const needed = requiredRole(req.method, pathname);
   if (!roleAtLeast(user.role, needed)) {
     if (isApi)
-      return unauthorized(`requires the ${needed} role (you are ${user.role})`, 403);
+      return withCors(
+        unauthorized(`requires the ${needed} role (you are ${user.role})`, 403),
+      );
     return NextResponse.redirect(new URL("/library", req.url));
   }
 
@@ -74,5 +113,5 @@ export default async function proxy(req: NextRequest) {
   headers.set(HDR_USER_ID, String(user.id));
   headers.set(HDR_USER_NAME, user.username);
   headers.set(HDR_USER_ROLE, user.role);
-  return NextResponse.next({ request: { headers } });
+  return withCors(NextResponse.next({ request: { headers } }));
 }

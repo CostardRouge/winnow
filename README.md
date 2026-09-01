@@ -180,6 +180,7 @@ offending variable — instead of silently degrading in production.
 |---|---|
 | `POST /api/index/scan` `{ path }` | Registers the root and enqueues an indexing run |
 | `GET /api/stats` | Counters (media / scan / analyzed / pending) + queue activity + pause + rates |
+| `GET /api/capabilities` | What **this instance** can do, for a client app (Atelier): API version, auth methods + whether CORS is on, media facts (sidecars, Range on derivatives / not on originals, proxy codec & size, the partial `content_hash`), unbuilt-yet flags (document bucket, reminders), storage driver, and the caller's role. Facts about the code as it is — a client decides from these rather than guessing |
 | `GET /api/settings` · `PATCH /api/settings` `{ scanPerHour?, analyzePerHour?, geocodePerHour?, geocodePrecisionM?, rescanMinutes? }` | Hourly scan/analyze/geocode rates (0 = unlimited) + geocode cell precision (metres) + periodic re-scan interval (minutes, 0 = off) |
 | `POST /api/scan/control` `{ action: pause\|resume }` | Suspends/resumes indexing + derivative generation |
 | `GET /api/failures` | Everything that failed (scan / analyze / import) + the deduplication audit (each duplicate joined to its kept asset for thumbnail/compare) + the **missing originals** awaiting triage |
