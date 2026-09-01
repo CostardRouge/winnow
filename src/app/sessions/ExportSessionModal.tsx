@@ -9,7 +9,7 @@ import ExportFilePicker, {
 import ExportTargetPicker, {
   type ExportTargetId,
 } from "@/app/exports/ExportTargetPicker";
-import { useOverlayDismiss } from "@/app/exports/useOverlayDismiss";
+import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
 // Custom, reusable export modal for a session — replaces the old browser
 // prompt()/alert() flow. It drives the same POST /api/export (copy of the

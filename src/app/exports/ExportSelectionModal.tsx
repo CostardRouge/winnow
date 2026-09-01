@@ -6,7 +6,7 @@ import ExportFilePicker, {
   type ExportPickerState,
 } from "./ExportFilePicker";
 import ExportTargetPicker, { type ExportTargetId } from "./ExportTargetPicker";
-import { useOverlayDismiss } from "./useOverlayDismiss";
+import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
 // Export modal for an ad-hoc selection (gallery bulk bar, context menu, map
 // area). The gallery used to fire POST /api/export silently, with no options;
