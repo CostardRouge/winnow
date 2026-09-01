@@ -43,3 +43,17 @@ Seeded 2026-08-20 from `src/proxy.ts`, `src/lib/auth.ts`, `src/lib/authz.ts` and
 **Decision**: `ratings.rated_by` and `export_jobs.created_by` record which account acted.
 
 **How to apply**: a new verb that changes shared curation state should record its actor the same way — the library is multi-user and "who rejected this frame" is a question that gets asked.
+
+## A trusted client app gets CORS, and CORS grants nothing (2026-08-31)
+
+**Decision**: Atelier — the editing half of the maintainer's stack, a static browser app at `atelier.steeve.website` — calls this API cross-origin **with the session cookie**. That works without any new credential because `SameSite` is judged on the *site* (`steeve.website`), not the origin: a sibling subdomain is cross-origin but same-site, so `Lax` lets the cookie travel. All Winnow adds is the CORS answer (`src/lib/cors.ts`, pure like `authz.ts`; wired in `src/proxy.ts`; `CORS_ALLOWED_ORIGINS` in `config.ts`, empty by default) and a `GET /api/capabilities` fact sheet the client reads on connect.
+
+**Why**: the alternative was a Bearer-token system — a table, a mint/revoke UI and a branch in the request guard — in a repository with no tests, for a client that already has a valid session. Deferred until a genuinely *foreign* origin needs access; `capabilities.auth.methods` is where `token`/`oauth2` would appear when built.
+
+**Invariants, in the order forgetting them bites**:
+- **The preflight is answered BEFORE the session check.** An `OPTIONS` carries no cookie; behind the guard it would 401 and every cross-origin call would die unreadably. It is the one path in `proxy.ts` that returns before `validateSession`, and it returns 204 with headers only — it never touches data.
+- **Exact origins only, never `*`, never a pattern.** With credentials the browser refuses a wildcard; a `*.steeve.website` match would extend the cookie to anything under the site. `originListEnv` rejects a path or a bare host at boot (and is not `listEnv`, which splits on `:` — every origin contains one).
+- **`Access-Control-Expose-Headers` must name `Content-Range`, `Content-Length`, `Accept-Ranges`.** Without them a Range fetch "works" while the client cannot read the 206's bounds — video seeking silently fails.
+- The **401/403 are readable cross-origin on purpose** (they carry the CORS headers): a client must be able to tell "not signed in" from "blocked" and offer a sign-in link.
+- There is still **no CSRF token**; `SameSite=Lax` is the whole protection. Allowing credentialed cross-origin requests widens that surface, which is why the allowlist is one exact origin, not a wildcard. Do not loosen it to make a dev setup convenient.
+- `/api/capabilities` states **facts about the code as it is** (`rangeOnOriginals: false`, `documents.bucket: false`, `scheduling.reminders: false`). Flip a flag when the feature lands, never before; add fields, never rename them.

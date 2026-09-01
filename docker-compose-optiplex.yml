@@ -55,6 +55,9 @@ x-winnow-env: &winnow-env
   VIDEO_VAAPI_DEVICE: ${VIDEO_VAAPI_DEVICE:-/dev/dri/renderD128}
   VIDEO_PROXY_HEIGHT: "${VIDEO_PROXY_HEIGHT:-720}"
   VIDEO_PROXY_CRF: "${VIDEO_PROXY_CRF:-24}"
+  # Browser apps (Atelier) allowed to call the API cross-origin with the session
+  # cookie — exact origins, comma-separated, empty = off. See lib/cors.ts.
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
   # S3 / MinIO — used only if STORAGE_DRIVER=s3.
   S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}

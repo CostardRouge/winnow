@@ -184,6 +184,32 @@ function urlEnv(def: string, forbid?: { suffix: string; hint: string }) {
     });
 }
 
+// Comma/whitespace-separated list of exact origins (`https://host[:port]`).
+// NOT listEnv: that one also splits on ":", which every origin contains. A
+// value that is present but not an origin fails at boot — a typo here would
+// otherwise silently leave a trusted client app locked out.
+function originListEnv() {
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const items = (raw ?? "")
+        .split(/[,\s]+/)
+        .map((s) => s.trim().toLowerCase().replace(/\/+$/, ""))
+        .filter(Boolean);
+      for (const item of items) {
+        if (!/^https?:\/\/[a-z0-9.-]+(?::\d+)?$/.test(item)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `"${item}" is not an origin (expected scheme://host[:port], no path)`,
+          });
+          return z.NEVER;
+        }
+      }
+      return items;
+    });
+}
+
 // --- The schema: one entry per recognized environment variable ------------
 
 const EnvSchema = z
@@ -248,6 +274,15 @@ const EnvSchema = z
     IMMICH_PRECHECK: boolEnv(true),
     // Generous: a 60 MB RAW over a slow uplink. Applies per HTTP call.
     IMMICH_TIMEOUT_MS: intEnv(300000, { min: 1000 }),
+
+    // --- Trusted client apps (CORS) ---------------------------------------
+    // Browser apps allowed to call the API cross-origin WITH the session cookie
+    // — today Atelier (`https://atelier.steeve.website`), the editing half of
+    // the stack, served from a sibling subdomain. Exact origins only, never a
+    // pattern: with credentials the browser refuses a wildcard, and a subdomain
+    // wildcard would hand the cookie to anything under the site. Empty (the
+    // default) = no cross-origin access at all. See lib/cors.ts.
+    CORS_ALLOWED_ORIGINS: originListEnv(),
 
     // --- Folder picker (Volumes "Add folder") -----------------------------
     // Base directories the server-side folder picker is allowed to browse. The
@@ -488,6 +523,11 @@ function loadConfig() {
 
     browse: {
       roots: e.BROWSE_ROOTS,
+    },
+
+    // Client apps trusted cross-origin (cf. lib/cors.ts). Empty = CORS off.
+    cors: {
+      allowedOrigins: e.CORS_ALLOWED_ORIGINS,
     },
 
     import: {
