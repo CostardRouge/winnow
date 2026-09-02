@@ -3026,6 +3026,89 @@ html[data-theme="dark"] .btn-primary:hover {
     border-top: 1px solid var(--color-border);
   }
 
+  /* ---- Deduplication: navigating a five-thousand-entry backlog ----------
+     The triage page is mostly navigation now (scope tabs, search, sort, paging,
+     a bulk collapse). These are its chrome; the group cards above are unchanged.
+     Everything here is a semantic class rather than utilities in the JSX, per
+     the rest of this file. */
+
+  /* Which half of the library a copy sits in. Incoming is the only zone whose
+     files deduplication may delete, so it stays neutral while the view-only
+     ones (Gallery/Export) read as "protected" — the same green the app uses for
+     a kept/finished state. */
+  .dup-zone {
+    @apply ml-2 shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+  }
+  .dup-zone-gallery,
+  .dup-zone-export {
+    color: var(--color-pick);
+    border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
+  }
+  .dup-zone-other {
+    color: var(--color-faint);
+  }
+  /* A RAW that reached the Gallery: the one thing the workflow says must never
+     happen, so it gets the alarm colour even though nothing here can fix it. */
+  .dup-flag-raw {
+    @apply ml-2 shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-reject);
+    border-color: color-mix(in srgb, var(--color-reject) 40%, var(--color-border));
+    background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
+  }
+  .dup-flag-stale {
+    @apply ml-2 shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-faint);
+    border-style: dashed;
+  }
+
+  .dup-scopes {
+    @apply mb-2 flex flex-wrap;
+  }
+  .dup-toolbar {
+    @apply mb-2;
+  }
+  .dup-check-label {
+    @apply inline-flex cursor-pointer select-none items-center gap-2 text-[13px];
+    color: var(--color-muted);
+  }
+  .dup-sort {
+    @apply inline-flex items-center gap-2;
+  }
+  .dup-sort .input {
+    @apply w-auto;
+  }
+  /* The running answer to "is this tab worth my time?": groups, extra copies,
+     bytes. Sits between the toolbar and the list so it reads as a caption of
+     what's below, not another control. */
+  .dup-summary {
+    @apply mb-2 mt-0 text-[13px];
+    color: var(--color-muted);
+  }
+  .dup-summary strong {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Standing report (RAW masters in the Gallery): a finding, not a failure —
+     nothing on this page can act on it, so it is drawn as a note, not a row. */
+  .dup-report {
+    @apply mb-3 flex flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border p-3 text-[13px];
+    color: var(--color-text);
+    border-color: color-mix(in srgb, var(--color-reject) 30%, var(--color-border));
+    background: color-mix(in srgb, var(--color-reject) 6%, var(--color-surface));
+  }
+  /* The sentence is one flex item (so its <strong> stays inline mid-text) and
+     the action another, dropping below it on narrow widths. */
+  .dup-report p {
+    @apply m-0 min-w-[16rem] flex-1;
+  }
+  .dup-pager {
+    @apply flex items-center justify-center gap-3 py-2;
+  }
+  .dup-rule-list {
+    @apply mt-2 grid list-disc gap-1 pl-5;
+  }
+
   /* ---- Pipeline sub-route tabs -------------------------------------------
      Same compact segmented-control language as .view-toggle/.view-btn (the
      Sessions/Grid/Calendar/Map switcher), so the two read as one family —

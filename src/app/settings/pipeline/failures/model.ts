@@ -1,7 +1,9 @@
 // Shared shapes for the Settings › Pipeline › Failures section. Each failure
 // family lives on its own sub-route (/settings/pipeline/failures/{analyze,
 // scan, import, ml, duplicates, missing}); they all read the same
-// GET /api/failures payload, typed here.
+// GET /api/failures payload, typed here — except deduplication, whose listing
+// is far too large to ride that poll and has its own endpoint + types
+// (GET /api/failures/duplicates, src/lib/duplicateList.ts).
 
 export type DerivItem = {
   asset_id: number;
@@ -34,34 +36,6 @@ export type ImportItem = {
   error: string;
   created_at: string;
 };
-// The indexed copy a duplicate matched — its thumbnail stands in for the
-// (identical) duplicate, and its path/name let the user compare the two. It is
-// not necessarily a *kept* copy: `deleted` marks one already sent to the trash
-// (its file still on disk, hence still a duplicate), `purged` one whose bytes
-// were already reclaimed. `view_only` marks a copy on a Final/Export volume —
-// finalized masters, never deleted by deduplication.
-export type ExistingAsset = {
-  id: number;
-  filename: string | null;
-  abs_path: string | null;
-  media_type: string | null;
-  has_thumb: boolean;
-  deleted: boolean;
-  purged: boolean;
-  view_only: boolean;
-};
-export type DuplicateItem = {
-  abs_path: string;
-  content_hash: string;
-  existing_asset_id: number | null;
-  source: string;
-  verified: boolean | null;
-  hits: number;
-  file_size: number | null;
-  updated_at: string;
-  view_only: boolean;
-  existing: ExistingAsset | null;
-};
 // An indexed asset whose ORIGINAL is gone from disk (cf. lib/integrity.ts).
 // `trashed` = auto-trashed by the detector (reversible); false = only flagged
 // (mass-disappearance guard) and still visible in the library.
@@ -82,11 +56,6 @@ export type Failures = {
   scan: { count: number; items: ScanItem[] };
   import: { count: number; items: ImportItem[] };
   ml: { count: number; items: MlItem[] };
-  duplicates: {
-    count: number;
-    falseCollisions: number;
-    items: DuplicateItem[];
-  };
   missing: { count: number; items: MissingItem[] };
 };
 

@@ -1,16 +1,18 @@
-// POST /api/failures/duplicates/purge-resolved -> drops duplicate_hits rows
-// whose recorded file no longer exists on disk. Covers the case where a
-// duplicate copy was removed by hand (outside "Delete"/"Keep only
-// this"/"Discard" here) and its audit row was left behind claiming a file
-// that's already gone. See purgeResolvedDuplicateHits in lib/duplicates for
-// the safety rule (ENOENT only, never on an ambiguous stat error).
+// POST /api/failures/duplicates/purge-resolved -> clears the duplicate_hits
+// rows that no longer describe a real duplication: a file removed by hand
+// outside this page, a hash still held by an already-purged library entry (the
+// "no file left on disk" entries that could never resolve on their own), and the
+// lone copies nothing shadows any more. See sweepResolvedDuplicateHits in
+// lib/duplicates for the three cases and their safety rules — no file is ever
+// touched here.
 import { json, serverError } from "@/lib/api";
-import { purgeResolvedDuplicateHits } from "@/lib/duplicates";
+import { sweepResolvedDuplicateHits } from "@/lib/duplicates";
+
+export const dynamic = "force-dynamic"; // DB-backed route: never pre-rendered/cached at build time
 
 export async function POST() {
   try {
-    const result = await purgeResolvedDuplicateHits();
-    return json(result);
+    return json(await sweepResolvedDuplicateHits());
   } catch (err) {
     return serverError(err);
   }

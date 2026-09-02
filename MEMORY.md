@@ -36,6 +36,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - Originals are read-only and read once; deletes are soft → `docs/memory/architecture.md`
 - Derivatives sit on disk behind an S3-shaped driver, so MinIO is one env flip away → `docs/memory/architecture.md`
 - Dedup is a partial hash arbitrated by a full-content compare, every decision logged → `docs/memory/architecture.md`
+- Only Incoming copies are ever deletable, so "no RAW in the Gallery" is reported, not fixed, by dedup → `docs/memory/architecture.md`
+- Removing an asset's bytes must release its `content_hash`, or the surviving file is unindexable forever → `docs/memory/architecture.md`
 - Logic lives in `src/lib/`; worker, API routes and CLI scripts are thin wrappers → `docs/memory/architecture.md`
 - One worker process, nine BullMQ queues, chained manually rather than by BullMQ flows → `docs/memory/pipeline.md`
 - Worker memory hygiene (jemalloc, out-of-process HEIF decode, `sharp.cache(false)`) is load-bearing → `docs/memory/pipeline.md`
@@ -48,12 +50,14 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - Atelier (the editing app, a sibling subdomain) calls the API cross-origin with the session cookie: same-site, so no token — just an exact-origin CORS allowlist answered before the session check, plus `GET /api/capabilities` → `docs/memory/auth.md`
 - Styling is a token-based "Paper" system of semantic classes in `globals.css`, not utilities in JSX → `docs/memory/frontend.md`
 - Every DB-backed route opts out of static rendering with `force-dynamic` → `docs/memory/frontend.md`
+- The dedup triage page pages server-side on its own endpoint, off the shared failures poll → `docs/memory/frontend.md`
 - The whole verification gate is `typecheck` + `migrate` + `build`; no linter, no tests → `docs/memory/testing-and-ci.md`
 
 ## Open items (dated; remove when done)
 
 - 2026-08-20 — **Two duplicate migration prefixes are still on `main`**, contradicting rule 1 of `db/migrations/README.md` and its "History" section, which reads as though every collision was resolved: `0010_gps_coords.sql` / `0010_search_text.sql` and `0013_asset_groups.sql` / `0013_clean_object_placeholders.sql`. They apply today in an accidental lexicographic order. Renumbering means extending `RENUMBERED` in `src/lib/migrate.ts` and touches every already-migrated database — maintainer's call. Next free number is `0039`.
 - 2026-08-20 — The P1 list in `docs/ARCHITECTURE-REVIEW.md` §4 is the standing backlog (disk-space preflight, streamed video proxies, retention janitor, the `asset_faces.embedding` decision, job cancel, fail-closed `getSettings()`, compose env drift). Check it before proposing pipeline work; nothing in this memory supersedes it.
+- 2026-09-02 — **The purge worker still leaves `content_hash` set on the rows it purges** (`src/lib/purge.ts` step 3), while `reclaimTrashedAsset` in `src/lib/duplicates.ts` releases it and documents why a purged row holding a hash makes the surviving file unindexable forever. The dedup sweep now repairs those rows after the fact ("Clear resolved"), so nothing is stuck — but the two paths disagree, and fixing the worker would stop the state from being created at all. It changes purge semantics for every already-purged row, so it is the maintainer's call.
 - 2026-08-20 — No test suite and no test runner. Several pure functions are explicitly shaped for testing (review §3.5) but nothing runs them, so every refactor rides on `tsc` alone. Adding the first test also means choosing a runner and adding a CI job — a decision, not a chore.
 - 2026-08-20 — `docker-compose-optiplex.yml`'s `x-winnow-env` anchor is missing a documented set of variables (`ML_CLIP_*`, `IMMICH_*`, `BURST_*`, `SHARP_CONCURRENCY`, `PURGE_*`, `HEIC_DECODE_TIMEOUT_MS`, `BROWSE_ROOTS`, `FINALS_DIRS`). Defaults keep production running, so it fails silently: those knobs simply cannot be tuned on the Optiplex. See `docs/memory/configuration.md`.
 
