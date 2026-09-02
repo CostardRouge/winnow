@@ -28,6 +28,68 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this).
 
+## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
+
+**Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder
+inside the same root is therefore modelled as two unrelated events, and the two
+of them lock each other:
+
+1. at the new path the file is "new"; its INSERT hits `ON CONFLICT
+   (content_hash) DO NOTHING` because the old row still holds the hash;
+2. the collision-recovery branch calls `sameContent(new, old)`, which reads the
+   **old** path — now ENOENT — so it answers `null` ("unverifiable"), not
+   `false`. Only `false` triggers the recovery insert, so the file is counted in
+   `duplicates` and **never indexed**;
+3. end-of-scan `reconcileMissingForRoot` does not see the old path, confirms
+   ENOENT, and sets `missing_at` + auto-trash.
+
+**Why it matters**: this is a *stable* state — every rescan repeats it verbatim
+(only `duplicate_hits.hits` increments). It never self-heals, and scanning more
+often only reaches it faster. Diagnosing a mass "missing" event therefore starts
+with "was anything moved?", not with scan cadence.
+
+**How to recover** (the mapping is already in the DB): each moved file left a
+`duplicate_hits` row carrying the **new** `abs_path` and `existing_asset_id` =
+the now-missing asset, `verified = null`. Relinking off that map preserves
+everything — derivative objects are keyed by asset id (`thumb/${id}.webp`), so
+id, rating, tags, faces and burst membership all survive, and `mv` keeps the
+mtime so the next scan skips the file at the stat gate. A relink must move
+`abs_path` **and** `rel_path` **and** `session_id` (one session = one directory,
+`ensureSession`), then lift `missing_at` and the auto-trash (`deleted_at =
+missing_at` is the marker that says the trash is ours), drop the consumed
+`duplicate_hits` rows and recompute the touched sessions' counters.
+
+**Two traps around the recovery**:
+
+- **Purging the missing rows recovers nothing and makes it permanent.** The
+  purge worker stamps `purged_at` but does **not** release `content_hash` —
+  only `reclaimTrashedAsset` (`lib/duplicates.ts`) does, and its comment
+  explains exactly why it must. A purged row keeps squatting the unique hash, so
+  the moved file stays unindexable forever.
+- **"Keep only this copy" refuses to relink a trashed library copy** and
+  reclaims it instead (row purged, rating/tags/faces lost, reindexed fresh) —
+  which is precisely the state auto-trashed missing assets are in. It cannot
+  currently tell "the user culled this" from "we trashed it because we could not
+  find it", although `deleted_at = missing_at` says so.
+
+Restoring from the triage page does not help either: it clears `deleted_at` and
+leaves `missing_at` set, so the asset returns to the library still pointing at a
+dead path — and `markMissing`'s `AND missing_at IS NULL` guard means it is never
+re-trashed. It just sits there, live and broken.
+
+**The fix is not speed, it is modelling.** The state of the art for move
+detection is `(st.dev, st.ino)`, not the hash: the inode is the only identifier
+the filesystem keeps stable across an intra-volume `mv`, and the `stat` is
+already done in the hot loop, so it costs nothing. Store it, and an unknown
+`abs_path` whose inode matches a row with an ENOENT path is a move → update the
+path in place. It does not survive a copy or a cross-volume move, hence the
+cheap fallback that would already fix the case above: in the collision branch,
+tell "unreadable" (EACCES/EIO) from "gone" (ENOENT) — a colliding row pointing
+at an ENOENT path is not a duplicate, it is the same file elsewhere. Do **not**
+reach for a chokidar watcher on the source roots: it costs a lot of inotify
+watches on an 80k tree and only ever catches *future* moves, while the inode
+catches the ones made while the worker was down too.
+
 ## ML is a remote HTTP call to an unversioned Immich endpoint (2026-08-20)
 
 **Decision**: faces, OCR and CLIP come from one multipart `POST /predict` to an `immich-machine-learning` container. Winnow embeds no models. The two local metrics (Laplacian sharpness, 64-bit dHash) are computed with sharp on bytes already in memory.
