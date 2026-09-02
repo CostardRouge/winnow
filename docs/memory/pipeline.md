@@ -28,6 +28,110 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this).
 
+## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
+
+**Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder
+inside the same root is therefore modelled as two unrelated events, and the two
+of them lock each other:
+
+1. at the new path the file is "new"; its INSERT hits `ON CONFLICT
+   (content_hash) DO NOTHING` because the old row still holds the hash;
+2. the collision-recovery branch calls `sameContent(new, old)`, which reads the
+   **old** path — now ENOENT — so it answers `null` ("unverifiable"), not
+   `false`. Only `false` triggers the recovery insert, so the file is counted in
+   `duplicates` and **never indexed**;
+3. end-of-scan `reconcileMissingForRoot` does not see the old path, confirms
+   ENOENT, and sets `missing_at` + auto-trash.
+
+**Why it matters**: this is a *stable* state — every rescan repeats it verbatim
+(only `duplicate_hits.hits` increments). It never self-heals, and scanning more
+often only reaches it faster. Diagnosing a mass "missing" event therefore starts
+with "was anything moved?", not with scan cadence.
+
+**How to recover**: *Failures › Missing files › "Moved, not deleted"* — **Scan
+for moved files**, then **Relink**. `npm run relink-moved` (dry run) →
+`-- --apply` is the same pass from a shell (`lib/relink.ts` +
+`scripts/relink-moved.ts`). It walks the root, hashes only
+the unindexed files whose size matches an orphan, and moves each row onto its
+file. Relink, never reindex: derivative objects are keyed by asset id
+(`thumb/${id}.webp`), so id, rating, tags, pairing, burst membership and the
+edit link all survive, and `mv` keeps the mtime so the next scan skips the file
+at the stat gate. It moves `abs_path` **and** `rel_path` **and** `session_id`
+(one session = one directory) and lifts the auto-trash only when `deleted_at =
+missing_at` — the marker that says the trash is ours, same contract as
+`restoreMissing`.
+
+**Purging the missing rows recovers nothing and makes it worse — but it is not
+fatal.** The purge worker stamps `purged_at` without releasing `content_hash`
+(only `reclaimTrashedAsset` in `lib/duplicates.ts` does, and its comment
+explains why it must), so a purged row keeps squatting the unique hash and the
+moved file stays unindexable *forever*. What a purge actually destroys is
+narrow and rebuildable: the thumb/proxy objects, the `asset_faces` /
+`asset_clip` rows, and the `asset_sidecars` rows (whose files it failed to
+unlink — they moved with the clip — while deleting their rows anyway). Ratings
+are kept by design and every column on the asset row survives, so `relink-moved`
+handles purged rows too: it un-stamps the purge and re-enqueues one derivative,
+which re-enqueues ML on completion. Note purged rows vanish from the Missing
+triage list (`listMissing` filters `purged_at IS NULL`), which makes the purge
+*look* like it worked.
+
+**"Keep only this copy" is not the escape hatch either**: it refuses to relink a
+*trashed* library copy and reclaims it instead (row purged, rating/tags/faces
+lost, reindexed fresh) — precisely the state auto-trashed missing assets are in.
+It cannot currently tell "the user culled this" from "we trashed it because we
+could not find it", although `deleted_at = missing_at` says so.
+
+**Known reporting drift, deliberately not patched**: a purge of an already-absent
+original adds its `file_size` to the job's `freedBytes` and writes a `'purged'`
+`purge_log` row although it unlinked nothing, and `relink-moved` leaves that row
+in place (the purge did run; `purge_log.status` is `CHECK (purged|error)`, so
+recording a correction would need a migration).
+
+Restoring from the triage page does not help either: it clears `deleted_at` and
+leaves `missing_at` set, so the asset returns to the library still pointing at a
+dead path — and `markMissing`'s `AND missing_at IS NULL` guard means it is never
+re-trashed. It just sits there, live and broken.
+
+**The fix is not speed, it is modelling.** The state of the art for move
+detection is `(st.dev, st.ino)`, not the hash: the inode is the only identifier
+the filesystem keeps stable across an intra-volume `mv`, and the `stat` is
+already done in the hot loop, so it costs nothing. Store it, and an unknown
+`abs_path` whose inode matches a row with an ENOENT path is a move → update the
+path in place. It does not survive a copy or a cross-volume move, hence the
+cheap fallback that would already fix the case above: in the collision branch,
+tell "unreadable" (EACCES/EIO) from "gone" (ENOENT) — a colliding row pointing
+at an ENOENT path is not a duplicate, it is the same file elsewhere. Do **not**
+reach for a chokidar watcher on the source roots: it costs a lot of inotify
+watches on an 80k tree and only ever catches *future* moves, while the inode
+catches the ones made while the worker was down too.
+
+## The relink pass rides the integrity queue, told apart by job name (2026-09-02)
+
+**Decision**: `enqueueRelink` adds to the **integrity** queue under the job name
+`relink` (`RELINK_JOB`), and the integrity worker branches on `job.name`. No new
+queue, no new table: the report is the BullMQ job's **return value**, read back
+by `getRelinkJob` and polled by the UI.
+
+**Why**: a relink has the integrity sweep's exact I/O profile — a full walk plus
+a stat per file — and that queue's `concurrency: 1` is what stops the two from
+ganging up on the spinning HDD. A `relink_jobs` table would have duplicated
+`purge_jobs` for a repair tool; completed jobs are retained (`removeOnComplete:
+{ count: 1000 }`), which is history enough.
+
+**The trap this created, already fixed — do not reintroduce it**:
+`enqueueIntegrity` coalesces against *pending jobs on its queue*, and originally
+matched on `data.rootId` alone. With two job kinds sharing the queue that would
+hand a sweep request an existing **relink** job and report it as the sweep.
+Anything that inspects pending integrity jobs must filter on `job.name` first.
+
+**How to apply**: a queued job whose result the UI needs can return it and be
+polled through `getJob` — no table required. Note the consequence of the shared
+queue: `pauseAllQueues` includes `integrity`, so a paused pipeline holds a
+relink too (the UI says so rather than spinning silently). Relink jobs run with
+`attempts: 1` — a blind retry would re-walk a tree the first attempt already
+half-changed — so the per-row work is individually try/caught instead, the same
+isolation the indexer gives each file.
+
 ## ML is a remote HTTP call to an unversioned Immich endpoint (2026-08-20)
 
 **Decision**: faces, OCR and CLIP come from one multipart `POST /predict` to an `immich-machine-learning` container. Winnow embeds no models. The two local metrics (Laplacian sharpness, 64-bit dHash) are computed with sharp on bytes already in memory.

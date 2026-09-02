@@ -19,10 +19,13 @@ import {
   type GeocodeJob,
   type MlJob,
   type IntegrityJob,
+  type RelinkJob,
+  RELINK_JOB,
   type GpsWriteJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { runIntegrityJob } from "./lib/integrity";
+import { relinkMoved } from "./lib/relink";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
@@ -228,9 +231,26 @@ const mlWorker = new Worker(
 // verifies the derivative objects still exist in storage. Serialized (one
 // sweep at a time) — it's the scan's I/O profile, so it must never gang up
 // on the NAS HDD.
+//
+// The relink pass (cf. lib/relink.ts) rides the same queue for the same
+// reason, told apart by the job name; its report is the job's return value,
+// which is what the Missing files tab polls.
 const integrityWorker = new Worker(
   QUEUES.integrity,
   async (job) => {
+    if (job.name === RELINK_JOB) {
+      const { rootId, apply } = job.data as RelinkJob;
+      console.log(
+        `[relink] ${apply ? "repair" : "dry run"}${rootId ? ` (root ${rootId})` : ""}…`,
+      );
+      const out = await relinkMoved({ rootId: rootId ?? undefined, apply });
+      for (const { root, report } of out.perRoot)
+        console.log(
+          `[relink] root ${root.id}: ${report.matched} match(es), ` +
+            `${report.relinked} relinked, ${report.ambiguous} ambiguous`,
+        );
+      return out;
+    }
     const { rootId } = job.data as IntegrityJob;
     console.log(`[integrity] sweep${rootId ? ` (root ${rootId})` : ""}…`);
     return runIntegrityJob({ rootId });
