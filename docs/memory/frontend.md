@@ -62,6 +62,24 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: a new library-scoped page reaches for `LibrarySourceTabs`/`useStoredLibrarySource` directly rather than hand-rolling another copy. The person-list threshold hiding (`ML_PERSON_MIN_FACES`) and gear's "drop empty cards" rule read the count for the *active* half (summed, under "All") — a stack invisible on the Gallery tab reappears on Incoming or All.
 
+## Deduplication triage is paged server-side and off the shared poll (2026-09-02)
+
+**Decision**: `/settings/pipeline/failures/duplicates` reads its own `GET /api/failures/duplicates` (grouping, zone classification, filtering, facets and paging all server-side in `src/lib/duplicateList.ts`), not the `useFailures()` payload every other family page polls every 5 s. The dedup slice was removed from `GET /api/failures` entirely.
+
+**Why**: it is the one family that reaches thousands of rows, and it was being serialized into every tick of a poll that five other pages share — while the page itself rendered every group at once, with no paging and a filter that only searched what had already been shipped. The maintainer's library carries ~5000 hits; the page was unusable at that size.
+
+**How to apply**: the page owns its query (scope, path search, RAW-in-Gallery, sort, offset) and reloads on change or after an action — do not put it back on an interval. `buildGroups()` reads the whole table once per request on purpose (the grouping key is the hash but every filter is derived per path); that is affordable at a few thousand rows and is the documented trade — if the table ever grows an order of magnitude, that is the thing to revisit, not the paging.
+
+**Why not `LibrarySourceTabs`**: the scope picker wears the same `.tabs`/`.tab` classes but is deliberately its own list — a group is a *set* of copies, so it needs values that toggle has no meaning for (`mixed` = the same bytes on both sides, `elsewhere` = Export/unregistered), and every tab carries a count. Reusing the component would have meant widening `LibrarySource` for one page.
+
+## A bulk destructive action states its RULE, not its file list (2026-09-02)
+
+**Decision**: "Collapse N resolvable" resolves whole groups in batches, and the endpoint takes the **filter**, not a client-built list of groups: the server re-derives which groups match and which copy survives with the same code that rendered the preview. The rule is narrow on purpose — a lone Final/Export copy that is *also* the library entry (or with no library entry), else a live library entry with no protected copy. Everything else stays manual.
+
+**Why**: the excluded case that matters is a live library entry plus a protected copy elsewhere (an Export volume mirroring an incoming original). Collapsing onto the protected copy would relink a live asset onto a view-only volume — moving the library's idea of where that photo lives, across roots, unasked — and the right answer there is usually to delete nothing. Passing the filter rather than a list also means a page that went stale can never delete a copy the rule would no longer pick.
+
+**How to apply**: the client loop must stop on **lack of progress** (`remaining` not shrinking), never on `remaining === 0`: a group whose deletions are refused keeps matching the rule forever. Every group still goes through `keepOneCopy`, so the path whitelist, view-only refusal and relink-before-unlink ordering are untouched — the bulk path adds a picker, not a shortcut.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.

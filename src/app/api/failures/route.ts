@@ -4,99 +4,17 @@
 //   - scan       : scan_failures table (per-file indexing failures)        [from now on]
 //   - import     : import_batches.result.errors of failed batches          [retroactive]
 //   - missing    : assets.missing_at (originals gone from disk)            [lib/integrity.ts]
-import { many, one } from "@/lib/db";
+// Deduplication is NOT here: its listing is thousands of rows and needs its own
+// grouping/paging, so it lives at GET /api/failures/duplicates and is fetched
+// only by the page that draws it (this payload is polled by every family tab).
+import { many } from "@/lib/db";
 import { failureCounts } from "@/lib/failures";
-import { viewOnlyChecker } from "@/lib/duplicates";
 import { listMissing, type MissingItem } from "@/lib/integrity";
 import { json, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 const LIMIT = 200;
-
-// Deduplication audit (review §4): files matched as duplicates by partial hash.
-// Guarded so a missing table (pre-migration) never breaks the other families.
-async function duplicateHits() {
-  try {
-    const [rows, counts, isViewOnly] = await Promise.all([
-      many<{
-        abs_path: string;
-        content_hash: string;
-        existing_asset_id: number | null;
-        source: string;
-        verified: boolean | null;
-        hits: number;
-        file_size: number | null;
-        updated_at: string;
-        existing_filename: string | null;
-        existing_abs_path: string | null;
-        existing_media_type: string | null;
-        existing_has_thumb: boolean | null;
-        existing_deleted: boolean | null;
-        existing_purged: boolean | null;
-      }>(
-        // LEFT JOIN the kept asset so the UI can show its thumbnail (the copies
-        // are identical, so its thumbnail stands in for the duplicate) and lay
-        // out a kept-vs-duplicate comparison. All DB-local — no NAS I/O here
-        // (the list polls every few seconds), only the explicit download/delete
-        // actions ever touch the originals.
-        `SELECT d.abs_path, d.content_hash, d.existing_asset_id, d.source,
-                d.verified, d.hits, d.file_size, d.updated_at,
-                a.filename               AS existing_filename,
-                a.abs_path               AS existing_abs_path,
-                a.media_type             AS existing_media_type,
-                (a.thumb_key IS NOT NULL) AS existing_has_thumb,
-                (a.deleted_at IS NOT NULL) AS existing_deleted,
-                (a.purged_at IS NOT NULL) AS existing_purged
-           FROM duplicate_hits d
-           LEFT JOIN assets a ON a.id = d.existing_asset_id
-          ORDER BY d.updated_at DESC
-          LIMIT ${LIMIT}`,
-      ),
-      one<{ n: number; false_collisions: number }>(
-        `SELECT count(*) AS n,
-                count(*) FILTER (WHERE verified IS FALSE) AS false_collisions
-           FROM duplicate_hits`,
-      ),
-      // Final/Export volumes are view-only: their files are never deleted (cf.
-      // lib/duplicates). Flagged per copy so the UI stops offering the action
-      // instead of letting the user discover the refusal.
-      viewOnlyChecker(),
-    ]);
-    const items = rows.map((r) => ({
-      abs_path: r.abs_path,
-      content_hash: r.content_hash,
-      existing_asset_id: r.existing_asset_id,
-      source: r.source,
-      verified: r.verified,
-      hits: r.hits,
-      file_size: r.file_size,
-      updated_at: r.updated_at,
-      view_only: isViewOnly(r.abs_path),
-      existing: r.existing_asset_id
-        ? {
-            id: r.existing_asset_id,
-            filename: r.existing_filename,
-            abs_path: r.existing_abs_path,
-            media_type: r.existing_media_type,
-            has_thumb: !!r.existing_has_thumb,
-            deleted: !!r.existing_deleted,
-            purged: !!r.existing_purged,
-            view_only: r.existing_abs_path
-              ? isViewOnly(r.existing_abs_path)
-              : false,
-          }
-        : null,
-    }));
-    return {
-      count: Number(counts?.n ?? 0),
-      falseCollisions: Number(counts?.false_collisions ?? 0),
-      items,
-    };
-  } catch {
-    return { count: 0, falseCollisions: 0, items: [] };
-  }
-}
 
 export async function GET() {
   try {
@@ -108,7 +26,7 @@ export async function GET() {
       () => [],
     );
 
-    const [counts, derivItems, scanItems, mlItems, batches, duplicates] =
+    const [counts, derivItems, scanItems, mlItems, batches] =
       await Promise.all([
         failureCounts(),
         many(
@@ -151,7 +69,6 @@ export async function GET() {
             ORDER BY created_at DESC
             LIMIT 50`,
         ),
-        duplicateHits(),
       ]);
 
     // Flattens the per-file errors of the failed import batches (preview only —
@@ -181,7 +98,6 @@ export async function GET() {
       scan: { count: counts.scan, items: scanItems },
       import: { count: counts.import, items: importItems },
       ml: { count: counts.ml, items: mlItems },
-      duplicates,
       missing: { count: counts.missing, items: missingItems },
     });
   } catch (err) {

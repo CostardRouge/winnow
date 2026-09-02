@@ -12,6 +12,9 @@ import { config } from "./config";
 import { isWithinBrowseRoots } from "./fsbrowse";
 import { getStorage } from "./storage/index";
 import { normalizeRootPath } from "./volumes";
+import type { DuplicateZone, SweepResolvedResult } from "./duplicateTypes";
+
+export type { DuplicateZone, SweepResolvedResult };
 
 // Thrown for user-fixable problems while resolving a duplicate group (the chosen
 // survivor isn't part of the group, sits outside the browsable area, …) → mapped
@@ -100,6 +103,56 @@ function isUnder(target: string, roots: string[]): boolean {
 export async function viewOnlyChecker(): Promise<(path: string) => boolean> {
   const roots = await viewOnlyRoots();
   return (path: string) => isUnder(path, roots);
+}
+
+// --- Zones: which half of the library a duplicate copy sits in --------------
+//
+// The triage page splits duplicates the way the maintainer thinks about them:
+// copies still sitting in the Incoming tree (to cull) versus copies that reached
+// the finalized Gallery. `roles.ts` already answers that for an INDEXED asset
+// via its session's root; a duplicate hit has no session (it was never indexed),
+// so the answer has to come from the path alone — same registered roots, matched
+// as prefixes.
+//
+// The zone values themselves live in duplicateTypes.ts (the client renders them).
+function zoneForKind(kind: string): DuplicateZone {
+  if (kind === "finals") return "gallery";
+  if (kind === "export") return "export";
+  return "incoming"; // 'source' + 'inbox' — cf. lib/roles.ts
+}
+
+// Longest path first, so a finals folder NESTED inside an incoming root reads as
+// gallery rather than as the tree that contains it (that nesting is real — cf.
+// dedupeOverlappingRoots in lib/volumes).
+async function zoneRoots(): Promise<{ path: string; zone: DuplicateZone }[]> {
+  const rows = await many<{ path: string; kind: string }>(
+    "SELECT path, kind FROM roots",
+  ).catch(() => [] as { path: string; kind: string }[]);
+  return [
+    ...rows.map((r) => ({ path: r.path, zone: zoneForKind(r.kind) })),
+    // Configured directories that may not be registered as roots (yet).
+    { path: config.import.incomingDir, zone: "incoming" as DuplicateZone },
+    ...config.import.finalsDirs.map((p) => ({
+      path: p,
+      zone: "gallery" as DuplicateZone,
+    })),
+    { path: config.exportDir, zone: "export" as DuplicateZone },
+  ]
+    .filter((z) => z.path)
+    .map((z) => ({ ...z, path: normalizeRootPath(z.path) }))
+    .filter((z) => z.path && z.path !== "/")
+    .sort((a, b) => b.path.length - a.path.length);
+}
+
+// One roots lookup, then a synchronous classifier — the zone counterpart of
+// viewOnlyChecker, for classifying a whole listing in one pass.
+export async function zoneChecker(): Promise<(path: string) => DuplicateZone> {
+  const roots = await zoneRoots();
+  return (target: string) => {
+    const t = normalizeRootPath(target);
+    const hit = roots.find((r) => t === r.path || t.startsWith(r.path + "/"));
+    return hit ? hit.zone : "other";
+  };
 }
 
 // Reclaim the row of a TRASHED asset whose original we just removed while
@@ -514,27 +567,81 @@ async function fileGone(absPath: string): Promise<boolean> {
   }
 }
 
-export type PurgeResolvedResult = { checked: number; purged: number };
-
-// Every duplicate_hits row was recorded against a file that existed on disk at
-// scan time. "Delete"/"Keep only this"/"Discard" above all clear their own rows
-// as they act — but nothing clears a row when its file is removed OUTSIDE the
-// app (by hand, e.g. straight from the incoming folder rather than through this
-// page): the row is left claiming a copy that is already gone, forever, since
-// nothing ever re-visits it. This re-stats every recorded path and drops the
-// rows confirmed gone. No file is touched — there is nothing left to delete —
-// only the stale audit row goes.
-export async function purgeResolvedDuplicateHits(): Promise<PurgeResolvedResult> {
+// A `duplicate_hits` row only means something while the content it names still
+// exists in two places. Three ways that stops being true, none of which any
+// other code path ever revisits — so without this sweep the row is listed
+// forever and the page fills with entries the user cannot act on:
+//
+//  1. THE FILE IS GONE. "Delete"/"Keep only this"/"Discard" clear their own
+//     rows, but a copy removed BY HAND (straight from the incoming folder) is
+//     never noticed. Re-stat every recorded path and drop what's confirmed
+//     gone. ENOENT only (cf. fileGone) — a flaky mount must never erase rows.
+//
+//  2. THE LIBRARY COPY WAS PURGED, KEEPING THE HASH. The purge worker stamps
+//     `purged_at` and drops the derivatives but leaves `content_hash` set
+//     (lib/purge.ts) — so a row with no bytes left goes on holding the hash
+//     under its unique index and permanently shadows the file still on disk:
+//     every scan collides with it, fails to verify (the file the row points at
+//     is gone → "unverifiable"), skips the file and re-records the same hit.
+//     That is the "In library (purged) — no file left on disk" entry that never
+//     resolves. Releasing the hash is exactly what reclaimTrashedAsset does for
+//     the copies this module removes itself, and is safe for the same reason:
+//     a purged row has no bytes to be a duplicate OF.
+//
+//  3. NOTHING SHADOWS THE CONTENT ANY MORE. Once no live (non-purged) asset
+//     holds the hash and a single recorded copy is left, that copy is simply
+//     the only instance of those bytes — not a duplicate. Its row is dropped so
+//     the next scan can index the file normally. Two or more copies still
+//     shadow each other and stay listed for triage.
+//
+// No file is ever touched here: only stale audit rows and a dead hash go.
+export async function sweepResolvedDuplicateHits(): Promise<SweepResolvedResult> {
   const rows = await many<{ abs_path: string }>(
     "SELECT abs_path FROM duplicate_hits",
   );
+
+  // 1) Re-stat every recorded path. Bounded concurrency: the sequential version
+  //    walked ~5k paths one NAS round-trip at a time and outlived the request.
   const gone: string[] = [];
-  for (const r of rows) {
-    if (await fileGone(r.abs_path)) gone.push(r.abs_path);
-  }
+  let cursor = 0;
+  const STAT_CONCURRENCY = 16;
+  await Promise.all(
+    Array.from({ length: Math.min(STAT_CONCURRENCY, rows.length) }, async () => {
+      for (let i = cursor++; i < rows.length; i = cursor++) {
+        if (await fileGone(rows[i].abs_path)) gone.push(rows[i].abs_path);
+      }
+    }),
+  );
   if (gone.length > 0)
     await q("DELETE FROM duplicate_hits WHERE abs_path = ANY($1::text[])", [
       gone,
     ]);
-  return { checked: rows.length, purged: gone.length };
+
+  // 2) Release the hash held by a purged asset that shadows a recorded copy.
+  const released = await q(
+    `UPDATE assets a
+        SET content_hash = NULL, updated_at = now()
+       FROM duplicate_hits d
+      WHERE d.content_hash = a.content_hash
+        AND a.purged_at IS NOT NULL`,
+  );
+
+  // 3) Drop the rows nothing shadows any more (the only copy of its content).
+  const stale = await q(
+    `DELETE FROM duplicate_hits d
+      WHERE NOT EXISTS (
+              SELECT 1 FROM assets a
+               WHERE a.content_hash = d.content_hash AND a.purged_at IS NULL)
+        AND NOT EXISTS (
+              SELECT 1 FROM duplicate_hits o
+               WHERE o.content_hash = d.content_hash
+                 AND o.abs_path <> d.abs_path)`,
+  );
+
+  return {
+    checked: rows.length,
+    purged: gone.length,
+    released: released.rowCount ?? 0,
+    stale: stale.rowCount ?? 0,
+  };
 }

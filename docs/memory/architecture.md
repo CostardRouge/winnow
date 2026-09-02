@@ -30,6 +30,22 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **How to apply**: keep the invariant "a suspected duplicate is never dropped without a full compare, and never dropped silently". A trashed duplicate is deliberately *not* treated as present (`src/lib/duplicates.ts`), so restoring one behaves sensibly.
 
+## A `duplicate_hits` row must be able to STOP being true (2026-09-02)
+
+**Decision**: `sweepResolvedDuplicateHits()` (`src/lib/duplicates.ts`, behind "Clear resolved") clears the rows that no longer describe a duplication, in three cases: the file was removed by hand outside the app; a lone recorded copy whose content no live asset holds any more; and — the one that was a genuine dead end — a library entry that was **purged while keeping its `content_hash`**.
+
+**Why**: the purge worker stamps `purged_at` and drops the derivatives but never releases `content_hash` (`lib/purge.ts`), so a row with no bytes left goes on occupying the hash's unique index. Every scan then collides with it, fails to verify (the file it points at is gone → "unverifiable"), skips the real file and re-records the very hit it just saw. That is why the maintainer kept seeing "In library (purged) — no file left on disk" entries that no action on the page could ever clear. Releasing the hash on a purged row is safe for the same reason `reclaimTrashedAsset` already does it: there are no bytes left for it to be a duplicate of.
+
+**How to apply**: any new state that removes an asset's bytes must release its `content_hash`, or it silently makes the surviving file unindexable forever. The sweep only ever removes audit rows and a dead hash — never a file — and drops a row on a missing file only for ENOENT, never on an ambiguous stat error (a flaky NAS mount must not erase the audit trail).
+
+## Only Incoming copies are ever deletable, and that decides the whole triage UI (2026-09-02)
+
+**Decision**: `view_only` (Final/Export volumes) and the Incoming/Gallery *zone* of a copy are the same fact seen twice — a Gallery or Export copy is always protected, an Incoming one never is. `zoneChecker()` in `src/lib/duplicates.ts` classifies a path (`incoming` / `gallery` / `export` / `other`) against the registered roots, longest prefix first, because a finals folder nested inside an incoming root must read as gallery.
+
+**Why**: it is `roles.ts`'s question, but a duplicate hit was never indexed and has no session to join through — the path is all there is. The consequence shapes the page: the maintainer's stated goal ("no RAW should live in the Gallery") **cannot be acted on from deduplication at all**, since deleting a Gallery copy is exactly what the view-only rule forbids. So the page reports RAW-in-Gallery as a standing finding to fix by hand, and never offers an action it would refuse.
+
+**How to apply**: do not add an action that deletes on the Gallery side; extend the report instead. Zones are a triage lens, not a new permission model — `viewOnlyChecker()` stays the authority on what may be removed.
+
 ## One implementation per operation; `src/lib/` owns the logic (2026-08-20)
 
 **Decision**: business logic lives in `src/lib/*.ts`. The worker (`src/worker.ts`), the API routes under `src/app/api/**` and the CLI scripts in `src/scripts/` are thin wrappers calling the same functions.
