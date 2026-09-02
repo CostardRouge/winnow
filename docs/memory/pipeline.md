@@ -48,8 +48,10 @@ of them lock each other:
 often only reaches it faster. Diagnosing a mass "missing" event therefore starts
 with "was anything moved?", not with scan cadence.
 
-**How to recover**: `npm run relink-moved` (dry run) → `-- --apply`
-(`lib/relink.ts` + `scripts/relink-moved.ts`). It walks the root, hashes only
+**How to recover**: *Failures › Missing files › "Moved, not deleted"* — **Scan
+for moved files**, then **Relink**. `npm run relink-moved` (dry run) →
+`-- --apply` is the same pass from a shell (`lib/relink.ts` +
+`scripts/relink-moved.ts`). It walks the root, hashes only
 the unindexed files whose size matches an orphan, and moves each row onto its
 file. Relink, never reindex: derivative objects are keyed by asset id
 (`thumb/${id}.webp`), so id, rating, tags, pairing, burst membership and the
@@ -102,6 +104,33 @@ at an ENOENT path is not a duplicate, it is the same file elsewhere. Do **not**
 reach for a chokidar watcher on the source roots: it costs a lot of inotify
 watches on an 80k tree and only ever catches *future* moves, while the inode
 catches the ones made while the worker was down too.
+
+## The relink pass rides the integrity queue, told apart by job name (2026-09-02)
+
+**Decision**: `enqueueRelink` adds to the **integrity** queue under the job name
+`relink` (`RELINK_JOB`), and the integrity worker branches on `job.name`. No new
+queue, no new table: the report is the BullMQ job's **return value**, read back
+by `getRelinkJob` and polled by the UI.
+
+**Why**: a relink has the integrity sweep's exact I/O profile — a full walk plus
+a stat per file — and that queue's `concurrency: 1` is what stops the two from
+ganging up on the spinning HDD. A `relink_jobs` table would have duplicated
+`purge_jobs` for a repair tool; completed jobs are retained (`removeOnComplete:
+{ count: 1000 }`), which is history enough.
+
+**The trap this created, already fixed — do not reintroduce it**:
+`enqueueIntegrity` coalesces against *pending jobs on its queue*, and originally
+matched on `data.rootId` alone. With two job kinds sharing the queue that would
+hand a sweep request an existing **relink** job and report it as the sweep.
+Anything that inspects pending integrity jobs must filter on `job.name` first.
+
+**How to apply**: a queued job whose result the UI needs can return it and be
+polled through `getJob` — no table required. Note the consequence of the shared
+queue: `pauseAllQueues` includes `integrity`, so a paused pipeline holds a
+relink too (the UI says so rather than spinning silently). Relink jobs run with
+`attempts: 1` — a blind retry would re-walk a tree the first attempt already
+half-changed — so the per-row work is individually try/caught instead, the same
+isolation the indexer gives each file.
 
 ## ML is a remote HTTP call to an unversioned Immich endpoint (2026-08-20)
 

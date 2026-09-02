@@ -887,13 +887,18 @@ debug, and a **"retry"** button per family:
   a move today, and the state is stable — rescanning repeats it verbatim, and
   **Restore** puts the row back still pointing at the dead path. **Purging is
   the wrong reflex**: it does not release the content hash, so the moved file
-  stays unindexable forever. Repair it with `npm run relink-moved` (dry run;
-  add `-- --apply`), which matches each orphaned row to the file that now holds
-  its content — size prefilter, then the same partial hash the indexer dedups
-  on — and moves the row onto it, keeping its id and therefore its rating, tags,
-  pairing, burst and edit links. Purged rows are recovered too: the purge only
-  destroyed the derivatives, the ML rows and the sidecar rows, all of which the
-  relink re-queues.
+  stays unindexable forever. Repair it from **Moved, not deleted** at the bottom
+  of this tab: **Scan for moved files** queues a dry pass and reports exactly
+  what it would do, then **Relink** applies that same match. Both are queued
+  jobs (the pass walks the whole volume) and the section survives leaving the
+  page or locking your phone. `npm run relink-moved` is the same thing from a
+  shell (dry run; add `-- --apply`). It matches each orphaned row to the file
+  that now holds its content — size prefilter, then the same partial hash the
+  indexer dedups on — and moves the row onto it, keeping its id and therefore
+  its rating, tags, pairing, burst and edit links. Nothing on disk is touched:
+  only the library's idea of where each file lives. Purged rows are recovered
+  too — the purge only destroyed the derivatives, the ML rows and the sidecar
+  rows, all of which the relink re-queues.
 - **Deduplication** (audit + triage): copies of the same bytes are **grouped by
   content**. Each group lists *every* place that content lives — the library's
   indexed copy (its thumbnail stands in for the group) and any extra copies on

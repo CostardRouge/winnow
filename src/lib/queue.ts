@@ -98,6 +98,14 @@ export type GpsWriteJob = { assetId: number };
 // the derivative objects still exist in storage. `rootId` scopes to one volume;
 // omitted → the whole library.
 export type IntegrityJob = { rootId?: number | null };
+// Relink moved originals (cf. lib/relink.ts). Rides the INTEGRITY queue rather
+// than one of its own: it has the same I/O profile (a full walk + a stat per
+// file) and that queue's concurrency of 1 is what keeps the two of them from
+// ganging up on the NAS HDD. The two are told apart by the job NAME, so
+// anything that inspects pending integrity jobs must match on it — see
+// enqueueIntegrity's coalescing.
+export const RELINK_JOB = "relink";
+export type RelinkJob = { rootId?: number | null; apply: boolean };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -488,14 +496,62 @@ export async function enqueueIntegrity(
   const rootId = opts.rootId ?? null;
   const jobs = await queue.getJobs([...PENDING_INDEX_STATES], 0, 99);
   for (const job of jobs) {
-    const queued = (job?.data as IntegrityJob)?.rootId ?? null;
-    if (job && (queued === null || queued === rootId)) return job;
+    // Name-checked: relink jobs share this queue, and coalescing a sweep into
+    // one would hand the caller a job that does something else entirely.
+    if (job?.name !== "integrity") continue;
+    const queued = (job.data as IntegrityJob)?.rootId ?? null;
+    if (queued === null || queued === rootId) return job;
   }
   return queue.add("integrity", { rootId } satisfies IntegrityJob, {
     ...defaultJobOpts,
     // A sweep interrupted by pause returns cleanly (partial report); no retries.
     attempts: 1,
   });
+}
+
+// Enqueue a relink pass (cf. lib/relink.ts). Coalesced only on an EXACT match
+// (same scope, same apply flag): a dry run and a repair are different intents
+// and must never collapse into one another, but a double-tapped button should
+// not queue the same walk twice.
+export async function enqueueRelink(
+  opts: { rootId?: number | null; apply?: boolean } = {},
+): Promise<Job> {
+  const queue = getQueues().integrity;
+  const rootId = opts.rootId ?? null;
+  const apply = opts.apply === true;
+  const jobs = await queue.getJobs([...PENDING_INDEX_STATES], 0, 99);
+  for (const job of jobs) {
+    if (job?.name !== RELINK_JOB) continue;
+    const d = job.data as RelinkJob;
+    if ((d?.rootId ?? null) === rootId && d?.apply === apply) return job;
+  }
+  return queue.add(RELINK_JOB, { rootId, apply } satisfies RelinkJob, {
+    ...defaultJobOpts,
+    // A repair must never be retried blindly: a re-run would walk again and
+    // could act on a tree the first attempt already half-changed.
+    attempts: 1,
+  });
+}
+
+// One relink job's state and, once finished, the report it returned. Reads
+// straight from BullMQ (completed jobs are retained per defaultJobOpts), so a
+// repair needs no table of its own — the report IS the job's return value.
+export async function getRelinkJob(jobId: string): Promise<{
+  id: string;
+  state: string;
+  data: RelinkJob | null;
+  result: unknown;
+  failedReason: string | null;
+} | null> {
+  const job = await getQueues().integrity.getJob(jobId);
+  if (!job || job.name !== RELINK_JOB) return null;
+  return {
+    id: String(job.id),
+    state: await job.getState(),
+    data: (job.data ?? null) as RelinkJob | null,
+    result: job.returnvalue ?? null,
+    failedReason: job.failedReason ?? null,
+  };
 }
 
 // Write a manual GPS position back into the original file (cf. lib/exifWrite.ts).

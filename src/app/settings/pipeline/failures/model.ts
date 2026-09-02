@@ -90,6 +90,51 @@ export type Failures = {
   missing: { count: number; items: MissingItem[] };
 };
 
+// --- Relink (moved originals) ----------------------------------------------
+//
+// Mirrors lib/relink.ts's report over the wire. Re-declared here rather than
+// imported so nothing pulls that server-only module (config, pg, node:fs) into
+// the client bundle — same reason every other shape above is re-declared.
+// `matches`/`skipped` are capped previews; `matched`/`skippedCount` are exact.
+export type RelinkMatch = {
+  assetId: number;
+  filename: string;
+  oldPath: string;
+  newPath: string;
+  state: "purged" | "trashed" | "flagged";
+  fileSize: number | null;
+  needsRebuild: boolean;
+};
+export type RelinkReport = {
+  applied: boolean;
+  orphans: number;
+  scanned: number;
+  unindexed: number;
+  hashed: number;
+  matched: number;
+  matches: RelinkMatch[];
+  rebuilds: number;
+  relinked: number;
+  ambiguous: number;
+  skippedCount: number;
+  skipped: { path: string; reason: string }[];
+  derivativesQueued: number;
+  sidecarsRecorded: number;
+};
+export type RelinkRootReport = {
+  root: { id: number; path: string; kind: string };
+  report: RelinkReport;
+};
+// A queued relink pass, as GET /api/failures/relink?job_id= returns it. The
+// report only exists once `state` is "completed".
+export type RelinkJobInfo = {
+  id: string;
+  state: string;
+  data: { rootId: number | null; apply: boolean } | null;
+  result: { perRoot: RelinkRootReport[] } | null;
+  failedReason: string | null;
+};
+
 export type Kind = "derivative" | "scan" | "import" | "missing" | "ml";
 export type Scope = { ids?: number[]; paths?: string[] };
 

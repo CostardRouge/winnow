@@ -35,7 +35,7 @@ function arg(name: string): string | undefined {
 function printReport(report: RelinkReport, limit: number): void {
   console.log(
     `  walked ${report.scanned} media file(s), ${report.unindexed} unindexed, ` +
-      `${report.hashed} hashed → ${report.matches.length} match(es)`,
+      `${report.hashed} hashed → ${report.matched} match(es)`,
   );
 
   for (const m of report.matches.slice(0, limit)) {
@@ -44,16 +44,18 @@ function printReport(report: RelinkReport, limit: number): void {
     console.log(`        from ${m.oldPath}`);
     console.log(`          to ${m.newPath}`);
   }
-  if (report.matches.length > limit)
-    console.log(`    … and ${report.matches.length - limit} more`);
+  const shown = Math.min(limit, report.matches.length);
+  if (report.matched > shown)
+    console.log(`    … and ${report.matched - shown} more`);
 
   if (report.ambiguous)
     console.log(`  ${report.ambiguous} ambiguous — left untouched`);
 
   for (const s of report.skipped.slice(0, limit))
     console.log(`  skipped ${s.path}: ${s.reason}`);
-  if (report.skipped.length > limit)
-    console.log(`  … and ${report.skipped.length - limit} more skipped`);
+  const shownSkips = Math.min(limit, report.skipped.length);
+  if (report.skippedCount > shownSkips)
+    console.log(`  … and ${report.skippedCount - shownSkips} more skipped`);
 
   if (report.applied)
     console.log(
@@ -99,9 +101,9 @@ async function main() {
     }
     console.log(`  ${report.orphans} orphaned row(s) in scope`);
     printReport(report, limit);
-    matched += report.matches.length;
+    matched += report.matched;
     relinked += report.relinked;
-    rebuilds += report.matches.filter((m) => m.needsRebuild).length;
+    rebuilds += report.rebuilds;
   }
 
   console.log("");

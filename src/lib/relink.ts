@@ -86,6 +86,13 @@ export type RelinkMatch = {
 
 export type RelinkSkip = { path: string; reason: string };
 
+// The report travels through Redis (the job's return value) and then to a
+// phone, so the two unbounded lists are previews: the counts stay exact, the
+// arrays are capped. A 900-file reorganisation is a realistic run, and nobody
+// reads 900 rows on a phone anyway — same reasoning as purge's inline errors.
+const PREVIEW_LIMIT = 50;
+const SKIP_LIMIT = 50;
+
 export type RelinkReport = {
   // False for a dry run: matches are reported, nothing is written.
   applied: boolean;
@@ -96,14 +103,26 @@ export type RelinkReport = {
   unindexed: number;
   // Unindexed files whose size matched an orphan, so they were hashed.
   hashed: number;
+  // Total matches found, and the first PREVIEW_LIMIT of them.
+  matched: number;
   matches: RelinkMatch[];
+  // Matches whose row lost its derivatives (purged) and needs a rebuild.
+  rebuilds: number;
   relinked: number;
   // Orphans matching several files on disk: never resolved automatically.
   ambiguous: number;
+  // Total skips, and the first SKIP_LIMIT of them.
+  skippedCount: number;
   skipped: RelinkSkip[];
   derivativesQueued: number;
   sidecarsRecorded: number;
 };
+
+function addSkip(report: RelinkReport, target: string, reason: string): void {
+  report.skippedCount++;
+  if (report.skipped.length < SKIP_LIMIT)
+    report.skipped.push({ path: target, reason });
+}
 
 type Orphan = {
   id: number;
@@ -203,10 +222,7 @@ async function findMoved(
     try {
       hash = await partialHash(absPath, size);
     } catch (err) {
-      report.skipped.push({
-        path: absPath,
-        reason: `unreadable: ${(err as Error).message}`,
-      });
+      addSkip(report, absPath, `unreadable: ${(err as Error).message}`);
       continue;
     }
 
@@ -222,20 +238,22 @@ async function findMoved(
       goneCache.set(orphan.id, gone);
     }
     if (!gone) {
-      report.skipped.push({
-        path: absPath,
-        reason: `the original is still at ${orphan.abs_path} — this is a copy, not a move`,
-      });
+      addSkip(
+        report,
+        absPath,
+        `the original is still at ${orphan.abs_path} — this is a copy, not a move`,
+      );
       continue;
     }
 
     // Crossing volumes changes what the asset IS (cullable source vs view-only
     // final), so it is reported and left to the user.
     if (orphan.root_id !== root.id) {
-      report.skipped.push({
-        path: absPath,
-        reason: `asset ${orphan.id} belongs to root ${orphan.root_id}; relinking across volumes changes its role — move it deliberately`,
-      });
+      addSkip(
+        report,
+        absPath,
+        `asset ${orphan.id} belongs to root ${orphan.root_id}; relinking across volumes changes its role — move it deliberately`,
+      );
       continue;
     }
 
@@ -294,10 +312,11 @@ async function applyOne(
   );
   if (!updated) {
     // Restored or repaired by something else between the scan and now.
-    report.skipped.push({
-      path: match.newPath,
-      reason: `asset ${orphan.id} is no longer flagged missing — skipped`,
-    });
+    addSkip(
+      report,
+      match.newPath,
+      `asset ${orphan.id} is no longer flagged missing — skipped`,
+    );
     return;
   }
   report.relinked++;
@@ -373,9 +392,12 @@ export async function relinkMovedForRoot(
     scanned: 0,
     unindexed: 0,
     hashed: 0,
+    matched: 0,
     matches: [],
+    rebuilds: 0,
     relinked: 0,
     ambiguous: 0,
+    skippedCount: 0,
     skipped: [],
     derivativesQueued: 0,
     sidecarsRecorded: 0,
@@ -384,10 +406,7 @@ export async function relinkMovedForRoot(
   // Same guard as every integrity pass: an unreachable root proves nothing
   // about its files, and walking it would read every asset as moved.
   if (await isGone(root.path)) {
-    report.skipped.push({
-      path: root.path,
-      reason: "root unreachable — pass skipped",
-    });
+    addSkip(report, root.path, "root unreachable — pass skipped");
     return report;
   }
 
@@ -403,10 +422,11 @@ export async function relinkMovedForRoot(
   for (const { orphan, paths } of hits.values()) {
     if (paths.length > 1) {
       report.ambiguous++;
-      report.skipped.push({
-        path: orphan.abs_path,
-        reason: `asset ${orphan.id} matches ${paths.length} files on disk (${paths.join(", ")}) — ambiguous, left untouched`,
-      });
+      addSkip(
+        report,
+        orphan.abs_path,
+        `asset ${orphan.id} matches ${paths.length} files on disk (${paths.join(", ")}) — ambiguous, left untouched`,
+      );
       continue;
     }
     const match: RelinkMatch = {
@@ -418,8 +438,19 @@ export async function relinkMovedForRoot(
       fileSize: orphan.file_size == null ? null : Number(orphan.file_size),
       needsRebuild: orphan.thumb_key == null,
     };
-    report.matches.push(match);
-    if (apply) await applyOne(root, match, orphan, report, touched, dirCache);
+    report.matched++;
+    if (match.needsRebuild) report.rebuilds++;
+    if (report.matches.length < PREVIEW_LIMIT) report.matches.push(match);
+    if (!apply) continue;
+    // Per-row isolation, same idiom as the indexer's per-file try/catch: a row
+    // that can no longer be moved (its destination claimed in the meantime, so
+    // the abs_path unique index refuses it) must not abandon the 900 others
+    // halfway through — the job runs with attempts:1 and is not retried.
+    try {
+      await applyOne(root, match, orphan, report, touched, dirCache);
+    } catch (err) {
+      addSkip(report, match.newPath, `relink failed: ${(err as Error).message}`);
+    }
   }
 
   if (apply && touched.size) await refreshSessions(touched);
