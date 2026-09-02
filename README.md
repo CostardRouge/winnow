@@ -878,6 +878,22 @@ debug, and a **"retry"** button per family:
   queues the full sweep (`POST /api/integrity`), which also repairs 'ready'
   assets whose thumb/proxy object went missing from the cache by re-enqueuing
   their generation.
+  **A file that was *moved* rather than deleted is the one case none of that
+  repairs.** Asset identity is the path, so reorganising folders inside a volume
+  reads as two unrelated events that lock each other: at its new path the file
+  collides with the content hash its own old row still holds and is dropped as
+  an *unverifiable* duplicate (the verification reads the old path, which is
+  gone), while the old row is flagged missing and auto-trashed. Nothing detects
+  a move today, and the state is stable — rescanning repeats it verbatim, and
+  **Restore** puts the row back still pointing at the dead path. **Purging is
+  the wrong reflex**: it does not release the content hash, so the moved file
+  stays unindexable forever. Repair it with `npm run relink-moved` (dry run;
+  add `-- --apply`), which matches each orphaned row to the file that now holds
+  its content — size prefilter, then the same partial hash the indexer dedups
+  on — and moves the row onto it, keeping its id and therefore its rating, tags,
+  pairing, burst and edit links. Purged rows are recovered too: the purge only
+  destroyed the derivatives, the ML rows and the sidecar rows, all of which the
+  relink re-queues.
 - **Deduplication** (audit + triage): copies of the same bytes are **grouped by
   content**. Each group lists *every* place that content lives — the library's
   indexed copy (its thumbnail stands in for the group) and any extra copies on

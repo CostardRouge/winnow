@@ -45,7 +45,10 @@ export type IndexProgress = {
 // responsive, coarse enough that Redis never becomes the bottleneck.
 const PROGRESS_EVERY = 200;
 
-async function* walk(dir: string): AsyncGenerator<string> {
+// Exported for lib/relink.ts, which must walk a root under the EXACT same
+// ignore rules as a scan — a repair pass that saw a different set of files than
+// the indexer would draw the wrong conclusions about what is missing.
+export async function* walk(dir: string): AsyncGenerator<string> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -66,7 +69,11 @@ async function* walk(dir: string): AsyncGenerator<string> {
   }
 }
 
-async function ensureSession(
+// Exported for lib/relink.ts: a relinked asset changes directory, hence session
+// (one session = one directory), and the destination folder may have no session
+// row yet. Sharing this keeps session naming identical whether a folder is
+// discovered by a scan or by a repair.
+export async function ensureSession(
   root: Root,
   dir: string,
 ): Promise<Session> {

@@ -48,29 +48,42 @@ of them lock each other:
 often only reaches it faster. Diagnosing a mass "missing" event therefore starts
 with "was anything moved?", not with scan cadence.
 
-**How to recover** (the mapping is already in the DB): each moved file left a
-`duplicate_hits` row carrying the **new** `abs_path` and `existing_asset_id` =
-the now-missing asset, `verified = null`. Relinking off that map preserves
-everything — derivative objects are keyed by asset id (`thumb/${id}.webp`), so
-id, rating, tags, faces and burst membership all survive, and `mv` keeps the
-mtime so the next scan skips the file at the stat gate. A relink must move
-`abs_path` **and** `rel_path` **and** `session_id` (one session = one directory,
-`ensureSession`), then lift `missing_at` and the auto-trash (`deleted_at =
-missing_at` is the marker that says the trash is ours), drop the consumed
-`duplicate_hits` rows and recompute the touched sessions' counters.
+**How to recover**: `npm run relink-moved` (dry run) → `-- --apply`
+(`lib/relink.ts` + `scripts/relink-moved.ts`). It walks the root, hashes only
+the unindexed files whose size matches an orphan, and moves each row onto its
+file. Relink, never reindex: derivative objects are keyed by asset id
+(`thumb/${id}.webp`), so id, rating, tags, pairing, burst membership and the
+edit link all survive, and `mv` keeps the mtime so the next scan skips the file
+at the stat gate. It moves `abs_path` **and** `rel_path` **and** `session_id`
+(one session = one directory) and lifts the auto-trash only when `deleted_at =
+missing_at` — the marker that says the trash is ours, same contract as
+`restoreMissing`.
 
-**Two traps around the recovery**:
+**Purging the missing rows recovers nothing and makes it worse — but it is not
+fatal.** The purge worker stamps `purged_at` without releasing `content_hash`
+(only `reclaimTrashedAsset` in `lib/duplicates.ts` does, and its comment
+explains why it must), so a purged row keeps squatting the unique hash and the
+moved file stays unindexable *forever*. What a purge actually destroys is
+narrow and rebuildable: the thumb/proxy objects, the `asset_faces` /
+`asset_clip` rows, and the `asset_sidecars` rows (whose files it failed to
+unlink — they moved with the clip — while deleting their rows anyway). Ratings
+are kept by design and every column on the asset row survives, so `relink-moved`
+handles purged rows too: it un-stamps the purge and re-enqueues one derivative,
+which re-enqueues ML on completion. Note purged rows vanish from the Missing
+triage list (`listMissing` filters `purged_at IS NULL`), which makes the purge
+*look* like it worked.
 
-- **Purging the missing rows recovers nothing and makes it permanent.** The
-  purge worker stamps `purged_at` but does **not** release `content_hash` —
-  only `reclaimTrashedAsset` (`lib/duplicates.ts`) does, and its comment
-  explains exactly why it must. A purged row keeps squatting the unique hash, so
-  the moved file stays unindexable forever.
-- **"Keep only this copy" refuses to relink a trashed library copy** and
-  reclaims it instead (row purged, rating/tags/faces lost, reindexed fresh) —
-  which is precisely the state auto-trashed missing assets are in. It cannot
-  currently tell "the user culled this" from "we trashed it because we could not
-  find it", although `deleted_at = missing_at` says so.
+**"Keep only this copy" is not the escape hatch either**: it refuses to relink a
+*trashed* library copy and reclaims it instead (row purged, rating/tags/faces
+lost, reindexed fresh) — precisely the state auto-trashed missing assets are in.
+It cannot currently tell "the user culled this" from "we trashed it because we
+could not find it", although `deleted_at = missing_at` says so.
+
+**Known reporting drift, deliberately not patched**: a purge of an already-absent
+original adds its `file_size` to the job's `freedBytes` and writes a `'purged'`
+`purge_log` row although it unlinked nothing, and `relink-moved` leaves that row
+in place (the purge did run; `purge_log.status` is `CHECK (purged|error)`, so
+recording a correction would need a migration).
 
 Restoring from the triage page does not help either: it clears `deleted_at` and
 leaves `missing_at` set, so the asset returns to the library still pointing at a
