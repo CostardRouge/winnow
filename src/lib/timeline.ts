@@ -61,9 +61,14 @@ const SAME_PLACE_BREAK_HOURS = 72;
 // shooting; past this the two are separate outings and the crumb stands alone.
 const ABSORB_MAX_GAP_HOURS = 6;
 
-/** One uninterrupted run of shooting at one place, as SQL returns it. */
+/** One uninterrupted run of shooting, as SQL returns it.
+ *
+ *  Under the `place` rule a run holds exactly one place, but under `time` it
+ *  can cross several (a day driving through six villages is one run), so the
+ *  run carries the whole DISTRIBUTION, busiest first. Collapsing it to a
+ *  single value here would name that day after whichever place sorted last. */
 export type TimelineRun = {
-  place: string | null;
+  places: { place: string | null; n: number }[];
   started_at: string;
   ended_at: string;
   count: number;
@@ -244,24 +249,44 @@ export async function fetchRuns(
      grouped AS (
        SELECT m.*, sum(m.brk) OVER (ORDER BY m.captured_at, m.id) AS run_id
        FROM marked m
+     ),
+     -- Two-level aggregation: per (run, place) first, then rolled up into one
+     -- ordered list per run. A scalar subquery over the outer group cannot see
+     -- ungrouped columns, so the histogram has to be built this way round.
+     per_place AS (
+       SELECT run_id, place, count(*)::int AS n
+       FROM grouped GROUP BY run_id, place
+     ),
+     place_lists AS (
+       SELECT run_id,
+              jsonb_agg(jsonb_build_object('place', place, 'n', n)
+                        ORDER BY n DESC, place) AS places
+       FROM per_place GROUP BY run_id
+     ),
+     runs AS (
+       SELECT
+         g.run_id                                            AS run_id,
+         min(g.captured_at)                                  AS started_at,
+         max(g.captured_at)                                  AS ended_at,
+         count(*)::int                                       AS count,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY g.gps_lon) AS median_lon,
+         count(g.gps_lon)::int                               AS geotagged,
+         array_remove(array_agg(DISTINCT g.device), NULL)    AS devices,
+         -- The folders this run crosses, id + name: the chapter shows them as
+         -- links, because "these three directories are one stay" is the whole
+         -- point of the view. jsonb, not json: only jsonb has an equality
+         -- operator, so only jsonb_agg can take DISTINCT. Ordering is left to
+         -- the caller — DISTINCT forbids an ORDER BY that isn't the argument.
+         jsonb_agg(DISTINCT jsonb_build_object('id', s.id, 'name', s.name))
+                                                             AS sessions
+       FROM grouped g
+       JOIN sessions s ON s.id = g.session_id
+       GROUP BY g.run_id
      )
-     SELECT
-       max(g.place)                                        AS place,
-       min(g.captured_at)                                  AS started_at,
-       max(g.captured_at)                                  AS ended_at,
-       count(*)::int                                       AS count,
-       percentile_cont(0.5) WITHIN GROUP (ORDER BY g.gps_lon) AS median_lon,
-       count(g.gps_lon)::int                               AS geotagged,
-       array_remove(array_agg(DISTINCT g.device), NULL)    AS devices,
-       -- The folders this run crosses, id + name: the chapter shows them as
-       -- links, because "these three directories are one stay" is the whole
-       -- point of the view.
-       (SELECT json_agg(json_build_object('id', x.id, 'name', x.name) ORDER BY x.name)
-          FROM (SELECT DISTINCT s.id, s.name) x)           AS sessions
-     FROM grouped g
-     JOIN sessions s ON s.id = g.session_id
-     GROUP BY g.run_id
-     ORDER BY min(g.captured_at)`,
+     SELECT r.started_at, r.ended_at, r.count, r.median_lon, r.geotagged,
+            r.devices, r.sessions, pl.places
+     FROM runs r JOIN place_lists pl ON pl.run_id = r.run_id
+     ORDER BY r.started_at`,
     bound == null ? [...params, breaks] : [...params, bound, breaks],
   );
 }
@@ -379,9 +404,15 @@ export function tzOffsetFromLongitude(lon: number | null): number | null {
 function assemble(group: RunGroup): TimelineChapter {
   const { runs, absorbed, span } = group;
   // The chapter is named by its dominant place — the one holding the most
-  // media, not simply the first, so a stop-off never names the whole day.
+  // media across every run it spans, not the first or the last. Under the
+  // time rule one run already crosses several places, which is why the run
+  // carries a distribution rather than a single value.
   const tally = new Map<string, number>();
-  for (const r of runs) if (r.place) tally.set(r.place, (tally.get(r.place) ?? 0) + r.count);
+  for (const r of runs) {
+    for (const { place, n } of r.places ?? []) {
+      if (place) tally.set(place, (tally.get(place) ?? 0) + n);
+    }
+  }
   const places = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([p]) => p);
 
   const geotagged = runs.reduce((n, r) => n + r.geotagged, 0);
@@ -401,7 +432,9 @@ function assemble(group: RunGroup): TimelineChapter {
     count: runs.reduce((n, r) => n + r.count, 0),
     places,
     devices: [...new Set(runs.flatMap((r) => r.devices))],
-    sessions: [...new Map(runs.flatMap((r) => r.sessions).map((s) => [s.id, s])).values()],
+    sessions: [...new Map(runs.flatMap((r) => r.sessions ?? []).map((s) => [s.id, s])).values()].sort(
+      (a, b) => a.name.localeCompare(b.name),
+    ),
     tz_offset_hours: tzOffsetFromLongitude(lon),
     // A chosen location is not an inference — the doubt has been resolved by
     // the human who chose it.
@@ -567,7 +600,7 @@ export async function attachSamples(
   const i = params.length;
 
   const rows = await many<{ idx: number; ids: number[] }>(
-    `SELECT b.idx, COALESCE(array_agg(p.id ORDER BY p.captured_at), '{}') AS ids
+    `SELECT b.idx, array_remove(array_agg(p.id ORDER BY p.captured_at), NULL) AS ids
      FROM unnest($${i + 1}::timestamptz[], $${i + 2}::timestamptz[])
           WITH ORDINALITY AS b(lo, hi, idx)
      LEFT JOIN LATERAL (
