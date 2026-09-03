@@ -69,3 +69,11 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 **Why**: an unmounted NAS looks exactly like "every file was deleted". The guard is what stops one bad mount from soft-deleting the library.
 
 **How to apply**: any new sweep that deletes or trashes in bulk needs the same "does this look like an unmounted volume?" question answered before it acts.
+
+## A deduced location never writes into an original (2026-09-03)
+
+**Decision**: `POST /api/assets/geotag` is the one sanctioned exception to "originals are read once": it sets `gps_source='manual'`, arms `gps_write_status='pending'`, and the `gpswrite` job writes the coordinates into the **original file's EXIF** (`src/lib/exifWrite.ts`). It is sanctioned because a human confirmed a before/after recap (`GeotagRecapModal`). A location that Winnow *infers* — the Timeline naming a GPS-less chapter from its neighbours in time (`inferPlaces()` in `src/lib/timeline.ts`), or any future guess — therefore stays **display-only**: it lives in the API response as `place_inferred`, touches no `assets` row, never arms the write-back, never enqueues anything.
+
+**Why**: a write-back launders a guess into a fact — a re-index reads the file's EXIF back as truth, and the Capture One export copies it into the finals. The maintainer chose "shown, marked as deduced, confirmable by hand" over persisting an `inferred` source, so the doubt stays visible until a human resolves it.
+
+**How to apply**: the only path from an inference to a coordinate on an asset is an explicit action that goes through the existing geotag flow with its recap, on an explicit selection. The Timeline has exactly three entry points into it — *Confirmer le lieu…* on an inferred chapter, *Placer N médias sans position…* on a located one, and the offer shown after saving a location in the chapter dialog — and all three end in `GeotagRecapModal`, whose submit is the one `POST /api/assets/geotag`. A chapter's own location field writes on the chapter row only. The GPS-less media are enumerated with the shared filter's `has_gps=0` (made tri-state for this: it used to be `z.coerce.boolean`, under which `"0"` read as true). Never add a fourth path that skips the recap.

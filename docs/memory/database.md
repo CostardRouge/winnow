@@ -43,3 +43,13 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 **Decision (pending)**: `purge_log`, resolved `scan_failures`, `export_jobs.result` / `import_batches.result` JSONB, `exports` lineage and stale-model `asset_clip` rows all grow without bound. A retention janitor is P1 in the review (D7) and does not exist yet.
 
 **How to apply**: if you add a table that accumulates a row per event, say in the migration how it gets pruned — or add it to the janitor list in `MEMORY.md`'s open items rather than leaving it silent.
+
+## Timeline chapters are corrections, not entities (2026-09-03)
+
+**Decision**: migration `0040_timeline_chapters.sql` adds two small tables that store what a human changed about the Timeline's *derived* chapters, never the chapters themselves: `timeline_chapters` (a named span `[starts_at, ends_at]` + optional `name`, `place_label`, `place_lat/lon`) and `timeline_breaks` (a forced split `at`). `lib/timeline.ts` folds them back in: every break and both edges of every span become forced breaks in the SQL scan (the end edge is `ends_at + 1 s`, or the span's last frame would be cut off its own span), runs inside a span are pinned into one group that neither absorbs nor gets absorbed, and the span's name/location replace the derived ones. Spans may not overlap (the POST refuses); span bounds are immutable (reset and redraw, so a span's identity is its range).
+
+**Why**: a chapter is a function of capture time + place; storing it would let the first photo re-indexed inside a period contradict the stored cut, and every rescan would have to reconcile two truths. Storing the edit keeps re-derivation safe — the exact reasoning `0029_bursts.sql` gives for keeping ratings per asset.
+
+**Retention**: both tables grow only by a human clicking Rename / Split / Merge and shrink from the same dialog — tens of rows, no automatic writer, hence no janitor (the migration says so, per the rule above).
+
+**How to apply**: a new kind of chapter edit is a new correction folded in by `lib/timeline.ts`, not a new column on a stored chapter. A span's location is the *chapter's*: nothing in these tables or their routes writes GPS onto assets (`docs/memory/architecture.md`, "A deduced location never writes into an original").

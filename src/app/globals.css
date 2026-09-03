@@ -2460,6 +2460,232 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex flex-wrap items-center justify-center gap-2.5 py-3 text-center;
   }
 
+  /* ---- Timeline (/timeline) --------------------------------------------- */
+  /* The library read as a story: a stream of chapters (a stay in a place,
+     across as many session folders as it needs) beside a sticky per-month
+     spine. Chapters are derived per request (cf. lib/timeline.ts) — nothing
+     here is a stored entity. The stream is NOT react-window virtualized: a
+     chapter's height depends on its content (day rows, wrapped meta), which
+     react-window cannot size; content-visibility on each chapter plus the
+     lazily fetched tile rows keep thirty chapters cheap instead. */
+  .tl-body {
+    @apply flex min-h-0 flex-1;
+  }
+  .tl-stream {
+    @apply min-w-0 flex-1 overflow-y-auto px-3.5 pb-10 pt-1.5;
+  }
+  /* Year bracket, sticky so the reader always knows which year is scrolling. */
+  .tl-era {
+    @apply sticky top-0 z-[3] flex items-baseline gap-3 px-2 pb-2.5 pt-3;
+    background: linear-gradient(to bottom, var(--color-bg) 62%, transparent);
+  }
+  .tl-era-name {
+    @apply text-2xl leading-none;
+    font-family: var(--font-serif);
+  }
+  .tl-era-meta {
+    @apply text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .tl-chapter {
+    @apply relative px-2 pb-5 pt-1;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
+  }
+  .tl-chapter + .tl-chapter {
+    @apply pt-4;
+    border-top: 1px solid var(--color-border);
+  }
+  .tl-ch-head {
+    @apply mb-1 flex items-start gap-3;
+  }
+  .tl-ch-title {
+    @apply m-0 text-[1.45rem] leading-tight;
+    font-family: var(--font-serif);
+    font-weight: 400;
+    text-wrap: balance;
+  }
+  .tl-ch-dates {
+    @apply text-[11px] font-semibold;
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+  }
+  .tl-ch-actions {
+    @apply ml-auto flex gap-1.5 opacity-0 transition duration-150;
+  }
+  .tl-chapter:hover .tl-ch-actions,
+  .tl-chapter:focus-within .tl-ch-actions {
+    @apply opacity-100;
+  }
+  .tl-ch-meta {
+    @apply my-2 flex flex-wrap items-center gap-1.5 text-xs;
+    color: var(--color-muted);
+  }
+  .tl-ch-meta .num {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .tl-sep {
+    color: var(--color-faint);
+  }
+  /* The session folders a chapter crosses — dashed, small, and there on
+     purpose: it is the visible proof that this view merges what Sessions
+     separates. */
+  .tl-session-tag {
+    @apply rounded-[5px] px-1.5 py-px text-[10px];
+    font-family: var(--font-mono);
+    border: 1px dashed var(--color-border-strong);
+    color: var(--color-faint);
+  }
+  .tl-session-tag:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  /* "Place inferred" — the chapter holds no GPS and was named from its
+     neighbours. Amber like a skip: reviewed-but-unsure, never a verdict. */
+  .tl-inferred {
+    @apply rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-star);
+    border-color: color-mix(in srgb, var(--color-star) 45%, transparent);
+    background: color-mix(in srgb, var(--color-star) 10%, transparent);
+  }
+  .tl-day {
+    @apply mb-1.5 mt-3 flex items-center gap-2.5;
+  }
+  .tl-day-label {
+    @apply whitespace-nowrap text-[11px] font-semibold uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+  }
+  .tl-day-rule {
+    @apply h-px flex-1;
+    background: var(--color-border);
+  }
+  /* The sample strip scrolls in its own box so the "+N" tile is never clipped
+     by the spine and the page never scrolls sideways. */
+  .tl-row {
+    @apply flex gap-1.5 overflow-x-auto pb-1;
+    --tl-cell: 104px;
+    scrollbar-width: thin;
+  }
+  .tl-row .cell {
+    width: var(--tl-cell);
+    height: var(--tl-cell);
+    aspect-ratio: auto;
+    cursor: pointer;
+  }
+  .tl-row-skeleton {
+    @apply flex gap-1.5;
+  }
+  .tl-row-skeleton .skeleton {
+    width: var(--tl-cell, 104px);
+    height: var(--tl-cell, 104px);
+    flex-shrink: 0;
+  }
+  .tl-more {
+    @apply flex flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-[var(--radius)] text-[11px] font-semibold;
+    width: var(--tl-cell, 104px);
+    height: var(--tl-cell, 104px);
+    border: 1px dashed var(--color-border-strong);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .tl-more .n {
+    @apply text-[15px];
+    font-family: var(--font-mono);
+    color: var(--color-text);
+  }
+  .tl-more:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  /* The spine: per-month density, the temporal counterpart of the map's
+     "show zone" — one gesture reaches any month of a year. */
+  .tl-spine {
+    @apply w-[92px] flex-shrink-0 overflow-y-auto px-2.5 pb-10 pt-3;
+    border-left: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .tl-spine-year {
+    @apply mb-1 mt-3 text-[10px] font-semibold;
+    font-family: var(--font-mono);
+    letter-spacing: 0.08em;
+    color: var(--color-faint);
+  }
+  .tl-spine-year:first-child {
+    @apply mt-0;
+  }
+  .tl-spine-row {
+    @apply flex w-full items-center gap-1.5 rounded-[var(--radius-sm)] border-0 bg-transparent px-1 py-0.5 text-left;
+  }
+  .tl-spine-row:hover {
+    background: var(--color-surface-3);
+  }
+  .tl-spine-row.active {
+    background: var(--color-accent-wash);
+  }
+  .tl-spine-m {
+    @apply w-[22px] flex-shrink-0 text-[10px] font-semibold;
+    color: var(--color-muted);
+  }
+  .tl-spine-row.active .tl-spine-m {
+    color: var(--color-accent);
+  }
+  .tl-spine-bar {
+    @apply h-[5px] rounded-full;
+    background: var(--color-border-strong);
+    min-width: 2px;
+  }
+  .tl-spine-row.active .tl-spine-bar {
+    background: var(--color-accent);
+  }
+  /* Human-chosen chapter location (a named span's place_label). */
+  .tl-located {
+    @apply inline-flex items-center gap-1;
+    color: var(--color-text);
+  }
+  /* The edit dialog: place suggestions drop under the field as a plain list
+     (the geotag picker's autocomplete, without the map), and the split/merge
+     controls sit in a row. */
+  .tl-edit-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .tl-edit-row .input {
+    @apply w-auto min-w-0 flex-1;
+  }
+  .tl-edit-place {
+    @apply mt-1;
+  }
+  .tl-edit-suggest {
+    @apply m-0 mt-1 flex list-none flex-col gap-0.5 rounded-[var(--radius)] border p-1;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .tl-edit-suggest li {
+    @apply flex items-center gap-2 px-1.5 py-1 text-xs;
+  }
+  .tl-edit-suggest button {
+    @apply w-full rounded-[var(--radius-sm)] border-0 bg-transparent px-2 py-1.5 text-left text-xs;
+    color: var(--color-text);
+  }
+  .tl-edit-suggest button:hover {
+    background: var(--color-surface-3);
+  }
+  /* Phones: the spine costs a fifth of the width for a scrubber nobody can
+     read at that size — the year bracket and scrolling do the job there. */
+  @media (max-width: 760px) {
+    .tl-spine {
+      display: none;
+    }
+    .tl-row {
+      --tl-cell: 88px;
+    }
+  }
+
   /* ---- Filter panel ----------------------------------------------------- */
   .filter-panel {
     @apply flex flex-col gap-5;
