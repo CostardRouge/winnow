@@ -91,6 +91,9 @@ export type TimelineChapter = {
    *  inferred from the neighbouring chapters rather than measured. Never a
    *  reason to write anything — cf. inferPlaces below. */
   place_inferred: boolean;
+  /** How many of the chapter's media carry no position at all — what a
+   *  human-chosen location can offer to place, through the geotag recap. */
+  ungeotagged: number;
   /** How many runs were folded in by absorption (0 = none). */
   absorbed: number;
   /** The named span (timeline_chapters row) this chapter is pinned to, if a
@@ -403,6 +406,7 @@ function assemble(group: RunGroup): TimelineChapter {
     // A chosen location is not an inference — the doubt has been resolved by
     // the human who chose it.
     place_inferred: geotagged === 0 && span?.place_label == null,
+    ungeotagged: runs.reduce((n, r) => n + r.count, 0) - geotagged,
     absorbed,
     override_id: span?.id ?? null,
     place_label: span?.place_label ?? null,

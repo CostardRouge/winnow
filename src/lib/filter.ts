@@ -196,8 +196,11 @@ export const FilterSchema = z
     // picking a node scopes the grid to everything beneath it.
     under: z.string().min(1).max(4096).optional(),
 
-    // Misc
-    has_gps: z.coerce.boolean().optional(),
+    // Misc. Tri-state: `1` → geotagged only, `0` → media WITHOUT a position
+    // (what a chapter's "place the GPS-less media here" needs to enumerate),
+    // absent → no constraint. Was z.coerce.boolean, under which "0" and
+    // "false" read as true.
+    has_gps: boolish,
     // Map zone: bounding box "w,s,e,n" (filters on the materialized gps_lat/lon).
     bbox,
   })
@@ -505,7 +508,8 @@ export function buildFilter(
     params.push(`${escapeLike(prefix)}/%`);
   }
 
-  if (filter.has_gps) conditions.push(`a.gps IS NOT NULL`);
+  if (filter.has_gps === true) conditions.push(`a.gps IS NOT NULL`);
+  else if (filter.has_gps === false) conditions.push(`a.gps IS NULL`);
 
   if (filter.bbox) {
     const { w, s, e, n } = filter.bbox;

@@ -15,6 +15,7 @@ import { formatBadge } from "@/lib/format";
 import type { TimelineChapter } from "@/lib/timeline";
 import type { GalleryAsset } from "@/app/gallery/VirtualGrid";
 import type { ViewerItem } from "@/app/MediaViewer";
+import type { PickedLocation } from "@/app/LocationPickerModal";
 
 export type Row = GalleryAsset & ViewerItem & { captured_at: string | null };
 
@@ -58,6 +59,8 @@ export default function ChapterCard({
   gridHref,
   onOpen,
   onEdit,
+  onConfirmPlace,
+  onPlaceMedia,
   viewerRows,
 }: {
   chapter: TimelineChapter;
@@ -66,6 +69,13 @@ export default function ChapterCard({
   onOpen: (rows: Row[], index: number) => void;
   /** Rename / locate / split / merge — the host opens the dialog. */
   onEdit: (chapter: TimelineChapter) => void;
+  /** An inferred place is a guess: this opens the manual geotag flow (picker
+   *  + recap) on the chapter's GPS-less media. The only way an inference
+   *  ever becomes a coordinate. */
+  onConfirmPlace: (chapter: TimelineChapter) => void;
+  /** The chapter has a chosen location and GPS-less media: offer to place
+   *  them there — through the same recap, never implicitly. */
+  onPlaceMedia: (chapter: TimelineChapter, loc: PickedLocation) => void;
   /** The viewer's live rows, when it is open on this chapter: a rating made
    *  there must show on the tile underneath without a refetch. */
   viewerRows?: Row[];
@@ -179,13 +189,37 @@ export default function ChapterCard({
           </>
         )}
         {ch.place_inferred && (
-          <span
-            className="tl-inferred"
-            title="Aucun média de ce chapitre n'a de position : le lieu vient des chapitres voisins. Rien n'a été écrit."
-          >
-            lieu déduit
-          </span>
+          <>
+            <span
+              className="tl-inferred"
+              title="Aucun média de ce chapitre n'a de position : le lieu vient des chapitres voisins. Rien n'a été écrit."
+            >
+              lieu déduit
+            </span>
+            <button
+              className="btn btn-sm"
+              onClick={() => onConfirmPlace(ch)}
+              title="Choisir la position sur la carte, puis confirmer média par média — c'est ce qui écrit les coordonnées"
+            >
+              Confirmer le lieu…
+            </button>
+          </>
         )}
+        {!ch.place_inferred &&
+          ch.place_label &&
+          ch.place_lat != null &&
+          ch.place_lon != null &&
+          ch.ungeotagged > 0 && (
+            <button
+              className="btn btn-sm"
+              onClick={() =>
+                onPlaceMedia(ch, { lat: ch.place_lat!, lon: ch.place_lon!, label: ch.place_label })
+              }
+              title="Proposer la position du chapitre aux médias qui n'en ont pas — avec le récap avant écriture"
+            >
+              Placer {ch.ungeotagged.toLocaleString()} média{ch.ungeotagged > 1 ? "s" : ""} sans position…
+            </button>
+          )}
         {ch.sessions.length > 0 && (
           <>
             <span className="tl-sep">·</span>

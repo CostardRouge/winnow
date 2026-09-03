@@ -10,7 +10,7 @@
 // so a tile, its badges, its rating and the viewer are the gallery's, not a
 // second implementation that would drift.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import type {
@@ -27,8 +27,46 @@ import {
 import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import type { GalleryAsset } from "@/app/gallery/VirtualGrid";
+import GeotagRecapModal, { type GeotagRecapAsset } from "@/app/GeotagRecapModal";
+import type { PickedLocation } from "@/app/LocationPickerModal";
 import ChapterCard, { type Row } from "./ChapterCard";
 import ChapterEditModal from "./ChapterEditModal";
+
+// Leaflet touches `window` at import time: client-only, like the gallery.
+const LocationPickerModal = dynamic(() => import("@/app/LocationPickerModal"), {
+  ssr: false,
+});
+
+// A chapter's media that carry no position, paged through the shared
+// /api/assets feed (has_gps=0) so the recap lists exactly what the grid would.
+// Capped at PAGE_MAX per page, cursor-driven; a chapter is at most a few
+// thousand frames, so this is a handful of requests at worst.
+async function fetchUngeotagged(
+  ch: TimelineChapter,
+  kind: string | null,
+): Promise<GeotagRecapAsset[]> {
+  const out: GeotagRecapAsset[] = [];
+  let cursor: string | null = null;
+  do {
+    const sp = new URLSearchParams();
+    sp.set("date_from", ch.started_at.slice(0, 10));
+    sp.set("date_to", ch.ended_at.slice(0, 10));
+    sp.set("has_gps", "0");
+    sp.set("collapse", "1");
+    sp.set("limit", "500");
+    if (kind) sp.set("kind", kind);
+    if (cursor) sp.set("cursor", cursor);
+    const page: { assets: (GeotagRecapAsset & { captured_at: string | null })[]; next_cursor: string | null } =
+      await fetchJson(`/api/assets?${sp.toString()}`);
+    // capture_date is a UTC day; the chapter's bounds are instants. Keep only
+    // what actually falls inside the chapter, not the whole edge days.
+    for (const a of page.assets) {
+      if (a.captured_at && a.captured_at >= ch.started_at && a.captured_at <= ch.ended_at) out.push(a);
+    }
+    cursor = page.next_cursor;
+  } while (cursor);
+  return out;
+}
 
 type Payload = {
   chapters: TimelineChapter[];
@@ -100,6 +138,40 @@ export default function TimelinePanel() {
   // The chapter being renamed / split / merged, by key (the object is looked
   // up in the current payload so a re-derive never leaves a stale copy open).
   const [editing, setEditing] = useState<string | null>(null);
+  // Only show the chapters whose place was inferred (no GPS at all): the
+  // review list for "which of these do I want to confirm".
+  const [onlyInferred, setOnlyInferred] = useState(false);
+
+  // The ONE path from an inferred or chosen place to a coordinate on a media:
+  // the existing manual geotag flow — picker (unless a location is already
+  // chosen) → recap listing every media with its before/after → POST
+  // /api/assets/geotag, which is what writes the EXIF. Nothing else in this
+  // page writes a position (cf. docs/memory/architecture.md).
+  const [geotag, setGeotag] = useState<{
+    chapter: TimelineChapter;
+    assets: GeotagRecapAsset[] | null;
+    loc?: PickedLocation;
+  } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const startGeotag = useCallback(
+    async (chapter: TimelineChapter, loc?: PickedLocation) => {
+      setGeotag({ chapter, assets: null, loc });
+      try {
+        const assets = await fetchUngeotagged(chapter, kindFor(source));
+        if (!assets.length) {
+          setGeotag(null);
+          setNotice("Tous les médias de ce chapitre ont déjà une position.");
+          return;
+        }
+        setGeotag((g) => (g && g.chapter.key === chapter.key ? { ...g, assets } : g));
+      } catch (e) {
+        setGeotag(null);
+        setNotice(`Impossible de lister les médias sans position : ${(e as Error).message}`);
+      }
+    },
+    [source],
+  );
 
   const query = useMemo(() => {
     const sp = new URLSearchParams();
@@ -168,14 +240,15 @@ export default function TimelinePanel() {
   // Chapters grouped under their year, for the sticky era bracket.
   const eras = useMemo(() => {
     const out: { year: number; chapters: TimelineChapter[] }[] = [];
-    for (const ch of data?.chapters ?? []) {
+    const list = (data?.chapters ?? []).filter((c) => !onlyInferred || c.place_inferred);
+    for (const ch of list) {
       const y = new Date(ch.started_at).getUTCFullYear();
       const last = out[out.length - 1];
       if (last && last.year === y) last.chapters.push(ch);
       else out.push({ year: y, chapters: [ch] });
     }
     return out;
-  }, [data]);
+  }, [data, onlyInferred]);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const jumpTo = (year: number, month: number) => {
@@ -244,9 +317,29 @@ export default function TimelinePanel() {
             {Icons.alert} {data.undated.toLocaleString()} sans date
           </span>
         )}
+        {data && data.chapters.some((c) => c.place_inferred) && (
+          <button
+            className={`chip${onlyInferred ? " active" : ""}`}
+            onClick={() => setOnlyInferred((v) => !v)}
+            aria-pressed={onlyInferred}
+            title="Ne montrer que les chapitres dont le lieu a été déduit des voisins (aucun média géolocalisé)"
+          >
+            lieux déduits
+            <span className="chip-count">{data.chapters.filter((c) => c.place_inferred).length}</span>
+          </button>
+        )}
         <span className="spacer" />
         <LibrarySourceTabs source={source} onChange={setSource} />
       </div>
+      {notice && (
+        <div className="gallery-controls" role="status">
+          <span className="hint">{notice}</span>
+          <span className="spacer" />
+          <button className="btn btn-sm" onClick={() => setNotice(null)}>
+            OK
+          </button>
+        </div>
+      )}
 
       <div className="tl-body">
         <div className="tl-stream" ref={streamRef}>
@@ -285,6 +378,8 @@ export default function TimelinePanel() {
                   gridHref={gridHref(source)}
                   onOpen={(rows, index) => setViewer({ rows, index })}
                   onEdit={(c) => setEditing(c.key)}
+                  onConfirmPlace={(c) => startGeotag(c)}
+                  onPlaceMedia={(c, loc) => startGeotag(c, loc)}
                   viewerRows={viewer?.rows}
                 />
               ))}
@@ -311,9 +406,44 @@ export default function TimelinePanel() {
             next={data.chapters[idx + 1] ?? null}
             onClose={() => setEditing(null)}
             onChanged={() => setAttempt((n) => n + 1)}
+            onPlaceMedia={(loc) => startGeotag(data.chapters[idx], loc)}
           />
         );
       })()}
+
+      {geotag && !geotag.loc && (
+        <LocationPickerModal
+          count={geotag.chapter.ungeotagged}
+          initial={
+            geotag.chapter.place_lat != null && geotag.chapter.place_lon != null
+              ? { lat: geotag.chapter.place_lat, lon: geotag.chapter.place_lon }
+              : null
+          }
+          onClose={() => setGeotag(null)}
+          onPicked={(loc) => setGeotag((g) => (g ? { ...g, loc } : g))}
+        />
+      )}
+      {geotag?.loc && geotag.assets && (
+        <GeotagRecapModal
+          assets={geotag.assets}
+          target={geotag.loc}
+          onClose={() => setGeotag(null)}
+          onApplied={(message) => {
+            setGeotag(null);
+            setNotice(message);
+            // The media now carry a position: the chapter stops being
+            // inferred on the next derivation.
+            setAttempt((n) => n + 1);
+          }}
+        />
+      )}
+      {geotag?.loc && !geotag.assets && (
+        <div className="modal-overlay" role="presentation">
+          <div className="modal">
+            <LoadingState label="Liste des médias sans position…" />
+          </div>
+        </div>
+      )}
 
       {viewer && viewer.rows[viewer.index] && (
         <MediaViewer

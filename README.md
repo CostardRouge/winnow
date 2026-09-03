@@ -490,6 +490,18 @@ has its undo (*Réinitialiser*, *Recoller au précédent*). A span's location
 describes the chapter and is **never copied onto its media** — placing the
 chapter's GPS-less media there is a separate, explicit geotag with its recap.
 
+**From an inference to a coordinate — one path.** A chapter badged *lieu
+déduit* carries *Confirmer le lieu…*, and a chapter with a chosen location
+and GPS-less media carries *Placer N médias sans position…*; saving a
+location in the dialog *offers* the same thing as a second step. All three
+open the existing manual geotag flow — the map picker where no location is
+chosen yet, then the per-media before/after recap — and it is `POST
+/api/assets/geotag`, at the end of that recap, that writes. The GPS-less
+media are enumerated through the shared feed with `has_gps=0` (the filter
+became tri-state for this; `has_gps=1` still means "geotagged only"). The
+*lieux déduits* chip narrows the stream to the chapters still waiting for
+that confirmation.
+
 ### Map view (where the media are) & zone culling
 
 Every gallery (Incoming → *Browse*, *Final*, and `/gallery`) has a

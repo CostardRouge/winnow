@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import type { TimelineChapter } from "@/lib/timeline";
 import type { PlaceSuggestion } from "@/lib/geocode";
+import type { PickedLocation } from "@/app/LocationPickerModal";
 import { Spinner } from "@/app/ui";
 import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
@@ -56,6 +57,7 @@ export default function ChapterEditModal({
   next,
   onClose,
   onChanged,
+  onPlaceMedia,
 }: {
   chapter: TimelineChapter;
   /** Neighbours in the current stream, for "merge with". */
@@ -64,6 +66,9 @@ export default function ChapterEditModal({
   onClose: () => void;
   /** Something was written: the host re-derives the stream. */
   onChanged: () => void;
+  /** The chapter now has a chosen location and GPS-less media: the human
+   *  accepted the offer to place them there. The host runs the geotag recap. */
+  onPlaceMedia: (loc: PickedLocation) => void;
 }) {
   const backdrop = useOverlayDismiss<HTMLDivElement>(() => {
     if (!busy) onClose();
@@ -81,6 +86,9 @@ export default function ChapterEditModal({
   const [splitAt, setSplitAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // After a save that set a location while media lack one: the offer. Its own
+  // step, with its own button — naming a place must never geotag by itself.
+  const [offer, setOffer] = useState<PickedLocation | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -153,8 +161,12 @@ export default function ChapterEditModal({
   });
 
   // Save = PATCH the existing span, or draw one over the derived chapter.
-  const save = () =>
-    run(async () => {
+  // When the save set a location and media lack one, the dialog stays open
+  // on the offer instead of closing — the geotag is a second, explicit gesture.
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
       const r = ch.override_id
         ? await fetch(`/api/timeline/chapters/${ch.override_id}`, jsonInit("PATCH", spanFields()))
         : await fetch(
@@ -162,7 +174,18 @@ export default function ChapterEditModal({
             jsonInit("POST", { starts_at: ch.started_at, ends_at: ch.ended_at, ...spanFields() }),
           );
       await check(r);
-    });
+      onChanged();
+      if (place && placeChanged && ch.ungeotagged > 0) {
+        setOffer({ lat: place.lat, lon: place.lon, label: place.label });
+        setBusy(false);
+        return;
+      }
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
 
   const split = () =>
     run(async () => {
@@ -195,6 +218,38 @@ export default function ChapterEditModal({
     run(async () => {
       await check(await fetch(`/api/timeline/breaks/${ch.break_id}`, { method: "DELETE" }));
     });
+
+  if (offer) {
+    return (
+      <div className="modal-overlay" role="presentation" {...backdrop}>
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tl-offer-title">
+          <h2 className="modal-title" id="tl-offer-title">
+            Lieu enregistré
+          </h2>
+          <p className="hint">
+            <b>{ch.ungeotagged.toLocaleString()}</b> média{ch.ungeotagged > 1 ? "s" : ""} de ce
+            chapitre n'{ch.ungeotagged > 1 ? "ont" : "a"} pas de position. Les placer à «{" "}
+            {offer.label} » ? Un récap média par média précède l'écriture, et les coordonnées
+            confirmées sont inscrites dans les originaux.
+          </p>
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose}>
+              Non, seulement le chapitre
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                onClose();
+                onPlaceMedia(offer);
+              }}
+            >
+              Placer les médias…
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" role="presentation" {...backdrop}>
