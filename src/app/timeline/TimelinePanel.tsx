@@ -28,6 +28,7 @@ import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import type { GalleryAsset } from "@/app/gallery/VirtualGrid";
 import ChapterCard, { type Row } from "./ChapterCard";
+import ChapterEditModal from "./ChapterEditModal";
 
 type Payload = {
   chapters: TimelineChapter[];
@@ -96,6 +97,9 @@ export default function TimelinePanel() {
   // next chapter is a scroll away, and a flattened list would hand the viewer
   // items whose tiles never loaded.
   const [viewer, setViewer] = useState<{ rows: Row[]; index: number } | null>(null);
+  // The chapter being renamed / split / merged, by key (the object is looked
+  // up in the current payload so a re-derive never leaves a stale copy open).
+  const [editing, setEditing] = useState<string | null>(null);
 
   const query = useMemo(() => {
     const sp = new URLSearchParams();
@@ -280,6 +284,7 @@ export default function TimelinePanel() {
                   chapter={ch}
                   gridHref={gridHref(source)}
                   onOpen={(rows, index) => setViewer({ rows, index })}
+                  onEdit={(c) => setEditing(c.key)}
                   viewerRows={viewer?.rows}
                 />
               ))}
@@ -295,6 +300,20 @@ export default function TimelinePanel() {
           />
         )}
       </div>
+
+      {editing != null && data && (() => {
+        const idx = data.chapters.findIndex((c) => c.key === editing);
+        if (idx < 0) return null;
+        return (
+          <ChapterEditModal
+            chapter={data.chapters[idx]}
+            prev={data.chapters[idx - 1] ?? null}
+            next={data.chapters[idx + 1] ?? null}
+            onClose={() => setEditing(null)}
+            onChanged={() => setAttempt((n) => n + 1)}
+          />
+        );
+      })()}
 
       {viewer && viewer.rows[viewer.index] && (
         <MediaViewer

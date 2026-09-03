@@ -57,12 +57,15 @@ export default function ChapterCard({
   chapter: ch,
   gridHref,
   onOpen,
+  onEdit,
   viewerRows,
 }: {
   chapter: TimelineChapter;
   /** The grid this chapter's "see all" drills into (Incoming or Gallery). */
   gridHref: string;
   onOpen: (rows: Row[], index: number) => void;
+  /** Rename / locate / split / merge — the host opens the dialog. */
+  onEdit: (chapter: TimelineChapter) => void;
   /** The viewer's live rows, when it is open on this chapter: a rating made
    *  there must show on the tile underneath without a refetch. */
   viewerRows?: Row[];
@@ -127,6 +130,9 @@ export default function ChapterCard({
           </span>
         </div>
         <div className="tl-ch-actions">
+          <button className="btn btn-sm" onClick={() => onEdit(ch)}>
+            {ch.override_id ? "Modifier" : "Nommer"}
+          </button>
           <Link className="btn btn-sm" href={seeAll}>
             Ouvrir dans la grille
           </Link>
@@ -161,6 +167,17 @@ export default function ChapterCard({
         >
           jours locaux · {tzLabel(ch.tz_offset_hours)}
         </span>
+        {ch.place_label && (
+          <>
+            <span className="tl-sep">·</span>
+            <span
+              className="tl-located"
+              title={`Lieu choisi pour le chapitre (${ch.place_lat?.toFixed(4)}, ${ch.place_lon?.toFixed(4)}). Les médias gardent leur propre position.`}
+            >
+              {ch.place_label}
+            </span>
+          </>
+        )}
         {ch.place_inferred && (
           <span
             className="tl-inferred"

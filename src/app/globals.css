@@ -2641,6 +2641,40 @@ html[data-theme="dark"] .btn-primary:hover {
   .tl-spine-row.active .tl-spine-bar {
     background: var(--color-accent);
   }
+  /* Human-chosen chapter location (a named span's place_label). */
+  .tl-located {
+    @apply inline-flex items-center gap-1;
+    color: var(--color-text);
+  }
+  /* The edit dialog: place suggestions drop under the field as a plain list
+     (the geotag picker's autocomplete, without the map), and the split/merge
+     controls sit in a row. */
+  .tl-edit-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .tl-edit-row .input {
+    @apply w-auto min-w-0 flex-1;
+  }
+  .tl-edit-place {
+    @apply mt-1;
+  }
+  .tl-edit-suggest {
+    @apply m-0 mt-1 flex list-none flex-col gap-0.5 rounded-[var(--radius)] border p-1;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .tl-edit-suggest li {
+    @apply flex items-center gap-2 px-1.5 py-1 text-xs;
+  }
+  .tl-edit-suggest button {
+    @apply w-full rounded-[var(--radius-sm)] border-0 bg-transparent px-2 py-1.5 text-left text-xs;
+    color: var(--color-text);
+  }
+  .tl-edit-suggest button:hover {
+    background: var(--color-surface-3);
+  }
   /* Phones: the spine costs a fifth of the width for a scrubber nobody can
      read at that size — the year bracket and scrolling do the job there. */
   @media (max-width: 760px) {

@@ -93,6 +93,17 @@ export type TimelineChapter = {
   place_inferred: boolean;
   /** How many runs were folded in by absorption (0 = none). */
   absorbed: number;
+  /** The named span (timeline_chapters row) this chapter is pinned to, if a
+   *  human renamed / merged / located it. NULL = purely derived. */
+  override_id: number | null;
+  /** Human-chosen location of the chapter (from its span). Display only —
+   *  never copied onto the media by the derivation. */
+  place_label: string | null;
+  place_lat: number | null;
+  place_lon: number | null;
+  /** The forced split (timeline_breaks row) that starts this chapter, if one
+   *  does — deleting it re-glues the chapter to the previous one. */
+  break_id: number | null;
   cover_id: number | null;
   /** A handful of ids spread evenly across the chapter's span — the collapsed
    *  row tells the arc of the stay, not its first hour. */
@@ -103,6 +114,51 @@ export type TimelineChapter = {
 // enough to read the shape of a stay, few enough that thirty chapters stay one
 // cheap request each.
 const SAMPLE_SIZE = 10;
+
+/* ---------------------------------------------------------------------------
+   Corrections — what a human stored on top of the derivation
+   --------------------------------------------------------------------------- */
+
+/** A named span (timeline_chapters): everything captured inside is one chapter,
+ *  carrying this name and location. Its bounds also act as forced breaks. */
+export type ChapterSpan = {
+  id: number;
+  starts_at: string;
+  ends_at: string;
+  name: string | null;
+  place_label: string | null;
+  place_lat: number | null;
+  place_lon: number | null;
+};
+
+/** A forced split (timeline_breaks): media at or after `at` start a chapter. */
+export type ChapterBreak = { id: number; at: string };
+
+export type ChapterOverrides = { spans: ChapterSpan[]; breaks: ChapterBreak[] };
+
+/** Both correction tables, whole — counted in tens (cf. migration 0040). */
+export async function fetchOverrides(): Promise<ChapterOverrides> {
+  const [spans, breaks] = await Promise.all([
+    many<ChapterSpan>(
+      `SELECT id, starts_at, ends_at, name, place_label, place_lat, place_lon
+       FROM timeline_chapters ORDER BY starts_at`,
+    ),
+    many<ChapterBreak>(`SELECT id, at FROM timeline_breaks ORDER BY at`),
+  ]);
+  return { spans, breaks };
+}
+
+/** Every instant the scan must break at: the explicit splits, plus both edges
+ *  of every named span so a derived run never straddles one. The end edge is
+ *  one second past the span's last frame — a break at exactly `ends_at` would
+ *  cut that frame off its own span. */
+export function forcedBreaks(ov: ChapterOverrides): string[] {
+  const edges = ov.spans.flatMap((s) => [
+    s.starts_at,
+    new Date(Date.parse(s.ends_at) + 1000).toISOString(),
+  ]);
+  return [...ov.breaks.map((b) => b.at), ...edges];
+}
 
 /* ---------------------------------------------------------------------------
    Pass 1 — the SQL scan
@@ -121,6 +177,8 @@ export async function fetchRuns(
   granularity: PlaceGranularity,
   mode: ChapterMode,
   gapHours: number,
+  /** Instants that always start a new run (cf. forcedBreaks). */
+  breaks: string[] = [],
 ): Promise<TimelineRun[]> {
   // Collapse RAW+JPEG pairs and burst piles to one logical medium, so a
   // chapter's count matches the grid it drills into (same call as the
@@ -131,8 +189,8 @@ export async function fetchRuns(
   const where = conditions.join(" AND ");
   const place = PLACE_COLUMN[granularity];
 
-  // The three rules are the same scan with a different break predicate, over
-  // the `scoped` CTE (hence the `s.` prefixes):
+  // The three rules are the same scan with a different break predicate, read
+  // off the `lagged` CTE (hence the `l.` prefixes, and prev_at / prev_place):
   //   place  — a different place starts a chapter, whatever the delay.
   //   time   — a long enough silence starts a chapter, wherever we are.
   //   hybrid — a different place always does, and staying put only after three
@@ -140,16 +198,19 @@ export async function fetchRuns(
   // NULL place is its own value here (IS DISTINCT FROM), so a run of
   // ungeotagged media forms its own chapter instead of silently joining the
   // last known place — inferPlaces then decides, visibly, what to call it.
-  const placeChanged = `s.place IS DISTINCT FROM lag(s.place) OVER w`;
-  const silence = `s.captured_at - lag(s.captured_at) OVER w > $${params.length + 1} * interval '1 hour'`;
+  // On top of the rule, a forced break (a human split, or a named span's
+  // edge) that falls in (prev_at, captured_at] always starts a run.
+  const placeChanged = `l.place IS DISTINCT FROM l.prev_place`;
+  const boundIdx = params.length + 1;
+  const silence = `l.captured_at - l.prev_at > $${boundIdx} * interval '1 hour'`;
 
-  // Only one bound is ever read, so the placeholder is always $n+1.
   const [breakExpr, bound] =
     mode === "place"
       ? [placeChanged, null]
       : mode === "time"
         ? [silence, gapHours]
         : [`${placeChanged} OR ${silence}`, SAME_PLACE_BREAK_HOURS];
+  const breaksIdx = bound == null ? boundIdx : boundIdx + 1;
 
   return many<TimelineRun>(
     `WITH scoped AS (
@@ -159,10 +220,23 @@ export async function fetchRuns(
        LEFT JOIN ratings r ON r.asset_id = a.id
        WHERE ${where} AND a.captured_at IS NOT NULL
      ),
-     marked AS (
-       SELECT s.*, CASE WHEN ${breakExpr} THEN 1 ELSE 0 END AS brk
+     lagged AS (
+       SELECT s.*,
+              lag(s.captured_at) OVER w AS prev_at,
+              lag(s.place)       OVER w AS prev_place
        FROM scoped s
        WINDOW w AS (ORDER BY s.captured_at, s.id)
+     ),
+     marked AS (
+       SELECT l.*,
+              CASE
+                WHEN l.prev_at IS NULL THEN 0
+                WHEN ${breakExpr} THEN 1
+                WHEN EXISTS (SELECT 1 FROM unnest($${breaksIdx}::timestamptz[]) fb
+                              WHERE fb > l.prev_at AND fb <= l.captured_at) THEN 1
+                ELSE 0
+              END AS brk
+       FROM lagged l
      ),
      grouped AS (
        SELECT m.*, sum(m.brk) OVER (ORDER BY m.captured_at, m.id) AS run_id
@@ -185,7 +259,7 @@ export async function fetchRuns(
      JOIN sessions s ON s.id = g.session_id
      GROUP BY g.run_id
      ORDER BY min(g.captured_at)`,
-    bound == null ? params : [...params, bound],
+    bound == null ? [...params, breaks] : [...params, bound, breaks],
   );
 }
 
@@ -210,38 +284,62 @@ const gapHoursBetween = (a: TimelineRun[], b: TimelineRun[]) =>
  * worth testing on its own the day the repo grows a test runner
  * (docs/ARCHITECTURE-REVIEW.md §3.5).
  */
-export function absorbRuns(
-  runs: TimelineRun[],
-  absorbMin: number,
-): { runs: TimelineRun[]; absorbed: number }[] {
-  const groups: { runs: TimelineRun[]; absorbed: number }[] = runs.map((r) => ({
-    runs: [r],
-    absorbed: 0,
-  }));
+export type RunGroup = {
+  runs: TimelineRun[];
+  absorbed: number;
+  /** The named span that owns this group, if any. A pinned group neither
+   *  absorbs nor gets absorbed: the human drew its edges. */
+  span: ChapterSpan | null;
+};
+
+/**
+ * Fold every run captured inside a named span into one pinned group. Runs are
+ * already cut at span edges by the SQL scan (cf. forcedBreaks), so membership
+ * is a plain containment test and consecutive members merge.
+ */
+export function applySpans(runs: TimelineRun[], spans: ChapterSpan[]): RunGroup[] {
+  const owner = (r: TimelineRun) =>
+    spans.find((s) => r.started_at >= s.starts_at && r.ended_at <= s.ends_at) ?? null;
+  const groups: RunGroup[] = [];
+  for (const r of runs) {
+    const span = owner(r);
+    const last = groups[groups.length - 1];
+    if (span && last && last.span === span) last.runs.push(r);
+    else groups.push({ runs: [r], absorbed: 0, span });
+  }
+  return groups;
+}
+
+export function absorbRuns(groupsIn: RunGroup[], absorbMin: number): RunGroup[] {
+  const groups = groupsIn.map((g) => ({ ...g, runs: [...g.runs] }));
   if (absorbMin <= 0) return groups;
 
-  const total = (g: { runs: TimelineRun[] }) =>
-    g.runs.reduce((n, r) => n + r.count, 0);
+  const total = (g: RunGroup) => g.runs.reduce((n, r) => n + r.count, 0);
+  const near = (a: RunGroup, b: RunGroup) =>
+    gapHoursBetween(a.runs, b.runs) <= ABSORB_MAX_GAP_HOURS;
+  // A crumb can only move into a free (unpinned) neighbour, and a pinned
+  // crumb stays where the human put it.
+  const free = (g: RunGroup | undefined) => !!g && !g.span;
 
   // Repeat until nothing moves: absorbing a crumb can leave its neighbour
   // still under the threshold, and a single pass would stop halfway. Bounded
-  // by the run count — every iteration removes exactly one group.
-  for (let guard = 0; guard < runs.length; guard++) {
+  // by the group count — every iteration removes exactly one group.
+  for (let guard = 0; guard < groupsIn.length; guard++) {
     const idx = groups.findIndex(
       (g, k) =>
+        free(g) &&
         total(g) < absorbMin &&
-        ((k > 0 && gapHoursBetween(groups[k - 1].runs, g.runs) <= ABSORB_MAX_GAP_HOURS) ||
-          (k < groups.length - 1 &&
-            gapHoursBetween(g.runs, groups[k + 1].runs) <= ABSORB_MAX_GAP_HOURS)),
+        ((free(groups[k - 1]) && near(groups[k - 1], g)) ||
+          (free(groups[k + 1]) && near(g, groups[k + 1]))),
     );
     if (idx < 0) break;
 
-    const before =
-      idx > 0 ? gapHoursBetween(groups[idx - 1].runs, groups[idx].runs) : Infinity;
-    const after =
-      idx < groups.length - 1
-        ? gapHoursBetween(groups[idx].runs, groups[idx + 1].runs)
-        : Infinity;
+    const before = free(groups[idx - 1])
+      ? gapHoursBetween(groups[idx - 1].runs, groups[idx].runs)
+      : Infinity;
+    const after = free(groups[idx + 1])
+      ? gapHoursBetween(groups[idx].runs, groups[idx + 1].runs)
+      : Infinity;
     // Merge toward the nearer neighbour; ties go backwards so the chapter keeps
     // the earlier start (a chapter is named by where it began).
     const target = before <= after ? idx - 1 : idx + 1;
@@ -249,6 +347,7 @@ export function absorbRuns(
     groups.splice(lo, 2, {
       runs: [...groups[lo].runs, ...groups[hi].runs],
       absorbed: groups[lo].absorbed + groups[hi].absorbed + 1,
+      span: null,
     });
   }
   return groups;
@@ -274,10 +373,8 @@ export function tzOffsetFromLongitude(lon: number | null): number | null {
   return Math.round(lon / 15);
 }
 
-function assemble(
-  group: { runs: TimelineRun[]; absorbed: number },
-): TimelineChapter {
-  const { runs, absorbed } = group;
+function assemble(group: RunGroup): TimelineChapter {
+  const { runs, absorbed, span } = group;
   // The chapter is named by its dominant place — the one holding the most
   // media, not simply the first, so a stop-off never names the whole day.
   const tally = new Map<string, number>();
@@ -290,18 +387,28 @@ function assemble(
   const lons = runs.map((r) => r.median_lon).filter((l): l is number => l != null).sort((a, b) => a - b);
 
   const started_at = runs[0].started_at;
+  // A human-located chapter reads its days at that location's longitude:
+  // the point of choosing a place is that the media had none.
+  const lon = span?.place_lon ?? (lons.length ? lons[lons.length >> 1] : null);
   return {
     key: started_at,
-    name: places[0] ?? "Lieu inconnu",
+    name: span?.name ?? places[0] ?? "Lieu inconnu",
     started_at,
     ended_at: runs[runs.length - 1].ended_at,
     count: runs.reduce((n, r) => n + r.count, 0),
     places,
     devices: [...new Set(runs.flatMap((r) => r.devices))],
     sessions: [...new Map(runs.flatMap((r) => r.sessions).map((s) => [s.id, s])).values()],
-    tz_offset_hours: tzOffsetFromLongitude(lons.length ? lons[lons.length >> 1] : null),
-    place_inferred: geotagged === 0,
+    tz_offset_hours: tzOffsetFromLongitude(lon),
+    // A chosen location is not an inference — the doubt has been resolved by
+    // the human who chose it.
+    place_inferred: geotagged === 0 && span?.place_label == null,
     absorbed,
+    override_id: span?.id ?? null,
+    place_label: span?.place_label ?? null,
+    place_lat: span?.place_lat ?? null,
+    place_lon: span?.place_lon ?? null,
+    break_id: null,
     cover_id: null,
     sample_ids: [],
   };
@@ -373,20 +480,22 @@ const GRAN_MAX_CHAPTERS = 30;
 export async function pickGranularity(
   filter: PartialAssetFilter,
   opts: TimelineOptions,
-): Promise<{ granularity: PlaceGranularity; runs: TimelineRun[] }> {
+  ov: ChapterOverrides,
+): Promise<{ granularity: PlaceGranularity; groups: RunGroup[] }> {
+  const breaks = forcedBreaks(ov);
+  const cut = async (granularity: PlaceGranularity) => {
+    const runs = await fetchRuns(filter, granularity, opts.mode, opts.gapHours, breaks);
+    return absorbRuns(applySpans(runs, ov.spans), opts.mode === "hybrid" ? opts.absorbMin : 0);
+  };
   if (opts.granularity !== "auto") {
-    return {
-      granularity: opts.granularity,
-      runs: await fetchRuns(filter, opts.granularity, opts.mode, opts.gapHours),
-    };
+    return { granularity: opts.granularity, groups: await cut(opts.granularity) };
   }
   const order: PlaceGranularity[] = ["region", "county", "city"];
-  let last: { granularity: PlaceGranularity; runs: TimelineRun[] } | null = null;
+  let last: { granularity: PlaceGranularity; groups: RunGroup[] } | null = null;
   for (const granularity of order) {
-    const runs = await fetchRuns(filter, granularity, opts.mode, opts.gapHours);
-    const n = absorbRuns(runs, opts.mode === "hybrid" ? opts.absorbMin : 0).length;
-    last = { granularity, runs };
-    if (n >= GRAN_MIN_CHAPTERS && n <= GRAN_MAX_CHAPTERS) return last;
+    const groups = await cut(granularity);
+    last = { granularity, groups };
+    if (groups.length >= GRAN_MIN_CHAPTERS && groups.length <= GRAN_MAX_CHAPTERS) return last;
   }
   return last!;
 }
@@ -494,6 +603,19 @@ export async function attachSamples(
    The whole derivation
    --------------------------------------------------------------------------- */
 
+/** Tell each chapter which forced split, if any, is the reason it starts: the
+ *  break sitting in (previous chapter's end, this chapter's start]. That is
+ *  the split's undo handle — deleting it re-glues the two. */
+function attachBreaks(chapters: TimelineChapter[], breaks: ChapterBreak[]): TimelineChapter[] {
+  return chapters.map((ch, k) => {
+    const prevEnd = chapters[k - 1]?.ended_at ?? null;
+    const b = breaks.find(
+      (x) => x.at <= ch.started_at && (prevEnd == null || x.at > prevEnd),
+    );
+    return { ...ch, break_id: b?.id ?? null };
+  });
+}
+
 export type TimelineResult = {
   chapters: TimelineChapter[];
   granularity: PlaceGranularity;
@@ -505,9 +627,9 @@ export async function deriveTimeline(
   filter: PartialAssetFilter,
   opts: TimelineOptions,
 ): Promise<TimelineResult> {
-  const { granularity, runs } = await pickGranularity(filter, opts);
-  const groups = absorbRuns(runs, opts.mode === "hybrid" ? opts.absorbMin : 0);
-  const bare = inferPlaces(groups.map(assemble));
+  const ov = await fetchOverrides();
+  const { granularity, groups } = await pickGranularity(filter, opts, ov);
+  const bare = attachBreaks(inferPlaces(groups.map(assemble)), ov.breaks);
   // Covers and samples are independent per-chapter lookups: run them side by
   // side and merge, rather than paying two round trips in sequence.
   const [withCovers, withSamples] = await Promise.all([

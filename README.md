@@ -195,6 +195,8 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
 | `GET /api/assets/timeline` `?<filters>&mode=place\|time\|hybrid&gran=auto\|city\|county\|region` | The library read as a story: **chapters** (a stay in a place, across session folders) with count, span, places, devices, folders, cover, a spread sample of ids, the local-day offset and whether the place was inferred; plus the per-month `spine` and the `granularity` actually used — feeds the [Timeline](#timeline-the-library-read-as-a-story-page-timeline) |
+| `GET/POST /api/timeline/chapters`, `PATCH/DELETE /api/timeline/chapters/:id` | **Named spans** — the human corrections to the timeline's derivation: `{starts_at, ends_at, name?, place_label?, place_lat?, place_lon?}`. A span renames, merges and/or locates everything captured inside it; spans may not overlap. The location is the chapter's, never written onto media |
+| `GET/POST /api/timeline/breaks`, `DELETE /api/timeline/breaks/:id` | **Forced splits** — `{at}`: media at or after `at` start a new chapter. Deleting one re-glues the halves |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/gear` | The **shelf**: every camera body the library was shot with and, nested under each, the lenses used on it — media count, photo/video split and date span **tallied separately for Incoming and the Gallery**. Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
@@ -474,6 +476,19 @@ holding **no GPS at all** is named from its neighbours in time and badged
 *lieu déduit*: that inference lives in the response only. `POST
 /api/assets/geotag` writes coordinates into the **original file's EXIF**, and a
 guess is not the human confirmation that write-back requires.
+
+**Editing a chapter** (*Nommer* / *Modifier* on the card) never stores the
+chapter: it stores a **correction** on top of the derivation (migration
+`0040`), so re-indexing or re-deriving stays safe — the same reasoning that
+keeps ratings per asset so a burst pile can be re-clustered. Two corrections
+exist. A **named span** `[starts_at, ends_at]` makes everything inside it one
+chapter with that name and, optionally, a chosen **location** (Nominatim
+autocomplete through `/api/places/search`); renaming a chapter and merging two
+neighbours are both "draw a span". A **forced break** at an instant splits;
+the dialog offers the chapter's local mornings as cut points. Every correction
+has its undo (*Réinitialiser*, *Recoller au précédent*). A span's location
+describes the chapter and is **never copied onto its media** — placing the
+chapter's GPS-less media there is a separate, explicit geotag with its recap.
 
 ### Map view (where the media are) & zone culling
 
