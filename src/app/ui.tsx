@@ -716,4 +716,13 @@ export const Icons = {
       <circle cx="12" cy="10" r="3" />
     </svg>
   ),
+  // Timeline — a spine with chapters pinned along it (the /timeline rail entry).
+  timeline: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4v16" />
+      <path d="M8 7h11M8 12h7M8 17h9" />
+      <circle cx="4" cy="7" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="17" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  ),
 };

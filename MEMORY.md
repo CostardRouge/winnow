@@ -51,6 +51,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - Styling is a token-based "Paper" system of semantic classes in `globals.css`, not utilities in JSX → `docs/memory/frontend.md`
 - Every DB-backed route opts out of static rendering with `force-dynamic` → `docs/memory/frontend.md`
 - The dedup triage page pages server-side on its own endpoint, off the shared failures poll → `docs/memory/frontend.md`
+- The Timeline derives chapters per request (one SQL row per run, JS absorption); edits will be stored as corrections, never as chapters → `docs/memory/frontend.md`
+- A deduced location is display-only: only a human-confirmed geotag ever writes into an original's EXIF → `docs/memory/architecture.md`
 - The whole verification gate is `typecheck` + `migrate` + `build`; no linter, no tests → `docs/memory/testing-and-ci.md`
 
 ## Open items (dated; remove when done)

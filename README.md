@@ -194,6 +194,7 @@ offending variable — instead of silently degrading in production.
 | `GET /api/assets` `?<filters>&cursor&sort=recent` | Paginated global gallery (cumulative filters incl. `derivative_status`, `q=` free-text path search, and `has_edit`/`is_edit` for the finals↔sources before/after link; `sort=recent` orders by last update) |
 | `GET /api/assets/geo` `?<filters>` | GPS points (`{id,lat,lon}`) of the geotagged matches — feeds the map view |
 | `GET /api/assets/calendar` `?<filters>&from&to` | Per-day `{date,count,cover_id}` aggregates in the `[from,to]` window + the full filtered `bounds` (min/max capture date) — feeds the calendar view |
+| `GET /api/assets/timeline` `?<filters>&mode=place\|time\|hybrid&gran=auto\|city\|county\|region` | The library read as a story: **chapters** (a stay in a place, across session folders) with count, span, places, devices, folders, cover, a spread sample of ids, the local-day offset and whether the place was inferred; plus the per-month `spine` and the `granularity` actually used — feeds the [Timeline](#timeline-the-library-read-as-a-story-page-timeline) |
 | `GET /api/facets` | Values + counts to build the filters |
 | `GET /api/gear` | The **shelf**: every camera body the library was shot with and, nested under each, the lenses used on it — media count, photo/video split and date span **tallied separately for Incoming and the Gallery**. Feeds the [Gear page](#gear-what-the-library-was-shot-with-page-gear) |
 | `GET /api/sessions` `?kind&sort=captured\|touched\|progress\|count&sort_dir&progress=untouched\|partial\|incomplete\|complete` | List of sessions + counters (ready/pending + **picks/rejects/unrated**) + the **most recent verdict time**. `sort` ranks by capture date, last-touched, triage completeness or live-media count (`count`); `progress` filters by how far each session has been triaged |
@@ -432,6 +433,47 @@ a `date_from=date_to` filter and drops back to the **Grid** to review that day �
 the same hand-off the map's *Show in grid* uses. `GET /api/assets/calendar`
 returns one row per capture date (`{date,count,cover_id}`) for the visible
 window plus the overall `bounds`, so a month renders in a single request.
+
+### Timeline: the library read as a story (page `/timeline`)
+
+The Calendar answers *what did I shoot that day*, the Map *where*. Neither
+tells the story of a period: a year abroad lands in dozens of session folders,
+and a session is a **directory on disk**, never a leg of a trip. The
+**Timeline** is the third axis — a chronological stream cut into **chapters**
+("Sydney, 3 → 11 March") that cross those folders, each listing the folders it
+merges so the merge is visible, with a sticky per-month **spine** to reach any
+month of a year in one gesture. It carries the Incoming/Gallery/All picker like
+`/gear` and `/search`, tiles open the same viewer with the same P/X/0-5
+shortcuts, and *Ouvrir dans la grille* drops the chapter's date span into the
+grid.
+
+Chapters are **derived on every request, never stored** (`lib/timeline.ts`):
+one ordered SQL scan (`LAG` + a running sum of breaks) returns *one row per
+run* — a 100k library collapses to a few hundred rows — then a pure JS pass
+absorbs the crumbs, and one more query picks a cover and a spread sample per
+chapter. Three cut rules share that scan:
+
+- **Lieu** — a different place starts a chapter. Merges a nine-day stay across
+  three folders; shatters a day on the road through six villages.
+- **Temps** — a silence longer than `gap` hours starts a chapter. The road day
+  becomes one chapter; the stay breaks every night.
+- **Hybride** (default) — a place change always breaks; staying put only after
+  72 h (sleeping there is not leaving); then runs under `absorb` media fold
+  into their neighbour when they belong to the same outing.
+
+The **place granularity** is picked automatically (Région → Département →
+Ville, the first level giving a readable 6–30 chapters), shown as a chip and
+pinnable — an automatic cut nobody can see or pin is one nobody trusts.
+
+Two things worth knowing. Days are read **locally**: `capture_date` is
+materialized at UTC and the schema holds no timezone, so in Australia (+11)
+every frame shot before 11:00 local sits on the previous UTC day — the
+sunrises. A chapter's median longitude gives the offset (`round(lon / 15)`),
+stated on the chapter, approximate at zone borders on purpose. And a chapter
+holding **no GPS at all** is named from its neighbours in time and badged
+*lieu déduit*: that inference lives in the response only. `POST
+/api/assets/geotag` writes coordinates into the **original file's EXIF**, and a
+guess is not the human confirmation that write-back requires.
 
 ### Map view (where the media are) & zone culling
 

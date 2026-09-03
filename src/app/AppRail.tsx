@@ -25,6 +25,14 @@ const NAV: NavItem[] = [
     match: (p) => p === "/" || p.startsWith("/library") || p.startsWith("/sessions"),
   },
   {
+    // The library read as a story — chapters across session folders. Second
+    // in the rail because it is a way INTO the library, not a tool on it.
+    href: "/timeline",
+    label: "Timeline",
+    icon: Icons.timeline,
+    match: (p) => p.startsWith("/timeline"),
+  },
+  {
     href: "/sift",
     label: "Sift",
     icon: Icons.sift,
