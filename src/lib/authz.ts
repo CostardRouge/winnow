@@ -61,8 +61,11 @@ const ADMIN_ONLY_PREFIXES = ["/api/auth/users", "/users", "/api/db/backup"];
 // Account self-service: any signed-in role, mutations included. Signing out
 // and changing one's OWN password/display name are not library writes — a
 // viewer must be able to do both (the "am I really me" proof is the current
-// password, checked by the route itself, not the role).
-const SELF_SERVICE_PREFIXES = ["/api/auth/logout", "/api/auth/me"];
+// password, checked by the route itself, not the role). A client app's
+// document bucket (/api/apps/…, migration 0041) is the same kind of thing:
+// rows are scoped to user_id by the route, so a viewer owns its trips
+// without being able to touch the library.
+const SELF_SERVICE_PREFIXES = ["/api/auth/logout", "/api/auth/me", "/api/apps"];
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 

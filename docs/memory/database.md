@@ -53,3 +53,13 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 **Retention**: both tables grow only by a human clicking Rename / Split / Merge and shrink from the same dialog — tens of rows, no automatic writer, hence no janitor (the migration says so, per the rule above).
 
 **How to apply**: a new kind of chapter edit is a new correction folded in by `lib/timeline.ts`, not a new column on a stored chapter. A span's location is the *chapter's*: nothing in these tables or their routes writes GPS onto assets (`docs/memory/architecture.md`, "A deduced location never writes into an original").
+
+## A client app's documents are opaque rows owned by a user (2026-09-06)
+
+**Decision**: migration `0041_app_documents.sql` adds `app_documents (app, id) PK, user_id NOT NULL → users ON DELETE CASCADE, kind, version, doc JSONB, etag` — the bucket Atelier keeps its road trips in so they resume from another device (its `docs/roadtrip-persistence.md`). `lib/appDocuments.ts` holds every rule; the routes under `api/apps/[app]/docs` only map outcomes to status codes.
+
+**Why the shape**: ownership is a **column, not a role**. Every GET on this instance is viewer-visible, so without `user_id` on every query each trip would be readable by every account; a foreign row answers **404, never 403**, so its existence is not revealed — including on a `PUT` whose id collides with another user's row. Writes are **self-service** (`/api/apps` joined `SELF_SERVICE_PREFIXES` in `lib/authz.ts`): a viewer owns its documents the way it owns its password, and never gains a library write. The `etag` is regenerated on every write and checked in the `UPDATE`'s `WHERE`, so two devices racing cannot both succeed; a stale `If-Match` is a 412 carrying the current revision and the client decides — last-write-wins with a refusal, no merge. `PUT` requires `Content-Type: application/json` on purpose: this is the first **mutating** cross-origin route, and the forced preflight (only an allowlisted origin passes, `lib/cors.ts`) is what stands in for the CSRF token Winnow does not have.
+
+**Retention**: rows exist only by the owner's explicit gestures and go with the user (CASCADE); 1 MiB cap per body (`MAX_DOC_BYTES`, advertised in `/api/capabilities`). No automatic writer, no janitor.
+
+**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`.
