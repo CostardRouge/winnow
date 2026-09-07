@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 
 const TABS: { href: string; label: string }[] = [
   { href: "/settings/pipeline", label: "Pipeline" },
+  { href: "/settings/features", label: "Features" },
   { href: "/settings/volumes", label: "Volumes" },
   { href: "/settings/import", label: "Import" },
   { href: "/settings/database", label: "Database" },

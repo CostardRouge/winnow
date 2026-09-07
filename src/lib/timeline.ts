@@ -426,7 +426,7 @@ function assemble(group: RunGroup): TimelineChapter {
   const lon = span?.place_lon ?? (lons.length ? lons[lons.length >> 1] : null);
   return {
     key: started_at,
-    name: span?.name ?? places[0] ?? "Lieu inconnu",
+    name: span?.name ?? places[0] ?? "Unknown place",
     started_at,
     ended_at: runs[runs.length - 1].ended_at,
     count: runs.reduce((n, r) => n + r.count, 0),

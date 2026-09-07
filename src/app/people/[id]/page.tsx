@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { one } from "@/lib/db";
 import PersonDetail from "./PersonDetail";
+import { requireFeature } from "@/lib/featureGate";
 
 // Tab title carries the person's name ("Marie · People — Winnow"); an unnamed
 // stack falls back to the same "Unnamed" the header shows. Best-effort: an
@@ -32,6 +33,7 @@ export default async function PersonPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireFeature("people");
   const { id } = await params;
   return <PersonDetail personId={Number.parseInt(id, 10)} />;
 }

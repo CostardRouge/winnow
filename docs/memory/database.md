@@ -63,3 +63,11 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 **Retention**: rows exist only by the owner's explicit gestures and go with the user (CASCADE); 1 MiB cap per body (`MAX_DOC_BYTES`, advertised in `/api/capabilities`). No automatic writer, no janitor.
 
 **How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`.
+
+## `collapseGroups` over a large scope triggers Postgres JIT — measure before blaming the SQL (2026-09-07)
+
+**Finding**: `buildFilter(..., { collapseGroups: true })` carries a correlated subquery (the burst-cover pick), which inflates the planner's estimated cost past `jit_above_cost`. Postgres then LLVM-compiles the expression, and the compile dominates: measured on an 87k-row library, `count(*)` over that predicate is **1058 ms with JIT on and 28 ms with it off** — on a plan whose subplan `EXPLAIN` reports as *never executed*. The tell is a Seq Scan whose `actual time` **starts** at ~800 ms with a tiny `Buffers` count.
+
+**Why it has not bitten before**: every existing consumer windows the scope first — the gallery to a page, the Calendar to a month, a session to its own rows — so the plan stays under the threshold. `/api/assets/heat/*` was the first read to carry the predicate over the *whole* library.
+
+**How to apply**: a new aggregate over the full library runs its statement with `SET LOCAL jit = off` (`lib/heat.ts` has the one helper that does it, via `tx` — the only reason a read uses a transaction there). Fold the work into **one** scan rather than several small ones, or the cost is paid once per query: the heat routes went 5.5 s → 0.23 s from those two changes together, with identical output. Turning JIT off for the whole pool would also work and is the maintainer's call, not a thing to slip into a feature commit.

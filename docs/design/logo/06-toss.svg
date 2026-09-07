@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 06 · Le van et le jet — 02 with its movement: one grain already back in the
+       fan, three still airborne, fading as they go. The rising diagonal replays the
+       current feather's gesture without keeping its drawing. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M3.4 14.6Q12 21.8 20.6 14.6" stroke-width="2.1"/>
+    <circle cx="10.6" cy="16.4" r="1.75" fill="currentColor" stroke="none"/>
+    <circle cx="14.6" cy="11.2" r="1.5" fill="currentColor" stroke="none" opacity=".85"/>
+    <circle cx="17.6" cy="7.2" r="1.25" fill="currentColor" stroke="none" opacity=".6"/>
+    <circle cx="20.2" cy="3.8" r="1" fill="currentColor" stroke="none" opacity=".38"/>
+  </g>
+</svg>

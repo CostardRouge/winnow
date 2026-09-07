@@ -11,6 +11,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { reassignFaces } from "@/lib/people";
 import { json, badRequest, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Reassigning a face is the People section's own verb.
+  const off = await featureOff("people");
+  if (off) return off;
+
   try {
     const { id } = await params;
     const personId = Number.parseInt(id, 10);

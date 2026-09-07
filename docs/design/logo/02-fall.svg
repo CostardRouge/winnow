@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 02 · La chute — the tipped winnowing fan and the grain falling back into it.
+       The fan is deliberately asymmetric: a symmetric bowl under a centred dot
+       reads as a smiling face, not as a fan. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M3.4 15.8Q11.2 21.8 20.6 12.4" stroke-width="2.1"/>
+    <circle cx="14" cy="6.4" r="2.5" fill="currentColor" stroke="none"/>
+  </g>
+</svg>
