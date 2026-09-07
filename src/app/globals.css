@@ -5308,168 +5308,408 @@ html[data-theme="dark"] .btn-primary:hover {
 }
 
 
-/* ---- Gear: the illustrated shelf of bodies + lenses (page /gear) ---------
-   One design at two breakpoints. Wide: the body keeps its catalogue-plate card
-   (chrome-less on paper, line-art as the hero, surface only on hover) in a
-   sticky column, with its glass as a list of rows beside it. Narrow: the card
-   flattens into a horizontal band and the rows tuck under it behind an indent
-   rule, so a whole kit reads on one phone screen. The lens art rides along in
-   miniature — it is SVG, so it stays sharp and its proportions stay honest
-   (cf. LensArt.tsx: same mm→unit scale for every barrel). Names are set in
-   mono: they are part numbers, not prose.
+/* ---- Gear: the kit, read four ways (page /gear) --------------------------
+   The page used to lead with generated line-art portraits of every body and
+   lens. They are gone: a drawing of a camera says nothing the library knows,
+   and an illustrated shelf was somebody else's idea. What carries the page now
+   is the library's own numbers, arranged four ways — an inventory sheet
+   (Index), a figure-first card wall (Cards), bars on a year axis (Timeline)
+   and a logarithmic millimetre axis (Coverage). Each layout owns its own block
+   below; what they share sits first.
+
+   Common vocabulary: names are set in mono because they are part numbers, not
+   prose; every figure column is tabular so a kit lines up down the page; the
+   accent only ever appears on the row under the pointer, so a busy shelf stays
+   quiet until you aim at something.
    -------------------------------------------------------------------------- */
 @layer components {
   .gear-shelf {
-    @apply flex flex-col gap-9;
+    @apply flex flex-col gap-4;
   }
   .gear-head {
     @apply flex flex-wrap items-center gap-3;
   }
-  /* One body and its glass. The camera stands on the left as the heading of its
-     own row — it's the thing the lenses belong to — and the lens grid flows
-     beside it. Below the breakpoint the two stack, camera first. */
-  .gear-body {
-    @apply grid items-start gap-x-7 gap-y-4;
-    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
-    padding-top: 26px;
-    border-top: 1px solid var(--color-border);
-  }
-  /* The first body sits right under the toolbar: no rule above it. */
-  .gear-body:first-of-type {
-    @apply border-t-0 pt-0;
-  }
-  /* The camera card rides along as the row scrolls past — the lens grid can be
-     long, and "which body am I looking at" must never need a scroll back up. */
-  .gear-body-figure {
-    @apply sticky self-start;
-    top: 12px;
-  }
-  .gear-body-glass {
-    @apply flex min-w-0 flex-col gap-3;
-  }
-  .gear-body-glass-head {
-    @apply m-0 text-xs font-semibold uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-muted);
-  }
-  .gear-card {
-    @apply flex flex-col items-center gap-2 rounded-[var(--radius-lg)] border
-      px-3 pb-4 pt-3 text-center transition duration-150;
-    color: var(--color-text);
-    background: transparent;
-    border-color: transparent;
-    transition-timing-function: var(--ease-out);
-  }
-  .gear-card:hover {
-    color: var(--color-text);
-    background: var(--color-surface);
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-card);
-  }
-  .gear-card-text {
-    @apply flex min-w-0 flex-col items-center gap-2;
-  }
-  /* The artwork inks itself with currentColor, so it flips with the theme. The
-     width cap is what sets the drawn size. */
-  .gear-art {
-    @apply block w-full;
-  }
-  .gear-art-camera {
-    max-width: 250px;
-  }
-  .gear-art svg {
-    @apply block h-auto w-full;
-    transition: transform 0.18s var(--ease-out);
-  }
-  .gear-card:hover .gear-art svg {
-    transform: translateY(-2px);
-  }
-  .gear-name {
-    @apply mt-1 text-[13px] font-medium;
-    font-family: var(--font-mono);
-    letter-spacing: -0.01em;
-    line-height: 1.35;
-    text-wrap: balance;
-  }
-  .gear-count {
-    font-family: var(--font-mono);
-  }
-  .gear-meta {
-    @apply flex w-full flex-col gap-0.5 text-[11px];
+  /* Four layouts is three more than a toggle can explain on its own. */
+  .gear-caption {
+    @apply m-0 text-xs;
+    max-width: 72ch;
     color: var(--color-faint);
   }
-  /* Long lens/body names truncate rather than reflow the card. */
-  .gear-meta-line {
-    @apply block max-w-full truncate;
+
+  .gear-shelf
+    :is(
+      .gear-ix-head-name,
+      .gear-ix-name,
+      .gear-plate-name,
+      .gear-plate-lens-name,
+      .gear-tl-name,
+      .gear-cv-head-name,
+      .gear-cv-name
+    ) {
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+  /* The archetype the EXIF string was classified into (cf. lib/gearSpec.ts) —
+     the one honest thing we can say about an unknown body. */
+  .gear-ix-kind,
+  .gear-cv-kind,
+  .gear-plate-kind {
+    @apply shrink-0 text-[10px] font-semibold uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-faint);
+  }
+  /* Share of a body's tagged frames. Purely relative — the number is in the
+     next column; this is for the eye running down the sheet. */
+  .gear-meter {
+    @apply block h-1 w-full overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .gear-meter-fill {
+    @apply block h-full rounded-full;
+    background: var(--color-border-strong);
   }
 
-  /* The glass as a list: hairline-separated rows, one lens each. */
-  .gear-rows {
-    @apply flex min-w-0 flex-col;
-    border-top: 1px solid var(--color-border);
+  /* ---- Index: the inventory sheet -------------------------------------- */
+  .gear-index {
+    @apply flex flex-col gap-7;
   }
-  .gear-row {
-    @apply flex items-center gap-3 px-1.5 py-2 transition duration-150;
+  .gear-ix-body {
+    @apply flex flex-col;
+  }
+  .gear-ix-head {
+    @apply flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-2 transition duration-150;
+    border-bottom: 1px solid var(--color-border-strong);
+    color: var(--color-text);
+    transition-timing-function: var(--ease-out);
+  }
+  .gear-ix-head:hover {
+    color: var(--color-accent);
+  }
+  .gear-ix-head-main {
+    @apply flex min-w-0 items-baseline gap-2;
+  }
+  .gear-ix-head-name {
+    @apply truncate text-[15px] font-medium;
+  }
+  .gear-ix-head-meta {
+    @apply min-w-0 truncate text-[11px];
+    color: var(--color-faint);
+  }
+  .gear-ix-head-years {
+    @apply ml-auto shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .gear-ix-head-count {
+    @apply shrink-0 text-[12px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .gear-ix-rows {
+    @apply flex flex-col;
+  }
+  /* ONE template for every row on the page, whichever body it hangs off: the
+     spec, the meter, the years and the counts line up from the first lens to
+     the last. That cross-body alignment is the whole point of this layout —
+     per-body column widths would make it a list of cards again. */
+  .gear-ix-row {
+    @apply grid items-center gap-x-4 px-1 py-2 transition duration-150;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 190px) 96px 72px 84px;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     transition-timing-function: var(--ease-out);
   }
-  .gear-row:hover {
+  .gear-ix-row:hover {
     background: var(--color-surface);
-    color: var(--color-text);
   }
-  .gear-row:last-child {
-    border-bottom: none;
+  .gear-ix-row:hover .gear-meter-fill {
+    background: var(--color-accent);
   }
-  /* The barrel in miniature. Strokes stay screen-sized rather than shrinking
-     with the drawing (the linework would fade to hairlines at this scale); the
-     engraved text and the knurl ribs — noise this small — are dropped rather
-     than smudged, leaving the collar outlines to carry the shape. */
-  .gear-row-art {
-    @apply shrink-0;
-    width: 34px;
+  /* The frames no lens row can account for: present, so the column sums to the
+     body's total, but not a link — there is nothing to filter on. */
+  .gear-ix-row.is-untagged,
+  .gear-ix-row.is-untagged:hover {
+    background: transparent;
+    color: var(--color-faint);
   }
-  .gear-row-art svg {
-    @apply block h-auto w-full;
-  }
-  .gear-row-art svg * {
-    vector-effect: non-scaling-stroke;
-  }
-  .gear-row-art svg text,
-  .gear-row-art svg line {
-    display: none;
-  }
-  .gear-row-text {
-    @apply flex-1 flex min-w-0 flex-col gap-0.5;
-  }
-  .gear-row-name {
+  .gear-ix-name {
     @apply truncate text-[13px] font-medium;
-    font-family: var(--font-mono);
-    letter-spacing: -0.01em;
   }
-  .gear-row-spec {
+  .gear-ix-spec {
     @apply truncate text-[11px];
     color: var(--color-faint);
   }
-  /* Fixed width so the years line up as a column across the list. */
-  .gear-row-years {
-    @apply shrink-0 text-right text-[11px];
-    width: 76px;
+  .gear-ix-years {
+    @apply text-right text-[11px];
     font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
     color: var(--color-faint);
   }
-  /* Counts stack number-over-unit and right-align, so a kit's tallies read as
-     one figures column. */
-  .gear-row-count {
-    @apply ml-auto shrink-0 text-right text-[12px];
+  .gear-ix-count {
+    @apply text-right text-[12px];
     font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
     color: var(--color-muted);
   }
-  .gear-row-count small {
+  .gear-ix-count small {
     @apply block text-[10px];
     color: var(--color-faint);
+  }
+
+  /* ---- Cards: the figure-first wall ------------------------------------ */
+  /* Multi-column rather than a grid: a card is as tall as the kit on it (four
+     lenses or none), and a grid would leave a hole the height of the tallest
+     card in every row. Columns pack them. */
+  .gear-plates {
+    columns: 300px 3;
+    column-gap: 16px;
+  }
+  .gear-plate {
+    @apply mb-4 flex flex-col gap-3 rounded-[var(--radius-lg)] border p-4;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    break-inside: avoid;
+  }
+  .gear-plate-head {
+    @apply flex items-baseline justify-between gap-2;
+  }
+  .gear-plate-years {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  /* The tally IS the picture: big enough to read across the room, with the
+     name underneath it rather than above. */
+  .gear-plate-figure {
+    @apply flex flex-col;
+    color: var(--color-text);
+  }
+  .gear-plate-n {
+    @apply block text-[34px] font-medium leading-none;
+    font-family: var(--font-mono);
+    letter-spacing: -0.03em;
+  }
+  .gear-plate-unit {
+    @apply mt-1.5 block text-[10px] uppercase;
+    letter-spacing: 0.12em;
+    color: var(--color-faint);
+  }
+  .gear-plate-name {
+    @apply mt-2.5 block text-[13px] font-medium;
+    text-wrap: balance;
+  }
+  .gear-plate-figure:hover .gear-plate-name {
+    color: var(--color-accent);
+  }
+  .gear-plate-meta {
+    @apply m-0 flex flex-col gap-0.5 text-[11px];
+    color: var(--color-faint);
+  }
+  .gear-plate-meta span {
+    @apply block truncate;
+  }
+  .gear-plate-glass {
+    @apply flex flex-col gap-0.5 pt-3;
+    border-top: 1px solid var(--color-border);
+  }
+  .gear-plate-glass-head {
+    @apply m-0 mb-1 text-[10px] font-semibold uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-faint);
+  }
+  /* A card is narrow, so the share bar is the row's own background rather than
+     a column of its own — the busiest glass still reads first without stealing
+     width from the name. */
+  .gear-plate-lens {
+    @apply relative flex items-baseline gap-2 overflow-hidden rounded-[var(--radius-sm)]
+      px-2 py-1.5;
+    color: var(--color-text);
+  }
+  /* Flush with the row's left edge and rounded only at its head, so a short
+     bar reads as a bar rather than as a highlighted word. */
+  .gear-plate-lens-fill {
+    @apply absolute inset-y-0 left-0 block;
+    border-radius: 0 999px 999px 0;
+    background: color-mix(in srgb, var(--color-surface-2) 65%, transparent);
+  }
+  .gear-plate-lens:hover .gear-plate-lens-fill {
+    background: var(--color-accent-wash);
+  }
+  .gear-plate-lens-name {
+    @apply relative min-w-0 flex-1 truncate text-[12px];
+  }
+  .gear-plate-lens-count {
+    @apply relative shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .gear-plate-untagged {
+    @apply px-2 pt-1 text-[10px];
+    color: var(--color-faint);
+  }
+
+  /* ---- Timeline & Coverage: the two axis layouts ------------------------
+     Same skeleton — a label column, a track the data is positioned inside as
+     percentages, a figure column — and the same sticky ruler, because a bar
+     means nothing once its scale has scrolled away. */
+  .gear-timeline,
+  .gear-coverage {
+    @apply relative flex flex-col gap-5;
+  }
+  /* Every row of both layouts shares one column template — the ruler, the
+     gridline layer and the lanes are separate grids, so the widths have to be
+     FIXED (a `max-content` figures column would size per row and the ruler
+     would stop lining up with the tracks it annotates). */
+  .gear-tl-axis,
+  .gear-tl-grid,
+  .gear-tl-lane,
+  .gear-cv-axis,
+  .gear-cv-grid,
+  .gear-cv-lane {
+    @apply grid items-center gap-x-3;
+    grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 84px;
+  }
+  .gear-tl-axis,
+  .gear-cv-axis {
+    @apply sticky z-[1] py-1.5;
+    top: 0;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border-strong);
+  }
+  /* The scale carried down behind the data. Below everything (the sticky ruler
+     paints over it) and out of the pointer's way. */
+  .gear-tl-grid,
+  .gear-cv-grid {
+    @apply pointer-events-none absolute inset-0;
+  }
+  .gear-tl-grid .gear-tl-track,
+  .gear-cv-grid .gear-cv-track {
+    @apply h-full;
+  }
+  .gear-axis-line {
+    @apply absolute inset-y-0 block w-px;
+    background: var(--color-border);
+  }
+  .gear-tl-label,
+  .gear-cv-label {
+    @apply flex min-w-0 flex-col;
+  }
+  .gear-tl-track,
+  .gear-cv-track {
+    @apply relative block h-4;
+  }
+  /* A hairline AT the value with its label to the right — a real ruler, and no
+     half-clipped number at either end of the track. */
+  .gear-tl-tick,
+  .gear-cv-tick {
+    @apply absolute inset-y-0 block whitespace-nowrap pl-1 text-[10px] leading-4;
+    border-left: 1px solid var(--color-border);
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .gear-tl-lane,
+  .gear-cv-lane {
+    @apply rounded-[var(--radius-sm)] px-1 py-1.5 transition duration-150;
+    color: var(--color-text);
+    transition-timing-function: var(--ease-out);
+  }
+  .gear-tl-lane:hover,
+  .gear-cv-lane:hover {
+    background: var(--color-surface);
+  }
+  .gear-tl-name,
+  .gear-cv-name {
+    @apply truncate text-[12px] font-medium;
+  }
+  .gear-tl-spec,
+  .gear-cv-spec {
+    @apply truncate text-[10px];
+    color: var(--color-faint);
+  }
+  .gear-tl-undated,
+  .gear-cv-unknown {
+    @apply block text-[10px] leading-4;
+    color: var(--color-faint);
+  }
+  .gear-tl-count,
+  .gear-cv-count {
+    @apply text-right text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+
+  /* Timeline: the body's own span is the heavy bar, its glass hangs under it
+     indented, and the weight of a bar is how much that piece actually shot. */
+  .gear-tl-body {
+    @apply flex flex-col;
+  }
+  .gear-tl-lane.is-body .gear-tl-name {
+    @apply text-[13px];
+  }
+  .gear-tl-lane.is-lens .gear-tl-label {
+    padding-left: 14px;
+  }
+  .gear-tl-bar {
+    @apply absolute block rounded-full;
+    top: 50%;
+    height: 6px;
+    min-width: 6px; /* a single day of use still leaves a mark */
+    transform: translateY(-50%);
+    background: var(--color-muted);
+  }
+  .gear-tl-lane.is-body .gear-tl-bar {
+    height: 9px;
+    background: var(--color-muted);
+  }
+  .gear-tl-lane.is-body .gear-tl-count {
+    color: var(--color-text);
+  }
+  .gear-tl-lane:hover .gear-tl-bar {
+    background: var(--color-accent);
+  }
+
+  /* Coverage: a zoom is a segment, a prime is a point. */
+  .gear-cv-body {
+    @apply flex flex-col;
+  }
+  .gear-cv-axis,
+  .gear-cv-grid,
+  .gear-cv-lane {
+    grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 64px;
+  }
+  .gear-cv-head {
+    @apply flex items-baseline gap-2 pb-1.5 pt-1 transition duration-150;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    transition-timing-function: var(--ease-out);
+  }
+  .gear-cv-head:hover {
+    color: var(--color-accent);
+  }
+  .gear-cv-head-name {
+    @apply truncate text-[13px] font-medium;
+  }
+  .gear-cv-head-count {
+    @apply ml-auto shrink-0 text-[11px];
+    color: var(--color-faint);
+  }
+  .gear-cv-range {
+    @apply absolute block rounded-full;
+    top: 50%;
+    height: 7px;
+    min-width: 7px;
+    transform: translateY(-50%);
+    background: var(--color-muted);
+  }
+  .gear-cv-point {
+    @apply absolute block rounded-full;
+    top: 50%;
+    height: 9px;
+    width: 9px;
+    margin-left: -4.5px; /* centre the dot ON its focal length */
+    transform: translateY(-50%);
+    background: var(--color-muted);
+  }
+  .gear-cv-lane:hover :is(.gear-cv-range, .gear-cv-point) {
+    background: var(--color-accent);
   }
 }
 
@@ -5910,62 +6150,104 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
-/* Narrow: the side column folds away and the body's card flattens into a
-   horizontal band — small artwork, name and years beside it, count pushed to
-   the far edge — with its lens rows tucked under it behind an indent rule, so
-   "whose glass is this" survives without the two-column vis-à-vis. Same
-   markup as the wide card; only the direction changes. */
-@media (max-width: 900px) {
-  .gear-body {
-    grid-template-columns: minmax(0, 1fr);
+/* Narrow: the sheet gives up its middle columns rather than shrinking them —
+   the spec drops under the name, the meter and the years go (both are luxuries
+   next to "which lens, how much"), and the axis layouts trade label width for
+   track. The card wall becomes one column. */
+@media (max-width: 860px) {
+  /* The head's meta takes a line of its own rather than being squeezed off the
+     right edge by the years and the total. */
+  .gear-ix-head-meta {
+    flex-basis: 100%;
   }
-  .gear-body-figure {
-    @apply static;
+  .gear-ix-row {
+    @apply gap-x-3;
+    grid-template-columns: minmax(0, 1fr) 78px;
   }
-  .gear-card {
-    @apply flex-row items-center gap-3 px-3 py-2.5 text-left;
-    background: var(--color-surface);
-    border-color: var(--color-border);
+  .gear-ix-name {
+    grid-column: 1;
+    grid-row: 1;
   }
-  .gear-card-text {
-    @apply items-start gap-0.5;
+  .gear-ix-spec {
+    grid-column: 1;
+    grid-row: 2;
   }
-  .gear-art-camera {
-    @apply shrink-0;
-    width: 84px;
+  .gear-ix-count {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
-  .gear-name {
-    @apply mt-0;
-  }
-  /* The band has one line of room: the years stay, the split and the other
-     tab's tally wait for the wide card. */
-  .gear-meta-extra {
+  .gear-ix-row .gear-meter,
+  .gear-ix-years {
     display: none;
   }
-  .gear-count {
-    @apply ml-auto shrink-0;
+  .gear-tl-axis,
+  .gear-tl-grid,
+  .gear-tl-lane {
+    grid-template-columns: minmax(0, 128px) minmax(0, 1fr) 64px;
   }
-  /* The indent rule that hangs the rows off their body's band. */
-  .gear-body-glass {
-    border-left: 1px solid var(--color-border);
-    margin-left: 14px;
-    padding-left: 12px;
-  }
-  .gear-rows {
-    border-top: none;
+  .gear-cv-axis,
+  .gear-cv-grid,
+  .gear-cv-lane {
+    grid-template-columns: minmax(0, 128px) minmax(0, 1fr) 52px;
   }
 }
 
-/* Phones: tighter shelf, and the years column cedes its room to the name. */
-@media (max-width: 767px) {
-  .gear-shelf {
-    gap: 26px;
-  }
-  .gear-body {
-    padding-top: 20px;
-  }
-  .gear-row-years {
+@media (max-width: 560px) {
+  /* Three wrapped rows of chrome already push the first body off the fold; the
+     caption's two lines are the ones worth losing (every layout button still
+     carries the same sentence as its tooltip). */
+  .gear-caption {
     display: none;
+  }
+  .gear-head {
+    @apply gap-2;
+  }
+  /* The tracks now run the full width, so the gridlines cross the labels —
+     halve them rather than read a name through a ruler. */
+  .gear-axis-line {
+    opacity: 0.5;
+  }
+  /* On a phone the label column would eat the track it exists to annotate: the
+     name goes above its own bar and the lane becomes two rows. The ruler and
+     the gridline layer keep one row, spanning the full width the tracks now
+     have — so the scale still lines up with the bars under it. */
+  .gear-tl-lane,
+  .gear-cv-lane {
+    grid-template-columns: minmax(0, 1fr) 60px;
+  }
+  .gear-tl-label,
+  .gear-cv-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .gear-tl-track,
+  .gear-cv-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .gear-tl-count,
+  .gear-cv-count {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .gear-tl-axis,
+  .gear-tl-grid,
+  .gear-cv-axis,
+  .gear-cv-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gear-tl-axis :is(.gear-tl-label, .gear-tl-count),
+  .gear-tl-grid :is(.gear-tl-label, .gear-tl-count),
+  .gear-cv-axis :is(.gear-cv-label, .gear-cv-count),
+  .gear-cv-grid :is(.gear-cv-label, .gear-cv-count) {
+    display: none;
+  }
+  .gear-tl-axis .gear-tl-track,
+  .gear-tl-grid .gear-tl-track,
+  .gear-cv-axis .gear-cv-track,
+  .gear-cv-grid .gear-cv-track {
+    grid-column: 1;
+    grid-row: 1;
   }
 }
 

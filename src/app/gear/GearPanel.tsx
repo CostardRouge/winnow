@@ -1,224 +1,80 @@
 "use client";
 
-// The /gear shelf: every camera body the library was shot with, drawn as
-// line-art (cf. CameraArt), with the glass it was used with as a compact list
-// of rows (cf. LensArt, in miniature). Bodies come first and lenses hang off
-// them, because that is how the kit is actually held: a lens count only means
-// something once you know which body it was mounted on.
+// The /gear shelf: every camera body the library was shot with and the glass it
+// was used with, counted off the EXIF.
 //
-// The layout is one design at two breakpoints: on desktop the body keeps its
-// catalogue-plate card in a sticky left column with the lens rows alongside;
-// on narrow screens the card collapses into a horizontal band and the rows
-// stack under it behind an indent rule, so a whole kit reads on one phone
-// screen. The rows keep spec + count; secondary meta (split, "more elsewhere",
-// the merged EXIF spellings) folds into the row's tooltip.
+// FOUR LAYOUTS, one dataset. The page used to have a single design built around
+// generated line-art portraits of each body and lens; the drawings are gone (an
+// illustrated shelf is somebody else's idea, and a drawing of a camera says
+// nothing the library knows). What replaced them is the library's own numbers,
+// read four different ways — because "what have I shot with" is really four
+// questions, and no single arrangement answers them all:
 //
-// A gear card is a shortcut, not a museum label — tapping a body opens the grid
-// filtered on it, tapping a lens opens the same grid narrowed to that body AND
-// that lens, so "what did I shoot on the 56 on the X-T5" is one click away.
+//   Index     — the inventory sheet. Everything aligned in one column set:
+//               spec, usage meter, years, count. The dense, scannable default.
+//   Cards     — one card per body with the tally as the hero figure. The
+//               at-a-glance read, and the one that survives a phone screen.
+//   Timeline  — bars on a shared year axis: when each piece was in service,
+//               which body replaced which, what has not come out since 2021.
+//   Coverage  — every lens on a logarithmic millimetre axis: what the bag
+//               covers and where the hole is.
+//
+// The layout is remembered, like the source tab: it is a way of reading the
+// shelf, not a per-visit decision.
+//
+// A gear entry is a shortcut, not a museum label — following a body opens the
+// grid filtered on it, following a lens opens the same grid narrowed to that
+// body AND that lens, so "what did I shoot on the 56 on the A7C" is one click
+// away in every layout.
 //
 // Which grid? The library has two halves — Incoming (still to cull) and the
 // Gallery (finalized exports) — and most gear has frames in BOTH. Merging them
-// would make every card lie in one direction or the other: the count would
+// would make every entry lie in one direction or the other: the count would
 // include media the linked grid can't show. So the shelf carries the shared
 // Incoming/Gallery/All picker (cf. LibrarySourceTabs.tsx), and the choice
-// drives both the counts and where every card points (cf. lib/gear.ts, which
-// tallies per source). "All" sums both — its cards link to whichever half the
+// drives both the counts and where every entry points (cf. lib/gear.ts, which
+// tallies per source). "All" sums both — its entries link to whichever half the
 // piece of gear actually has frames in, Incoming first (effectiveLibrarySource).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { lensArt, lensSpec } from "@/lib/gearArt";
-import type { GearCamera, GearLens, GearResponse, GearStats } from "@/lib/gearTypes";
+import type { GearResponse } from "@/lib/gearTypes";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
-import {
-  effectiveLibrarySource,
-  LibrarySourceTabs,
-  useStoredLibrarySource,
-  type LibrarySource,
-} from "@/app/LibrarySourceTabs";
-import CameraArt from "./CameraArt";
-import LensArt from "./LensArt";
+import { LibrarySourceTabs, useStoredLibrarySource } from "@/app/LibrarySourceTabs";
+import { buildKit, num, SORTS, type Sort } from "./model";
+import IndexView from "./IndexView";
+import CardsView from "./CardsView";
+import TimelineView from "./TimelineView";
+import CoverageView from "./CoverageView";
 
-type Sort = "used" | "recent";
+type View = "index" | "cards" | "timeline" | "coverage";
 
-const SORTS: { key: Sort; label: string; title: string }[] = [
-  { key: "used", label: "Most used", title: "Busiest gear first" },
-  { key: "recent", label: "Recent", title: "Most recently used first" },
+const VIEWS: { key: View; label: string; blurb: string }[] = [
+  { key: "index", label: "Index", blurb: "The kit as an inventory sheet — spec, use, years, count in one column set." },
+  { key: "cards", label: "Cards", blurb: "One card per body, its tally as the hero figure, its glass listed inside." },
+  { key: "timeline", label: "Timeline", blurb: "When each piece was in service, on one shared year axis." },
+  { key: "coverage", label: "Coverage", blurb: "Every lens on a logarithmic focal-length axis — what the bag covers, and where the hole is." },
 ];
 
-// The chosen half of the library sticks between visits — it is a way of working
-// ("I live in Incoming"), not a per-visit decision.
+const isView = (v: string | null): v is View => VIEWS.some((x) => x.key === v);
+
+// The chosen half of the library and the chosen layout both stick between
+// visits — they are ways of working ("I live in Incoming", "I read the sheet"),
+// not per-visit decisions.
 const SOURCE_KEY = "winnow.gear.source";
+const VIEW_KEY = "winnow.gear.view";
 
-const num = (n: number) => n.toLocaleString();
-
-/** Union of a body/lens's two per-source tallies — "All". */
-function mergeStats(a: GearStats, b: GearStats): GearStats {
-  const earliest = (x: string | null, y: string | null) =>
-    x == null ? y : y == null ? x : x < y ? x : y;
-  const latest = (x: string | null, y: string | null) =>
-    x == null ? y : y == null ? x : x > y ? x : y;
-  return {
-    count: a.count + b.count,
-    photos: a.photos + b.photos,
-    videos: a.videos + b.videos,
-    first_capture: earliest(a.first_capture, b.first_capture),
-    last_capture: latest(a.last_capture, b.last_capture),
-  };
-}
-
-/** The tally for the active source — Incoming/Gallery read directly, All summed. */
-function statsFor(
-  x: { incoming: GearStats; gallery: GearStats },
-  source: LibrarySource,
-): GearStats {
-  return source === "all" ? mergeStats(x.incoming, x.gallery) : x[source];
-}
-
-/**
- * Where a piece of gear's frames live, for the active source. `lenses` is every
- * raw EXIF spelling the card merged (cf. lib/lensLabels.ts) — the filter is
- * multi-value, so one card still reaches all of its frames.
- */
-function href(base: "incoming" | "gallery", device: string, lenses?: string[]): string {
-  const sp = new URLSearchParams({ device });
-  if (lenses?.length) sp.set("lens", lenses.join(","));
-  // Both targets seed their filters from the query string: Incoming through its
-  // `[view]` route (Grid is the one that shows the frames themselves), the
-  // Gallery tab through the same decode (cf. library/gallery/page.tsx).
-  const path = base === "gallery" ? "/library/gallery" : "/library/incoming/grid";
-  return `${path}?${sp.toString()}`;
-}
-
-/** "2019–2026" — the years a piece of gear was in service, from its frames. */
-function years(first: string | null, last: string | null): string | null {
-  const year = (iso: string | null) => {
-    if (!iso) return null;
-    const y = new Date(iso).getFullYear();
-    return Number.isFinite(y) ? y : null;
-  };
-  const a = year(first);
-  const b = year(last) ?? a;
-  if (a == null) return null;
-  return a === b ? `${a}` : `${a}–${b}`;
-}
-
-/** Photos, videos, or a mixed bag — number and unit, kept apart so the lens
- * rows can stack them into an aligned figures column. */
-function countParts(s: GearStats): { n: string; unit: string } {
-  if (s.videos === 0)
-    return { n: num(s.photos), unit: s.photos === 1 ? "photo" : "photos" };
-  if (s.photos === 0)
-    return { n: num(s.videos), unit: s.videos === 1 ? "video" : "videos" };
-  return { n: num(s.count), unit: "media" };
-}
-
-/** The same tally as one string — the pill on the camera card. */
-function countLabel(s: GearStats): string {
-  const { n, unit } = countParts(s);
-  return `${n} ${unit}`;
-}
-
-/** Mixed libraries get the split spelled out; single-medium ones don't need it. */
-function splitLine(s: GearStats): string | null {
-  if (s.photos > 0 && s.videos > 0)
-    return `${num(s.photos)} photos · ${num(s.videos)} videos`;
-  return null;
-}
-
-/**
- * "45,230 shutter actuations · Jul 2026" — the body's odometer, as read off the
- * newest indexed frame carrying the counter (Sony MakerNotes, cf. lib/gear.ts).
- * The date says how fresh the reading is: frames shot since but not yet
- * imported aren't counted. Null-count bodies (phones, drones) show nothing.
- */
-function shutterLine(c: GearCamera): string | null {
-  if (c.shutter_count == null) return null;
-  const line = `${num(c.shutter_count)} shutter actuations`;
-  if (!c.shutter_count_at) return line;
-  const d = new Date(c.shutter_count_at);
-  if (!Number.isFinite(d.getTime())) return line;
-  const asOf = d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
-  return `${line} · ${asOf}`;
-}
-
-/** "…and 3 more elsewhere" — what the other half of the library still holds.
- *  Meaningless on "All" (there is no "elsewhere" once both halves are summed),
- *  so `other` is null there and the line simply doesn't render. */
-function elsewhereLine(
-  other: GearStats | null,
-  source: "incoming" | "gallery",
-): string | null {
-  if (!other || other.count === 0) return null;
-  const where = source === "gallery" ? "Incoming" : "the Gallery";
-  return `${num(other.count)} more in ${where}`;
-}
-
-/**
- * The body's card: a catalogue-plate portrait in the desktop column, a
- * horizontal band above its lens list on narrow screens — same markup, the
- * stylesheet turns the column into a row. `extra` meta (the media split, the
- * other tab's tally) hides on the band, where the years are all that fit.
- */
-function CameraCard({
-  href,
-  art,
-  name,
-  label,
-  count,
-  meta,
-  extra,
-}: {
-  href: string;
-  art: ReactNode;
-  /** Raw EXIF string — surfaced as the tooltip when the label was prettified. */
-  name: string;
-  label: string;
-  count: string;
-  meta: (string | null)[];
-  extra: (string | null)[];
-}) {
-  const lines = meta.filter(Boolean) as string[];
-  const extras = extra.filter(Boolean) as string[];
-  return (
-    <Link href={href} className="gear-card" title={name === label ? undefined : name}>
-      <span className="gear-art gear-art-camera">{art}</span>
-      <span className="gear-card-text">
-        <span className="gear-name">{label}</span>
-        {(lines.length > 0 || extras.length > 0) && (
-          <span className="gear-meta">
-            {lines.map((l) => (
-              <span key={l} className="gear-meta-line">
-                {l}
-              </span>
-            ))}
-            {extras.map((l) => (
-              <span key={l} className="gear-meta-line gear-meta-extra">
-                {l}
-              </span>
-            ))}
-          </span>
-        )}
-      </span>
-      <span className="pill gear-count">{count}</span>
-    </Link>
-  );
-}
-
-/** Busiest first / most recently used first, both read off the active source. */
-function sortFor(sort: Sort, source: LibrarySource) {
-  return <T extends { label: string; incoming: GearStats; gallery: GearStats }>(
-    a: T,
-    b: T,
-  ) => {
-    const sa = statsFor(a, source);
-    const sb = statsFor(b, source);
-    return sort === "recent"
-      ? (sb.last_capture ?? "").localeCompare(sa.last_capture ?? "") ||
-          a.label.localeCompare(b.label)
-      : sb.count - sa.count || a.label.localeCompare(b.label);
-  };
+/** Restore / persist the layout. Seeded in an effect, like the source hook, so
+ *  the first render matches the server's and nothing flashes. */
+function useStoredView(): [View, (v: View) => void] {
+  const [view, setView] = useState<View>("index");
+  useEffect(() => {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (isView(saved)) setView(saved);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(VIEW_KEY, view);
+  }, [view]);
+  return [view, setView];
 }
 
 export default function GearPanel() {
@@ -226,6 +82,7 @@ export default function GearPanel() {
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>("used");
   const [source, setSource] = useStoredLibrarySource(SOURCE_KEY);
+  const [view, setView] = useStoredView();
 
   useEffect(() => {
     fetchJson<GearResponse>("/api/gear")
@@ -233,19 +90,12 @@ export default function GearPanel() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load"));
   }, []);
 
-  // Gear with nothing in the active source is dropped rather than drawn at zero:
-  // its card would link to an empty grid, which is exactly the dead end the
-  // source tabs exist to prevent. It reappears on another tab.
-  const cameras = useMemo<GearCamera[]>(() => {
-    const cmp = sortFor(sort, source);
-    return (data?.cameras ?? [])
-      .filter((c) => statsFor(c, source).count > 0)
-      .map((c) => ({
-        ...c,
-        lenses: c.lenses.filter((l) => statsFor(l, source).count > 0).sort(cmp),
-      }))
-      .sort(cmp);
-  }, [data, sort, source]);
+  // One derivation for every layout: the tallies, the links and the weights are
+  // decided here so two views can never disagree about them (cf. model.ts).
+  const kit = useMemo(
+    () => buildKit(data?.cameras ?? [], source, sort),
+    [data, source, sort],
+  );
 
   if (error) {
     return (
@@ -256,8 +106,7 @@ export default function GearPanel() {
   }
   if (!data) return <LoadingState label="Reading the EXIF…" />;
 
-  const lensCount = new Set(cameras.flatMap((c) => c.lenses.map((l) => l.key))).size;
-  const totalFrames = cameras.reduce((s, c) => s + statsFor(c, source).count, 0);
+  const current = VIEWS.find((v) => v.key === view) ?? VIEWS[0];
   // Empty tab vs empty library: only the second one is "no gear yet".
   const otherTotal = (data.cameras ?? []).reduce(
     (s, c) => s + c.incoming.count + c.gallery.count,
@@ -268,10 +117,24 @@ export default function GearPanel() {
     <div className="gear-head">
       <LibrarySourceTabs source={source} onChange={setSource} />
       <span className="hint">
-        {cameras.length} {cameras.length === 1 ? "body" : "bodies"} · {lensCount}{" "}
-        {lensCount === 1 ? "lens" : "lenses"} · {num(totalFrames)} media
+        {kit.bodies.length} {kit.bodies.length === 1 ? "body" : "bodies"} ·{" "}
+        {kit.lensCount} {kit.lensCount === 1 ? "lens" : "lenses"} ·{" "}
+        {num(kit.totalFrames)} media
       </span>
       <span className="spacer" />
+      <div className="view-toggle" role="group" aria-label="Layout">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            className={`view-btn${view === v.key ? " active" : ""}`}
+            onClick={() => setView(v.key)}
+            aria-pressed={view === v.key}
+            title={v.blurb}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
       <div className="view-toggle" role="group" aria-label="Sort gear">
         {SORTS.map((s) => (
           <button
@@ -288,7 +151,7 @@ export default function GearPanel() {
     </div>
   );
 
-  if (cameras.length === 0) {
+  if (kit.bodies.length === 0) {
     return (
       <div className="gear-shelf">
         {head}
@@ -310,130 +173,23 @@ export default function GearPanel() {
   return (
     <div className="gear-shelf">
       {head}
-
-      {cameras.map((c) => (
-        <Body key={c.name} camera={c} source={source} />
-      ))}
+      {/* The layouts are different enough that the toggle alone doesn't say what
+          it just did — one line does. */}
+      <p className="gear-caption">{current.blurb}</p>
+      <Layout view={view} kit={kit} />
     </div>
   );
 }
 
-/** One body and the glass that rode on it — the unit the shelf is built from. */
-function Body({ camera, source }: { camera: GearCamera; source: LibrarySource }) {
-  const stats = statsFor(camera, source);
-  const base = effectiveLibrarySource(source, camera.incoming.count);
-  const other = source === "all" ? null : camera[source === "incoming" ? "gallery" : "incoming"];
-  // Frames whose files carry no lens tag: the body's total minus what the lens
-  // cards account for. Named rather than hidden, so the numbers add up.
-  const tagged = camera.lenses.reduce((s, l) => s + statsFor(l, source).count, 0);
-  const untagged = stats.count - tagged;
-
-  return (
-    <section className="gear-body">
-      <div className="gear-body-figure">
-        <CameraCard
-          href={href(base, camera.name)}
-          art={<CameraArt name={camera.name} />}
-          name={camera.name}
-          label={camera.label}
-          count={countLabel(stats)}
-          extra={[
-            splitLine(stats),
-            shutterLine(camera),
-            elsewhereLine(other, source === "gallery" ? "gallery" : "incoming"),
-          ]}
-          meta={[years(stats.first_capture, stats.last_capture)]}
-        />
-      </div>
-
-      <div className="gear-body-glass">
-        <h3 className="gear-body-glass-head">
-          {camera.lenses.length > 0
-            ? `${camera.lenses.length} ${camera.lenses.length === 1 ? "lens" : "lenses"}`
-            : "No lens recorded"}
-          {untagged > 0 && (
-            <span className="hint">
-              {" "}
-              · {num(untagged)} {untagged === 1 ? "frame" : "frames"} without a lens tag
-            </span>
-          )}
-        </h3>
-        {camera.lenses.length > 0 && (
-          <div className="gear-rows">
-            {camera.lenses.map((l) => (
-              <LensRow key={l.key} lens={l} device={camera.name} source={source} />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/**
- * One lens as a list row: miniature barrel, name + spec, count in an aligned
- * figures column. The years get a column of their own where the row is wide
- * enough; everything else the old card spelled out folds into the tooltip.
- */
-function LensRow({
-  lens,
-  device,
-  source,
-}: {
-  lens: GearLens;
-  device: string;
-  source: LibrarySource;
-}) {
-  const stats = statsFor(lens, source);
-  const base = effectiveLibrarySource(source, lens.incoming.count);
-  const other = source === "all" ? null : lens[source === "incoming" ? "gallery" : "incoming"];
-  // The spec line is derived, so a lens whose name states nothing ("E 18-55")
-  // still shows the range its frames recorded.
-  const spec =
-    lensSpec(
-      lensArt(lens.label, {
-        focalMin: lens.focal_min,
-        focalMax: lens.focal_max,
-        aperture: lens.aperture_min,
-      }),
-    ) || null;
-  const specLine = [
-    spec,
-    lens.names.length > 1 ? `${lens.names.length} EXIF names` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  // The tooltip carries every raw EXIF spelling this row merged — a merge is
-  // always inspectable rather than something that just happened — plus the
-  // meta the compact row no longer spells out.
-  const tip = [
-    lens.names.join(" · "),
-    splitLine(stats),
-    elsewhereLine(other, source === "gallery" ? "gallery" : "incoming"),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const yr = years(stats.first_capture, stats.last_capture);
-  const { n, unit } = countParts(stats);
-  return (
-    <Link href={href(base, device, lens.names)} className="gear-row" title={tip}>
-      <span className="gear-row-art">
-        <LensArt
-          name={lens.label}
-          focalMin={lens.focal_min}
-          focalMax={lens.focal_max}
-          aperture={lens.aperture_min}
-        />
-      </span>
-      <span className="gear-row-text">
-        <span className="gear-row-name">{lens.label}</span>
-        {specLine && <span className="gear-row-spec">{specLine}</span>}
-      </span>
-      {yr && <span className="gear-row-years">{yr}</span>}
-      <span className="gear-row-count">
-        {n}
-        <small>{unit}</small>
-      </span>
-    </Link>
-  );
+function Layout({ view, kit }: { view: View; kit: ReturnType<typeof buildKit> }) {
+  switch (view) {
+    case "cards":
+      return <CardsView kit={kit} />;
+    case "timeline":
+      return <TimelineView kit={kit} />;
+    case "coverage":
+      return <CoverageView kit={kit} />;
+    default:
+      return <IndexView kit={kit} />;
+  }
 }
