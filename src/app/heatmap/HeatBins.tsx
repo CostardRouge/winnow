@@ -1,6 +1,9 @@
 "use client";
 
-// The heatmap's map: one square per geocoding cell, on the shared ramp.
+// The heatmap's map: one mark per geocoding cell, on the shared ramp. The mark
+// keeps a constant PIXEL size rather than covering its cell on the ground — a
+// shape drawn to a 5 km cell's real extent is invisible at the world zoom a
+// distribution is actually read at.
 //
 // Unlike the gallery's MapView — which plots a marker per asset and caps at
 // 10 000 points — this draws one bin per PLACE, so the payload is bounded by
@@ -116,7 +119,7 @@ export default function HeatBins({
       });
       marker.bindTooltip(
         `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(measure.say(p))}` +
-          `<br><span class="heat-tip-dim">${p.c.toLocaleString("en-US")} frames</span>`,
+          `<br><span class="heat-tip-dim">${p.c.toLocaleString("en-GB")} frames</span>`,
         { className: "heat-tip", direction: "top", offset: [0, -4], opacity: 1 },
       );
       marker.on("click", () => selectRef.current(selected === p.id ? null : p.id));

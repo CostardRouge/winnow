@@ -212,7 +212,7 @@ export default function HeatGrid({
                                 e.currentTarget,
                                 prettyDate(iso),
                                 row ? measure.say(cell) : "nothing that day",
-                                row ? `${cell.c.toLocaleString("en-US")} frames · ${place}` : "",
+                                row ? `${cell.c.toLocaleString("en-GB")} frames · ${place}` : "",
                               );
                             }}
                             onFocus={(e) =>
@@ -220,7 +220,7 @@ export default function HeatGrid({
                                 e.currentTarget,
                                 prettyDate(iso),
                                 row ? measure.say(cell) : "nothing that day",
-                                row ? `${cell.c.toLocaleString("en-US")} frames · ${place}` : "",
+                                row ? `${cell.c.toLocaleString("en-GB")} frames · ${place}` : "",
                               )
                             }
                             onBlur={() => setHover(null)}
@@ -248,7 +248,7 @@ export default function HeatGrid({
                                 e.currentTarget,
                                 agg ? `${prettyDate(agg.first)} → ${prettyDate(agg.last)}` : `Week ${w + 1}, ${y}`,
                                 agg ? measure.say(agg) : "nothing that week",
-                                agg ? `${agg.c.toLocaleString("en-US")} frames` : "",
+                                agg ? `${agg.c.toLocaleString("en-GB")} frames` : "",
                               )
                             }
                             onFocus={(e) =>
@@ -256,7 +256,7 @@ export default function HeatGrid({
                                 e.currentTarget,
                                 agg ? `${prettyDate(agg.first)} → ${prettyDate(agg.last)}` : `Week ${w + 1}, ${y}`,
                                 agg ? measure.say(agg) : "nothing that week",
-                                agg ? `${agg.c.toLocaleString("en-US")} frames` : "",
+                                agg ? `${agg.c.toLocaleString("en-GB")} frames` : "",
                               )
                             }
                             onBlur={() => setHover(null)}

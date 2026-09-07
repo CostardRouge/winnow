@@ -181,7 +181,7 @@ export default function HeatMatrix({
                           e.currentTarget,
                           label,
                           cell ? measure.say(cell) : "nothing that month",
-                          cell ? `${cell.c.toLocaleString("en-US")} frames` : "",
+                          cell ? `${cell.c.toLocaleString("en-GB")} frames` : "",
                         )
                       }
                       onFocus={(e) =>
@@ -189,7 +189,7 @@ export default function HeatMatrix({
                           e.currentTarget,
                           label,
                           cell ? measure.say(cell) : "nothing that month",
-                          cell ? `${cell.c.toLocaleString("en-US")} frames` : "",
+                          cell ? `${cell.c.toLocaleString("en-GB")} frames` : "",
                         )
                       }
                       onBlur={() => setHover(null)}

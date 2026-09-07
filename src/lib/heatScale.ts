@@ -47,7 +47,7 @@ export type Measure = {
   say: (x: HeatCell) => string;
 };
 
-const nf = new Intl.NumberFormat("en-US");
+const nf = new Intl.NumberFormat("en-GB");
 
 export const MEASURES: readonly Measure[] = [
   {

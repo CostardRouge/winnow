@@ -92,10 +92,13 @@ const SOURCE_KEY = "winnow.heatmap.source";
 const kindFor = (s: LibrarySource) =>
   s === "incoming" ? "incoming" : s === "gallery" ? "final" : null;
 
-const nf = new Intl.NumberFormat("en-US");
+const nf = new Intl.NumberFormat("en-GB");
+// Day before month, short month name — the en-GB shape the rest of the tree
+// uses (gallery/Tree.tsx, gallery/CalendarView.tsx).
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const pretty = (iso: string) => {
   const [y, m, d] = iso.split("-");
-  return `${Number(d)}/${m}/${y}`;
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 };
 
 export default function HeatmapPanel() {

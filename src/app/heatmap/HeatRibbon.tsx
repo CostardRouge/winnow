@@ -86,7 +86,7 @@ export default function HeatRibbon({
                     y: b.top,
                     head: label,
                     body: cell ? measure.say(cell) : "nothing that month",
-                    sub: cell ? `${cell.c.toLocaleString("en-US")} frames` : "",
+                    sub: cell ? `${cell.c.toLocaleString("en-GB")} frames` : "",
                   });
                 }}
                 onBlur={() => setHover(null)}
