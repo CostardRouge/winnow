@@ -12,6 +12,16 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: reach for an existing token and an existing component class before inventing either; add a new class to the matching `@layer components` block rather than piling utilities into the JSX. Never hardcode a hex colour that a token already names.
 
+## The brand mark lives in five copies, and 16 px is the first test (2026-09-07)
+
+**Observation**: changing the symbol means touching five independent places, not one — `public/icons/icon.svg`, `icon-maskable.svg` and `icon-apple.svg` (three different insets, and the maskable is **inverted**: paper glyph on full-bleed vermillion), then `npx tsx scripts/gen-icons.ts` to re-rasterise the seven PNGs, then `Brand` in `src/app/ui.tsx` (thinner strokes than the icons — 1.6/1.3 against 2.1/1.7 — because the pill inverts the glyph to `--color-accent-fg`), then the hardcoded fifth copy in `public/offline.html` lines 83-85, then `VERSION` in `public/sw.js` because the icons are precached. Missing any one of them leaves the old mark live somewhere.
+
+**Decision**: `docs/design/logo/` holds ten candidate symbols (2026-09-07 exploration) with a README naming what each gives up; nothing there is wired in, the incumbent arc is still in production. The ranking criterion agreed with the maintainer is **legibility at 16 px before meaning** — the incumbent fails exactly there, its three parallel arcs merging into one curve, which is what prompted the exploration.
+
+**Traps found while drawing**: a *comb* of thin parallel strokes always clogs at favicon size — a filled mass survives where an outline does not; a **symmetric** bowl under a centred dot reads as a smiling face, so the fan shapes are deliberately asymmetric; and any candidate must be checked inverted (white on vermillion, in the `.brand-mark` pill and the maskable tile) as well as vermillion on paper, since opacity-faded secondary strokes behave differently on the two grounds.
+
+**How to apply**: judge a candidate as a real 16×16 raster, not a scaled-down vector — they lie in opposite directions. Author in a 24×24 viewBox with `currentColor` and round caps so the glyph drops into `Brand` unchanged. Adopting one does not touch `manifest.ts`, `layout.tsx`'s `viewport.themeColor` or `offline.html`'s theme block — those carry the paper/night backgrounds, not the mark.
+
 ## Every DB-backed route opts out of static rendering (2026-08-20)
 
 **Decision**: 62 route files carry `export const dynamic = "force-dynamic"` with a one-line comment saying why ("DB-backed route: never pre-rendered/cached at build time").

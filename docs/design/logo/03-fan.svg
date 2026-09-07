@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 03 · Le van — the winnowing fan head-on, a wide V with the grain in its
+       throat. The stroke descends the way the triage does: many at the top, one
+       point at the bottom. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M4.2 6.4 12 18.4 19.8 6.4" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="12" cy="13.8" r="2" fill="currentColor" stroke="none"/>
+  </g>
+</svg>

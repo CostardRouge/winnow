@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 05 · Le W plié — a broad-nib W: descending strokes heavy, ascending ones
+       hairline, as if drawn with a quill. The only variant that speaks Instrument
+       Serif's language rather than merely sitting next to it. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M3.2 4.8 7.9 19.2" stroke-width="2.7"/>
+    <path d="M7.9 19.2 12 8.2" stroke-width="1.05"/>
+    <path d="M12 8.2 16.1 19.2" stroke-width="2.7"/>
+    <path d="M16.1 19.2 20.8 4.8" stroke-width="1.05"/>
+  </g>
+</svg>

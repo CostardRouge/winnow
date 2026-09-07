@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 09 · Le vent — the whole story in one glyph: the fan, the grain dropping back
+       into it, and the chaff blowing off along a drift line, fading out. The only
+       variant that shows the sorting *and* its result. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M9.4 11.6C13.4 9.6 17.6 6.4 20.8 2.6" stroke-width=".9" opacity=".22"/>
+    <path d="M3 14.4Q12 21.4 21 14.4" stroke-width="2.1"/>
+    <circle cx="9.9" cy="15.4" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="13" cy="13" r="1.45" fill="currentColor" stroke="none" opacity=".9"/>
+    <circle cx="16.1" cy="9.4" r="1.25" fill="currentColor" stroke="none" opacity=".6"/>
+    <circle cx="18.7" cy="6.2" r="1" fill="currentColor" stroke="none" opacity=".4"/>
+    <circle cx="20.8" cy="3.4" r=".8" fill="currentColor" stroke="none" opacity=".24"/>
+  </g>
+</svg>
