@@ -178,9 +178,20 @@ export function shareInkText(share: number): string {
 
 // ------------------------------------------------------------------ axes ----
 
-/** Where a millimetre ruler is allowed to put a label — the focal lengths people
- *  say out loud. Only the ones inside the kit's own range are drawn. */
-const NICE_MM = [8, 10, 12, 14, 16, 20, 24, 28, 35, 50, 70, 85, 105, 135, 200, 300, 400, 600, 800];
+/**
+ * Where a millimetre ruler is allowed to put a label — the focal lengths people
+ * say out loud. Only the ones inside the kit's own range are drawn.
+ *
+ * It started at 8mm, which is a full-frame photographer's floor and not the
+ * library's: phones report their REAL focal length, so an iPhone's four cameras
+ * sit between 2 and 16mm and had no tick under them at all. The single-digit
+ * end is here because the library has gear there, not because anyone says
+ * "a 3mm" out loud.
+ */
+const NICE_MM = [
+  2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 28, 35, 50, 70, 85, 105, 135, 200, 300, 400,
+  600, 800,
+];
 
 export type FocalAxis = {
   /** A focal length in mm → its position on the track, 0–1. */

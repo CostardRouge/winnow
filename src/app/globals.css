@@ -6283,14 +6283,15 @@ html[data-theme="dark"] .btn-primary:hover {
      A row per body, its height proportional to its media (with a declared
      floor — cf. BlocksView MIN_ROW), sliced into a tile per lens. Needs a
      definite height: proportional flex has nothing to divide otherwise. */
+  /* No height here: BlocksView sets each row's own height in pixels, so the
+     surface grows with the number of bodies instead of dividing a constant
+     between them (cf. MIN_ROW_PX). */
   .gear-blocks {
     @apply flex flex-col;
     gap: 2px;
-    height: 520px;
   }
   .gear-blk-row {
-    @apply flex min-h-0;
-    flex-basis: 0;
+    @apply flex min-h-0 shrink-0;
     gap: 2px;
   }
   .gear-blk-label {
@@ -7061,11 +7062,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-stk-seg {
     @apply px-1;
   }
-  /* Blocks and Marks are the two that a phone genuinely squeezes: give them
-     the height back that the narrower tracks cost them. */
-  .gear-blocks {
-    height: 600px;
-  }
+  /* Marks is the one a phone genuinely squeezes: give it back the height the
+     narrower tracks cost it. (Blocks sizes its own rows.) */
   .gear-blk-label {
     width: 88px;
   }

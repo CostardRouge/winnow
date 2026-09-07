@@ -16,13 +16,28 @@ import type { Kit, KitPart } from "./model";
 import { num, shareInk, shareInkText } from "./model";
 
 /**
- * A row's height floor, as a fraction of the drawing. Without it a drone with
- * 640 frames next to a body with 15,000 is a 12-pixel sliver whose label can't
- * be drawn — and a tile you cannot read says nothing at all. The floor is
- * declared, not hidden: the areas below it are no longer to scale, which is the
- * honest trade for keeping every body visible.
+ * A row's height floor, in PIXELS — the two-line label (name over count) plus
+ * its padding, and the smallest tile that can still be read.
+ *
+ * It was a *fraction* of the drawing at first, which held for a five-body kit
+ * and quietly failed for a real one: with twelve bodies the floors share the
+ * same fixed height, so every one of them shrinks, and the tail rendered at 29px
+ * with its label cut through the middle. A floor that scales with the number of
+ * rows is not a floor.
  */
-const MIN_ROW = 0.115;
+const MIN_ROW_PX = 46;
+
+/**
+ * The pixels handed out BY SHARE on top of that floor, so the drawing still
+ * says "this body shot most of the library" once every row is legible. The
+ * container's height is therefore `rows × MIN_ROW_PX + SCALE_PX` rather than a
+ * constant: a kit with more bodies gets a taller surface, not thinner rows.
+ *
+ * The floor is a declared distortion — the areas below it are no longer to
+ * scale. That is the honest trade for a tile you can actually read, and it is
+ * why the row keeps printing its own count.
+ */
+const SCALE_PX = 420;
 
 /** Below this share of its row, a tile can't hold its name — hover carries it. */
 const LABEL_AT = 0.11;
@@ -60,15 +75,17 @@ function Tile({ part, tone }: { part: KitPart; tone: number }) {
 }
 
 export default function BlocksView({ kit }: { kit: Kit }) {
-  const floors = kit.bodies.map((b) =>
-    Math.max(kit.totalFrames > 0 ? b.stats.count / kit.totalFrames : 0, MIN_ROW),
-  );
-  const sum = floors.reduce((a, v) => a + v, 0) || 1;
+  // Heights in pixels rather than flex weights: proportional flex needs a
+  // definite container height to divide, and any constant we picked for it was
+  // a guess about how many bodies a library has.
+  const height = (b: (typeof kit.bodies)[number]) =>
+    MIN_ROW_PX +
+    (kit.totalFrames > 0 ? b.stats.count / kit.totalFrames : 0) * SCALE_PX;
 
   return (
     <div className="gear-blocks">
-      {kit.bodies.map((b, i) => (
-        <div key={b.name} className="gear-blk-row" style={{ flexGrow: floors[i] / sum }}>
+      {kit.bodies.map((b) => (
+        <div key={b.name} className="gear-blk-row" style={{ height: height(b) }}>
           <Link href={b.href} className="gear-blk-label" title={`${b.kindLabel}\n${b.tip}`}>
             <b>{b.label}</b>
             <small>{num(b.stats.count)} media</small>
