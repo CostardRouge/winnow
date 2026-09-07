@@ -16,19 +16,23 @@
 // Incoming when the item has anything there, Gallery otherwise — the item's
 // own split decides, not a fixed default.
 import { useEffect, useState } from "react";
+import { OptionPicker, type PickerOption } from "./OptionPicker";
 
 export type LibrarySource = "all" | "incoming" | "gallery";
 
-export const LIBRARY_SOURCES: {
-  key: LibrarySource;
-  label: string;
-  title: string;
-}[] = [
-  { key: "all", label: "All", title: "Incoming and Gallery combined" },
-  { key: "incoming", label: "Incoming", title: "Media still to cull" },
-  { key: "gallery", label: "Gallery", title: "Finalized exports" },
+export const LIBRARY_SOURCES: PickerOption<LibrarySource>[] = [
+  { key: "all", label: "All", hint: "Incoming and Gallery combined" },
+  { key: "incoming", label: "Incoming", hint: "Media still to cull" },
+  { key: "gallery", label: "Gallery", hint: "Finalized exports" },
 ];
 
+/**
+ * Three options, so `OptionPicker` draws the segmented row it always drew — the
+ * same `.tabs`/`.tab` markup, down to the `title` and the `aria-pressed`. What
+ * changes is that this component no longer OWNS the segmented control: it is
+ * the library-source instance of the shared one, which is what it was always
+ * described as.
+ */
 export function LibrarySourceTabs({
   source,
   onChange,
@@ -39,19 +43,13 @@ export function LibrarySourceTabs({
   ariaLabel?: string;
 }) {
   return (
-    <div className="tabs" role="group" aria-label={ariaLabel}>
-      {LIBRARY_SOURCES.map((s) => (
-        <button
-          key={s.key}
-          className={`tab${source === s.key ? " active" : ""}`}
-          onClick={() => onChange(s.key)}
-          aria-pressed={source === s.key}
-          title={s.title}
-        >
-          {s.label}
-        </button>
-      ))}
-    </div>
+    <OptionPicker
+      options={LIBRARY_SOURCES}
+      value={source}
+      onChange={onChange}
+      ariaLabel={ariaLabel}
+      size="md"
+    />
   );
 }
 

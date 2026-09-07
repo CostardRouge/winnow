@@ -46,6 +46,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import type { GearResponse } from "@/lib/gearTypes";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import { LibrarySourceTabs, useStoredLibrarySource } from "@/app/LibrarySourceTabs";
+import { OptionPicker, type PickerOption } from "@/app/OptionPicker";
 import { buildKit, num, SORTS, type Sort } from "./model";
 import StackView from "./StackView";
 import IndexView from "./IndexView";
@@ -66,18 +67,26 @@ type View =
   | "marks"
   | "record";
 
-const VIEWS: { key: View; label: string; blurb: string }[] = [
-  { key: "stack", label: "Stack", blurb: "Where the frames went — one bar per body, split by the glass that shot them." },
-  { key: "index", label: "Index", blurb: "The kit as an inventory sheet — spec, use, years, count in one column set." },
-  { key: "cards", label: "Cards", blurb: "One card per body, its tally as the hero figure, its glass listed inside." },
-  { key: "blocks", label: "Blocks", blurb: "The whole kit as one surface: every area is proportional to its media." },
-  { key: "timeline", label: "Timeline", blurb: "When each piece was in service, on one shared year axis." },
-  { key: "coverage", label: "Coverage", blurb: "Every lens on a logarithmic focal-length axis — what the bag covers, and where the hole is." },
-  { key: "marks", label: "Marks", blurb: "Focal length against aperture, sized by use — where the bag actually works." },
-  { key: "record", label: "Record", blurb: "One sheet per body: its specs, its odometer and its glass, set to be read." },
+const VIEWS: PickerOption<View>[] = [
+  { key: "stack", label: "Stack", hint: "Where the frames went — one bar per body, split by the glass that shot them." },
+  { key: "index", label: "Index", hint: "The kit as an inventory sheet — spec, use, years, count in one column set." },
+  { key: "cards", label: "Cards", hint: "One card per body, its tally as the hero figure, its glass listed inside." },
+  { key: "blocks", label: "Blocks", hint: "The whole kit as one surface: every area is proportional to its media." },
+  { key: "timeline", label: "Timeline", hint: "When each piece was in service, on one shared year axis." },
+  { key: "coverage", label: "Coverage", hint: "Every lens on a logarithmic focal-length axis — what the bag covers, and where the hole is." },
+  { key: "marks", label: "Marks", hint: "Focal length against aperture, sized by use — where the bag actually works." },
+  { key: "record", label: "Record", hint: "One sheet per body: its specs, its odometer and its glass, set to be read." },
 ];
 
 const isView = (v: string | null): v is View => VIEWS.some((x) => x.key === v);
+
+/** The sort order, in the picker's shape — `SORTS` (model.ts) predates it and
+ *  is shared with nothing else, so the mapping stays here rather than churn it. */
+const SORT_OPTIONS: PickerOption<Sort>[] = SORTS.map((s) => ({
+  key: s.key,
+  label: s.label,
+  hint: s.title,
+}));
 
 // The chosen half of the library and the chosen layout both stick between
 // visits — they are ways of working ("I live in Incoming", "I read the sheet"),
@@ -145,32 +154,16 @@ export default function GearPanel() {
         {num(kit.totalFrames)} media
       </span>
       <span className="spacer" />
-      <div className="view-toggle" role="group" aria-label="Layout">
-        {VIEWS.map((v) => (
-          <button
-            key={v.key}
-            className={`view-btn${view === v.key ? " active" : ""}`}
-            onClick={() => setView(v.key)}
-            aria-pressed={view === v.key}
-            title={v.blurb}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
-      <div className="view-toggle" role="group" aria-label="Sort gear">
-        {SORTS.map((s) => (
-          <button
-            key={s.key}
-            className={`view-btn${sort === s.key ? " active" : ""}`}
-            onClick={() => setSort(s.key)}
-            aria-pressed={sort === s.key}
-            title={s.title}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      {/* Eight options: the picker draws itself as a menu (cf. OptionPicker),
+          which is also where each layout's sentence finally becomes readable on
+          a touch screen. Two options: it stays a segmented row. */}
+      <OptionPicker options={VIEWS} value={view} onChange={setView} ariaLabel="Layout" />
+      <OptionPicker
+        options={SORT_OPTIONS}
+        value={sort}
+        onChange={setSort}
+        ariaLabel="Sort"
+      />
     </div>
   );
 
@@ -198,7 +191,7 @@ export default function GearPanel() {
       {head}
       {/* The layouts are different enough that the toggle alone doesn't say what
           it just did — one line does. */}
-      <p className="gear-caption">{current.blurb}</p>
+      <p className="gear-caption">{current.hint}</p>
       <Layout view={view} kit={kit} />
     </div>
   );
