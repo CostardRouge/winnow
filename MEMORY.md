@@ -58,6 +58,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 ## Open items (dated; remove when done)
 
+- 2026-09-07 — **A `/heatmap` view (when × where, cross-filtered) is designed and not built**: `docs/HEATMAP.md` carries the brief — the measure list (volume · keepers · keeper rate · **backlog**, the one that is uniquely Winnow's), the two aggregate routes, and the placement argument. Two findings worth knowing even if the view is never built: the geographic bins **already exist** (`places(cell_lat, cell_lon, precision_m)` snaps every coordinate at geocode time, named, uniquely indexed, with `assets.place_id` pointing at it), and a binned `/api/assets/geo` would remove that route's 10 000-point cap. Five questions there are the maintainer's to answer; nothing in the brief is agreed.
 - 2026-09-07 — **The Timeline ships OFF** (feature flag, `src/lib/features.ts`): its chapters are re-derived per request, the cut rules and the behaviour at library scale still owe a rework, and Atelier stopped reading them for exactly that reason (`shared/sources/winnow/features.ts` there carries the argument). What is open is the rework itself, not the flag. Until it lands, do not build anything new on `/api/assets/timeline`, and remember the route now 404s by default — a client asking it will not get an empty answer, it will get nothing.
 - 2026-08-20 — **Two duplicate migration prefixes are still on `main`**, contradicting rule 1 of `db/migrations/README.md` and its "History" section, which reads as though every collision was resolved: `0010_gps_coords.sql` / `0010_search_text.sql` and `0013_asset_groups.sql` / `0013_clean_object_placeholders.sql`. They apply today in an accidental lexicographic order. Renumbering means extending `RENUMBERED` in `src/lib/migrate.ts` and touches every already-migrated database — maintainer's call. Next free number is `0041` (`0039_burst_kind.sql` and `0040_timeline_chapters.sql` are taken).
 - 2026-08-20 — The P1 list in `docs/ARCHITECTURE-REVIEW.md` §4 is the standing backlog (disk-space preflight, streamed video proxies, retention janitor, the `asset_faces.embedding` decision, job cancel, fail-closed `getSettings()`, compose env drift). Check it before proposing pipeline work; nothing in this memory supersedes it.
@@ -78,3 +79,12 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 | `docs/memory/frontend.md` | `src/app/**`, pages, styling, the viewer/grid interactions, the PWA |
 | `docs/memory/auth.md` | login, invites, sessions, roles, `src/proxy.ts`, `src/lib/{auth,authz}.ts` |
 | `docs/memory/testing-and-ci.md` | deciding a change is done, `.github/workflows/`, adding tests |
+
+Not a memory file, but read it before proposing work on the Calendar, the Map
+or a new way of reading the library at large:
+
+- **`docs/HEATMAP.md`** — the agreed-with-nobody design (2026-09-07) for a
+  `/heatmap` view crossing a years-wide day grid with a binned map, one measure
+  colouring both. A **proposal**: it argues its own placement and lists what it
+  does not know. Its schema and route claims were checked against the tree and
+  carry paths.
