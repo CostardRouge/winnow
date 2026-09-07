@@ -144,6 +144,83 @@ function ms(iso: string | null): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** "Jul 2026" — how fresh the shutter reading is, on its own so a spec table can
+ *  put it beside the number instead of inside a sentence. */
+function asOf(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
+
+/**
+ * The ink a share of the whole is painted with: one hue, light for a sliver,
+ * dark for the bulk (the Stack bars and the Blocks tiles).
+ *
+ * The mapping is ABSOLUTE — it reads the share itself, never the segment's rank
+ * in its bar. A tone that came from "biggest, second, third" would repaint every
+ * surviving segment the moment the Incoming/Gallery tab changed the set around
+ * it, and a colour that moves under the same piece of glass is a colour that
+ * means nothing. Square root because the interesting range is the bottom of the
+ * scale: most kits are one lens doing half the work and a long tail under 10%.
+ */
+export function shareInk(share: number): string {
+  const pct = Math.round(26 + 62 * Math.sqrt(Math.max(share, 0)));
+  return `color-mix(in srgb, var(--color-text) ${pct}%, var(--color-bg))`;
+}
+
+/** Text laid ON a `shareInk` fill: the page's ground once the fill goes dark. */
+export function shareInkText(share: number): string {
+  return 26 + 62 * Math.sqrt(Math.max(share, 0)) > 52
+    ? "var(--color-bg)"
+    : "var(--color-text)";
+}
+
+// ------------------------------------------------------------------ axes ----
+
+/** Where a millimetre ruler is allowed to put a label — the focal lengths people
+ *  say out loud. Only the ones inside the kit's own range are drawn. */
+const NICE_MM = [8, 10, 12, 14, 16, 20, 24, 28, 35, 50, 70, 85, 105, 135, 200, 300, 400, 600, 800];
+
+export type FocalAxis = {
+  /** A focal length in mm → its position on the track, 0–1. */
+  at: (mm: number) => number;
+  ticks: { mm: number; at: number }[];
+};
+
+/**
+ * The focal-length scale, shared by Coverage and Marks so the two charts place
+ * the same lens at the same spot.
+ *
+ * Logarithmic on purpose: 16→24mm is the same visual step as 200→300mm, which
+ * is how focal lengths are actually experienced. A linear axis would crush a
+ * whole wide-angle kit into the first centimetre of a 400mm library.
+ */
+export function focalAxis(focal: { min: number; max: number }): FocalAxis {
+  // A hair of padding in log space, so a lens sitting on the kit's extreme
+  // isn't drawn flush against the edge of its track.
+  const lo = Math.log(Math.max(focal.min, 1) / 1.12);
+  const hi = Math.log(Math.max(focal.max, focal.min * 1.2) * 1.12);
+  const at = (mm: number) => (Math.log(Math.max(mm, 1)) - lo) / (hi - lo);
+  // A short kit packs several nice values into one centimetre of ruler (12·14·16
+  // on a wide-angle bag), so labels closer than a legible gap are dropped — the
+  // ruler is a reference, not a complete list.
+  const ticks: { mm: number; at: number }[] = [];
+  for (const mm of NICE_MM) {
+    const x = at(mm);
+    if (x < 0 || x > 1) continue;
+    if (ticks.length > 0 && x - ticks[ticks.length - 1].at < 0.05) continue;
+    ticks.push({ mm, at: x });
+  }
+  // A kit spanning less than one nice interval (a single prime, two close zooms)
+  // gets its own two bounds as the ruler rather than no ruler at all.
+  if (ticks.length >= 2) return { at, ticks };
+  const ends = [Math.round(focal.min), Math.round(focal.max)].filter(
+    (mm, i, a) => a.indexOf(mm) === i,
+  );
+  return { at, ticks: ends.map((mm) => ({ mm, at: at(mm) })) };
+}
+
 // ------------------------------------------------------------------- kit ----
 
 /** A lens as every layout wants it: tallied, linked, spec'd, weighed. */
@@ -165,6 +242,26 @@ export type KitLens = {
   to: number | null;
 };
 
+/**
+ * A slice of ONE body's frames: a lens, or the remainder no lens tag accounts
+ * for. The composition layouts (Stack, Blocks) divide a body by these rather
+ * than by `lenses`, because a bar that leaves the untagged frames out would be
+ * a bar that doesn't add up to the number printed next to it.
+ *
+ * `share` is of the body's whole — note that `KitLens.share` is of its TAGGED
+ * frames only, which is the right denominator for a meter beside a lens row and
+ * the wrong one for a slice of a pie.
+ */
+export type KitPart = {
+  key: string;
+  label: string;
+  count: number;
+  share: number;
+  /** null on the untagged remainder: there is no lens to filter the grid on. */
+  href: string | null;
+  tip: string;
+};
+
 /** One body and the glass that rode on it — the unit every layout is built from. */
 export type KitBody = {
   name: string;
@@ -174,13 +271,19 @@ export type KitBody = {
   stats: GearStats;
   href: string;
   years: string | null;
+  /** "45,230 shutter actuations · Jul 2026" — the odometer as one line. */
   shutter: string | null;
+  /** …and the same reading split, for a spec table that has a column for each. */
+  shutterCount: number | null;
+  shutterAt: string | null;
   split: string | null;
   elsewhere: string | null;
   /** Frames whose files carry no lens tag — named rather than hidden, so the
    *  body's total and its lens rows add up. */
   untagged: number;
   lenses: KitLens[];
+  /** The same frames cut into slices that sum to `stats.count` (cf. KitPart). */
+  parts: KitPart[];
   /** Share of the busiest body's frames, 0–1. */
   share: number;
   tip: string;
@@ -196,6 +299,8 @@ export type Kit = {
   span: { from: number; to: number } | null;
   /** Focal bounds in mm across every lens that recorded one — the coverage axis. */
   focal: { min: number; max: number } | null;
+  /** Fastest and slowest maximum aperture recorded — the Marks vertical axis. */
+  aperture: { min: number; max: number } | null;
 };
 
 /** Busiest first / most recently used first, both read off the active source. */
@@ -285,6 +390,27 @@ export function buildKit(
     const lensRows = camera.lenses.filter((l) => statsFor(l, source).count > 0).sort(cmp);
     const tagged = lensRows.reduce((s, l) => s + statsFor(l, source).count, 0);
     const kind = cameraKind(camera.name);
+    const lenses = lensRows.map((l) => buildLens(l, camera.name, source, tagged));
+    const untagged = stats.count - tagged;
+    // The slices of this body, always summing to its own total.
+    const parts: KitPart[] = lenses.map((l) => ({
+      key: l.key,
+      label: l.label,
+      count: l.stats.count,
+      share: stats.count > 0 ? l.stats.count / stats.count : 0,
+      href: l.href,
+      tip: l.tip,
+    }));
+    if (untagged > 0) {
+      parts.push({
+        key: "__untagged",
+        label: "No lens recorded",
+        count: untagged,
+        share: stats.count > 0 ? untagged / stats.count : 0,
+        href: null,
+        tip: "These files carry no lens tag, so there is nothing to filter on.",
+      });
+    }
     return {
       name: camera.name,
       label: camera.label,
@@ -294,10 +420,13 @@ export function buildKit(
       href: gridHref(base, camera.name),
       years: years(stats.first_capture, stats.last_capture),
       shutter: shutterLine(camera),
+      shutterCount: camera.shutter_count,
+      shutterAt: asOf(camera.shutter_count_at),
       split: splitLine(stats),
       elsewhere: elsewhereLine(other, source === "gallery" ? "gallery" : "incoming"),
-      untagged: stats.count - tagged,
-      lenses: lensRows.map((l) => buildLens(l, camera.name, source, tagged)),
+      untagged,
+      lenses,
+      parts,
       share: busiest > 0 ? stats.count / busiest : 0,
       // The raw EXIF device string is the filter value and the only unambiguous
       // name a body has — worth a tooltip wherever the label was prettified.
@@ -312,6 +441,10 @@ export function buildKit(
     .flatMap((b) => b.lenses)
     .flatMap((l) => [l.optics.focalMin, l.optics.focalMax])
     .filter((f): f is number => f != null && f > 0);
+  const apertures = bodies
+    .flatMap((b) => b.lenses)
+    .map((l) => l.optics.aperture)
+    .filter((a): a is number => a != null && a > 0);
 
   return {
     bodies,
@@ -320,5 +453,9 @@ export function buildKit(
     span: dates.length > 0 ? { from: Math.min(...dates), to: Math.max(...dates) } : null,
     focal:
       focals.length > 0 ? { min: Math.min(...focals), max: Math.max(...focals) } : null,
+    aperture:
+      apertures.length > 0
+        ? { min: Math.min(...apertures), max: Math.max(...apertures) }
+        : null,
   };
 }

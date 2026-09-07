@@ -3,24 +3,30 @@
 // The /gear shelf: every camera body the library was shot with and the glass it
 // was used with, counted off the EXIF.
 //
-// FOUR LAYOUTS, one dataset. The page used to have a single design built around
+// EIGHT LAYOUTS, one dataset. The page used to have a single design built around
 // generated line-art portraits of each body and lens; the drawings are gone (an
 // illustrated shelf is somebody else's idea, and a drawing of a camera says
 // nothing the library knows). What replaced them is the library's own numbers,
-// read four different ways — because "what have I shot with" is really four
+// read eight different ways — because "what have I shot with" is really several
 // questions, and no single arrangement answers them all:
 //
+//   Stack     — where the frames went: one bar per body, split by its glass, and
+//               one for the whole library. Proportion before number. The DEFAULT.
 //   Index     — the inventory sheet. Everything aligned in one column set:
-//               spec, usage meter, years, count. The dense, scannable default.
+//               spec, usage meter, years, count. The densest of the eight.
 //   Cards     — one card per body with the tally as the hero figure. The
 //               at-a-glance read, and the one that survives a phone screen.
+//   Blocks    — the kit as one surface, every area proportional to its frames.
 //   Timeline  — bars on a shared year axis: when each piece was in service,
 //               which body replaced which, what has not come out since 2021.
 //   Coverage  — every lens on a logarithmic millimetre axis: what the bag
 //               covers and where the hole is.
+//   Marks     — focal length against aperture, sized by use: the bag's habit.
+//   Record    — one printed sheet per body, in the display serif. The slow read.
 //
 // The layout is remembered, like the source tab: it is a way of reading the
-// shelf, not a per-visit decision.
+// shelf, not a per-visit decision. The order below is the order of the toggle,
+// and it runs composition → list → chart → sheet rather than by date added.
 //
 // A gear entry is a shortcut, not a museum label — following a body opens the
 // grid filtered on it, following a lens opens the same grid narrowed to that
@@ -41,18 +47,34 @@ import type { GearResponse } from "@/lib/gearTypes";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import { LibrarySourceTabs, useStoredLibrarySource } from "@/app/LibrarySourceTabs";
 import { buildKit, num, SORTS, type Sort } from "./model";
+import StackView from "./StackView";
 import IndexView from "./IndexView";
 import CardsView from "./CardsView";
+import BlocksView from "./BlocksView";
 import TimelineView from "./TimelineView";
 import CoverageView from "./CoverageView";
+import MarksView from "./MarksView";
+import RecordView from "./RecordView";
 
-type View = "index" | "cards" | "timeline" | "coverage";
+type View =
+  | "stack"
+  | "index"
+  | "cards"
+  | "blocks"
+  | "timeline"
+  | "coverage"
+  | "marks"
+  | "record";
 
 const VIEWS: { key: View; label: string; blurb: string }[] = [
+  { key: "stack", label: "Stack", blurb: "Where the frames went — one bar per body, split by the glass that shot them." },
   { key: "index", label: "Index", blurb: "The kit as an inventory sheet — spec, use, years, count in one column set." },
   { key: "cards", label: "Cards", blurb: "One card per body, its tally as the hero figure, its glass listed inside." },
+  { key: "blocks", label: "Blocks", blurb: "The whole kit as one surface: every area is proportional to its media." },
   { key: "timeline", label: "Timeline", blurb: "When each piece was in service, on one shared year axis." },
   { key: "coverage", label: "Coverage", blurb: "Every lens on a logarithmic focal-length axis — what the bag covers, and where the hole is." },
+  { key: "marks", label: "Marks", blurb: "Focal length against aperture, sized by use — where the bag actually works." },
+  { key: "record", label: "Record", blurb: "One sheet per body: its specs, its odometer and its glass, set to be read." },
 ];
 
 const isView = (v: string | null): v is View => VIEWS.some((x) => x.key === v);
@@ -64,9 +86,10 @@ const SOURCE_KEY = "winnow.gear.source";
 const VIEW_KEY = "winnow.gear.view";
 
 /** Restore / persist the layout. Seeded in an effect, like the source hook, so
- *  the first render matches the server's and nothing flashes. */
+ *  the first render matches the server's and nothing flashes. A visitor with a
+ *  remembered choice keeps it; only a fresh one lands on Stack. */
 function useStoredView(): [View, (v: View) => void] {
-  const [view, setView] = useState<View>("index");
+  const [view, setView] = useState<View>("stack");
   useEffect(() => {
     const saved = localStorage.getItem(VIEW_KEY);
     if (isView(saved)) setView(saved);
@@ -183,13 +206,21 @@ export default function GearPanel() {
 
 function Layout({ view, kit }: { view: View; kit: ReturnType<typeof buildKit> }) {
   switch (view) {
+    case "index":
+      return <IndexView kit={kit} />;
     case "cards":
       return <CardsView kit={kit} />;
+    case "blocks":
+      return <BlocksView kit={kit} />;
     case "timeline":
       return <TimelineView kit={kit} />;
     case "coverage":
       return <CoverageView kit={kit} />;
+    case "marks":
+      return <MarksView kit={kit} />;
+    case "record":
+      return <RecordView kit={kit} />;
     default:
-      return <IndexView kit={kit} />;
+      return <StackView kit={kit} />;
   }
 }

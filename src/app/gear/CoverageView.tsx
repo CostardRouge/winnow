@@ -10,47 +10,13 @@
 // range, the EXIF fills the rest), so a zoom always shot at one end shows the
 // range it owns, not the range it was used at.
 //
-// Log, not linear: 16→24mm is the same visual step as 200→300mm, which is how
-// focal lengths are actually experienced. A linear axis would crush a whole
-// wide-angle kit into the first centimetre of a 400mm library.
+// The scale itself lives in model.ts (`focalAxis`), shared with Marks so the two
+// charts place the same lens at the same spot.
 import Link from "next/link";
-import type { Kit, KitBody, KitLens } from "./model";
-import { num } from "./model";
+import type { FocalAxis, Kit, KitBody, KitLens } from "./model";
+import { focalAxis, num } from "./model";
 
-/** Where a ruler is allowed to put a label — the focal lengths people say out
- *  loud. Only the ones inside the kit's own range are drawn. */
-const NICE_MM = [8, 10, 12, 14, 16, 20, 24, 28, 35, 50, 70, 85, 105, 135, 200, 300, 400, 600, 800];
-
-function axisFor(focal: { min: number; max: number }) {
-  // A hair of padding in log space, so a lens sitting on the kit's extreme
-  // doesn't get drawn flush against the edge of its track.
-  const lo = Math.log(Math.max(focal.min, 1) / 1.12);
-  const hi = Math.log(Math.max(focal.max, focal.min * 1.2) * 1.12);
-  const at = (mm: number) => (Math.log(Math.max(mm, 1)) - lo) / (hi - lo);
-  // A short kit packs several nice values into one centimetre of ruler (12·14·16
-  // on a wide-angle bag), so labels closer than a legible gap are dropped —
-  // the ruler is a reference, not a complete list.
-  const ticks: { mm: number; at: number }[] = [];
-  for (const mm of NICE_MM) {
-    const x = at(mm);
-    if (x < 0 || x > 1) continue;
-    if (ticks.length > 0 && x - ticks[ticks.length - 1].at < 0.05) continue;
-    ticks.push({ mm, at: x });
-  }
-  return {
-    at,
-    // A kit spanning less than one nice interval (a single prime, two close
-    // zooms) gets its own two bounds as the ruler rather than no ruler at all.
-    ticks:
-      ticks.length >= 2
-        ? ticks
-        : [Math.round(focal.min), Math.round(focal.max)]
-            .filter((mm, i, a) => a.indexOf(mm) === i)
-            .map((mm) => ({ mm, at: at(mm) })),
-  };
-}
-
-type Axis = ReturnType<typeof axisFor>;
+type Axis = FocalAxis;
 
 function LensLane({ lens, axis }: { lens: KitLens; axis: Axis }) {
   const { focalMin, focalMax, zoom } = lens.optics;
@@ -114,7 +80,7 @@ export default function CoverageView({ kit }: { kit: Kit }) {
       </p>
     );
   }
-  const axis = axisFor(kit.focal);
+  const axis = focalAxis(kit.focal);
   return (
     <div className="gear-coverage">
       {/* The millimetre grid, carried down behind every lane: a segment only

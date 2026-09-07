@@ -5711,6 +5711,329 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-cv-lane:hover :is(.gear-cv-range, .gear-cv-point) {
     background: var(--color-accent);
   }
+
+  /* ---- Stack: part-to-whole, one bar at a time -------------------------
+     The ink of a segment is its SHARE (cf. model.ts `shareInk`) — one hue,
+     light for a sliver, dark for the bulk — and never its rank, so switching
+     the Incoming/Gallery tab can't repaint the glass that survived. Identity
+     is never colour alone: every bar carries a legend under it, and the wide
+     segments print their own percentage. A 2px gap of page shows between
+     segments so two neighbouring tones can never fuse into one block. */
+  .gear-stack {
+    @apply flex flex-col gap-7;
+  }
+  .gear-stk-body {
+    @apply flex flex-col gap-2;
+  }
+  .gear-stk-lead {
+    @apply m-0 text-[10px] font-semibold uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-muted);
+  }
+  .gear-stk-head {
+    @apply flex flex-wrap items-baseline gap-x-3 gap-y-1;
+  }
+  .gear-stk-name {
+    @apply min-w-0 truncate text-[13px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+    color: var(--color-text);
+  }
+  .gear-stk-name:hover {
+    color: var(--color-accent);
+  }
+  .gear-stk-kind {
+    @apply shrink-0 text-[10px] font-semibold uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-faint);
+  }
+  .gear-stk-years {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .gear-stk-total {
+    @apply ml-auto shrink-0 text-[12px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .gear-stk-bar {
+    @apply flex overflow-hidden rounded-[var(--radius-sm)];
+    height: 30px;
+    gap: 2px;
+    background: var(--color-surface-2);
+  }
+  .gear-stk-seg {
+    @apply flex shrink items-center overflow-hidden px-2;
+    flex-basis: 0;
+    min-width: 4px;
+    transition: filter 0.15s var(--ease-out);
+  }
+  .gear-stk-seg:hover {
+    filter: brightness(1.12) saturate(1.4);
+  }
+  .gear-stk-pct {
+    @apply truncate text-[10px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .gear-stk-legend,
+  .gear-stk-flat {
+    @apply flex flex-wrap gap-x-4 gap-y-1;
+  }
+  .gear-stk-key {
+    @apply flex items-center gap-1.5 text-[11px];
+    color: var(--color-muted);
+  }
+  .gear-stk-key:hover {
+    color: var(--color-accent);
+  }
+  /* The untagged remainder: named in the legend, but nothing to open. */
+  .gear-stk-key.is-flat,
+  .gear-stk-key.is-flat:hover {
+    color: var(--color-faint);
+  }
+  .gear-stk-key i {
+    @apply block shrink-0 rounded-[2px];
+    width: 9px;
+    height: 9px;
+  }
+  .gear-stk-key b {
+    @apply font-medium;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+  }
+
+  /* ---- Blocks: the kit as one surface ----------------------------------
+     A row per body, its height proportional to its media (with a declared
+     floor — cf. BlocksView MIN_ROW), sliced into a tile per lens. Needs a
+     definite height: proportional flex has nothing to divide otherwise. */
+  .gear-blocks {
+    @apply flex flex-col;
+    gap: 2px;
+    height: 520px;
+  }
+  .gear-blk-row {
+    @apply flex min-h-0;
+    flex-basis: 0;
+    gap: 2px;
+  }
+  .gear-blk-label {
+    @apply flex shrink-0 flex-col justify-center overflow-hidden rounded-[var(--radius-sm)] px-2.5 py-1;
+    width: 150px;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+  }
+  .gear-blk-label:hover {
+    background: var(--color-surface-3);
+    color: var(--color-accent);
+  }
+  .gear-blk-label b {
+    @apply truncate text-[12px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+  .gear-blk-label small {
+    @apply truncate text-[10px];
+    color: var(--color-faint);
+  }
+  .gear-blk-tile {
+    @apply flex shrink flex-col justify-end overflow-hidden rounded-[var(--radius-sm)] px-2.5 py-1.5;
+    flex-basis: 0;
+    min-width: 4px;
+    transition: filter 0.15s var(--ease-out);
+  }
+  .gear-blk-tile:hover {
+    filter: brightness(1.12) saturate(1.4);
+  }
+  .gear-blk-tile b {
+    @apply truncate text-[11px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+  .gear-blk-tile small {
+    @apply truncate text-[10px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  /* ---- Marks: focal length against aperture ----------------------------
+     Positioned elements on percentage tracks, like the Timeline and Coverage
+     lanes — so a mark is a real Link and every colour is a token. The gutters
+     are grid columns rather than SVG margins, which keeps the tick labels in
+     the page's own type. */
+  .gear-marks {
+    @apply flex flex-col gap-3;
+  }
+  .gear-mk-chart {
+    @apply grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 18px;
+    height: 340px;
+    /* A plot the full width of a desktop scatters seven marks over a metre of
+       screen; capping the measure is what makes the crowd read as a crowd. */
+    max-width: 960px;
+  }
+  .gear-mk-stops {
+    @apply relative;
+  }
+  .gear-mk-stop {
+    @apply absolute right-2 text-[10px];
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-faint);
+  }
+  .gear-mk-plot {
+    @apply relative;
+    border-left: 1px solid var(--color-border-strong);
+    border-bottom: 1px solid var(--color-border-strong);
+  }
+  .gear-mk-hline {
+    @apply absolute inset-x-0 block;
+    height: 1px;
+    background: var(--color-border);
+  }
+  .gear-mk-vline {
+    @apply absolute inset-y-0 block;
+    width: 1px;
+    background: var(--color-border);
+  }
+  /* One mark per lens: a dot for a prime, a capsule spanning the range for a
+     zoom. Area carries the count; nothing else is encoded, so two lenses that
+     shot the same amount look the same wherever they sit. */
+  /* Two lenses that open to the same aperture sit at the same height, and two
+     zooms whose ranges overlap then fuse into one bar. A ring of the page's own
+     ground keeps the boundary visible without moving either mark off the value
+     it is reporting. */
+  .gear-mk-mark {
+    @apply absolute block rounded-full;
+    background: var(--color-muted);
+    box-shadow: 0 0 0 2px var(--color-bg);
+    transition: background 0.15s var(--ease-out);
+  }
+  .gear-mk-mark:hover {
+    background: var(--color-accent);
+    z-index: 1;
+  }
+  .gear-mk-name {
+    @apply pointer-events-none absolute block max-w-[140px] truncate text-[10px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .gear-mk-corner {
+    @apply block;
+  }
+  .gear-mk-mm {
+    @apply relative;
+  }
+  .gear-mk-tickmm {
+    @apply absolute top-1 text-[10px];
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-faint);
+  }
+  .gear-mk-legend {
+    @apply flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px];
+    color: var(--color-muted);
+  }
+  .gear-mk-legend > span {
+    @apply flex items-center gap-2;
+  }
+  .gear-mk-legend i {
+    @apply block shrink-0 rounded-full;
+    background: var(--color-muted);
+  }
+  .gear-mk-axes {
+    color: var(--color-faint);
+  }
+  .gear-mk-missing {
+    @apply m-0 text-[11px];
+    color: var(--color-faint);
+  }
+
+  /* ---- Record: one printed sheet per body ------------------------------
+     The one layout that wears the display serif, and the one place the raw
+     EXIF device string is set as a subtitle instead of hiding in a tooltip. */
+  .gear-records {
+    @apply flex flex-col gap-10;
+    /* A sheet is read, not scanned: past this the spec columns drift apart and
+       a value starts wrapping while its neighbours sit in white space. */
+    max-width: 1100px;
+  }
+  .gear-rec {
+    @apply flex flex-col gap-4;
+  }
+  .gear-rec-top {
+    @apply flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-2.5;
+    border-bottom: 2px solid var(--color-text);
+  }
+  .gear-rec-title {
+    @apply m-0 text-[30px] font-normal leading-none;
+    font-family: var(--font-serif);
+    letter-spacing: -0.01em;
+  }
+  .gear-rec-title a {
+    color: var(--color-text);
+  }
+  .gear-rec-title a:hover {
+    color: var(--color-accent);
+  }
+  .gear-rec-exif {
+    @apply min-w-0 truncate text-[10px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .gear-rec-count {
+    @apply ml-auto shrink-0 text-[13px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .gear-rec-specs {
+    @apply m-0 grid gap-x-6 gap-y-3;
+    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+  }
+  .gear-rec-spec dt {
+    @apply text-[10px] uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-faint);
+  }
+  .gear-rec-spec dd {
+    @apply m-0 mt-0.5 text-[13px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .gear-rec-glass {
+    @apply grid gap-x-7;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+  .gear-rec-lens {
+    @apply flex items-baseline gap-2.5 py-2;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+  .gear-rec-lens:hover {
+    color: var(--color-accent);
+  }
+  .gear-rec-lens b {
+    @apply min-w-0 truncate text-[12px] font-medium;
+    font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+  }
+  .gear-rec-lens em {
+    @apply shrink-0 whitespace-nowrap text-[11px] not-italic;
+    color: var(--color-faint);
+  }
+  .gear-rec-lens span {
+    @apply ml-auto shrink-0 text-[12px];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
 }
 
 /* ---- People: the shelf of clustered faces (page /people) -----------------
@@ -6155,6 +6478,12 @@ html[data-theme="dark"] .btn-primary:hover {
    next to "which lens, how much"), and the axis layouts trade label width for
    track. The card wall becomes one column. */
 @media (max-width: 860px) {
+  /* Eight layouts do not fit one row on a phone. The group wraps to a second
+     line rather than pushing Marks and Record off the edge of the screen,
+     where nothing would reveal that they exist. */
+  .gear-head .view-toggle {
+    @apply flex-wrap;
+  }
   /* The head's meta takes a line of its own rather than being squeezed off the
      right edge by the years and the total. */
   .gear-ix-head-meta {
@@ -6189,6 +6518,14 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-cv-grid,
   .gear-cv-lane {
     grid-template-columns: minmax(0, 128px) minmax(0, 1fr) 52px;
+  }
+  /* The Blocks label column is the first thing to give: a body's name matters
+     less than the tiles the row exists to show. */
+  .gear-blk-label {
+    width: 104px;
+  }
+  .gear-rec-title {
+    @apply text-[25px];
   }
 }
 
@@ -6248,6 +6585,31 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-cv-grid .gear-cv-track {
     grid-column: 1;
     grid-row: 1;
+  }
+  /* Stack keeps its shape on a phone — the bars are horizontal and the legend
+     wraps under them — but the segment percentages stop fitting. */
+  .gear-stk-bar {
+    height: 26px;
+  }
+  .gear-stk-seg {
+    @apply px-1;
+  }
+  /* Blocks and Marks are the two that a phone genuinely squeezes: give them
+     the height back that the narrower tracks cost them. */
+  .gear-blocks {
+    height: 600px;
+  }
+  .gear-blk-label {
+    width: 88px;
+  }
+  .gear-mk-chart {
+    height: 300px;
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  /* Under ~360px the names collide whatever the placement pass does; the marks
+     keep their tooltips and the legend still explains the encoding. */
+  .gear-mk-name {
+    display: none;
   }
 }
 
