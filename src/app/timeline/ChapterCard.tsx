@@ -19,8 +19,8 @@ import type { PickedLocation } from "@/app/LocationPickerModal";
 
 export type Row = GalleryAsset & ViewerItem & { captured_at: string | null };
 
-const DAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
-const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const HOUR_MS = 3_600_000;
 
 /** A capture instant read in the chapter's own local day (cf.
@@ -46,7 +46,7 @@ function durationLabel(ch: TimelineChapter) {
   const b = localDay(ch.ended_at, ch.tz_offset_hours);
   const days = Math.round((Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate()) -
     Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate())) / 86_400_000) + 1;
-  if (days > 1) return `${days} jours`;
+  if (days > 1) return `${days} days`;
   const h = Math.max(1, Math.round((Date.parse(ch.ended_at) - Date.parse(ch.started_at)) / HOUR_MS));
   return `${h} h`;
 }
@@ -141,16 +141,16 @@ export default function ChapterCard({
         </div>
         <div className="tl-ch-actions">
           <button className="btn btn-sm" onClick={() => onEdit(ch)}>
-            {ch.override_id ? "Modifier" : "Nommer"}
+            {ch.override_id ? "Edit" : "Name"}
           </button>
           <Link className="btn btn-sm" href={seeAll}>
-            Ouvrir dans la grille
+            Open in the grid
           </Link>
         </div>
       </div>
       <div className="tl-ch-meta">
         <span>
-          <b className="num">{ch.count.toLocaleString()}</b> médias
+          <b className="num">{ch.count.toLocaleString()}</b> media
         </span>
         {ch.devices.length > 0 && (
           <>
@@ -161,7 +161,7 @@ export default function ChapterCard({
         {ch.places.length > 1 && (
           <>
             <span className="tl-sep">·</span>
-            <span title="Lieux traversés, du plus photographié au moins">
+            <span title="Places crossed, most photographed first">
               {ch.places.slice(1, 4).join(", ")}
               {ch.places.length > 4 ? "…" : ""}
             </span>
@@ -171,18 +171,18 @@ export default function ChapterCard({
         <span
           title={
             ch.tz_offset_hours == null
-              ? "Aucune position GPS : les jours sont lus en UTC"
-              : "Décalage déduit de la longitude du chapitre — approximatif aux frontières de fuseau"
+              ? "No GPS position at all: the days are read in UTC"
+              : "Offset inferred from the chapter’s longitude — approximate near a timezone border"
           }
         >
-          jours locaux · {tzLabel(ch.tz_offset_hours)}
+          local days · {tzLabel(ch.tz_offset_hours)}
         </span>
         {ch.place_label && (
           <>
             <span className="tl-sep">·</span>
             <span
               className="tl-located"
-              title={`Lieu choisi pour le chapitre (${ch.place_lat?.toFixed(4)}, ${ch.place_lon?.toFixed(4)}). Les médias gardent leur propre position.`}
+              title={`Place chosen for the chapter (${ch.place_lat?.toFixed(4)}, ${ch.place_lon?.toFixed(4)}). The media keep their own position.`}
             >
               {ch.place_label}
             </span>
@@ -192,16 +192,16 @@ export default function ChapterCard({
           <>
             <span
               className="tl-inferred"
-              title="Aucun média de ce chapitre n'a de position : le lieu vient des chapitres voisins. Rien n'a été écrit."
+              title="No media in this chapter carries a position: the place comes from the neighbouring chapters. Nothing was written."
             >
-              lieu déduit
+              inferred place
             </span>
             <button
               className="btn btn-sm"
               onClick={() => onConfirmPlace(ch)}
-              title="Choisir la position sur la carte, puis confirmer média par média — c'est ce qui écrit les coordonnées"
+              title="Pick the position on the map, then confirm media by media — that is what writes the coordinates"
             >
-              Confirmer le lieu…
+              Confirm the place…
             </button>
           </>
         )}
@@ -215,9 +215,9 @@ export default function ChapterCard({
               onClick={() =>
                 onPlaceMedia(ch, { lat: ch.place_lat!, lon: ch.place_lon!, label: ch.place_label })
               }
-              title="Proposer la position du chapitre aux médias qui n'en ont pas — avec le récap avant écriture"
+              title="Offer the chapter’s position to the media that have none — with the recap before anything is written"
             >
-              Placer {ch.ungeotagged.toLocaleString()} média{ch.ungeotagged > 1 ? "s" : ""} sans position…
+              Place {ch.ungeotagged.toLocaleString()} media with no position…
             </button>
           )}
         {ch.sessions.length > 0 && (
@@ -249,14 +249,14 @@ export default function ChapterCard({
         {rows
           ? rows.map((r, i) => <Tile key={r.id} a={r} onClick={() => onOpen(rows, i)} />)
           : failed
-            ? <span className="hint">Vignettes indisponibles.</span>
+            ? <span className="hint">Thumbnails unavailable.</span>
             : <div className="tl-row-skeleton">
                 {ch.sample_ids.map((id) => <span key={id} className="skeleton" />)}
               </div>}
         {ch.count > shown && (
           <Link className="tl-more" href={seeAll}>
             <span className="n">+{(ch.count - shown).toLocaleString()}</span>
-            voir tout
+            see all
           </Link>
         )}
       </div>

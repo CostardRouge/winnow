@@ -2467,9 +2467,12 @@ html[data-theme="dark"] .btn-primary:hover {
      here is a stored entity. The stream is NOT react-window virtualized: a
      chapter's height depends on its content (day rows, wrapped meta), which
      react-window cannot size; content-visibility on each chapter plus the
-     lazily fetched tile rows keep thirty chapters cheap instead. */
+     lazily fetched tile rows keep thirty chapters cheap instead.
+     `.tl-body` is positioned so the re-derivation loader
+     (`.zone-loading-overlay`) covers the stream AND the spine: a change of
+     rule, granularity or source re-derives both. */
   .tl-body {
-    @apply flex min-h-0 flex-1;
+    @apply relative flex min-h-0 flex-1;
   }
   .tl-stream {
     @apply min-w-0 flex-1 overflow-y-auto px-3.5 pb-10 pt-1.5;
@@ -3688,6 +3691,28 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm;
     color: var(--color-muted);
     animation: fade-in 0.18s var(--ease-out);
+  }
+
+  /* Blocking in-zone loader — the same spinner + label as `.zone-loading`, but
+     as a card floated over the zone whose content is being re-derived, blurring
+     what is still underneath (the modal treatment, minus the dialog). Sits
+     above the sticky headers inside the zone (z-[3]) and below the modals
+     (z-50); it takes the pointer events on purpose, so stale results cannot be
+     clicked while the answer they belong to is being replaced. The positioned
+     parent is the zone (e.g. `.tl-body`). */
+  .zone-loading-overlay {
+    @apply absolute inset-0 z-20 flex items-center justify-center p-4;
+    background: color-mix(in srgb, var(--color-bg) 45%, transparent);
+    backdrop-filter: blur(3px);
+    animation: fade-in 0.18s var(--ease-out);
+  }
+  /* `.zone-loading` fills its flex parent by default; inside the overlay it is
+     a card, so it must stop growing. */
+  .zone-loading-overlay .zone-loading {
+    @apply flex-none rounded-[var(--radius-xl)] border px-7 py-6;
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-pop);
   }
 
   /* Floating "loading more" pill, pinned to the bottom of the result zone while

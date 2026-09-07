@@ -48,6 +48,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - Deploy is push-to-`main` → ghcr image → Watchtower pull on the Optiplex, behind Traefik + Cloudflare Tunnel → `docs/memory/deployment.md`
 - Identity lives in the app (`src/proxy.ts` + `src/lib/authz.ts`), not in the reverse proxy → `docs/memory/auth.md`
 - Atelier (the editing app, a sibling subdomain) calls the API cross-origin with the session cookie: same-site, so no token — just an exact-origin CORS allowlist answered before the session check, plus `GET /api/capabilities` → `docs/memory/auth.md`
+- Every user-facing string is in English (en-GB dates), whatever language the session is held in → `docs/memory/frontend.md`
 - Styling is a token-based "Paper" system of semantic classes in `globals.css`, not utilities in JSX → `docs/memory/frontend.md`
 - Every DB-backed route opts out of static rendering with `force-dynamic` → `docs/memory/frontend.md`
 - The dedup triage page pages server-side on its own endpoint, off the shared failures poll → `docs/memory/frontend.md`

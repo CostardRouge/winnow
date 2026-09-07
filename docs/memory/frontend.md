@@ -4,6 +4,14 @@ Read before touching a page or component under `src/app/`, the styling, the view
 
 Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`, `src/app/**` component comments and `docs/ARCHITECTURE-REVIEW.md` §3.5.
 
+## The UI is written in English — all of it (2026-09-07)
+
+**Decision**: every user-facing string is English: labels, buttons, tooltips, empty states, notices, loader labels, weekday and month names, and the server-side fallbacks that surface as copy (`lib/timeline.ts`'s `"Unknown place"`). The maintainer is French and `/timeline` shipped entirely in French — it was the only French island in the app and was translated wholesale on 2026-09-07.
+
+**Why**: the audience is English-speaking and technical first (the product still aims to be elegant for photographers). A half-translated UI reads worse than either language alone, and the drift starts with one page.
+
+**How to apply**: write the copy in English on the first pass — a French draft is a rewrite, not a detail, and it is the mistake to watch for when the conversation itself is in French. Follow the en-GB conventions already in the tree: day before month, `toLocaleString("en-GB")`, `MONTHS = ["Jan", …]` (`gallery/Tree.tsx`), full weekday names (`gallery/CalendarView.tsx`), curly quotes `“ ”` and `’`, never `« »`. There is no i18n layer and none is planned: strings are literals in the JSX, so translating a feature later means touching every file it owns.
+
 ## Styling: a "Paper" design system in CSS, not utilities in JSX (2026-08-20)
 
 **Decision**: `src/app/globals.css` (~5900 lines) defines the whole visual language — an `@theme` token block (warm paper surfaces, ink text, one vermillion accent, verdict colours, radii) followed by ~630 semantic component classes built with `@apply` inside `@layer components`. Components carry class names like `.sift-recent-card`, not long utility strings. `cn()` (`src/lib/cn.ts`, a thin `clsx`) composes them conditionally.
@@ -103,3 +111,11 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 **Choices that are not obvious from the code**: the stream is deliberately **not** react-window virtualized — a chapter's height depends on its content, which react-window cannot size; `content-visibility: auto` on `.tl-chapter` plus the lazy tile rows is the cheap path. Place granularity is **automatic** (Région → Département → Ville, first level yielding 6–30 chapters) and the chosen level is returned and shown as a pinnable chip: the maintainer accepted the auto cut on the condition that it is visible and pinnable, because a cut that changes under the fingers is not trusted. Days are read in the chapter's **local day** from `round(medianLon / 15)` — `capture_date` is UTC and no timezone column exists — and the offset is always stated. "Ville" alone was rejected as default (a day on the road makes six chapters), "Temps" alone too (a nine-day stay breaks every night); the mockups that settled this are linked from the plan, not the repo.
 
 **How to apply**: a new reading option goes into the URL (`mode`, `gran`, `source`) like the gallery's filters. Undated media are counted and shown, never silently dropped. Do not add a stored chapter entity — extend the corrections model (`docs/memory/database.md` once migration 0040 lands).
+
+## A re-derived view says so with one blurring overlay, not a second loader (2026-09-07)
+
+**Decision**: `LoadingOverlay` (`src/app/ui.tsx`, class `.zone-loading-overlay` in `globals.css`) is `LoadingState`'s exact spinner + label, drawn as a card floated over its zone with `backdrop-filter: blur(3px)` — the modal treatment minus the dialog. `/timeline` renders it as its **only** loader: the first read draws it over an empty `.tl-body`, every later one (chapter rule, place grouping, library source, a chapter edit, "Retry") over the previous answer, which stays visible, blurred and unclickable. Its label names the change being applied (`readingLabel()` diffs the previous `{mode, gran, source}` against the new one), not a generic "loading".
+
+**Why**: the timeline is derived from a full scan on **every** option change (no cache yet), so a click buys seconds of silence; the maintainer asked for the feedback before the performance work, and asked explicitly that the first-load and the re-derivation loaders be the *same* object — so the zone never changes shape between "nothing yet" and "re-reading". Blurring rather than clearing keeps the old answer as context while making it read as stale; taking the pointer events is the point, since clicking a chapter that is about to be replaced is a bug waiting to happen. The controls sit outside the overlay on purpose — changing your mind mid-derivation just cancels the in-flight read.
+
+**How to apply**: the zone that hosts it must be `position: relative` (`.tl-body` is, and covers the spine too since a change re-derives it as well); `.zone-loading` gets `flex-none` inside the overlay or it stretches. Reach for it when a view is **re-derived** (the whole answer is replaced); keep `.zone-loading` for a first fill with nothing behind it and `.zone-loading-more` for a feed being *extended* — a paged grid must not blur what it is about to append to. Client-only filters (the timeline's "lieux déduits" toggle) fetch nothing and must not raise it.

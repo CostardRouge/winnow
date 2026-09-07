@@ -180,6 +180,28 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
 }
 
 /**
+ * Blocking in-zone loader: the same spinner + label as `LoadingState`, drawn as
+ * a card floated over the zone it belongs to, blurring whatever is still
+ * displayed underneath. Used when a whole view is being re-derived (a filter or
+ * a source change) rather than extended: what is on screen answers the previous
+ * question, so it must read as stale and stop taking clicks — and the *first*
+ * load wears the exact same card over an empty zone, so nothing changes shape
+ * between "nothing yet" and "re-reading".
+ *
+ * The parent must be positioned (`position: relative`).
+ */
+export function LoadingOverlay({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div className="zone-loading-overlay" role="status" aria-live="polite">
+      <div className="zone-loading">
+        <Spinner />
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Brand lockup: a winnowing-fan / feather mark drawn as an SVG (no emoji), set
  * in the accent so it reads as the product's single signature colour, beside the
  * "Winnow" wordmark. Used in the home topbar.
