@@ -89,6 +89,41 @@ uploads go through the tunnel.)
 
 ---
 
+## Sections & feature flags (page `/settings/features`)
+
+Winnow grew by verbs — sift, search, people, gear, timeline — and each one took
+a slot in the navigation rail. Not all of them are wanted every day, and not all
+of them are finished. **Settings › Features** is one switch per optional
+section:
+
+| Section | Default | Why it is optional |
+|---|---|---|
+| **Library** | *always on* | Browsing, culling and exporting the library is what Winnow **is**. It has no flag. |
+| **Timeline** | **off** | The chapters are re-derived on every request and the cut rules are still being reworked; it ships off until it settles. |
+| **Sift** | on | The swipe deck. |
+| **Search** | on | Keyword search over captions, OCR text and tags. |
+| **People** | on | The face-clustering shelf. |
+| **Gear** | on | The bodies-and-lenses shelf. |
+
+A section that is off is **not merely hidden**. Its pages answer `404`, and so
+do the API routes it owns — so a bookmark, a typed URL or a client app cannot
+reach a feature this instance has turned off. `GET /api/capabilities` states
+`media.timeline` for exactly that reason: [Atelier](https://github.com/CostardRouge/atelier)
+reads it and says *"this instance does not serve a timeline"* rather than
+guessing from a 404.
+
+Routes the rest of the app also reads stay open on purpose — hiding the Gear
+shelf must not empty the gallery's lens filter, and `GET /api/people` remains
+the directory the gallery's person facet falls back on. Each gated route says
+at its top why it belongs to its section alone.
+
+The flags live in Postgres (`app_settings`, one `features` row), **not** in the
+environment: `NEXT_PUBLIC_*` is inlined at `next build` and the image is built
+in CI, so an env flag could never be flipped on the Optiplex. Flipping a switch
+is admin-only and takes effect immediately — the rail redraws under your hand.
+
+---
+
 ## Getting started
 
 ### With Docker Compose (recommended)
@@ -439,6 +474,13 @@ returns one row per capture date (`{date,count,cover_id}`) for the visible
 window plus the overall `bounds`, so a month renders in a single request.
 
 ### Timeline: the library read as a story (page `/timeline`)
+
+> **Off by default.** The Timeline is behind a feature flag and ships disabled:
+> the chapters are re-derived on every request, so what a client reads today can
+> change under it tomorrow, and the cut rules still owe a rework. Turn it on in
+> [Settings › Features](#sections--feature-flags-page-settingsfeatures) to look
+> at work in progress; with it off, the page and `GET /api/assets/timeline` both
+> answer `404`.
 
 The Calendar answers *what did I shoot that day*, the Map *where*. Neither
 tells the story of a period: a year abroad lands in dozens of session folders,

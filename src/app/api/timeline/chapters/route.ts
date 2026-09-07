@@ -15,11 +15,16 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one } from "@/lib/db";
 import { json, badRequest, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  // Chapter corrections belong to the Timeline alone.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const spans = await many(
       `SELECT id, starts_at, ends_at, name, place_label, place_lat, place_lon,
@@ -51,6 +56,10 @@ const SpanBody = z
   });
 
 export async function POST(req: NextRequest) {
+  // Chapter corrections belong to the Timeline alone.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const parsed = SpanBody.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid span", parsed.error.issues);

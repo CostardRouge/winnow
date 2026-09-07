@@ -5131,6 +5131,51 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* =======================================================================
+     Features (/settings/features) — one switch per optional section of the
+     app. A plain list inside the shared .control card: the point of the page
+     is to be read (each row says what the section is, and why one of them
+     ships off), so the rows are paragraphs with a switch, not a dense table.
+     ======================================================================= */
+  .feature-title {
+    @apply text-base leading-tight;
+  }
+  /* A comfortable measure for the standing paragraph — the card fills the page
+     width, and a 200-character line is unreadable. */
+  .feature-intro {
+    @apply mt-1.5 max-w-[72ch];
+  }
+  .feature-list {
+    @apply flex list-none flex-col gap-4 p-0;
+  }
+  .feature-row {
+    @apply flex flex-col gap-1 border-t pt-4;
+    border-color: var(--color-border);
+  }
+  .feature-row:first-child {
+    @apply border-t-0 pt-0;
+  }
+  .feature-switch {
+    @apply inline-flex cursor-pointer select-none items-center gap-2.5;
+  }
+  .feature-switch input {
+    @apply h-4 w-4 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+  .feature-name {
+    @apply text-sm;
+  }
+  .feature-blurb {
+    @apply pl-[26px] text-sm;
+    color: var(--color-faint);
+  }
+  /* The reason a section ships off — deliberately not styled as an error: it
+     is a statement about how finished the feature is, not a fault. */
+  .feature-caveat {
+    @apply pl-[26px] text-xs;
+    color: var(--color-accent);
+  }
+
+  /* =======================================================================
      Import (/settings/import) — the media intake page. Lives in the shared .pipeline-body
      (same p-5 page margin as Library / Sift / Pipeline / Volumes). A big
      drag-and-drop hero up top, then the live job status, then the secondary

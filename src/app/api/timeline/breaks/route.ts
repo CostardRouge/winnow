@@ -9,11 +9,16 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one } from "@/lib/db";
 import { json, badRequest, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  // Forced breaks belong to the Timeline alone.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const breaks = await many(`SELECT id, at, created_at FROM timeline_breaks ORDER BY at`);
     return json({ breaks });
@@ -25,6 +30,10 @@ export async function GET() {
 const Body = z.object({ at: z.string().datetime({ offset: true }) });
 
 export async function POST(req: NextRequest) {
+  // Forced breaks belong to the Timeline alone.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("at (ISO instant) required", parsed.error.issues);

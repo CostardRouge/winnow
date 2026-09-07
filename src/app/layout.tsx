@@ -7,6 +7,14 @@ import {
 import "./globals.css";
 import AppRail from "./AppRail";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
+import { FeaturesProvider } from "./FeaturesProvider";
+import { getFeatures } from "@/lib/featureGate";
+
+// DB-backed layout: never pre-rendered/cached at build time. The feature flags
+// below are read from Postgres on every request (behind a short cache), and
+// they decide what the rail offers — a stale copy baked at build time would
+// show sections this instance has turned off.
+export const dynamic = "force-dynamic";
 
 // "Paper" type system: Space Grotesk drives the UI, Instrument Serif sets the
 // editorial display headings, JetBrains Mono carries every number.
@@ -68,11 +76,16 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Read once here, at the root, and handed to the whole client tree through
+  // the context below — so the rail, the viewer's face chips and anything else
+  // that offers a way into an optional section all answer from one source.
+  const features = await getFeatures();
+
   return (
     <html
       lang="en"
@@ -104,10 +117,12 @@ export default function RootLayout({
             __html: `try{if(window.matchMedia("(min-width: 761px)").matches&&localStorage.getItem("winnow.gallery.aside")==="closed"){document.documentElement.setAttribute("data-gallery-aside","closed")}}catch(e){}`,
           }}
         />
-        <div className="root">
-          <AppRail />
-          <div className="root-main">{children}</div>
-        </div>
+        <FeaturesProvider value={features}>
+          <div className="root">
+            <AppRail />
+            <div className="root-main">{children}</div>
+          </div>
+        </FeaturesProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

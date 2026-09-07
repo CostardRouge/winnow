@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PeoplePanel from "./PeoplePanel";
+import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "People" };
 
@@ -8,7 +9,9 @@ export const metadata: Metadata = { title: "People" };
 // first. The people counterpart of the Gear shelf — instead of "narrow the grid
 // by camera", it answers "who is in the library, and how often", then links
 // each person to their media.
-export default function PeoplePage() {
+export default async function PeoplePage() {
+  await requireFeature("people");
+
   return (
     <div className="app-shell">
       <div className="topbar">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { one } from "@/lib/db";
 import SiftSession from "./SiftSession";
+import { requireFeature } from "@/lib/featureGate";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -22,6 +23,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   }
 }
 
-export default function SiftSessionRoute({ params }: Params) {
+export default async function SiftSessionRoute({ params }: Params) {
+  await requireFeature("sift");
   return <SiftSession params={params} />;
 }

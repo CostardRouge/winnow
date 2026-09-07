@@ -103,3 +103,19 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 **Choices that are not obvious from the code**: the stream is deliberately **not** react-window virtualized — a chapter's height depends on its content, which react-window cannot size; `content-visibility: auto` on `.tl-chapter` plus the lazy tile rows is the cheap path. Place granularity is **automatic** (Région → Département → Ville, first level yielding 6–30 chapters) and the chosen level is returned and shown as a pinnable chip: the maintainer accepted the auto cut on the condition that it is visible and pinnable, because a cut that changes under the fingers is not trusted. Days are read in the chapter's **local day** from `round(medianLon / 15)` — `capture_date` is UTC and no timezone column exists — and the offset is always stated. "Ville" alone was rejected as default (a day on the road makes six chapters), "Temps" alone too (a nine-day stay breaks every night); the mockups that settled this are linked from the plan, not the repo.
 
 **How to apply**: a new reading option goes into the URL (`mode`, `gran`, `source`) like the gallery's filters. Undated media are counted and shown, never silently dropped. Do not add a stored chapter entity — extend the corrections model (`docs/memory/database.md` once migration 0040 lands).
+
+## `router.refresh()` does not re-render the ROOT layout (2026-09-07)
+
+**Decision**: `FeaturesProvider` (`src/app/FeaturesProvider.tsx`) holds the feature flags in state, seeded by the root layout's server read and re-seeded when that value changes; `/settings/features` pushes the answer PATCH just confirmed into it through `useSetFeatures()`.
+
+**Why**: measured — after `PATCH /api/features`, `router.refresh()` re-rendered the route's own server components and the rail (which lives in `layout.tsx`) did not move until a full page load. A switch that only writes to the database therefore *looks broken* while you stay on the page.
+
+**How to apply**: anything rendered by the root layout that a page can change needs this shape — server read for the first paint, a client mirror for the change. Do not reach for `router.refresh()` to update the rail, and do not fetch the flags again from the browser (an entry point that appears a beat after the paint reads as a glitch). The server stays the source of truth; the context is a mirror, never a second one.
+
+## An optional section is hidden AND unreachable (2026-09-07)
+
+**Decision**: a section behind a feature flag loses its rail entry, its pages answer `404` (`requireFeature`), and the API routes it owns answer `404` too (`featureOff`) — `src/lib/featureGate.ts`. `GET /api/capabilities` states `media.timeline` so Atelier can say "this instance does not serve a timeline" instead of guessing from a 404.
+
+**Why**: hiding only the rail entry leaves the feature reachable by bookmark, by typed URL and by a client app — which is exactly what "the Timeline is not mature enough to be used" has to prevent. Atelier reached the same conclusion from the other side and already reads `media.timeline` (`shared/sources/winnow/client.ts`, `hasTimeline`), treating only an explicit `false` as "no".
+
+**How to apply**: gate a route only where the feature owns it outright. `GET /api/people` stays open even with People off — the gallery's person facet falls back on it to name a deep-linked id, and filtering by person is a *gallery* capability; `/api/facets` (gear's lens/device chips) likewise. Every gated handler carries a one-line comment saying why the route is its feature's alone. The one entry point outside the section itself that does follow the flag is the viewer's face box/chip link to `/people/:id` (`MediaViewer.tsx`, `linkable`) — it would 404.

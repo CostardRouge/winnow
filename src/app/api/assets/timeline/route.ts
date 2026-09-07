@@ -23,6 +23,7 @@ import {
   type TimelineOptions,
 } from "@/lib/timeline";
 import { json, badRequest, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
@@ -35,6 +36,12 @@ function num(raw: string | null, fallback: number, lo: number, hi: number) {
 }
 
 export async function GET(req: NextRequest) {
+  // The timeline's own read. Gated because this route IS the feature: while it
+  // is off nothing — not the page, not a client app — asks an immature
+  // derivation for chapters.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const sp = req.nextUrl.searchParams;
     let filter;

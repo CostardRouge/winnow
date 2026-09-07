@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import TimelinePanel from "./TimelinePanel";
+import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "Timeline" };
 
@@ -9,7 +10,11 @@ export const metadata: Metadata = { title: "Timeline" };
 // period" — a chronological stream cut into chapters (a stay in a place) that
 // cross session folders, since a session is a directory on disk and never a
 // leg of a trip (cf. lib/timeline.ts).
-export default function TimelinePage() {
+export default async function TimelinePage() {
+  // Off by default: the chapters are still being reworked, and a section that
+  // is off must be unreachable, not merely absent from the rail.
+  await requireFeature("timeline");
+
   return (
     // useSearchParams (the deep-linkable mode/granularity/source) needs a
     // Suspense boundary above it or the App Router refuses to prerender.
