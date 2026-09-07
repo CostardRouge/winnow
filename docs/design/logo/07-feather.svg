@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 07 · La plume tenue — the continuity option, redrawn: the vane becomes a
+       filled mass at 22 % instead of three parallel arcs, the rachis sits on top as
+       a solid stroke, the calamus stays a dot. Same silhouette as today, but it
+       survives reduction because it is a surface and not a comb. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M4.9 19.4C6.3 11.9 11.2 5.4 19.7 4.2 16.9 12.5 12 17.7 4.9 19.4Z" fill="currentColor" stroke="none" opacity=".22"/>
+    <path d="M4.9 19.4C12 17.7 16.9 12.5 19.7 4.2" stroke-width="2"/>
+    <circle cx="4.9" cy="19.4" r="1.9" fill="currentColor" stroke="none"/>
+  </g>
+</svg>

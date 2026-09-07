@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
+  <!-- 04 · Le grain-lentille — one almond says three things at once: a wheat grain
+       with its crease, a lens, an eye. Set at 45° so it holds the diagonal of the
+       feather it replaces. -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <path d="M4.8 19.2C4.8 12.4 12.4 4.8 19.2 4.8 19.2 11.6 11.6 19.2 4.8 19.2Z" fill="currentColor" stroke="none" opacity=".18"/>
+    <path d="M4.8 19.2C4.8 12.4 12.4 4.8 19.2 4.8 19.2 11.6 11.6 19.2 4.8 19.2Z" stroke-width="1.9" stroke-linejoin="round"/>
+    <path d="M7.9 16.1 16.1 7.9" stroke-width="1.2" opacity=".5"/>
+  </g>
+</svg>
