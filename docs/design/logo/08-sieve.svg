@@ -1,18 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="Winnow">
-  <!-- 08 · Le tri — the sieve in the middle, the mass on the left, what gets through
-       on the right. The most literal about what the app does: a lot goes in, little
-       comes out. Survivors filled, incomers hollow. -->
-  <g fill="none" stroke="currentColor" stroke-linecap="round">
-    <path d="M12.6 3.4V20.6" stroke-width="1.1" opacity=".3" stroke-dasharray="2 2.2"/>
-    <g stroke-width=".95" opacity=".55">
-      <circle cx="4.4" cy="6.4" r="1.25"/>
-      <circle cx="8.2" cy="6.4" r="1.25"/>
-      <circle cx="4.4" cy="12" r="1.25"/>
-      <circle cx="8.2" cy="12" r="1.25"/>
-      <circle cx="4.4" cy="17.6" r="1.25"/>
-      <circle cx="8.2" cy="17.6" r="1.25"/>
-    </g>
-    <circle cx="18.4" cy="9.2" r="2.2" fill="currentColor" stroke="none"/>
-    <circle cx="18.4" cy="15.4" r="2.2" fill="currentColor" stroke="none"/>
+  <!-- 08 · Le tri — ADOPTED 2026-09-07. The sieve in the middle, the mass on the
+       left, what gets through on the right: a lot goes in, little comes out.
+
+       This is the production geometry, which differs from the version shown on
+       the chooser: the mass is a filled disc at half opacity, not a hollow ring,
+       and the sieve is a solid hairline, not a dash. Both changes exist because
+       a 0.95-wide ring closes up into a blob at 16 px and a dash pattern
+       disappears there entirely — the very failure that retired the feather.
+       Size and opacity now carry "many small in, few big out" instead of the
+       hollow/filled contrast, and it survives rasterisation.
+
+       The opacities below (mass 0.5, sieve 0.32) are the ones for a VERMILLION
+       glyph on paper. The two inverted copies — the .brand-mark pill and
+       icon-maskable.svg — raise them to 0.68 / 0.45, because fading paper toward
+       a saturated vermillion loses far more perceived contrast than fading
+       vermillion toward paper.
+
+       Live copies: public/icons/*.svg, src/app/ui.tsx (Brand),
+       public/offline.html. See README.md. -->
+  <path d="M12.9 3.6V20.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".32"/>
+  <g fill="currentColor" opacity=".5">
+    <circle cx="4.2" cy="6.3" r="1.5"/>
+    <circle cx="9" cy="6.3" r="1.5"/>
+    <circle cx="4.2" cy="12" r="1.5"/>
+    <circle cx="9" cy="12" r="1.5"/>
+    <circle cx="4.2" cy="17.7" r="1.5"/>
+    <circle cx="9" cy="17.7" r="1.5"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="18.7" cy="8.5" r="2.5"/>
+    <circle cx="18.7" cy="15.5" r="2.5"/>
   </g>
 </svg>

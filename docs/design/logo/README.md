@@ -1,11 +1,26 @@
 # Logo variants — the 2026-09-07 exploration
 
-Ten candidate symbols for the Winnow mark, drawn to replace (or refine) the
-vermillion winnowing arc that has been in production since the start. Nothing
-here is wired into the app: `public/icons/`, `src/app/ui.tsx` and
-`public/offline.html` still carry the incumbent. These files exist so the choice
-is traceable, and so the retained one can be dropped into `Brand` without being
-redrawn.
+Ten candidate symbols for the Winnow mark, drawn to replace the vermillion
+winnowing arc that had been in production since the start.
+
+**`08-sieve.svg` — "Le tri" — was chosen and is live.** The other nine stay here
+as the record of what was considered and why it was passed over; they are not
+wired to anything.
+
+The adopted file carries the **production** geometry, which differs from what the
+chooser showed: the mass is a filled disc at half opacity instead of a hollow
+ring, and the sieve is a solid hairline instead of a dash. A 0.95-wide ring
+closes into a blob at 16 px and a dash pattern vanishes there — exactly the
+failure that retired the feather, so shipping it unchanged would have traded one
+16 px problem for another. Size and opacity now carry "many small in, few big
+out" in place of the hollow/filled contrast.
+
+The two **inverted** copies — the `.brand-mark` pill and `icon-maskable.svg` —
+carry higher opacities (mass 0.68, sieve 0.45) than the paper ones (0.5, 0.32).
+Fading paper toward a saturated vermillion loses far more perceived contrast
+than fading vermillion toward paper, so the favicon's values go murky in the
+pill. This only showed up by rendering the real `Brand` markup against the built
+CSS; the vector at 200 px looked fine either way.
 
 Visual chooser (every mark in its six real contexts, both themes, plus a true
 16 px raster of each):
@@ -37,7 +52,7 @@ Ordered by how much drawing they contain, not by preference.
 | 05 | `05-monogram.svg` | Broad-nib W, heavy down-strokes, hairline up-strokes | A monogram tells you nothing about the product; contrast flattens under 20 px |
 | 06 | `06-toss.svg` | The fan plus the toss: one grain landed, three airborne | The smallest grain disappears below 24 px |
 | 07 | `07-feather.svg` | The incumbent redrawn: filled vane instead of parallel arcs | Still a feather — a writing metaphor, not a sorting one |
-| 08 | `08-sieve.svg` | Sieve in the middle, the mass left, the survivors right | Six 1.25 r dots: unusable as a favicon |
+| 08 | `08-sieve.svg` | **Chosen.** Sieve in the middle, the mass left, the survivors right | At 16 px the mass is a texture, not six countable grains — accepted |
 | 09 | `09-wind.svg` | The whole story — fan, grain back, chaff blowing off | Seven objects in 24 units; splash-only |
 | 10 | `10-sheet.svg` | Nine frames, one kept, one struck | Describes the screen rather than the idea; the grid fills in below 32 px |
 
@@ -47,8 +62,9 @@ not styling — the first draft was symmetric and had to be thrown away.
 
 ## Adopting one — the five copies
 
-The symbol lives in five independent places. Missing one leaves the old mark in
-production somewhere.
+Done for `08` on 2026-09-07; the list stands for whoever changes the mark next.
+The symbol lives in five independent places, and missing one leaves the old mark
+in production somewhere.
 
 1. `public/icons/icon.svg`, `icon-maskable.svg`, `icon-apple.svg` — three
    sources with different insets, and the maskable one is **inverted** (paper

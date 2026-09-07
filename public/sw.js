@@ -11,7 +11,10 @@
  * It never caches /api responses or media bytes — those always hit the network.
  */
 
-const VERSION = "v1";
+// Bumped to v2 with the sieve mark: the icons and the offline page are
+// precached, so without a new version installed clients keep serving the old
+// feather.
+const VERSION = "v2";
 const STATIC_CACHE = `winnow-static-${VERSION}`;
 const SHELL_CACHE = `winnow-shell-${VERSION}`;
 const OFFLINE_URL = "/offline.html";

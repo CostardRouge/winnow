@@ -180,9 +180,24 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
 }
 
 /**
- * Brand lockup: a winnowing-fan / feather mark drawn as an SVG (no emoji), set
- * in the accent so it reads as the product's single signature colour, beside the
- * "Winnow" wordmark. Used in the home topbar.
+ * Brand lockup: the sieve mark drawn as an SVG (no emoji), beside the "Winnow"
+ * wordmark. Six grains press against the screen on the left, two make it through
+ * on the right — a lot goes in, little comes out. Used in the home topbar and
+ * the rail.
+ *
+ * The mark is `currentColor` throughout because `.brand-mark` inverts it: the
+ * pill is filled with the accent and the glyph is drawn in `--color-accent-fg`,
+ * the reverse of the favicon. The mass is a filled disc at reduced opacity
+ * rather than an outlined ring — a hairline ring closes up at favicon size,
+ * which is what retired the previous feather mark. The sieve is a solid hairline
+ * for the same reason: a dashed one disappears below ~24 px.
+ *
+ * The mass and sieve opacities are HIGHER here (0.68 / 0.45) than in the paper
+ * icons (0.5 / 0.32) on purpose: fading white toward a saturated vermillion
+ * loses far more perceived contrast than fading vermillion toward near-white
+ * paper, so the same value that reads well on the favicon goes murky in the
+ * pill. `public/icons/icon-maskable.svg`, the other inverted copy, carries the
+ * same raised values.
  */
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -190,19 +205,24 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <span className="brand-mark" aria-hidden>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
           <path
-            d="M4 20c8.5-1 14-6.5 16-16"
+            d="M12.9 3.6V20.4"
             stroke="currentColor"
-            strokeWidth="1.6"
+            strokeWidth="1.2"
             strokeLinecap="round"
+            opacity="0.45"
           />
-          <path
-            d="M5.5 18.5c5.5-.4 9.8-4.2 11.7-10.6M7.5 16.8c3.6-.3 6.6-2.9 8.2-7.3"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinecap="round"
-            opacity="0.55"
-          />
-          <circle cx="4" cy="20" r="1.4" fill="currentColor" />
+          <g fill="currentColor" opacity="0.68">
+            <circle cx="4.2" cy="6.3" r="1.5" />
+            <circle cx="9" cy="6.3" r="1.5" />
+            <circle cx="4.2" cy="12" r="1.5" />
+            <circle cx="9" cy="12" r="1.5" />
+            <circle cx="4.2" cy="17.7" r="1.5" />
+            <circle cx="9" cy="17.7" r="1.5" />
+          </g>
+          <g fill="currentColor">
+            <circle cx="18.7" cy="8.5" r="2.5" />
+            <circle cx="18.7" cy="15.5" r="2.5" />
+          </g>
         </svg>
       </span>
       {!compact && <span className="brand-word">Winnow</span>}
