@@ -5,10 +5,10 @@ import { requireFeature } from "@/lib/featureGate";
 export const metadata: Metadata = { title: "Gear" };
 
 // Dedicated Gear page: the shelf of every camera body and lens the library was
-// shot with, drawn as line-art and counted from the EXIF. The inverse of the
-// gallery's device/lens filter chips — instead of "narrow the grid by camera",
-// it answers "what have I shot with, and how much" at a glance, then links each
-// piece of gear back to its frames.
+// shot with, counted from the EXIF and read eight ways (cf. GearPanel). The
+// inverse of the gallery's device/lens filter chips — instead of "narrow the
+// grid by camera", it answers "what have I shot with, and how much" at a
+// glance, then links each piece of gear back to its frames.
 export default async function GearPage() {
   await requireFeature("gear");
 
