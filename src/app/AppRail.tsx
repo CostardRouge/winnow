@@ -5,16 +5,25 @@ import { usePathname, useRouter } from "next/navigation";
 import { Brand, Icons } from "./ui";
 import ThemeToggle from "./ThemeToggle";
 import ChangePasswordModal from "./ChangePasswordModal";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useFeatures } from "./FeaturesProvider";
+import type { FeatureId } from "@/lib/features";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 // Persistent navigation rail: vertical on desktop (left edge), a bottom tab bar
 // on phones. The single source of app navigation — pages no longer carry their
 // own back-arrows. "Library" owns the home dashboard and every session drill-in.
+//
+// Every entry but Library carries a `feature` id: the rail is the scarcest
+// surface in the app, and an instance decides in Settings › Features which of
+// the optional sections it wants to see. A hidden entry is not merely absent
+// from the rail — its route 404s (cf. src/lib/features.ts).
 type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
   match: (path: string) => boolean;
+  /** Absent on Library: the one section that is always offered. */
+  feature?: FeatureId;
 };
 
 const NAV: NavItem[] = [
@@ -31,30 +40,45 @@ const NAV: NavItem[] = [
     label: "Timeline",
     icon: Icons.timeline,
     match: (p) => p.startsWith("/timeline"),
+    feature: "timeline",
+  },
+  {
+    // Also a way INTO the library rather than a tool on it, so it sits beside
+    // the Timeline rather than inside the Library section — and its toolbar
+    // (select, density, Incoming/Gallery) means nothing to a distribution.
+    href: "/heatmap",
+    label: "Heatmap",
+    icon: Icons.heatmap,
+    match: (p) => p.startsWith("/heatmap"),
+    feature: "heatmap",
   },
   {
     href: "/sift",
     label: "Sift",
     icon: Icons.sift,
     match: (p) => p.startsWith("/sift"),
+    feature: "sift",
   },
   {
     href: "/search",
     label: "Search",
     icon: Icons.search,
     match: (p) => p.startsWith("/search"),
+    feature: "search",
   },
   {
     href: "/people",
     label: "People",
     icon: Icons.people,
     match: (p) => p.startsWith("/people"),
+    feature: "people",
   },
   {
     href: "/gear",
     label: "Gear",
     icon: Icons.gear,
     match: (p) => p.startsWith("/gear"),
+    feature: "gear",
   },
 ];
 // Pipeline, Volumes and Import used to sit here too. They're configuration
@@ -195,6 +219,15 @@ function AccountChip() {
 
 export default function AppRail() {
   const pathname = usePathname() ?? "/";
+  const features = useFeatures();
+
+  // Library always; every other entry only while its feature is on. The flags
+  // come from the server through the root layout, so the rail is right on the
+  // first paint — an entry that appears a beat later reads as a glitch.
+  const nav = useMemo(
+    () => NAV.filter((item) => !item.feature || features[item.feature]),
+    [features],
+  );
 
   // The login and invite screens stand alone — no navigation chrome around
   // them (an invitee is not signed in yet).
@@ -206,7 +239,7 @@ export default function AppRail() {
         <Brand compact />
       </Link>
       <div className="rail-nav">
-        {NAV.map((item) => (
+        {nav.map((item) => (
           <Link
             key={item.href}
             href={item.href}

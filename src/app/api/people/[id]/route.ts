@@ -11,6 +11,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,13 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // One person's stack: the People section's own. The LIST route (/api/people)
+  // is deliberately NOT gated — the gallery's person facet falls back on it to
+  // name a deep-linked id, and filtering by person is a gallery capability,
+  // not the People shelf.
+  const off = await featureOff("people");
+  if (off) return off;
+
   try {
     const { id } = await params;
     const personId = Number.parseInt(id, 10);
@@ -107,6 +115,13 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // One person's stack: the People section's own. The LIST route (/api/people)
+  // is deliberately NOT gated — the gallery's person facet falls back on it to
+  // name a deep-linked id, and filtering by person is a gallery capability,
+  // not the People shelf.
+  const off = await featureOff("people");
+  if (off) return off;
+
   try {
     const { id } = await params;
     const personId = Number.parseInt(id, 10);

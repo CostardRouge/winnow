@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import GearPanel from "./GearPanel";
+import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "Gear" };
 
@@ -8,7 +9,9 @@ export const metadata: Metadata = { title: "Gear" };
 // gallery's device/lens filter chips — instead of "narrow the grid by camera",
 // it answers "what have I shot with, and how much" at a glance, then links each
 // piece of gear back to its frames.
-export default function GearPage() {
+export default async function GearPage() {
+  await requireFeature("gear");
+
   return (
     <div className="app-shell">
       <div className="topbar">

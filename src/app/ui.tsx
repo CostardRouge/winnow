@@ -759,6 +759,17 @@ export const Icons = {
     </svg>
   ),
   // Timeline — a spine with chapters pinned along it (the /timeline rail entry).
+  // A grid of cells at three weights — the heatmap's own ramp, drawn small.
+  heatmap: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <rect x="6.2" y="6.2" width="3.6" height="3.6" rx="1" fill="currentColor" stroke="none" opacity="0.35" />
+      <rect x="10.2" y="6.2" width="3.6" height="3.6" rx="1" fill="currentColor" stroke="none" opacity="0.9" />
+      <rect x="14.2" y="10.2" width="3.6" height="3.6" rx="1" fill="currentColor" stroke="none" opacity="0.55" />
+      <rect x="6.2" y="14.2" width="3.6" height="3.6" rx="1" fill="currentColor" stroke="none" opacity="0.9" />
+      <rect x="10.2" y="10.2" width="3.6" height="3.6" rx="1" fill="currentColor" stroke="none" opacity="0.2" />
+    </svg>
+  ),
   timeline: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 4v16" />

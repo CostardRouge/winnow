@@ -22,6 +22,7 @@ import { config } from "@/lib/config";
 import { clipCoverage, embedText } from "@/lib/ml";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import { json, badRequest, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 import type { AssetGridRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,10 @@ const MAX_LIMIT = 200;
 type SearchRow = AssetGridRow & { distance: number };
 
 export async function GET(req: NextRequest) {
+  // Nothing but the Search page reads this route.
+  const off = await featureOff("search");
+  if (off) return off;
+
   try {
     // Surfaced to the UI so it can show a friendly "turn it on / back-fill"
     // hint rather than an error when the feature isn't wired yet.

@@ -3,6 +3,7 @@
 import { NextRequest } from "next/server";
 import { q } from "@/lib/db";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
+import { featureOff } from "@/lib/featureGate";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
@@ -11,6 +12,10 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Forced breaks belong to the Timeline alone.
+  const off = await featureOff("timeline");
+  if (off) return off;
+
   try {
     const id = Number.parseInt((await params).id, 10);
     if (!Number.isFinite(id)) return badRequest("bad id");

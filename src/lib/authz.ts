@@ -43,6 +43,7 @@ export function isPublicPath(pathname: string): boolean {
 const ADMIN_WRITE_PREFIXES = [
   "/api/roots", // add/remove/re-type volumes
   "/api/settings", // rates, pairing prefs
+  "/api/features", // which optional sections this instance offers
   "/api/scan", // scan control (pause/resume)
   "/api/index", // manual scans
   "/api/pipeline", // queue actions, backfills

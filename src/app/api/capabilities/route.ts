@@ -17,6 +17,7 @@ import { config } from "@/lib/config";
 import { identityFromHeaders } from "@/lib/auth";
 import { json, serverError } from "@/lib/api";
 import { DOC_KINDS, MAX_DOC_BYTES } from "@/lib/appDocuments";
+import { getFeatures } from "@/lib/featureGate";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ const API_VERSION = 1;
 export async function GET(req: NextRequest) {
   try {
     const me = identityFromHeaders(req.headers);
+    const features = await getFeatures();
     return json({
       api: { version: API_VERSION },
       auth: {
@@ -57,6 +59,17 @@ export async function GET(req: NextRequest) {
         // 64 KiB windows, cf. lib/hash.ts) — the identity a client can
         // recompute locally from a file.
         contentHash: "partial-sha256",
+        // Whether GET /api/assets/timeline answers on this instance. Winnow's
+        // timeline is behind a feature flag (Settings › Features, default OFF
+        // while its chapter derivation is reworked) and the route 404s when it
+        // is off, so a client must be told rather than left to guess from a
+        // 404 that could equally mean "old Winnow".
+        //
+        // Atelier already reads exactly this key
+        // (`shared/sources/winnow/client.ts`, `hasTimeline`) and treats only an
+        // explicit `false` as "no timeline" — which is why this is stated here
+        // and not in a `features` block of its own.
+        timeline: features.timeline,
       },
       // Where a client app keeps its own documents (api/apps/[app]/docs,
       // migration 0041): own rows for any signed-in role, an etag that

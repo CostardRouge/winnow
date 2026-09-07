@@ -39,3 +39,11 @@ Seeded 2026-08-20 from `src/lib/config.ts`, `.env.dist`, `CONTRIBUTING.md` and `
 **Decision**: `.env.dist` ships `winnow:winnow` for Postgres and `minioadmin:minioadmin` for MinIO, with an inline SECURITY note telling you to change them; compose binds the Postgres/Redis host ports to `127.0.0.1`.
 
 **How to apply**: they are safe to keep in git *because* they are documented placeholders bound to loopback — do not treat them as a leak to fix, and do not copy them into anything reachable from the LAN. The real values are set in the maintainer's `.env` on the Optiplex, which is gitignored and has never been committed.
+
+## Feature flags are a third kind of setting, with their own row (2026-09-07)
+
+**Decision**: which optional *sections* of the app this instance offers (Timeline, Sift, Search, People, Gear — the Library has no flag) is stored in `app_settings` under a single `features` jsonb row, read by `src/lib/featureGate.ts` and edited on `/settings/features`. It is deliberately NOT an env var and deliberately NOT part of `AppSettings`.
+
+**Why**: `NEXT_PUBLIC_*` is inlined at `next build` and the image is built in CI, so an env flag set in `docker-compose-optiplex.yml` would never reach the browser bundle — it would fail silently, the worst behaviour for a switch whose job is to be visible (`src/app/mapTiles.ts` already records the trap). And `AppSettings` is the contract shared with the *workers*; no worker cares whether the Gear shelf is on screen, so widening it would put a UI concern in every worker's hot path.
+
+**How to apply**: adding a section means one entry in the `FEATURES` registry (`src/lib/features.ts`), one rail entry carrying its `feature` id, `requireFeature()` in its page(s) and `featureOff()` in the API routes it owns. No migration: the row is key/value jsonb and `parseFeatures()` fills missing ids from the registry's defaults. The registry file is imported by a client component, so it must stay free of `./db` — the server half lives in `featureGate.ts`, and merging the two put `pg` in the browser bundle and broke the build. `getFeatures()` fails **open** (defaults) on a DB error, unlike `getSettings()`'s known bug: a flag hides a section, it never guards data.

@@ -89,6 +89,42 @@ uploads go through the tunnel.)
 
 ---
 
+## Sections & feature flags (page `/settings/features`)
+
+Winnow grew by verbs — sift, search, people, gear, timeline — and each one took
+a slot in the navigation rail. Not all of them are wanted every day, and not all
+of them are finished. **Settings › Features** is one switch per optional
+section:
+
+| Section | Default | Why it is optional |
+|---|---|---|
+| **Library** | *always on* | Browsing, culling and exporting the library is what Winnow **is**. It has no flag. |
+| **Timeline** | **off** | The chapters are re-derived on every request and the cut rules are still being reworked; it ships off until it settles. |
+| **Heatmap** | **off** | Nothing unfinished — it is a step-back view of the whole library rather than part of the daily cull, so it ships off until you want the rail slot. |
+| **Sift** | on | The swipe deck. |
+| **Search** | on | Keyword search over captions, OCR text and tags. |
+| **People** | on | The face-clustering shelf. |
+| **Gear** | on | The bodies-and-lenses shelf. |
+
+A section that is off is **not merely hidden**. Its pages answer `404`, and so
+do the API routes it owns — so a bookmark, a typed URL or a client app cannot
+reach a feature this instance has turned off. `GET /api/capabilities` states
+`media.timeline` for exactly that reason: [Atelier](https://github.com/CostardRouge/atelier)
+reads it and says *"this instance does not serve a timeline"* rather than
+guessing from a 404.
+
+Routes the rest of the app also reads stay open on purpose — hiding the Gear
+shelf must not empty the gallery's lens filter, and `GET /api/people` remains
+the directory the gallery's person facet falls back on. Each gated route says
+at its top why it belongs to its section alone.
+
+The flags live in Postgres (`app_settings`, one `features` row), **not** in the
+environment: `NEXT_PUBLIC_*` is inlined at `next build` and the image is built
+in CI, so an env flag could never be flipped on the Optiplex. Flipping a switch
+is admin-only and takes effect immediately — the rail redraws under your hand.
+
+---
+
 ## Getting started
 
 ### With Docker Compose (recommended)
@@ -440,6 +476,13 @@ window plus the overall `bounds`, so a month renders in a single request.
 
 ### Timeline: the library read as a story (page `/timeline`)
 
+> **Off by default.** The Timeline is behind a feature flag and ships disabled:
+> the chapters are re-derived on every request, so what a client reads today can
+> change under it tomorrow, and the cut rules still owe a rework. Turn it on in
+> [Settings › Features](#sections--feature-flags-page-settingsfeatures) to look
+> at work in progress; with it off, the page and `GET /api/assets/timeline` both
+> answer `404`.
+
 The Calendar answers *what did I shoot that day*, the Map *where*. Neither
 tells the story of a period: a year abroad lands in dozens of session folders,
 and a session is a **directory on disk**, never a leg of a trip. The
@@ -503,6 +546,59 @@ media are enumerated through the shared feed with `has_gps=0` (the filter
 became tri-state for this; `has_gps=1` still means "geotagged only"). The
 *lieux déduits* chip narrows the stream to the chapters still waiting for
 that confirmation.
+
+### Heatmap: when *and* where, four ways (page `/heatmap`)
+
+> **Off by default** — a feature flag, like the Timeline, but for a different
+> reason: nothing here is unfinished, it is simply a step-back view rather than
+> part of the daily cull. Turn it on in
+> [Settings › Features](#sections--feature-flags-page-settingsfeatures).
+
+The Calendar answers *what did I shoot that day*, one month at a time. The Map
+plots a marker per asset and caps at 10 000 points. Neither can **cross** the
+two — *"where was I in the summers of 2023–2025"*, *"when did I shoot this
+valley"*. The Heatmap is that crossing, read four ways behind one segmented
+control:
+
+| Reading | What it draws | What it gives up |
+|---|---|---|
+| **Both** | A years-deep calendar above, a binned map below, cross-filtered: brush a span and the map redraws; click a bin and the calendar redraws. | Two panels compete for height; on a phone one is always below the fold. |
+| **Matrix** | Places down, months across — the crossing as one object, read like a timetable. Corse lights up every August; Islande is one week and then five years of nothing. | Geography: two rows can be neighbours or 9 000 km apart and the grid says nothing. |
+| **Map** | The map at full width, months on a scrubber under it. Best for the question about absence — *where have I not been back to*. | A month-tall bar cannot name the one unculled week. |
+| **Tinted** | One calendar, each day wearing its place's colour; a run of matching feet is a trip. | Four tints is the ceiling — everything past the top few reads as "elsewhere". |
+
+**One measure colours all of them**, which is the point of the shared control:
+
+- **Backlog** *(default)* — what has never been culled. The measure that is
+  uniquely Winnow's: a map of *"these three weeks have never been looked at"*
+  is a work queue, not a statistic.
+- **Volume** — frames. The portrait rather than the to-do list.
+- **Keepers** — frames rated `pick`: not where you shoot most, but where you
+  shoot *well*.
+- **Keeper rate** — picks ÷ frames, with a floor: under 20 frames a cell has no
+  rate and is drawn neutral, because four frames and two picks is not a 50 %
+  day. The floor is stated on screen.
+
+The **bins are free**: reverse geocoding already snaps every coordinate to a
+`places(cell_lat, cell_lon, precision_m)` cell at ingest (5 km by default), so
+the map is one `GROUP BY` with no clustering pass and no PostGIS — and, unlike
+`/api/assets/geo`, no 10 000-point cap. The trade is that a bin does not refine
+as you zoom: its size is whatever the geocoder stored.
+
+Days are read in **UTC** (`capture_date` is a UTC column and Winnow keeps no
+per-asset timezone), and the page says so. Undated and ungeotagged media are
+**counted beside the view**, never silently dropped. Everything is in the URL —
+the reading, the measure, the granularity, the brushed span, the picked bin — and
+*Open in the grid* hands off with the same `date_from`/`date_to` pair the
+Calendar's day-drill already uses.
+
+Two aggregates back it: `GET /api/assets/heat/days` (one row per capture date)
+and `GET /api/assets/heat/places` (per place, by month — the map and the matrix
+from one read). Both are **one scan**, and both run with `SET LOCAL jit = off`:
+the pair-collapse predicate they share with the Calendar pushes the plan past
+`jit_above_cost`, and on an 87k-asset library the LLVM compile cost 1 s against
+28 ms of actual query. Together those two changes took the page from 5.5 s to
+0.23 s.
 
 ### Map view (where the media are) & zone culling
 

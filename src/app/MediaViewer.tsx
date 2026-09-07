@@ -21,6 +21,7 @@ import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 import { Icons } from "./ui";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { fetchJson } from "@/lib/fetchJson";
+import { useFeatures } from "./FeaturesProvider";
 
 // One face detected in the current asset (GET /api/assets/:id/faces): who it
 // is plus the pixel bbox in the ANALYZED derivative, whose dimensions ride
@@ -217,6 +218,9 @@ export default function MediaViewer<T extends ViewerItem>({
   currentPersonId?: number;
 }) {
   const last = items.length - 1;
+  // Whether this instance offers the People section at all: with it off, the
+  // /people/:id routes 404, so the face boxes and chips must not link there.
+  const peopleOffered = useFeatures().people;
 
   // This instance's place in the viewer stack (see viewerStack above): pushed
   // on mount, removed on unmount, checked before handling any key.
@@ -1023,6 +1027,10 @@ export default function MediaViewer<T extends ViewerItem>({
                     const isCurrent =
                       currentPersonId != null &&
                       f.person_id === currentPersonId;
+                    // A named face only links to its stack while the People
+                    // section is offered; with it off there is no page to
+                    // open, so the box stays a plain label.
+                    const linkable = f.person_id != null && peopleOffered;
                     const hover = {
                       onMouseEnter: () => setActiveFaceId(f.id),
                       onMouseLeave: () =>
@@ -1047,7 +1055,7 @@ export default function MediaViewer<T extends ViewerItem>({
                         </button>
                       );
                     }
-                    return f.person_id != null ? (
+                    return linkable ? (
                       <Link
                         key={f.id}
                         href={`/people/${f.person_id}`}
@@ -1354,6 +1362,10 @@ export default function MediaViewer<T extends ViewerItem>({
                     const isCurrent =
                       currentPersonId != null &&
                       f.person_id === currentPersonId;
+                    // A named face only links to its stack while the People
+                    // section is offered; with it off there is no page to
+                    // open, so the box stays a plain label.
+                    const linkable = f.person_id != null && peopleOffered;
                     const crop = (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -1383,7 +1395,7 @@ export default function MediaViewer<T extends ViewerItem>({
                         </button>
                       );
                     }
-                    return f.person_id != null ? (
+                    return linkable ? (
                       <Link
                         key={f.id}
                         href={`/people/${f.person_id}`}

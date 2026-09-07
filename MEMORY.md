@@ -55,9 +55,14 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - The Timeline derives chapters per request (one SQL row per run, JS absorption); edits are stored as corrections (named spans, forced breaks — migration 0040), never as chapters → `docs/memory/frontend.md`, `docs/memory/database.md`
 - A deduced location is display-only: only a human-confirmed geotag ever writes into an original's EXIF → `docs/memory/architecture.md`
 - The whole verification gate is `typecheck` + `migrate` + `build`; no linter, no tests → `docs/memory/testing-and-ci.md`
+- Every section but the Library is behind a feature flag stored in `app_settings`; off means hidden AND 404, pages and own API routes alike → `docs/memory/configuration.md`, `docs/memory/frontend.md`
+- The Heatmap reads the library as a distribution, four ways over ONE measure and ONE ramp; backlog is the default and the one measure uniquely Winnow's → `docs/memory/frontend.md`
+- An aggregate over the WHOLE library must run `SET LOCAL jit = off` and be one scan: `collapseGroups` puts the plan over `jit_above_cost` and the compile costs 40× the query → `docs/memory/database.md`
 
 ## Open items (dated; remove when done)
 
+- 2026-09-07 — **The Heatmap shipped, off by default**, with all four readings the maintainer asked for behind one segmented control (`docs/HEATMAP.md` is now a record, not a proposal). What is still open there: the bins do not refine on zoom (they are the geocoding cells; a `round(lat/step)` grid over `assets_gps_coords_idx` is the next step), and three of the brief's five questions were answered by building rather than by decision — the name ("Heatmap"), the default measure (backlog) and keeper rate shipping in v1 with its floor stated. The fifth is untouched: "show me everything with no position" as a filter of its own may be worth more than the heatmap, and is one filter rather than a screen.
+- 2026-09-07 — **The Timeline ships OFF** (feature flag, `src/lib/features.ts`): its chapters are re-derived per request, the cut rules and the behaviour at library scale still owe a rework, and Atelier stopped reading them for exactly that reason (`shared/sources/winnow/features.ts` there carries the argument). What is open is the rework itself, not the flag. Until it lands, do not build anything new on `/api/assets/timeline`, and remember the route now 404s by default — a client asking it will not get an empty answer, it will get nothing.
 - 2026-08-20 — **Two duplicate migration prefixes are still on `main`**, contradicting rule 1 of `db/migrations/README.md` and its "History" section, which reads as though every collision was resolved: `0010_gps_coords.sql` / `0010_search_text.sql` and `0013_asset_groups.sql` / `0013_clean_object_placeholders.sql`. They apply today in an accidental lexicographic order. Renumbering means extending `RENUMBERED` in `src/lib/migrate.ts` and touches every already-migrated database — maintainer's call. Next free number is `0041` (`0039_burst_kind.sql` and `0040_timeline_chapters.sql` are taken).
 - 2026-08-20 — The P1 list in `docs/ARCHITECTURE-REVIEW.md` §4 is the standing backlog (disk-space preflight, streamed video proxies, retention janitor, the `asset_faces.embedding` decision, job cancel, fail-closed `getSettings()`, compose env drift). Check it before proposing pipeline work; nothing in this memory supersedes it.
 - 2026-09-02 — **The purge worker still leaves `content_hash` set on the rows it purges** (`src/lib/purge.ts` step 3), while `reclaimTrashedAsset` in `src/lib/duplicates.ts` releases it and documents why a purged row holding a hash makes the surviving file unindexable forever. The dedup sweep now repairs those rows after the fact ("Clear resolved"), so nothing is stuck — but the two paths disagree, and fixing the worker would stop the state from being created at all. It changes purge semantics for every already-purged row, so it is the maintainer's call.
@@ -77,3 +82,13 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 | `docs/memory/frontend.md` | `src/app/**`, pages, styling, the viewer/grid interactions, the PWA |
 | `docs/memory/auth.md` | login, invites, sessions, roles, `src/proxy.ts`, `src/lib/{auth,authz}.ts` |
 | `docs/memory/testing-and-ci.md` | deciding a change is done, `.github/workflows/`, adding tests |
+
+Not a memory file, but read it before proposing work on the Calendar, the Map
+or a new way of reading the library at large:
+
+- **`docs/HEATMAP.md`** — the brief for `/heatmap`, now a **record**: the four
+  readings shipped 2026-09-07. §1–§5 carry the reasoning (why the crossing, why
+  the measure list, why the bins were free), §6 the placement argument that
+  will come up again for the next rail entry, §9 how the five open questions
+  were settled, and §10 the four claims the build proved wrong — including the
+  JIT finding and why the calendar needed a Day/Week toggle.
