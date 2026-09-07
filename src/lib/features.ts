@@ -43,7 +43,13 @@
 // mirroring settings.ts's shape without importing it (which would also make
 // the two files circular).
 
-export type FeatureId = "timeline" | "sift" | "search" | "people" | "gear";
+export type FeatureId =
+  | "timeline"
+  | "heatmap"
+  | "sift"
+  | "search"
+  | "people"
+  | "gear";
 
 export type Features = Record<FeatureId, boolean>;
 
@@ -75,6 +81,18 @@ export const FEATURES: readonly FeatureDescriptor[] = [
     blurb: "The library read as a story — chapters that cross session folders.",
     caveat:
       "Immature: chapters are re-derived on every request and the cut rules are still being reworked. Off until it settles.",
+  },
+  {
+    id: "heatmap",
+    label: "Heatmap",
+    // Off by default: a step-back view of the whole library, not part of the
+    // daily cull, and the rail is the scarcest surface in the app. Nothing
+    // about it is unfinished — unlike the Timeline's caveat, this one is a
+    // matter of whether you want the slot.
+    enabled: false,
+    blurb: "When and where the library was made — a calendar and a binned map on one measure.",
+    caveat:
+      "Off until you want the rail slot: it reads the whole library at once rather than the session in front of you.",
   },
   {
     id: "sift",

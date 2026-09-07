@@ -1,10 +1,10 @@
 # Heatmap — when and where the library was actually made
 
-*A design brief, not a decision. It was written after the feature-flag work of
-2026-09-07, in answer to "we made a heatmap in Atelier, I want the same kind of
-view here". Nothing below is agreed with the maintainer yet; read it to argue
-with it. Every claim about the existing schema and routes was checked against
-the tree on 2026-09-07 and carries its path.*
+*Written 2026-09-07 as a design brief with nothing agreed. **It is now a
+record**: the maintainer asked for all four readings, and they shipped behind
+one segmented control at `/heatmap` (feature flag `heatmap`, off by default).
+Read §1–§5 for the reasoning that survived, §6 for where it landed, and §10 for
+what the build changed about the plan and what is still open.*
 
 ---
 
@@ -143,46 +143,35 @@ state you cannot link to is a state you cannot show someone.
 
 ---
 
-## 6. Where it lives — and why the flags came first
+## 6. Where it lives — decided
 
-The worry that started this: the Library section's view switcher already
-carries Sessions · Grid · Calendar · Map, and the rail already carries six
-entries. Anywhere it goes, it crowds something.
+**Its own route, its own rail entry, its own flag** (`/heatmap`, `heatmap`,
+default off). The Library-tab variant below was the fallback and was not taken:
+four readings inside a section that already carries Sessions · Grid · Calendar ·
+Map would have been a switcher inside a switcher.
 
-**Recommendation: its own route, its own rail entry, its own feature flag.**
+The argument that settled it, and it is worth keeping because it will come up
+again for the next section:
 
-The argument is not that a fifth tab is impossible — `SectionView`
-(`src/app/gallery/ViewSwitch.tsx`) makes it genuinely cheap, and the view would
-inherit the Filters/Browse aside and the date/bbox hand-off for free. The
-argument is:
-
-1. **The rail is no longer a fixed cost.** That is exactly what the feature
-   flags bought (2026-09-07): the Timeline is off, and Sift / Search / People /
-   Gear are each one switch away. An instance that keeps three sections has room
-   for a fourth. Adding a rail entry is now a reversible decision, which is what
-   made the crowding argument decisive before and no longer does.
+1. **The rail is no longer a fixed cost.** That is what the feature flags
+   bought: the Timeline is off, Sift / Search / People / Gear are each one
+   switch away, and adding a rail entry became a reversible decision. The
+   crowding objection was decisive before the flags and is not any more.
 2. **It is a way INTO the library, not a tool on it** — the exact reason the
-   Timeline sits second in the rail rather than inside the Library section (see
-   the comment in `AppRail.tsx`). The heatmap answers a question *about* the
-   library and hands you back to the grid; it is not another way to look at a
-   filtered feed.
+   Timeline sits in the rail rather than inside the Library section (the
+   comment in `AppRail.tsx`). The heatmap answers a question *about* the
+   library and hands you back to the grid.
 3. **The Library toolbar is wrong for it.** Select-mode, grid density,
-   Incoming/Gallery/All — none of them mean anything to a distribution, and the
-   toolbar cannot hide them per view without becoming a special case.
+   Incoming/Gallery — none of them mean anything to a distribution, and the
+   toolbar cannot hide them per view without becoming a special case. (The
+   Incoming/Gallery picker *is* kept, as `LibrarySourceTabs`, because scoping
+   to half the library is a real question for a distribution.)
 
-**The variant, stated fairly.** A fifth `SectionView` in the Library is
-cheaper (no route, no rail entry, filters and hand-off inherited) and it puts
-the heatmap where its data already lives. Its cost is the toolbar noise above,
-and that it inherits the section's Incoming/Gallery scope whether or not that
-makes sense for a decade-wide view. If the rail entry is rejected, this is the
-fallback — not "don't build it".
-
-**Either way it carries a flag** (`heatmap`, default off until it is worth
-looking at), added to the `FEATURES` registry in `src/lib/features.ts` — one
-entry, a rail entry with its `feature` id, `requireFeature()` in the page and
-`featureOff()` in its own API routes. Nothing new to build for that.
-
----
+The variant that was rejected, stated fairly for the record: a fifth
+`SectionView` in the Library is cheaper — no route, no rail entry, filters and
+hand-off inherited — and it puts the heatmap where its data already lives. Its
+cost is the toolbar noise above, and inheriting a section scope whether or not
+it makes sense for a decade-wide view.
 
 ## 7. Data — two routes, no migration
 
@@ -228,15 +217,49 @@ counts line up with the grid a click lands in.
 
 ---
 
-## 9. Open questions for the maintainer
+## 9. The questions, and how they were settled
 
-1. **The name.** "Heatmap" says what it is and matches the plain-noun register
-   of Library / Timeline / Sift / Search / People / Gear. *Habits* or *Pulse*
-   say what it is *for*. I would ship "Heatmap" and rename if it feels flat.
-2. **Default measure** — Backlog (a work queue) or Volume (a portrait)?
-3. **Rail entry, or the Library variant of §6?**
-4. **Keeper rate at all in v1**, or only after the floor rule has been looked
-   at against the real library?
-5. **The undated / ungeotagged buckets**: counted beside the view is the
-   proposal, but they could also be a filter of their own ("show me what has no
-   position") — which is arguably a triage verb worth more than the heatmap.
+1. **The name** — "Heatmap". It matches the plain-noun register of Library ·
+   Timeline · Sift · Search · People · Gear. Settled by shipping; rename it if
+   it reads flat.
+2. **Default measure** — **backlog**. It opens on "here is what you owe"
+   rather than "here is what you did", which is the more useful of the two for
+   a triage tool. Volume is one click away.
+3. **Rail entry, or the Library variant** — the rail. §6 carries the argument.
+4. **Keeper rate in v1** — yes, with the floor built in and **stated on
+   screen**: under `RATE_FLOOR` (20) frames a cell has no rate and draws
+   neutral rather than flattering.
+5. **The undated / ungeotagged buckets** — counted beside the view, as
+   proposed. The alternative in the brief is **still open and still worth
+   more**: "show me everything with no position" as a filter of its own is a
+   triage verb, and it is one filter rather than a screen.
+
+## 10. What the build changed about this brief
+
+Four claims here were wrong or incomplete, and the corrections are the useful
+part of this section:
+
+- **"One row per year, 53 cells wide"** (§3) is a cell per *week*, not per day
+  — it loses the day entirely. Both readings are legitimate, so the calendar
+  ships with a **Day / Week toggle** instead of a guess: 7 × 53 per year for
+  six years on a screen, or one row per year for a decade at a glance.
+- **"Squares/hexes on the map"** (§4): the marks are circles that keep a
+  constant **pixel** size rather than covering their cell on the ground. A
+  shape drawn to the cell's real extent is invisible at world zoom, which is
+  the zoom a distribution is read at. The panel says which it is.
+- **Two routes, several queries each** (§7) was 5.5 s on an 87k-asset library.
+  Each read is now **one scan**, and both run `SET LOCAL jit = off`: the
+  pair-collapse predicate pushes the plan past `jit_above_cost` and the LLVM
+  compile measured 1058 ms against 28 ms of query, on a subplan `EXPLAIN`
+  reports as never executed. Result: 0.23 s. This is not heatmap-specific —
+  `docs/memory/database.md` carries it as a rule for any full-library
+  aggregate.
+- **The tinted calendar** tints places 2–5, not 1–4: the busiest place is home
+  for most libraries, and tinting it stripes four cells in five so the trips
+  stop reading as runs. The key names the place the rule applies to, so
+  nothing is hidden.
+
+Still open, and deliberately not half-built: **the bins do not refine on zoom**
+— they are the geocoding cells (`places.precision_m`, 5 km by default). A finer
+`round(lat/step)` grid over `assets_gps_coords_idx` is the next step, and it
+would also let this route back the Map view at low zoom.

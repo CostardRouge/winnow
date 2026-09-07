@@ -55,10 +55,12 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - A deduced location is display-only: only a human-confirmed geotag ever writes into an original's EXIF → `docs/memory/architecture.md`
 - The whole verification gate is `typecheck` + `migrate` + `build`; no linter, no tests → `docs/memory/testing-and-ci.md`
 - Every section but the Library is behind a feature flag stored in `app_settings`; off means hidden AND 404, pages and own API routes alike → `docs/memory/configuration.md`, `docs/memory/frontend.md`
+- The Heatmap reads the library as a distribution, four ways over ONE measure and ONE ramp; backlog is the default and the one measure uniquely Winnow's → `docs/memory/frontend.md`
+- An aggregate over the WHOLE library must run `SET LOCAL jit = off` and be one scan: `collapseGroups` puts the plan over `jit_above_cost` and the compile costs 40× the query → `docs/memory/database.md`
 
 ## Open items (dated; remove when done)
 
-- 2026-09-07 — **A `/heatmap` view (when × where, cross-filtered) is designed and not built**: `docs/HEATMAP.md` carries the brief — the measure list (volume · keepers · keeper rate · **backlog**, the one that is uniquely Winnow's), the two aggregate routes, and the placement argument. Two findings worth knowing even if the view is never built: the geographic bins **already exist** (`places(cell_lat, cell_lon, precision_m)` snaps every coordinate at geocode time, named, uniquely indexed, with `assets.place_id` pointing at it), and a binned `/api/assets/geo` would remove that route's 10 000-point cap. Five questions there are the maintainer's to answer; nothing in the brief is agreed.
+- 2026-09-07 — **The Heatmap shipped, off by default**, with all four readings the maintainer asked for behind one segmented control (`docs/HEATMAP.md` is now a record, not a proposal). What is still open there: the bins do not refine on zoom (they are the geocoding cells; a `round(lat/step)` grid over `assets_gps_coords_idx` is the next step), and three of the brief's five questions were answered by building rather than by decision — the name ("Heatmap"), the default measure (backlog) and keeper rate shipping in v1 with its floor stated. The fifth is untouched: "show me everything with no position" as a filter of its own may be worth more than the heatmap, and is one filter rather than a screen.
 - 2026-09-07 — **The Timeline ships OFF** (feature flag, `src/lib/features.ts`): its chapters are re-derived per request, the cut rules and the behaviour at library scale still owe a rework, and Atelier stopped reading them for exactly that reason (`shared/sources/winnow/features.ts` there carries the argument). What is open is the rework itself, not the flag. Until it lands, do not build anything new on `/api/assets/timeline`, and remember the route now 404s by default — a client asking it will not get an empty answer, it will get nothing.
 - 2026-08-20 — **Two duplicate migration prefixes are still on `main`**, contradicting rule 1 of `db/migrations/README.md` and its "History" section, which reads as though every collision was resolved: `0010_gps_coords.sql` / `0010_search_text.sql` and `0013_asset_groups.sql` / `0013_clean_object_placeholders.sql`. They apply today in an accidental lexicographic order. Renumbering means extending `RENUMBERED` in `src/lib/migrate.ts` and touches every already-migrated database — maintainer's call. Next free number is `0041` (`0039_burst_kind.sql` and `0040_timeline_chapters.sql` are taken).
 - 2026-08-20 — The P1 list in `docs/ARCHITECTURE-REVIEW.md` §4 is the standing backlog (disk-space preflight, streamed video proxies, retention janitor, the `asset_faces.embedding` decision, job cancel, fail-closed `getSettings()`, compose env drift). Check it before proposing pipeline work; nothing in this memory supersedes it.
@@ -83,8 +85,9 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 Not a memory file, but read it before proposing work on the Calendar, the Map
 or a new way of reading the library at large:
 
-- **`docs/HEATMAP.md`** — the agreed-with-nobody design (2026-09-07) for a
-  `/heatmap` view crossing a years-wide day grid with a binned map, one measure
-  colouring both. A **proposal**: it argues its own placement and lists what it
-  does not know. Its schema and route claims were checked against the tree and
-  carry paths.
+- **`docs/HEATMAP.md`** — the brief for `/heatmap`, now a **record**: the four
+  readings shipped 2026-09-07. §1–§5 carry the reasoning (why the crossing, why
+  the measure list, why the bins were free), §6 the placement argument that
+  will come up again for the next rail entry, §9 how the five open questions
+  were settled, and §10 the four claims the build proved wrong — including the
+  JIT finding and why the calendar needed a Day/Week toggle.

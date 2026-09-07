@@ -43,6 +43,16 @@ const NAV: NavItem[] = [
     feature: "timeline",
   },
   {
+    // Also a way INTO the library rather than a tool on it, so it sits beside
+    // the Timeline rather than inside the Library section — and its toolbar
+    // (select, density, Incoming/Gallery) means nothing to a distribution.
+    href: "/heatmap",
+    label: "Heatmap",
+    icon: Icons.heatmap,
+    match: (p) => p.startsWith("/heatmap"),
+    feature: "heatmap",
+  },
+  {
     href: "/sift",
     label: "Sift",
     icon: Icons.sift,

@@ -60,6 +60,36 @@
     monospace;
 }
 
+/* Heatmap tokens — deliberately OUTSIDE `@theme`.
+   Tailwind 4's `@theme` is not a general variable bag: it only emits custom
+   properties that fall in one of ITS namespaces (`--color-*`, `--radius-*`,
+   `--font-*`, `--shadow-*`, `--ease-*`…). A `--heat-0` declared in there is
+   silently dropped — no warning, no build error, and every cell paints
+   transparent. Measured, and it cost a render. Declare non-namespaced tokens
+   in a plain `:root` like this one, or give them a Tailwind namespace.
+
+   The ramp is ONE hue, recessed paper → the accent: magnitude is one
+   dimension, and a rainbow would invent an ordering the data does not have.
+   `--heat-none` is "no answer" (a cell the measure cannot speak to — a keeper
+   rate under its sample floor), deliberately NOT the same tone as rung 0,
+   which means "nothing here".
+
+   The place tints dress the tinted calendar and the matrix's row dots: four
+   hues, never red (red is the ramp), checked for colour-vision separation
+   against both papers — and always paired with a name, never colour alone. */
+:root {
+  --heat-0: #efe9dd;
+  --heat-1: #f4cdbd;
+  --heat-2: #eb9878;
+  --heat-3: #e26a45;
+  --heat-4: #d9442a;
+  --heat-none: #e7ded0;
+  --heat-place-0: #2e7d4f;
+  --heat-place-1: #2f6fd0;
+  --heat-place-2: #c2870f;
+  --heat-place-3: #8e44ad;
+}
+
 /* =========================================================================
    "Papier nuit" — the dark theme
    The same Paper system after dark: warm ink surfaces (never cold black),
@@ -100,6 +130,20 @@ html[data-theme="dark"] {
   --color-reject: #d85a5a;
   --color-reject-fg: #1c0f0f;
   --color-star: #e0a52a;
+
+  /* Heatmap ramp after dark — stepped from the night paper, not inverted from
+     the light ramp: a flipped sequential scale puts its brightest step where
+     the eye reads "empty". */
+  --heat-0: #241f17;
+  --heat-1: #4a2a20;
+  --heat-2: #8a3b28;
+  --heat-3: #c04930;
+  --heat-4: #ef5638;
+  --heat-none: #1f1b14;
+  --heat-place-0: #57a06a;
+  --heat-place-1: #5a86c8;
+  --heat-place-2: #b8871f;
+  --heat-place-3: #9d68b8;
 
   /* Shadows — deeper on dark so elevation still reads */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4),
@@ -5128,6 +5172,278 @@ html[data-theme="dark"] .btn-primary:hover {
   .sift-done-actions svg {
     width: 18px;
     height: 18px;
+  }
+
+  /* =======================================================================
+     Heatmap (/heatmap) — four readings of when × where, one measure and one
+     ramp. Everything here is drawn on the --heat-* tokens; no component sets a
+     colour of its own, so the night theme needs nothing but the token block.
+     ======================================================================= */
+  .heat-body {
+    @apply flex w-full flex-col gap-5;
+  }
+  /* A refetch (a picked bin) leaves the old reading in place, greyed, rather
+     than blanking the screen — the shape is what you were looking at. */
+  .heat-body.is-busy {
+    @apply opacity-60;
+    transition: opacity 0.2s var(--ease-out);
+  }
+  .heat-panel {
+    @apply flex flex-col gap-3 rounded-[var(--radius-xl)] border p-4;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .heat-panel-head {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1 border-b pb-2.5;
+    border-color: var(--color-border);
+  }
+  .heat-panel-title {
+    @apply text-[0.68rem] uppercase tracking-[0.14em];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .heat-note {
+    @apply text-[0.72rem] leading-snug;
+  }
+  .heat-foot {
+    @apply text-[0.75rem];
+  }
+  .heat-controls {
+    @apply flex-wrap gap-x-3 gap-y-2;
+  }
+  .heat-lab {
+    @apply text-[0.64rem] uppercase tracking-[0.14em];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .heat-filters {
+    @apply flex-wrap gap-2;
+  }
+  .chip-x {
+    @apply ml-1.5 cursor-pointer border-0 bg-transparent p-0 leading-none;
+    color: inherit;
+    opacity: 0.7;
+  }
+  .chip-x:hover {
+    opacity: 1;
+  }
+
+  /* The shared legend: the ramp plus its two ends in words, so the colours are
+     never the only carrier of the reading. */
+  .heat-legend {
+    @apply flex items-center gap-1.5 text-[0.64rem] whitespace-nowrap;
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .heat-legend i {
+    @apply block h-3 w-3 rounded-[3px] border;
+    border-color: var(--color-border);
+  }
+
+  /* ---- The calendar ---------------------------------------------------- */
+  .heat-gridwrap {
+    @apply relative;
+  }
+  /* Wide content scrolls in its OWN box: a decade of week columns is wider
+     than any screen and the page must never scroll sideways. */
+  .heat-scroll {
+    @apply overflow-x-auto pb-1;
+  }
+  .heat-years {
+    @apply inline-flex flex-col gap-2.5;
+  }
+  .heat-yearblock {
+    @apply flex items-start gap-2;
+  }
+  .heat-ylabel {
+    @apply w-9 flex-none pt-0.5 text-right text-[0.7rem];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .heat-wdays {
+    @apply flex flex-none flex-col gap-0.5 pr-1;
+  }
+  .heat-wdays span {
+    @apply flex items-center justify-end text-[0.55rem] leading-none;
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+    width: 24px;
+  }
+  .heat-cells {
+    @apply grid flex-none grid-flow-col;
+  }
+  .heat-cell {
+    @apply block h-[11px] w-[11px] cursor-pointer rounded-[2px] border-0 p-0;
+    background: var(--heat-none);
+    transition: transform 0.12s var(--ease-out);
+  }
+  .heat-cell:hover {
+    transform: scale(1.5);
+  }
+  .heat-cell:focus-visible {
+    outline: 2px solid var(--color-text);
+    outline-offset: 1px;
+  }
+  /* Outside the brushed span: still drawn, so the shape of the year survives
+     the filter — the holes are half of what the grid is for. */
+  .heat-cell.is-dim {
+    @apply opacity-25;
+  }
+  .heat-cell.is-picked {
+    box-shadow: 0 0 0 2px var(--color-text);
+  }
+  /* Lead-in / lead-out days of a year block: space, not a cell. */
+  .heat-cell.is-void {
+    @apply invisible cursor-default;
+  }
+
+  .heat-key {
+    @apply flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.72rem];
+    color: var(--color-muted);
+  }
+  .heat-keyitem {
+    @apply inline-flex items-center gap-1.5;
+  }
+  .heat-keyitem i {
+    @apply block h-2.5 w-2.5 flex-none rounded-[2px];
+  }
+  .heat-keyitem.is-muted {
+    color: var(--color-faint);
+  }
+
+  /* ---- The map --------------------------------------------------------- */
+  .heat-map {
+    @apply w-full overflow-hidden rounded-[var(--radius-lg)] border;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+  .heat-map.is-loading {
+    @apply h-[340px];
+  }
+  /* Leaflet's own tooltip, wearing the app's dark card. */
+  .heat-tip {
+    @apply rounded-[var(--radius-sm)] border-0 px-2.5 py-1.5 text-[0.7rem] leading-snug;
+    background: var(--color-frame);
+    color: #ece7da;
+    font-family: var(--font-mono);
+    box-shadow: var(--shadow-pop);
+  }
+  .heat-tip::before {
+    border-top-color: var(--color-frame);
+  }
+  .heat-tip-dim {
+    color: rgba(236, 231, 218, 0.62);
+  }
+
+  /* ---- The matrix ------------------------------------------------------ */
+  .heat-matrix {
+    @apply inline-flex flex-col gap-0.5;
+  }
+  .heat-mhead,
+  .heat-mrow {
+    @apply flex items-center gap-0.5;
+  }
+  .heat-mlab {
+    @apply flex w-[150px] flex-none items-center gap-2 truncate pr-2 text-[0.78rem];
+  }
+  .heat-mdot {
+    @apply block h-2 w-2 flex-none rounded-[2px];
+  }
+  .heat-myear {
+    @apply flex-none text-center text-[0.6rem];
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-faint);
+  }
+  .heat-mcells {
+    @apply flex gap-0.5;
+  }
+  .heat-mcell {
+    @apply h-3.5 w-[11px] cursor-pointer rounded-[2px] border-0 p-0;
+    background: var(--heat-none);
+  }
+  .heat-mcell:hover {
+    outline: 1.5px solid var(--color-text);
+  }
+  .heat-mcell:focus-visible {
+    outline: 2px solid var(--color-text);
+    outline-offset: 1px;
+  }
+  .heat-mcell.is-dim {
+    @apply opacity-25;
+  }
+  .heat-sortrow {
+    @apply mt-3 flex flex-wrap gap-1.5;
+  }
+  .heat-chip {
+    @apply cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.68rem];
+    font-family: var(--font-mono);
+    background: var(--color-surface-2);
+    border-color: var(--color-border-strong);
+    color: var(--color-muted);
+  }
+  .heat-chip.is-on {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+
+  /* ---- The month ribbon ------------------------------------------------ */
+  .heat-ribbon {
+    @apply flex h-[46px] items-end gap-0.5;
+  }
+  .heat-rbar {
+    @apply w-[11px] flex-none cursor-pointer rounded-t-[2px] border-0 p-0;
+  }
+  .heat-rbar:focus-visible {
+    outline: 2px solid var(--color-text);
+    outline-offset: 1px;
+  }
+  .heat-rbar.is-dim {
+    @apply opacity-25;
+  }
+  .heat-rticks {
+    @apply mt-1 flex gap-0.5 text-[0.6rem];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .heat-rticks span {
+    @apply w-[11px] flex-none overflow-visible whitespace-nowrap;
+  }
+
+  /* ---- The hover card -------------------------------------------------- */
+  /* Fixed-positioned and pointer-transparent: the grid scrolls sideways inside
+     its own box, so an absolutely-positioned card would be clipped by that box
+     or drift with its scroll — and a card that takes the pointer interrupts
+     the sweep the grid exists to be swept with. */
+  .heat-card {
+    @apply pointer-events-none fixed z-50 flex -translate-x-1/2 -translate-y-full
+           flex-col rounded-[var(--radius-sm)] px-3 py-2;
+    background: var(--color-frame);
+    color: #ece7da;
+    box-shadow: var(--shadow-pop);
+    white-space: nowrap;
+  }
+  .heat-card-h {
+    @apply text-[0.62rem] uppercase tracking-[0.12em];
+    font-family: var(--font-mono);
+    color: rgba(236, 231, 218, 0.62);
+  }
+  .heat-card-b {
+    @apply text-[0.82rem] leading-tight;
+  }
+  .heat-card-s {
+    @apply text-[0.66rem];
+    font-family: var(--font-mono);
+    color: rgba(236, 231, 218, 0.62);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .heat-cell:hover {
+      transform: none;
+    }
   }
 
   /* =======================================================================
