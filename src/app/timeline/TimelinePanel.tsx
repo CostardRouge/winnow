@@ -18,9 +18,10 @@ import type {
   PlaceGranularity,
   TimelineChapter,
 } from "@/lib/timeline";
-import { EmptyState, Icons, LoadingState } from "@/app/ui";
+import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
 import {
   LibrarySourceTabs,
+  LIBRARY_SOURCES,
   useStoredLibrarySource,
   type LibrarySource,
 } from "@/app/LibrarySourceTabs";
@@ -105,6 +106,36 @@ const isSource = (s: string | null): s is LibrarySource =>
 const kindFor = (s: LibrarySource) =>
   s === "incoming" ? "incoming" : s === "gallery" ? "final" : null;
 
+type ReadingOptions = {
+  mode: ChapterMode;
+  gran: PlaceGranularity | "auto";
+  source: LibrarySource;
+};
+
+// What the loader says while a derivation is in flight. Every option change
+// rebuilds the whole stream from a full scan (cf. lib/timeline.ts), which takes
+// seconds on a real library — so the feedback names the change being applied,
+// not just "chargement": that is what tells the reader the click was heard and
+// which of the three controls is answering. `prev === null` is the first read;
+// same options means a refresh (a chapter edit, "Réessayer").
+function readingLabel(prev: ReadingOptions | null, next: ReadingOptions): string {
+  if (!prev) return "Lecture de la bibliothèque…";
+  if (prev.source !== next.source) {
+    if (next.source === "all") return "Lecture de toute la bibliothèque…";
+    const label = LIBRARY_SOURCES.find((s) => s.key === next.source)?.label ?? next.source;
+    return `Lecture de ${label}…`;
+  }
+  if (prev.mode !== next.mode) {
+    const label = MODES.find((m) => m.key === next.mode)?.label ?? next.mode;
+    return `Nouvelle règle de découpage : ${label}…`;
+  }
+  if (prev.gran !== next.gran)
+    return next.gran === "auto"
+      ? "Découpage automatique…"
+      : `Découpage par ${GRAN_LABEL[next.gran].toLowerCase()}…`;
+  return "Actualisation des chapitres…";
+}
+
 export default function TimelinePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -127,6 +158,9 @@ export default function TimelinePanel() {
 
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+  // What the loader announces, decided from what changed since the last read.
+  const [loadingLabel, setLoadingLabel] = useState("Lecture de la bibliothèque…");
+  const lastRead = useRef<ReadingOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped by "Réessayer": same query, fresh request.
   const [attempt, setAttempt] = useState(0);
@@ -198,6 +232,9 @@ export default function TimelinePanel() {
 
   useEffect(() => {
     let cancelled = false;
+    const next: ReadingOptions = { mode, gran, source };
+    setLoadingLabel(readingLabel(lastRead.current, next));
+    lastRead.current = next;
     setLoading(true);
     setError(null);
     fetchJson<Payload>(`/api/assets/timeline?${query}`)
@@ -213,7 +250,8 @@ export default function TimelinePanel() {
     return () => {
       cancelled = true;
     };
-  }, [query, attempt]);
+    // mode/gran/source only feed the label; `query` is what actually changes.
+  }, [query, attempt, mode, gran, source]);
 
   // Optimistic rating, the gallery's own shape (GalleryShell.rate): patch the
   // open viewer's row, then the server. Chapter tiles re-read their rows from
@@ -341,9 +379,8 @@ export default function TimelinePanel() {
         </div>
       )}
 
-      <div className="tl-body">
+      <div className="tl-body" aria-busy={loading}>
         <div className="tl-stream" ref={streamRef}>
-          {loading && !data && <LoadingState label="Lecture de la bibliothèque…" />}
           {error && (
             <div className="error-box">
               <span>{error}</span>
@@ -394,6 +431,11 @@ export default function TimelinePanel() {
             onJump={jumpTo}
           />
         )}
+
+        {/* The one loader of this page: the first read draws it over an empty
+            zone, every later one over the previous answer, which stays visible
+            but blurred and unclickable until the new derivation lands. */}
+        {loading && <LoadingOverlay label={loadingLabel} />}
       </div>
 
       {editing != null && data && (() => {
