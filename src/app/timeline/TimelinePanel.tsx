@@ -18,9 +18,10 @@ import type {
   PlaceGranularity,
   TimelineChapter,
 } from "@/lib/timeline";
-import { EmptyState, Icons, LoadingState } from "@/app/ui";
+import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
 import {
   LibrarySourceTabs,
+  LIBRARY_SOURCES,
   useStoredLibrarySource,
   type LibrarySource,
 } from "@/app/LibrarySourceTabs";
@@ -79,19 +80,19 @@ type Payload = {
 const SOURCE_KEY = "winnow.timeline.source";
 
 const MODES: { key: ChapterMode; label: string; title: string }[] = [
-  { key: "place", label: "Lieu", title: "Un chapitre par lieu, quelle que soit la durée" },
-  { key: "time", label: "Temps", title: "Un chapitre par période continue de prise de vue" },
-  { key: "hybrid", label: "Hybride", title: "Changement de lieu ou longue absence, miettes absorbées" },
+  { key: "place", label: "Place", title: "One chapter per place, however long the stay" },
+  { key: "time", label: "Time", title: "One chapter per continuous stretch of shooting" },
+  { key: "hybrid", label: "Hybrid", title: "A change of place or a long gap, with the crumbs absorbed" },
 ];
 
 const GRAN_LABEL: Record<PlaceGranularity, string> = {
-  city: "Ville",
-  county: "Département",
-  region: "Région",
+  city: "City",
+  county: "County",
+  region: "Region",
 };
 const GRAN_CYCLE: (PlaceGranularity | "auto")[] = ["auto", "region", "county", "city"];
 
-const MONTHS_SHORT = ["jan", "fév", "mar", "avr", "mai", "jui", "jul", "aoû", "sep", "oct", "nov", "déc"];
+const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 const isMode = (s: string | null): s is ChapterMode =>
   s === "place" || s === "time" || s === "hybrid";
@@ -104,6 +105,36 @@ const isSource = (s: string | null): s is LibrarySource =>
 // "All" is simply no scope: the filter runs over both.
 const kindFor = (s: LibrarySource) =>
   s === "incoming" ? "incoming" : s === "gallery" ? "final" : null;
+
+type ReadingOptions = {
+  mode: ChapterMode;
+  gran: PlaceGranularity | "auto";
+  source: LibrarySource;
+};
+
+// What the loader says while a derivation is in flight. Every option change
+// rebuilds the whole stream from a full scan (cf. lib/timeline.ts), which takes
+// seconds on a real library — so the feedback names the change being applied,
+// not just "loading": that is what tells the reader the click was heard and
+// which of the three controls is answering. `prev === null` is the first read;
+// same options means a refresh (a chapter edit, "Retry").
+function readingLabel(prev: ReadingOptions | null, next: ReadingOptions): string {
+  if (!prev) return "Reading the library…";
+  if (prev.source !== next.source) {
+    if (next.source === "all") return "Reading the whole library…";
+    const label = LIBRARY_SOURCES.find((s) => s.key === next.source)?.label ?? next.source;
+    return `Reading ${label}…`;
+  }
+  if (prev.mode !== next.mode) {
+    const label = MODES.find((m) => m.key === next.mode)?.label ?? next.mode;
+    return `New chapter rule: ${label}…`;
+  }
+  if (prev.gran !== next.gran)
+    return next.gran === "auto"
+      ? "Automatic grouping…"
+      : `Grouping by ${GRAN_LABEL[next.gran].toLowerCase()}…`;
+  return "Refreshing the chapters…";
+}
 
 export default function TimelinePanel() {
   const router = useRouter();
@@ -127,6 +158,9 @@ export default function TimelinePanel() {
 
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+  // What the loader announces, decided from what changed since the last read.
+  const [loadingLabel, setLoadingLabel] = useState("Reading the library…");
+  const lastRead = useRef<ReadingOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped by "Réessayer": same query, fresh request.
   const [attempt, setAttempt] = useState(0);
@@ -161,13 +195,13 @@ export default function TimelinePanel() {
         const assets = await fetchUngeotagged(chapter, kindFor(source));
         if (!assets.length) {
           setGeotag(null);
-          setNotice("Tous les médias de ce chapitre ont déjà une position.");
+          setNotice("Every media in this chapter already has a position.");
           return;
         }
         setGeotag((g) => (g && g.chapter.key === chapter.key ? { ...g, assets } : g));
       } catch (e) {
         setGeotag(null);
-        setNotice(`Impossible de lister les médias sans position : ${(e as Error).message}`);
+        setNotice(`Couldn’t list the media with no position: ${(e as Error).message}`);
       }
     },
     [source],
@@ -198,6 +232,9 @@ export default function TimelinePanel() {
 
   useEffect(() => {
     let cancelled = false;
+    const next: ReadingOptions = { mode, gran, source };
+    setLoadingLabel(readingLabel(lastRead.current, next));
+    lastRead.current = next;
     setLoading(true);
     setError(null);
     fetchJson<Payload>(`/api/assets/timeline?${query}`)
@@ -213,7 +250,8 @@ export default function TimelinePanel() {
     return () => {
       cancelled = true;
     };
-  }, [query, attempt]);
+    // mode/gran/source only feed the label; `query` is what actually changes.
+  }, [query, attempt, mode, gran, source]);
 
   // Optimistic rating, the gallery's own shape (GalleryShell.rate): patch the
   // open viewer's row, then the server. Chapter tiles re-read their rows from
@@ -268,13 +306,13 @@ export default function TimelinePanel() {
       className={`chip${gran !== "auto" ? " active" : ""}`}
       title={
         gran === "auto"
-          ? "Découpage choisi pour la période affichée — cliquer pour l'épingler"
-          : "Découpage épinglé — cliquer pour changer de niveau"
+          ? "Grouping chosen for the period on screen — click to pin it"
+          : "Grouping pinned — click to change level"
       }
       onClick={() => setGran(GRAN_CYCLE[(GRAN_CYCLE.indexOf(gran) + 1) % GRAN_CYCLE.length])}
     >
-      Découpage · {GRAN_LABEL[data.granularity]}
-      <span className="chip-count">{gran === "auto" ? "auto" : "épinglé"}</span>
+      Grouping · {GRAN_LABEL[data.granularity]}
+      <span className="chip-count">{gran === "auto" ? "auto" : "pinned"}</span>
     </button>
   ) : null;
 
@@ -282,17 +320,17 @@ export default function TimelinePanel() {
     <div className="app-shell">
       <div className="topbar">
         <h1>Timeline</h1>
-        <span className="hint max-sm:hidden">la bibliothèque lue comme un récit</span>
+        <span className="hint max-sm:hidden">the library read as a story</span>
         <span className="spacer" />
         {data && (
           <span className="hint" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString()} médias · {data.chapters.length} chapitres
+            {total.toLocaleString()} media · {data.chapters.length} chapters
           </span>
         )}
       </div>
 
       <div className="gallery-controls">
-        <div className="tabs" role="group" aria-label="Règle de découpage">
+        <div className="tabs" role="group" aria-label="Chapter rule">
           {MODES.map((m) => (
             <button
               key={m.key}
@@ -312,9 +350,9 @@ export default function TimelinePanel() {
         {data && data.undated > 0 && (
           <span
             className="chip"
-            title="Médias sans date de prise de vue : ils ne peuvent pas être placés sur la timeline et restent visibles dans la grille"
+            title="Media with no capture date: they cannot be placed on the timeline and stay visible in the grid"
           >
-            {Icons.alert} {data.undated.toLocaleString()} sans date
+            {Icons.alert} {data.undated.toLocaleString()} undated
           </span>
         )}
         {data && data.chapters.some((c) => c.place_inferred) && (
@@ -322,9 +360,9 @@ export default function TimelinePanel() {
             className={`chip${onlyInferred ? " active" : ""}`}
             onClick={() => setOnlyInferred((v) => !v)}
             aria-pressed={onlyInferred}
-            title="Ne montrer que les chapitres dont le lieu a été déduit des voisins (aucun média géolocalisé)"
+            title="Only show the chapters whose place was inferred from their neighbours (no geotagged media at all)"
           >
-            lieux déduits
+            inferred places
             <span className="chip-count">{data.chapters.filter((c) => c.place_inferred).length}</span>
           </button>
         )}
@@ -341,24 +379,23 @@ export default function TimelinePanel() {
         </div>
       )}
 
-      <div className="tl-body">
+      <div className="tl-body" aria-busy={loading}>
         <div className="tl-stream" ref={streamRef}>
-          {loading && !data && <LoadingState label="Lecture de la bibliothèque…" />}
           {error && (
             <div className="error-box">
               <span>{error}</span>
               <button className="btn btn-sm" onClick={() => setAttempt((n) => n + 1)}>
-                Réessayer
+                Retry
               </button>
             </div>
           )}
           {data && data.chapters.length === 0 && !loading && (
             <EmptyState
-              title="Rien à raconter ici"
+              title="Nothing to tell here"
               hint={
                 source === "gallery"
-                  ? "La Gallery ne contient aucun média daté."
-                  : "Aucun média daté dans cette moitié de la bibliothèque."
+                  ? "The Gallery holds no dated media."
+                  : "No dated media in this half of the library."
               }
             />
           )}
@@ -367,8 +404,8 @@ export default function TimelinePanel() {
               <div className="tl-era">
                 <span className="tl-era-name">{era.year}</span>
                 <span className="tl-era-meta">
-                  {era.chapters.length} chapitre{era.chapters.length > 1 ? "s" : ""} ·{" "}
-                  {era.chapters.reduce((n, c) => n + c.count, 0).toLocaleString()} médias
+                  {era.chapters.length} chapter{era.chapters.length > 1 ? "s" : ""} ·{" "}
+                  {era.chapters.reduce((n, c) => n + c.count, 0).toLocaleString()} media
                 </span>
               </div>
               {era.chapters.map((ch) => (
@@ -394,6 +431,11 @@ export default function TimelinePanel() {
             onJump={jumpTo}
           />
         )}
+
+        {/* The one loader of this page: the first read draws it over an empty
+            zone, every later one over the previous answer, which stays visible
+            but blurred and unclickable until the new derivation lands. */}
+        {loading && <LoadingOverlay label={loadingLabel} />}
       </div>
 
       {editing != null && data && (() => {
@@ -440,7 +482,7 @@ export default function TimelinePanel() {
       {geotag?.loc && !geotag.assets && (
         <div className="modal-overlay" role="presentation">
           <div className="modal">
-            <LoadingState label="Liste des médias sans position…" />
+            <LoadingState label="Listing the media with no position…" />
           </div>
         </div>
       )}
@@ -512,7 +554,7 @@ function Spine({
   }
   let year: number | null = null;
   return (
-    <div className="tl-spine" aria-label="Mois">
+    <div className="tl-spine" aria-label="Months">
       {rows.map((r) => {
         const head = r.year !== year ? <div className="tl-spine-year">{r.year}</div> : null;
         year = r.year;
@@ -522,7 +564,7 @@ function Spine({
             {head}
             <button
               className={`tl-spine-row${active ? " active" : ""}`}
-              title={`${r.count.toLocaleString()} médias`}
+              title={`${r.count.toLocaleString()} media`}
               onClick={() => r.count && onJump(r.year, r.month)}
               disabled={!r.count}
             >

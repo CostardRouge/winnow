@@ -20,8 +20,8 @@ import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const DAYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
-const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 type Place = { label: string; lat: number; lon: number } | null;
 
@@ -224,17 +224,17 @@ export default function ChapterEditModal({
       <div className="modal-overlay" role="presentation" {...backdrop}>
         <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tl-offer-title">
           <h2 className="modal-title" id="tl-offer-title">
-            Lieu enregistré
+            Place saved
           </h2>
           <p className="hint">
-            <b>{ch.ungeotagged.toLocaleString()}</b> média{ch.ungeotagged > 1 ? "s" : ""} de ce
-            chapitre n'{ch.ungeotagged > 1 ? "ont" : "a"} pas de position. Les placer à «{" "}
-            {offer.label} » ? Un récap média par média précède l'écriture, et les coordonnées
-            confirmées sont inscrites dans les originaux.
+            <b>{ch.ungeotagged.toLocaleString()}</b> media in this chapter{" "}
+            {ch.ungeotagged > 1 ? "have" : "has"} no position. Place {ch.ungeotagged > 1 ? "them" : "it"}{" "}
+            at “{offer.label}”? A media-by-media recap comes before the write, and the confirmed
+            coordinates are inscribed in the originals.
           </p>
           <div className="modal-actions">
             <button className="btn" onClick={onClose}>
-              Non, seulement le chapitre
+              No, the chapter only
             </button>
             <button
               className="btn btn-primary"
@@ -243,7 +243,7 @@ export default function ChapterEditModal({
                 onPlaceMedia(offer);
               }}
             >
-              Placer les médias…
+              Place the media…
             </button>
           </div>
         </div>
@@ -255,16 +255,16 @@ export default function ChapterEditModal({
     <div className="modal-overlay" role="presentation" {...backdrop}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tl-edit-title">
         <h2 className="modal-title" id="tl-edit-title">
-          {ch.override_id ? "Modifier le chapitre" : "Nommer le chapitre"}
+          {ch.override_id ? "Edit the chapter" : "Name the chapter"}
         </h2>
         <p className="hint">
-          {ch.count.toLocaleString()} médias · {ch.sessions.length} dossier
-          {ch.sessions.length > 1 ? "s" : ""}. Une correction posée sur le découpage, jamais une
-          copie des médias : ré-indexer n'y change rien.
+          {ch.count.toLocaleString()} media · {ch.sessions.length} folder
+          {ch.sessions.length > 1 ? "s" : ""}. A correction laid over the derivation, never a copy
+          of the media: re-indexing does not undo it.
         </p>
 
         <label className="modal-label" htmlFor="tl-edit-name">
-          Nom
+          Name
         </label>
         <input
           ref={nameRef}
@@ -272,13 +272,13 @@ export default function ChapterEditModal({
           className="input modal-input"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={ch.places[0] ?? "Lieu inconnu"}
+          placeholder={ch.places[0] ?? "Unknown place"}
           maxLength={120}
           disabled={busy}
         />
 
         <label className="modal-label" htmlFor="tl-edit-place">
-          Lieu du chapitre
+          Chapter place
         </label>
         {place ? (
           <div className="tl-edit-place">
@@ -287,7 +287,7 @@ export default function ChapterEditModal({
               <button
                 type="button"
                 className="chip-x"
-                aria-label="Retirer le lieu"
+                aria-label="Remove the place"
                 onClick={() => setPlace(null)}
                 disabled={busy}
               >
@@ -302,7 +302,7 @@ export default function ChapterEditModal({
               className="input modal-input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher une ville, un lieu…"
+              placeholder="Search a city, a place…"
               autoComplete="off"
               disabled={busy}
             />
@@ -310,7 +310,7 @@ export default function ChapterEditModal({
               <ul className="tl-edit-suggest" role="listbox">
                 {searching && (
                   <li className="hint">
-                    <Spinner sm /> recherche…
+                    <Spinner sm /> searching…
                   </li>
                 )}
                 {suggestions.map((s) => (
@@ -330,7 +330,7 @@ export default function ChapterEditModal({
               </ul>
             )}
             <p className="hint" style={{ marginTop: 6 }}>
-              Décrit le chapitre, pas les médias : leur position n'est pas modifiée.
+              Describes the chapter, not the media: their own position is left alone.
             </p>
           </>
         )}
@@ -338,7 +338,7 @@ export default function ChapterEditModal({
         {days.length > 0 && (
           <>
             <label className="modal-label" htmlFor="tl-edit-split">
-              Scinder au matin du
+              Split on the morning of
             </label>
             <div className="tl-edit-row">
               <select
@@ -348,7 +348,7 @@ export default function ChapterEditModal({
                 onChange={(e) => setSplitAt(e.target.value)}
                 disabled={busy}
               >
-                <option value="">— choisir un jour —</option>
+                <option value="">— pick a day —</option>
                 {days.map((d) => (
                   <option key={d.at} value={d.at}>
                     {d.label}
@@ -356,7 +356,7 @@ export default function ChapterEditModal({
                 ))}
               </select>
               <button className="btn" onClick={split} disabled={busy || !splitAt}>
-                Scinder
+                Split
               </button>
             </div>
           </>
@@ -364,16 +364,16 @@ export default function ChapterEditModal({
 
         {(prev || next) && (
           <>
-            <span className="modal-label">Fusionner</span>
+            <span className="modal-label">Merge</span>
             <div className="tl-edit-row">
               {prev && (
                 <button className="btn" onClick={() => merge(prev)} disabled={busy} title={prev.name}>
-                  ← avec « {prev.name} »
+                  ← with “{prev.name}”
                 </button>
               )}
               {next && (
                 <button className="btn" onClick={() => merge(next)} disabled={busy} title={next.name}>
-                  avec « {next.name} » →
+                  with “{next.name}” →
                 </button>
               )}
             </div>
@@ -384,21 +384,21 @@ export default function ChapterEditModal({
 
         <div className="modal-actions">
           {ch.break_id != null && (
-            <button className="btn" onClick={unsplit} disabled={busy} title="Supprimer la coupure qui commence ce chapitre">
-              Recoller au précédent
+            <button className="btn" onClick={unsplit} disabled={busy} title="Remove the break that starts this chapter">
+              Rejoin the previous
             </button>
           )}
           {ch.override_id != null && (
-            <button className="btn" onClick={reset} disabled={busy} title="Revenir au découpage automatique">
-              Réinitialiser
+            <button className="btn" onClick={reset} disabled={busy} title="Back to the automatic derivation">
+              Reset
             </button>
           )}
           <span className="spacer" />
           <button className="btn" onClick={onClose} disabled={busy}>
-            Annuler
+            Cancel
           </button>
           <button className="btn btn-primary" onClick={save} disabled={busy || !dirty}>
-            {busy ? <Spinner sm /> : "Enregistrer"}
+            {busy ? <Spinner sm /> : "Save"}
           </button>
         </div>
       </div>
