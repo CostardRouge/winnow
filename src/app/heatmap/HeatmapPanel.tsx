@@ -22,6 +22,15 @@
 // colouring different questions, and ONE ramp so a rung means the same thing
 // everywhere. That sharing is the design; the four layouts are variations on it.
 //
+// ## Its three pickers are the shared `OptionPicker`
+//
+// Reading, Measure and Granularity are all "one of N", so they render the
+// project's own control rather than three hand-rolled rows of `.view-btn`. The
+// markup the segments form emits is the same one they carried, so nothing moved
+// on screen; what the page GAINS is the hint sentence on every option — the
+// measures had none, and "Backlog" beside "Keepers" is exactly the pair that
+// needs saying — plus the menu form for free on the day a fifth measure lands.
+//
 // ## State lives in the URL
 //
 // `view`, `measure`, `gran`, `source`, `from`/`to` (the brushed span) and
@@ -53,7 +62,9 @@ import {
   RATE_FLOOR,
   measureById,
   rungVar,
+  type MeasureId,
 } from "@/lib/heatScale";
+import { OptionPicker, type PickerOption } from "../OptionPicker";
 import HeatGrid, { byMonth, type Granularity } from "./HeatGrid";
 import HeatMatrix, { type MatrixSort } from "./HeatMatrix";
 import HeatRibbon from "./HeatRibbon";
@@ -68,13 +79,27 @@ const HeatBins = dynamicImport(() => import("./HeatBins"), {
 
 type ViewId = "both" | "matrix" | "map" | "tinted";
 
-const VIEWS: { id: ViewId; label: string; hint: string }[] = [
-  { id: "both", label: "Both", hint: "Calendar and map, cross-filtered" },
-  { id: "matrix", label: "Matrix", hint: "Places down, months across" },
-  { id: "map", label: "Map", hint: "The map at full width, months on a rail" },
-  { id: "tinted", label: "Tinted", hint: "One calendar, place as a stripe" },
+const VIEWS: PickerOption<ViewId>[] = [
+  { key: "both", label: "Both", hint: "Calendar and map, cross-filtered" },
+  { key: "matrix", label: "Matrix", hint: "Places down, months across" },
+  { key: "map", label: "Map", hint: "The map at full width, months on a rail" },
+  { key: "tinted", label: "Tinted", hint: "One calendar, place as a stripe" },
 ];
-const isView = (s: string | null): s is ViewId => VIEWS.some((v) => v.id === s);
+const isView = (s: string | null): s is ViewId => VIEWS.some((v) => v.key === s);
+
+// The rung's question, as a picker list. Built from `MEASURES` so the list, the
+// legend and the tooltips can never fall out of step; the hint is the measure's
+// own sentence, which is what the segments were missing.
+const MEASURE_OPTIONS: PickerOption<MeasureId>[] = MEASURES.map((m) => ({
+  key: m.id,
+  label: m.label,
+  hint: m.hint,
+}));
+
+const GRANS: PickerOption<Granularity>[] = [
+  { key: "day", label: "Day", hint: "One cell per day" },
+  { key: "week", label: "Week", hint: "One cell per week — a decade at a glance" },
+];
 const isSource = (s: string | null): s is LibrarySource =>
   s === "all" || s === "incoming" || s === "gallery";
 
@@ -218,52 +243,32 @@ export default function HeatmapPanel() {
 
       <div className="shell-head">
         <div className="shell-head-row">
-          <div className="view-toggle" role="group" aria-label="Reading">
-            {VIEWS.map((v) => (
-              <button
-                key={v.id}
-                className={`view-btn${view === v.id ? " active" : ""}`}
-                aria-pressed={view === v.id}
-                title={v.hint}
-                onClick={() => patch({ view: v.id })}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
+          <OptionPicker
+            options={VIEWS}
+            value={view}
+            onChange={(v) => patch({ view: v })}
+            ariaLabel="Reading"
+          />
           <span className="spacer" />
           <LibrarySourceTabs source={source} onChange={setSource} />
         </div>
 
         <div className="shell-head-row heat-controls">
           <span className="heat-lab">Measure</span>
-          <div className="view-toggle" role="group" aria-label="Measure">
-            {MEASURES.map((m) => (
-              <button
-                key={m.id}
-                className={`view-btn${measure.id === m.id ? " active" : ""}`}
-                aria-pressed={measure.id === m.id}
-                onClick={() => patch({ measure: m.id })}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <OptionPicker
+            options={MEASURE_OPTIONS}
+            value={measure.id}
+            onChange={(m) => patch({ measure: m })}
+            ariaLabel="Measure"
+          />
 
           {(view === "both" || view === "tinted") && (
-            <div className="view-toggle" role="group" aria-label="Granularity">
-              {(["day", "week"] as Granularity[]).map((g) => (
-                <button
-                  key={g}
-                  className={`view-btn${gran === g ? " active" : ""}`}
-                  aria-pressed={gran === g}
-                  title={g === "day" ? "One cell per day" : "One cell per week — a decade at a glance"}
-                  onClick={() => patch({ gran: g })}
-                >
-                  {g === "day" ? "Day" : "Week"}
-                </button>
-              ))}
-            </div>
+            <OptionPicker
+              options={GRANS}
+              value={gran}
+              onChange={(g) => patch({ gran: g })}
+              ariaLabel="Granularity"
+            />
           )}
 
           <span className="spacer" />
