@@ -62,6 +62,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - The Heatmap reads the library as a distribution, four ways over ONE measure and ONE ramp; backlog is the default and the one measure uniquely Winnow's → `docs/memory/frontend.md`
 - An aggregate over the WHOLE library must run `SET LOCAL jit = off` and be one scan: `collapseGroups` puts the plan over `jit_above_cost` and the compile costs 40× the query → `docs/memory/database.md`
 
+- A session that changes code reports this project's state to `PROJETS.md`, at the root of the private `second-brain` repo: the register is that file, never Claude's memory and never `git log` → CLAUDE.md rule 3
+
 ## Open items (dated; remove when done)
 
 - 2026-09-07 — **The Heatmap shipped, off by default**, with all four readings the maintainer asked for behind one segmented control (`docs/HEATMAP.md` is now a record, not a proposal). What is still open there: the bins do not refine on zoom (they are the geocoding cells; a `round(lat/step)` grid over `assets_gps_coords_idx` is the next step), and three of the brief's five questions were answered by building rather than by decision — the name ("Heatmap"), the default measure (backlog) and keeper rate shipping in v1 with its floor stated. The fifth is untouched: "show me everything with no position" as a filter of its own may be worth more than the heatmap, and is one filter rather than a screen.
