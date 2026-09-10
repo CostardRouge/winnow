@@ -30,6 +30,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: judge a candidate as a real 16×16 raster, not a scaled-down vector — they lie in opposite directions — and judge the pill by rendering the real `Brand` markup against the built CSS (`.next/static/chunks/*.css` carries the compiled `globals.css`, so a two-element static page reproduces it without a database). Author in a 24×24 viewBox with `currentColor` so the glyph drops into `Brand` unchanged. Changing the mark does not touch `manifest.ts`, `layout.tsx`'s `viewport.themeColor` or `offline.html`'s theme block — those carry the paper/night backgrounds, not the mark. The `🪶` in `README.md`'s title still shows a feather; it is the maintainer's line to change.
 
+## The icon SET is what puts a mark on a home screen, and this repo is the portfolio's reference (2026-09-10)
+
+**Measured, from a report that Winnow's icon was right on Chrome for iOS and Atelier's was not**: the difference is not the browser, it is one tag. iOS builds a home-screen icon from `apple-touch-icon` **only** — a PNG, square, opaque — and ignores `rel="icon"` whatever its type; with no such link it screenshots the page instead. Chrome for iOS is WebKit, so it reads exactly what Safari reads. Atelier declared an SVG favicon and nothing else, which is the whole of it; it has since copied this repo's set, and `COMMON-PROJECT-SPEC.md` in `second-brain` now carries the rule for every repo of the portfolio, with Winnow named as the worked example.
+
+**So `metadata.icons.apple` in `layout.tsx` is load-bearing, not decoration** — dropping it, or letting the 180px PNG fall out of `public/icons/`, silently costs the home-screen mark on every iPhone while every desktop tab still looks right. `manifest.ts` is the Android/Chrome half and does not cover for it. The seven PNGs and the three SVG sources are listed in «The brand mark is the sieve» above; that entry is the one to follow when the drawing changes.
+
+**`display: "standalone"` is EARNED here, and is the one field of the set another repo must decide for itself.** Winnow's state is on the server, so a home-screen launch in its own storage container costs nothing. An app whose documents live in the browser (Atelier: IndexedDB) would open on an empty gallery, and says `browser` for that reason. Do not copy the field across repos as though it were part of the boilerplate.
+
 ## Every DB-backed route opts out of static rendering (2026-08-20)
 
 **Decision**: 62 route files carry `export const dynamic = "force-dynamic"` with a one-line comment saying why ("DB-backed route: never pre-rendered/cached at build time").
