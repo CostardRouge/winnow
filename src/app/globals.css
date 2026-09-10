@@ -326,6 +326,66 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply inline-flex;
   }
 
+  /* ---- Connection status ------------------------------------------------- */
+  /* A slim pill dropped into the header band when the app loses its server,
+     and once more (in the pick colour) when it comes back. Deliberately NOT a
+     takeover: public/offline.html replaces the document, which is right for a
+     cold navigation with nothing cached and wrong for an outage mid-cull —
+     losing the network must not cost you your scroll position, your selection
+     or the frame you were judging. Reads the paper tokens, so it is in the
+     active theme by construction rather than by a second copy of the palette.
+     z-[1300]: above the viewer (z-50) and its overlays (z-[500]), menus
+     (z-[60]), modals (z-[80]) and the viewer boot card (z-[1200]) — a
+     connection you no longer have is worth knowing about whatever is on
+     screen. See src/app/ConnectionStatus.tsx for how the state is detected. */
+  .conn-bar {
+    @apply fixed z-[1300] flex items-center gap-2 border py-1.5 pl-3 pr-1.5 text-xs;
+    left: 50%;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    translate: -50% 0;
+    /* Sized to content: a fixed box offset by left:50% would otherwise take
+       the right half of the viewport (same trap as .bulk-bar). */
+    width: max-content;
+    max-width: min(92vw, 520px);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    color: var(--color-text);
+    animation: conn-in 0.18s var(--ease-out);
+  }
+  @keyframes conn-in {
+    from {
+      opacity: 0;
+      translate: -50% -8px;
+    }
+  }
+  /* The state is in the words; the dot only tells the two apart at a glance. */
+  .conn-dot {
+    @apply flex-none rounded-full;
+    width: 7px;
+    height: 7px;
+    background: var(--color-reject);
+  }
+  .conn-bar.is-back .conn-dot {
+    background: var(--color-pick);
+  }
+  .conn-bar.is-checking .conn-dot {
+    animation: conn-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes conn-pulse {
+    50% {
+      opacity: 0.3;
+    }
+  }
+  .conn-text {
+    @apply truncate font-medium;
+  }
+  .conn-act {
+    @apply flex-none;
+  }
+
   /* ---- Page header bar -------------------------------------------------- */
   .topbar {
     @apply sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5;
@@ -4086,6 +4146,26 @@ html[data-theme="dark"] .btn-primary:hover {
   .theme-toggle .theme-ic svg {
     width: 19px;
     height: 19px;
+  }
+  /* The connection pill shares the phone's header band with the theme toggle,
+     so it is anchored rather than centred: a centred pill of any useful width
+     runs under the toggle's fixed corner (z-45). It covers the page title while
+     it shows — the one thing on screen you already know — and never the media
+     underneath, which is the whole point of not being a full-page takeover. */
+  .conn-bar {
+    left: 8px;
+    top: calc(env(safe-area-inset-top, 0px) + 13px);
+    translate: 0 0;
+    /* Still sized to content (the base rule's width: max-content), capped so it
+       stops short of the toggle's corner instead of running under it. */
+    max-width: calc(100vw - 66px - env(safe-area-inset-right, 0px));
+    animation-name: conn-in-sheet;
+  }
+  @keyframes conn-in-sheet {
+    from {
+      opacity: 0;
+      translate: 0 -8px;
+    }
   }
   /* Reserve the bottom bar's height — including the safe-area inset on notched
      phones — so scrollable content (and the slide-in panel, which stops at the

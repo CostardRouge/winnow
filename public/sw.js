@@ -8,13 +8,20 @@
  *   2. serve the static app shell fast (Next.js build assets, icons),
  *   3. show a graceful offline page when a navigation can't reach the network.
  *
+ * (3) is the LAST resort, not the way an outage gets reported: it replaces the
+ * document, so it costs the reader their scroll position and their selection.
+ * An outage while the app is already open is reported in the page by
+ * src/app/ConnectionStatus.tsx; this page is what is left for a cold
+ * navigation with nothing cached to fall back on.
+ *
  * It never caches /api responses or media bytes — those always hit the network.
  */
 
-// Bumped to v2 with the sieve mark: the icons and the offline page are
-// precached, so without a new version installed clients keep serving the old
-// feather.
-const VERSION = "v2";
+// Bumped whenever a precached file changes: the icons and the offline page are
+// served from this cache, so without a new version installed clients keep the
+// old copy. v2 = the sieve mark; v3 = the offline page follows the chosen theme
+// and lets itself out when the connection returns.
+const VERSION = "v3";
 const STATIC_CACHE = `winnow-static-${VERSION}`;
 const SHELL_CACHE = `winnow-shell-${VERSION}`;
 const OFFLINE_URL = "/offline.html";

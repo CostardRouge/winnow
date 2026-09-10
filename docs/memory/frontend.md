@@ -62,6 +62,21 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: do not add `/api` or media to a cache. Bump `VERSION` in `sw.js` when the shell caching changes. Installability and the worker need a secure context, so the install prompt only appears over HTTPS (or `localhost`) — testing it over plain LAN http will look broken when it is not. Icons are re-rasterised from the SVG with `npx tsx scripts/gen-icons.ts` after editing `public/icons/icon.svg`.
 
+## An outage is a status bar; the full-page offline screen is the last resort (2026-09-10)
+
+**Decision**: `ConnectionStatus` (`src/app/ConnectionStatus.tsx`, `.conn-*` in `globals.css`, mounted by the root layout outside `.root`) reports an outage as a slim pill in the header band — one line, one verb, `role="status"` — and `public/offline.html` is kept only for a cold navigation with nothing cached. The maintainer's complaint was the takeover itself: the offline card replaces the document, so a blink of the tunnel mid-cull costs the scroll position, the selection and the frame being judged. It also ignored the theme switch, which is the second half of the rule below.
+
+**How it notices, cheapest first**: `offline`/`online` events are free but only fire when the DEVICE loses its network — Winnow's real failure is the opposite (wifi fine, the Optiplex not answering: a Watchtower pull, the tunnel, a Postgres restart), which the browser reports as online. So the component also **observes the global `fetch`** — every screen is fed by one, so a dead server surfaces within a second — and both signals only *raise the question*: nothing is shown until a probe of `/api/health` fails too, which is what kills false alarms from an aborted request. Only a `TypeError` counts (an `AbortError` is the app cancelling its own request). While down the probe **is** the retry loop (2s → 30s backoff, paused while the tab is hidden); while healthy there is **no polling at all** and a good session sends zero extra requests. A 503 from the probe means the app answered and Postgres or Redis did not, and is named as such ("Winnow's database is down") — "can't reach Winnow" would send you looking at the wrong box.
+
+**Traps**:
+- An inline `navigator.onLine === false` narrows the property to `true` for the rest of the block, and tsc then rejects the *second* reading (after the await) as a dead comparison — which is the reading that matters. Read it through a call.
+- `/api/health` is the only sound probe: public (`PUBLIC_PREFIXES` in `lib/authz.ts`), never cached by the worker, and it answers "is the server there" and nothing else. A 401 would still be a reachable server.
+- The offline page cannot be judged by `prefers-color-scheme`: the app's theme is an explicit choice in `localStorage["winnow.theme"]`, so the page runs the same pre-paint resolution as `layout.tsx` and swaps its two media-scoped `<meta theme-color>` tags for the single one that applies. Anything served outside the React tree needs that script or it will contradict the switch.
+- The worker answers the failed navigation **without redirecting**, so the document URL is still the page that was asked for: the page can reload itself back into that page, and it does, on `online` and on a 5 s tick. A fallback that needs a tap to leave is the dead end it is trying not to be.
+- A root layout that throws (Postgres down at first paint) takes `ConnectionStatus` with it — the bar covers outages that start while the app is *open*, not one that was already there.
+
+**How to apply**: report a transient app-wide condition as a fixed pill at `z-[1300]`, above the viewer, its overlays, menus and modals; do not push the layout down and do not take the page. New chrome outside the React tree (a static fallback, an error document) resolves the theme with the layout's script, never with a media query alone.
+
 ## Touch is a first-class input and it is fiddly (2026-08-20)
 
 **Observation**: the viewer and the sift deck hand-roll pointer/touch handling — double-tap returning to the last zoom, pointer events stopped from starting a pan/swipe on interactive overlays, a drag past `FLICK_PX` treated as a deliberate flick, and iOS's synthesized click after a touch explicitly prevented from opening the viewer.

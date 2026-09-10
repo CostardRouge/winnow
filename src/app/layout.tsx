@@ -6,6 +6,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import AppRail from "./AppRail";
+import ConnectionStatus from "./ConnectionStatus";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import { FeaturesProvider } from "./FeaturesProvider";
 import { getFeatures } from "@/lib/featureGate";
@@ -123,6 +124,10 @@ export default async function RootLayout({
             <div className="root-main">{children}</div>
           </div>
         </FeaturesProvider>
+        {/* Outside .root on purpose: it is a fixed overlay that must survive
+            whatever the page is doing (a full-screen viewer, an open modal),
+            and it belongs to no section. */}
+        <ConnectionStatus />
         <ServiceWorkerRegister />
       </body>
     </html>
