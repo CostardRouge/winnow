@@ -16,13 +16,29 @@ import type { Kit, KitPart } from "./model";
 import { num, shareInk, shareInkText } from "./model";
 
 /**
- * A row's height floor, as a fraction of the drawing. Without it a drone with
- * 640 frames next to a body with 15,000 is a 12-pixel sliver whose label can't
- * be drawn — and a tile you cannot read says nothing at all. The floor is
- * declared, not hidden: the areas below it are no longer to scale, which is the
- * honest trade for keeping every body visible.
+ * A row's height floor, in PIXELS — the unit the text is actually drawn in. A
+ * floor expressed as a fraction of the drawing buys nothing once the drawing
+ * has a fixed height: seventeen bodies divide it into ~30 px rows whatever the
+ * fraction says, because the fraction is relative to a total that grows with
+ * them, and every label is then cut through the middle. So the row heights are
+ * computed here and the surface is as tall as they come to — it grows with the
+ * kit, the way Stack's one-bar-per-body already does.
+ *
+ * The areas below the floor are no longer to scale; that is declared, not
+ * hidden, and is the honest trade for keeping every body visible and legible.
  */
-const MIN_ROW = 0.115;
+const ROW_FLOOR = 30;
+
+/**
+ * What is shared out proportionally ON TOP of every row's floor. The hierarchy
+ * lives in this budget alone, so it stays readable however many bodies there
+ * are: each row is `ROW_FLOOR + share × BUDGET`, and the drawing is as tall as
+ * that comes to.
+ */
+const BUDGET = 420;
+
+/** Under this height a row holds one line, not two — the count moves to the tip. */
+const TWO_LINES_AT = 42;
 
 /** Below this share of its row, a tile can't hold its name — hover carries it. */
 const LABEL_AT = 0.11;
@@ -34,7 +50,7 @@ const LABEL_AT = 0.11;
  * row) darker than the 6,000-frame zoom above it: the smallest thing on the
  * page as the heaviest. One scale across every tile keeps ink and area agreeing.
  */
-function Tile({ part, tone }: { part: KitPart; tone: number }) {
+function Tile({ part, tone, twoLines }: { part: KitPart; tone: number; twoLines: boolean }) {
   const style = {
     flexGrow: part.count,
     background: shareInk(tone),
@@ -45,7 +61,7 @@ function Tile({ part, tone }: { part: KitPart; tone: number }) {
     part.share >= LABEL_AT ? (
       <>
         <b>{part.label}</b>
-        <small>{num(part.count)}</small>
+        {twoLines ? <small>{num(part.count)}</small> : null}
       </>
     ) : null;
   return part.href ? (
@@ -60,28 +76,32 @@ function Tile({ part, tone }: { part: KitPart; tone: number }) {
 }
 
 export default function BlocksView({ kit }: { kit: Kit }) {
-  const floors = kit.bodies.map((b) =>
-    Math.max(kit.totalFrames > 0 ? b.stats.count / kit.totalFrames : 0, MIN_ROW),
+  const heights = kit.bodies.map(
+    (b) => ROW_FLOOR + (kit.totalFrames > 0 ? b.stats.count / kit.totalFrames : 0) * BUDGET,
   );
-  const sum = floors.reduce((a, v) => a + v, 0) || 1;
 
   return (
     <div className="gear-blocks">
-      {kit.bodies.map((b, i) => (
-        <div key={b.name} className="gear-blk-row" style={{ flexGrow: floors[i] / sum }}>
-          <Link href={b.href} className="gear-blk-label" title={`${b.kindLabel}\n${b.tip}`}>
-            <b>{b.label}</b>
-            <small>{num(b.stats.count)} media</small>
-          </Link>
-          {b.parts.map((p) => (
-            <Tile
-              key={p.key}
-              part={p}
-              tone={kit.totalFrames > 0 ? p.count / kit.totalFrames : 0}
-            />
-          ))}
-        </div>
-      ))}
+      {kit.bodies.map((b, i) => {
+        const twoLines = heights[i] >= TWO_LINES_AT;
+        const tip = `${b.kindLabel}\n${num(b.stats.count)} media\n${b.tip}`;
+        return (
+          <div key={b.name} className="gear-blk-row" style={{ height: `${heights[i]}px` }}>
+            <Link href={b.href} className="gear-blk-label" title={tip}>
+              <b>{b.label}</b>
+              {twoLines ? <small>{num(b.stats.count)} media</small> : null}
+            </Link>
+            {b.parts.map((p) => (
+              <Tile
+                key={p.key}
+                part={p}
+                tone={kit.totalFrames > 0 ? p.count / kit.totalFrames : 0}
+                twoLines={twoLines}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
