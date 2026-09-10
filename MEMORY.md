@@ -54,6 +54,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - The dedup triage page pages server-side on its own endpoint, off the shared failures poll → `docs/memory/frontend.md`
 - /gear carries no illustrations any more: eight layouts over one derived `Kit`, Stack the default, the choice remembered → `docs/memory/frontend.md`
 - One shared picker for "one of N": segments up to four options, a menu above — the form follows the count, never the viewport → `docs/memory/frontend.md`
+- An outage is reported as a status pill, never a takeover; the full-page offline screen is only for a cold navigation → `docs/memory/frontend.md`
 - The Timeline derives chapters per request (one SQL row per run, JS absorption); edits are stored as corrections (named spans, forced breaks — migration 0040), never as chapters → `docs/memory/frontend.md`, `docs/memory/database.md`
 - A deduced location is display-only: only a human-confirmed geotag ever writes into an original's EXIF → `docs/memory/architecture.md`
 - The whole verification gate is `typecheck` + `migrate` + `build`; no linter, no tests → `docs/memory/testing-and-ci.md`
