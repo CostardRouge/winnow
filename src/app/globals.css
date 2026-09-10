@@ -6360,17 +6360,19 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Blocks: the kit as one surface ----------------------------------
-     A row per body, its height proportional to its media (with a declared
-     floor — cf. BlocksView MIN_ROW), sliced into a tile per lens. Needs a
-     definite height: proportional flex has nothing to divide otherwise. */
+     A row per body, its height proportional to its media above a pixel floor,
+     sliced into a tile per lens. The row heights come from BlocksView (floor +
+     share of a budget) and the surface is as tall as they add up to: a fixed
+     container height would divide by the number of bodies instead, and cut the
+     labels through the middle as soon as the kit grows.
+     The line heights below are declared, not inherited, because that floor is
+     computed against them. */
   .gear-blocks {
     @apply flex flex-col;
     gap: 2px;
-    height: 520px;
   }
   .gear-blk-row {
-    @apply flex min-h-0;
-    flex-basis: 0;
+    @apply flex shrink-0;
     gap: 2px;
   }
   .gear-blk-label {
@@ -6387,10 +6389,12 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply truncate text-[12px] font-medium;
     font-family: var(--font-mono);
     letter-spacing: -0.01em;
+    line-height: 1.25;
   }
   .gear-blk-label small {
     @apply truncate text-[10px];
     color: var(--color-faint);
+    line-height: 1.25;
   }
   .gear-blk-tile {
     @apply flex shrink flex-col justify-end overflow-hidden rounded-[var(--radius-sm)] px-2.5 py-1.5;
@@ -6405,11 +6409,13 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply truncate text-[11px] font-medium;
     font-family: var(--font-mono);
     letter-spacing: -0.01em;
+    line-height: 1.25;
   }
   .gear-blk-tile small {
     @apply truncate text-[10px];
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    line-height: 1.25;
     opacity: 0.75;
   }
 
@@ -7141,14 +7147,12 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-stk-seg {
     @apply px-1;
   }
-  /* Blocks and Marks are the two that a phone genuinely squeezes: give them
-     the height back that the narrower tracks cost them. */
-  .gear-blocks {
-    height: 600px;
-  }
+  /* Blocks sizes its own rows in pixels, so a phone costs it only width. */
   .gear-blk-label {
     width: 88px;
   }
+  /* Marks is the layout a phone genuinely squeezes: give it the height back
+     that the narrower tracks cost it. */
   .gear-mk-chart {
     height: 300px;
     grid-template-columns: 34px minmax(0, 1fr);
