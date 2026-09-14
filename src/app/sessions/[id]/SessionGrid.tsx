@@ -805,7 +805,6 @@ export default function SessionGrid({
         <h1>{session?.name ?? `Session #${id}`}</h1>
         <span className="spacer" />
         {notice && <span className="notice">{notice}</span>}
-        <span className="hint">{assets.length} loaded</span>
       </div>
 
       <PullToRefresh className="session-view-body" onRefresh={refresh}>
@@ -1004,6 +1003,12 @@ export default function SessionGrid({
           </div>
         )}
 
+        {/* The loaded count reads under the grid it counts, not in the topbar:
+            on a phone the topbar's right end sits under the fixed theme toggle
+            and account chip, and the hint collided with them (UI review M1). */}
+        {assets.length > 0 && (
+          <p className="hint session-foot">{assets.length} loaded</p>
+        )}
         <div ref={sentinel} style={{ height: 40 }} />
         {loading && <div className="spinner">Loading…</div>}
       </PullToRefresh>

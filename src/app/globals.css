@@ -431,6 +431,11 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-view-body {
     @apply w-full p-5;
   }
+  /* The "N loaded" line under the session grid (it used to trail the topbar,
+     where a phone's fixed theme toggle covered it — UI review M1). */
+  .session-foot {
+    @apply m-0 mt-3 text-center;
+  }
   .app-shell {
     @apply flex flex-col overflow-hidden;
     height: 100%;
@@ -4156,6 +4161,13 @@ html[data-theme="dark"] .btn-primary:hover {
   .theme-toggle .theme-ic svg {
     width: 19px;
     height: 19px;
+  }
+  /* The rail foot above is fixed in the topbar band's top-right corner (theme
+     toggle 34px + account chip 36px + gaps), over whatever the band puts there:
+     a long session title wrapped under it and a trailing hint sat on top of
+     it. Reserve that corner so the band's content stops short of it. */
+  .topbar {
+    padding-right: calc(92px + env(safe-area-inset-right, 0px));
   }
   /* The connection pill shares the phone's header band with the theme toggle,
      so it is anchored rather than centred: a centred pill of any useful width
