@@ -19,8 +19,14 @@
 
   /* Ink */
   --color-text: #1b1813;
-  --color-muted: #7c7464;
-  --color-faint: #a99f8d;
+  /* The two lighter inks, measured on paper (#f4f0e7) and on a well (#efe9dd):
+     muted 4.9:1 / 4.6:1 — AA for the 12–13px copy it carries; faint 3.4:1 /
+     3.2:1 — the floor for large text and UI glyphs, not for small copy (moving
+     the sub-12px labels off faint is P1/P2 work in docs/UI-REVIEW.md). They
+     were #7c7464 (4.1:1) and #a99f8d (2.3:1, on 45 rules of sub-12px text).
+     UI review A1. */
+  --color-muted: #6f675a;
+  --color-faint: #8b8170;
 
   /* Single accent — vermillion */
   --color-accent: #d9442a;
@@ -113,7 +119,8 @@ html[data-theme="dark"] {
   --color-border: #2d2820; /* hairlines */
   --color-border-strong: #40392e;
 
-  /* Ink — warm off-white */
+  /* Ink — warm off-white. On night paper muted is 6.7:1 and faint 3.3:1, so
+     both already clear the floors the light tokens were lifted to (A1). */
   --color-text: #f2ece0;
   --color-muted: #a49a86;
   --color-faint: #6f6656;
