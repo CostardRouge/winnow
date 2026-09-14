@@ -820,7 +820,7 @@ export default function SessionGrid({
           />
         )}
 
-        <div className="filterbar">
+        <div className="filterbar verdict-filters">
           {VERDICT_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -840,7 +840,7 @@ export default function SessionGrid({
             {selectMode ? "Done" : "Select"}
           </button>
           <span className="spacer" />
-          <span className="hint">
+          <span className="hint kbd-hint">
             Keyboard: P pick · X reject · U clear · 1-5 stars · ←/→
           </span>
         </div>

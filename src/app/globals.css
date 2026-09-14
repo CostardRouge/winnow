@@ -1735,6 +1735,19 @@ html[data-theme="dark"] .btn-primary:hover {
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
   }
+  /* The session page's verdict filters: six buttons that wrapped into two rows
+     on a phone, "Select" alone on the second. Under 768px the row scrolls
+     sideways instead (below); every other .filterbar keeps wrapping, which is
+     what its mixed content wants. UI review M2. */
+  .verdict-filters .btn {
+    @apply shrink-0;
+  }
+  /* Keyboard shortcuts mean nothing to a touch screen. */
+  @media (pointer: coarse) {
+    .kbd-hint {
+      display: none;
+    }
+  }
 
   /* Exports tab: preferences toolbar above the job list */
   .exports-toolbar {
@@ -4266,6 +4279,16 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply px-2.5;
     /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
     padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
+  }
+  /* One scrolling row for the session verdict filters (see .verdict-filters).
+     The vertical pad/negative margin pair leaves room for the focus ring,
+     which the scroll container would otherwise clip. */
+  .verdict-filters {
+    @apply -mt-1 mb-2 flex-nowrap overflow-x-auto py-1;
+    scrollbar-width: none;
+  }
+  .verdict-filters::-webkit-scrollbar {
+    display: none;
   }
   /* The compact summary chip + popover is now the default at every width (see
      the base .stats-strip rules), so the header needs no phone-specific stats
