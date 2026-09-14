@@ -26,13 +26,23 @@ Seeded 2026-08-20 from `src/lib/config.ts`, `.env.dist`, `CONTRIBUTING.md` and `
 
 **How to apply**: if a client component needs a value, pass it down from a server component or expose it as `NEXT_PUBLIC_*` — importing `config` into a `"use client"` file is the mistake to catch in review.
 
-## Some settings live in the database, not the environment (2026-08-20)
+## Some settings live in the database, not the environment (2026-08-20, revised 2026-09-14)
 
-**Decision**: rates (`scanPerHour`, `analyzePerHour`, `mlPerHour`, `geocodePerHour`, `rescanMinutes`) and the pause flag live in `app_settings` and are tunable live from the UI. Concurrency knobs are environment/boot-time.
+**Decision**: the nine `AppSettings` keys (pause, `scanPerHour`, `analyzePerHour`, `mlPerHour`, `geocodePerHour`, `geocodePrecisionM`, `rescanMinutes`, `exportIncludeJpeg`, `exportIncludeLiveVideo`) live in `app_settings`. Concurrency knobs are environment/boot-time.
 
 **Why**: pacing has to change while the pipeline is running (thermals, an overnight backfill); pool and concurrency sizing does not, and changing it needs a restart anyway.
 
-**How to apply**: a knob that a human will want to turn *while watching the pipeline* belongs in `app_settings`; a knob that shapes process startup belongs in the environment. Known bug to avoid inheriting: `getSettings()` falls back to defaults on any DB error, so a Postgres blip silently un-pauses the pipeline and lifts every rate limit — it should fail closed on the last-known values (review C8).
+**Being in `app_settings` does not mean it has a control** — measured 2026-09-14: of the nine, only five are writable from a Settings page (the four rate sliders + pause), a sixth from the Exports toolbar (`exportIncludeJpeg`). **`geocodePerHour`, `geocodePrecisionM` and `exportIncludeLiveVideo` are written by nothing in the UI** and are reachable only by `curl`, even though `PATCH /api/settings` accepts all nine and `ExportFilePicker` *reads* `exportIncludeLiveVideo` as a default. `geocodePrecisionM` is the one that costs something visible: its cells are the Heatmap's bins, so the knob that would refine them exists and has no control.
+
+**The rule answers the wrong question, and it shows.** "Does it need a restart" is a fact about the runtime; the useful question is *whose decision is it* — the operator's (paths, credentials, concurrency), the photographer's (what counts as a burst, who appears on People, how coarse a place name is) or the moment's (pause, rates). Knobs of identical nature sit on opposite sides today: `geocodePrecisionM` is live while `ML_PERSON_MIN_FACES`, `ML_PERSON_MIN_SIMILARITY`, `BURST_GAP_SECONDS` and `BURST_MIN_FRAMES` — all re-derivable, all changing only what you *see* — need a container restart. Moving those four into `app_settings` is the fix of record; `docs/SETTINGS-UI.md` §3 (D15, D16) carries the argument.
+
+**How to apply**: a knob that a human will want to turn *while watching the pipeline* belongs in `app_settings`; a knob that shapes process startup belongs in the environment; a knob that changes what a page shows and is cheap to re-derive belongs in `app_settings` too, whatever the restart rule says. Adding a key to `AppSettings` is not done until something writes it — check `grep -rn "<key>" src/app` before calling it shipped. Known bug to avoid inheriting: `getSettings()` falls back to defaults on any DB error, so a Postgres blip silently un-pauses the pipeline and lifts every rate limit — it should fail closed on the last-known values (review C8).
+
+## `localStorage` is a fourth settings tier nobody designed (2026-09-14)
+
+**Observation**: sixteen `winnow.*` keys hold real preferences — `theme`, `grid.size`, `sessions.layout`, `gallery.aside`, `pipeline.{view,sort,density}`, `gear.{view,source}`, `viewer.info`, `dedup.scope`, `relink.job` and five separate remembered library sources. They accumulated one page at a time, and unlike the other three tiers none of them is visible from Settings, resettable, or carried to a second device. `db/migrations/0032_users.sql` creates a `users` table with no preferences beside it, so there is no account-level home for the ones that want one (theme above all: desktop and phone disagree permanently).
+
+**How to apply**: a new remembered view preference joins this tier by default and that is usually right — but say so deliberately rather than by reflex, and use the `winnow.<area>.<thing>` naming already in the tree. If a preference should follow the *person* rather than the browser, it needs a `user_preferences` row, which does not exist yet: proposing one is a decision, not a chore. Counting the tier: 68 env vars + 9 `app_settings` + 6 feature flags + 16 device keys = 99 knobs, 11 of them managed from a Settings page (`docs/SETTINGS-UI.md` §3).
 
 ## The dev defaults in `.env.dist` are dev defaults (2026-08-20)
 
