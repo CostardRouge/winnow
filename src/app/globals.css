@@ -2148,6 +2148,20 @@ html[data-theme="dark"] .btn-primary:hover {
     .vbar-label {
       @apply hidden;
     }
+    .viewer .controls {
+      @apply gap-1.5 px-2;
+    }
+  }
+  /* Touch screens already carry every gesture these two controls offer — a
+     swipe steps between frames, a pinch zooms and a double-tap returns to the
+     last zoom (MediaViewer's gesture layer) — and at 390px they were what
+     pushed the action bar onto a second line and left a zoom pill floating
+     in the black under a letterboxed frame. UI review M4. */
+  @media (pointer: coarse) {
+    .viewer-step,
+    .viewer-zoom {
+      display: none;
+    }
   }
 
   /* Structured metadata list inside the viewer. The gap above it is owned by
