@@ -44,7 +44,7 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 | # | Finding | Status |
 |---|---|---|
 | S1 | **Three stacked header bands** on every Library screen (`library/layout.tsx`: `.topbar` with h1 + strapline, `.shell-head-row` with section tabs + `StatsStrip`, then `GalleryShell`'s `.gallery-controls`): 172 px on desktop, **390 of 844 px on a phone** before the first card; on `/sessions/[id]` the grid starts at 410 px (desktop) / 1,320 px (phone). | P1 |
-| S2 | **Settings tab rows clip without a scroll cue**: on 390 px "Database" (`SettingsNav`) and "Failures" (`PipelineNav`) are cut at the right edge, no fade, no wrap. The Pipeline section stacks three navigation levels (Settings › Pipeline › Overview). | P0 (clip) · P1 (levels) |
+| S2 | **Settings tab rows clip without a scroll cue**: on 390 px "Database" (`SettingsNav`) and "Failures" (`PipelineNav`) are cut at the right edge, no fade, no wrap. The Pipeline section stacks three navigation levels (Settings › Pipeline › Overview). | **Fixed** (clip) — the pills scroll inside their own border under 768 px, `useRevealActiveTab` keeps the current tab in view · P1 (levels) |
 | S3 | **Section chrome is hand-typed 13 times** (`.topbar` + h1 + `.hint` + `.spacer`) in two different places — server `page.tsx` for `/gear`, `/people`, `/users`; the client panel for `/timeline`, `/heatmap`, `/search`, `/sift` — over **seven toolbar wrapper classes** (`.gallery-controls`, `.filterbar`, `.gear-head`, `.exports-toolbar`, `.trash-head`, `.sift-controls`, `.sift-deck-statusbar`), with `TimelinePanel` borrowing `.gallery-controls` and `PeoplePanel` borrowing `.gear-head`. `.pipeline-body` is the generic body class but is named after one section. | P1 |
 | S4 | **Detail pages disagree on their own shape**: `SessionGrid` and `SiftSession` put the entity name in `<h1>` and carry a back arrow despite `AppRail.tsx:13`'s rule; `PersonDetail` puts the section name in `<h1>`, the person in `.person-head-name`, and has no back affordance. | P2 |
 
@@ -62,10 +62,10 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 
 | # | Finding | Status |
 |---|---|---|
-| M1 | **"N loaded" overlaps the theme toggle** in the session topbar at 390 px (`SessionGrid.tsx`, the trailing `.hint`). | P0 |
-| M2 | **Verdict filters wrap into two rows** of 38 px `.btn`s with "Select" alone on the second; the **keyboard hint** ("Keyboard: P pick · X reject …") renders on a touch device. | P0 (wrap) · P1 (hint) |
+| M1 | **"N loaded" overlaps the theme toggle** in the session topbar at 390 px (`SessionGrid.tsx`, the trailing `.hint`). | **Fixed** — the count moved under the grid; the topbar reserves the rail-foot corner under 768 px |
+| M2 | **Verdict filters wrap into two rows** of 38 px `.btn`s with "Select" alone on the second; the **keyboard hint** ("Keyboard: P pick · X reject …") renders on a touch device. | **Fixed** — one sideways-scrolling row under 768 px (`.verdict-filters`); the hint hidden under `(pointer: coarse)` |
 | M3 | **1,320 px to the first frame** on `/sessions/[id]`, 390 px to the first card on `/library`. | P1 (via S1, H5) |
-| M4 | **Viewer on a phone**: the action bar wraps and the "next" arrow drops to a second centred line; the zoom control floats alone in black mid-screen; the info sheet opens by default at 45 % of the height (and is a bottom sheet on desktop too, leaving 570 of 900 px to the photo on a 1440 screen). | P0 (wrap, zoom) · P1 (sheet) |
+| M4 | **Viewer on a phone**: the action bar wraps and the "next" arrow drops to a second centred line; the zoom control floats alone in black mid-screen; the info sheet opens by default at 45 % of the height (and is a bottom sheet on desktop too, leaving 570 of 900 px to the photo on a 1440 screen). | **Fixed** (wrap, zoom) — the arrows and the zoom HUD are hidden under `(pointer: coarse)`, where swipe, pinch and double-tap already do their job; the bar's gaps tighten under 520 px · P1 (sheet) |
 | M5 | **Seven bottom-bar entries** at 10 px labels; Timeline and Heatmap are ways *into* the library, not daily tools. | P1 |
 | M6 | **No control reaches a touch target**: no `min-height` on any control, no `@media (pointer: coarse)`, and the ≤767 px block *shrinks* `.tab` to ≈22 px (`globals.css:4243`). See A3. | P1 |
 
@@ -94,7 +94,7 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 
 | # | Finding | Status |
 |---|---|---|
-| A1 | **`--color-faint` fails AA in both themes**: `#a99f8d` on `#f4f0e7` = **2.30:1**, `#6f6656` on `#16130e` = **3.27:1**. Used 78×, **45 of them on text of 8–11 px**. `#857b69` (light) / `#8c8272` (night) clear 4.5:1 and stay visibly the third step of the ramp. | P0 |
+| A1 | **`--color-faint` fails AA in both themes**: `#a99f8d` on `#f4f0e7` = **2.30:1**, `#6f6656` on `#16130e` = **3.27:1**. Used 78×, **45 of them on text of 8–11 px**. A faint that clears 4.5:1 on light paper would have to be *darker* than muted (`#7c7464` is 4.1:1), so the ramp cannot hold three steps at AA: the tertiary tone is a 3:1 tone by construction, and the small labels have to move off it (T1). | **Fixed** (the tokens) — muted `#6f675a` (4.9:1 on paper, 4.6:1 on a well), faint `#8b8170` (3.4:1 / 3.2:1); night paper already 6.7:1 / 3.3:1, unchanged · P1/P2 (the sub-12 px labels) |
 | A2 | `--color-muted` on light paper is 4.07:1 (0.43 short of AA), `--color-accent` on paper 3.84:1, `--color-star` 2.73:1, white on the night accent 3.47:1: fine for large text and icons, not for the 11–12 px copy they carry today. | P1 |
 | A3 | **No tap target anywhere reaches 44 × 44** (WCAG 2.5.5) and five control classes sit at or under the 24 px of 2.5.8: `.tag` 20, `.tab` on a phone 22, `.view-btn` / `.pipeline-tab` / `.ctx-*` 24. | P1 |
 
@@ -103,9 +103,9 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 | # | Finding | Status |
 |---|---|---|
 | P1 | **Raw glyph buttons** where every other icon comes from `Icons`: `✕ ↪ ✓ ↶` in `SwipeDeck`'s mobile verdict bar, `⇩ ↻ ☻` in `ViewerActions` and `AssetActionMenu`, a literal `+ Invite a user` on `/users`. | P2 |
-| P2 | The busy state on the login and invite submit buttons is the string `"…"`, not `<Spinner sm/>`; their errors use `.login-error` while the 26 other sites use `.error-box`. | P0 |
+| P2 | The busy state on the login and invite submit buttons is the string `"…"`, not `<Spinner sm/>` — and on six more buttons (confirm dialog, change password, invite a user, add a volume, retry failures, pause scan); their errors use `.login-error` while the 26 other sites use `.error-box`. | **Fixed** (the spinner, all eight) · P2 (`.login-error`) |
 | P3 | Empty-state copy that names environment variables (`ML_ENABLED=true` on `/people`) is right for an admin but is set as body text; set the names in `code`. | P2 |
-| P4 | `global-error.tsx` renders `<button onClick={reset}>` with no class and a `<p>` without `.hint`; neither error page sets a title. | P0 |
+| P4 | `global-error.tsx` renders `<button onClick={reset}>` with no class and a `<p>` without `.hint` — and, replacing the root layout, loads no stylesheet and no theme at all; neither error page sets a title. | **Fixed** — it imports the stylesheet, mirrors `error.tsx` and runs the layout's theme script · P2 (titles: `error.tsx` is a client component and cannot export metadata) |
 | P5 | The Sift deck card is portrait and letterboxes a landscape frame: half the card is black on a phone held upright. Emoji in copy (`Nothing here. 🎉`, `…right now. 🎉`). | P2 |
 
 ## 3. Direction
@@ -155,12 +155,14 @@ nothing else. The five moves, in the order they are visible:
 
 ## 4. Roadmap
 
-**P0 — bugs, about a day, ships alone:** M1 (move "N loaded" to the grid
-footer) · M2 (the filter row in an overflow-x container) · M4 (the viewer
-action bar under 400 px; the zoom control anchored to the stage corner) · S2
-(Settings/Pipeline tab rows scroll with an edge fade) · A1 (`--color-faint`
-to `#857b69` / `#8c8272`) · P2 (a spinner for the "…" busy state) · P4 (a
-class on the global-error button).
+**P0 — shipped 2026-09-14, seven commits (see the Fixed rows):** M1 (the
+loaded count under the grid, the topbar clear of the phone's fixed corner) ·
+M2 (the filter row scrolls sideways; the keyboard hint off touch screens) ·
+M4 (the viewer's arrows and zoom HUD off touch screens, where the gestures
+already exist) · S2 (the Settings and Pipeline pills scroll inside their
+border, the active tab revealed) · A1 (muted and faint lifted to 4.5:1 and
+3:1 floors on light paper) · P2 (a spinner on every busy button) · P4 (the
+root error page dressed and themed).
 
 **P1 — the visible step, one to two weeks, where the effort goes:** S1 + S3
 (`PageHeader`, two bands, the strapline retired) · H1–H3 (the session card) ·
