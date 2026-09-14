@@ -29,7 +29,7 @@ reverse. Three numbers carry the diagnosis:
 | Nav bars stacked before the first row of content | 3 | `/settings/pipeline/failures/*` |
 | Distinct "loading" treatments | 5 | one section, none of them the shared component |
 | Inline `style={{…}}` | 63 | 15 in `DatabasePanel.tsx` alone |
-| Knobs across four tiers | 99 | 11 of them managed from a Settings page (§3) |
+| Knobs across four tiers | 99 | 13 of them managed from a Settings page (§3) |
 
 What holds up, and must survive any rework:
 
@@ -189,16 +189,21 @@ groups. The desktop table is unchanged. *Status: open.*
 Findings 1–13 ask whether the panes look like one app. This section asks whether
 the things you can change are the things you would want to change.
 
-Winnow has **99 knobs across four tiers**. Eleven are managed from a Settings
+Winnow has **99 knobs across four tiers**. Thirteen are managed from a Settings
 page — meaning a pane reads the value, changes it, and shows you what it
 currently is.
 
 | Tier | What it holds | Knobs | Managed from Settings |
 |---|---|---|---|
 | Environment (`src/lib/config.ts`) | paths, credentials, concurrency, models | 68 | 0 |
-| `app_settings` (`src/lib/settings.ts`) | pause, hourly rates, geocoding, export pairing | 9 | 5 |
+| `app_settings` (`src/lib/settings.ts`) | pause, hourly rates, geocoding, export pairing | 9 | 7 |
 | Feature flags (`src/lib/features.ts`) | which sections the rail offers | 6 | 6 |
 | `localStorage` (`winnow.*`) | per-device view preferences | 16 | 0 |
+
+The two remaining `app_settings` keys are the export companion preferences; they
+have controls, in the Exports tab rather than in Settings, which is arguably the
+right place for them — the answer is standing, but you set it where you export.
+Since D16 was fixed, every key in the tier has a writer somewhere.
 
 68 environment variables holding paths and credentials is *correct* — nobody
 wants an S3 secret editable from a web form. The finding is that nothing
@@ -241,10 +246,18 @@ or `geocodePrecisionM`; `exportIncludeLiveVideo` is *read* as a default
 `curl`. `geocodePrecisionM` is the sharpest case: it is the grid step that snaps
 coordinates into a shared cell, and those cells **are** the Heatmap's bins — the
 Heatmap panel states out loud that its bins do not refine, while the knob that
-would change their size exists and has no control. **Fix**: a Geocoding group on
-the Operations pane (rate + cell size in metres, with its effect on place names
-named) and a Live Photo companion toggle beside the JPEG one. Three controls, no
-schema change, no new endpoint. *Status: open.*
+would change their size exists and has no control.
+**Status: Fixed.** Settings › Pipeline gained a Geocoding group — a rate slider
+(its own ceiling, since it paces someone else's server, and a max that widens to
+hold a stored value rather than clamping it into a lie) and a cell-size
+`OptionPicker` of five steps from 100 m to 25 km, each carrying the sentence that
+says what it does to place names. The note states the consequence that is not
+obvious: `precision_m` is part of the `places` primary key, so changing it
+re-tags nothing already geocoded — it starts a fresh set of cells and a burst of
+real lookups. The Exports toolbar gained the Live Photo motion toggle beside the
+JPEG one, both now written through one helper. `/api/stats` carries the two new
+values and `geocodeEnabled`, which gates the group the same way `mlEnabled` gates
+the ML slider. No schema change, no new endpoint.
 
 **D17 — One pane, three kinds of thing, no grouping.** `ControlPanel.tsx` stacks
 counters at `:162` (*what is true*), pause + four sliders at `:227` (*what
@@ -299,8 +312,8 @@ archive — very likely with a folder convention already — cannot change it. O
 every gap here this is the one most likely to stop someone using the import path
 at all.
 
-**E22 — Geocoding rate and cell size.** Already in the database, already read by
-the worker, no control. See D16.
+**E22 — Geocoding rate and cell size.** ~~Already in the database, already read
+by the worker, no control.~~ **Fixed** — see D16.
 
 **E23 — Any notification at all.** No mail, no webhook, no push — zero matches
 across `src/lib` and `src/app/api`. Nothing tells you an import finished, that
@@ -322,9 +335,10 @@ are re-derivable, all four need a container restart. The clearest instance of
 D15, and the one migration this review actually asks for.
 
 **E26 — The Live Photo companion default.** The JPEG companion has a persisted
-default and a per-export tick; the Live Photo motion has only the tick. Its
-stored default exists, is read, and can never be set. The smallest finding here
-and the easiest fix.
+default and a per-export tick; the Live Photo motion had only the tick, its
+stored default read by the picker and written by nothing. **Fixed** — both
+toggles now sit in the Exports toolbar and share one writer, which is what stops
+the asymmetry coming back: the second hand-rolled copy is how it happened.
 
 ---
 
@@ -348,10 +362,10 @@ any of it.**
    Account coming home. The only step that moves routes, and the one worth
    deciding before it is built. D18's read-only view of the environment belongs
    in the same Overview pane, so build them together.
-4. **The coverage gaps** — D16 and E22/E26 are three controls over settings that
-   already exist: an afternoon, no migration. E25 needs one migration to move
-   four thresholds into `app_settings`. E19, E20, E21 and E23 are features
-   rather than settings work, and each deserves its own brief.
+4. **The coverage gaps** — ~~D16 and E22/E26 are three controls over settings
+   that already exist~~ **done**. E25 needs one migration to move four
+   thresholds into `app_settings`. E19, E20, E21 and E23 are features rather
+   than settings work, and each deserves its own brief.
 
 **Step 0, before any of them: settle D15.** Whether the panes follow the runtime
 or the decider is the answer the rail of A1 is the shape of. It is a decision,

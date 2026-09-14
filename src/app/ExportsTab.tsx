@@ -15,9 +15,12 @@ export default function ExportsTab() {
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // RAW+JPEG pairing preference: also copy the JPEG companion alongside the RAW
-  // keeper. Persisted in app settings; applies to every export queued afterwards.
-  const [includeJpeg, setIncludeJpeg] = useState(false);
+  // Companion preferences: when a keeper is half of a pair, also copy the other
+  // half — the JPEG beside a RAW, the .mov motion beside a Live Photo still.
+  // Persisted in app settings, and read back by the export modal's file picker
+  // as ITS defaults (cf. exports/ExportFilePicker.tsx), so these two are the
+  // standing answer and the picker is where you override it for one export.
+  const [companions, setCompanions] = useState({ jpeg: false, liveVideo: false });
 
   const load = useCallback(async () => {
     try {
@@ -33,23 +36,40 @@ export default function ExportsTab() {
 
   useEffect(() => {
     load();
-    fetchJson<{ exportIncludeJpeg?: boolean }>("/api/settings")
-      .then((s) => setIncludeJpeg(Boolean(s.exportIncludeJpeg)))
+    fetchJson<{
+      exportIncludeJpeg?: boolean;
+      exportIncludeLiveVideo?: boolean;
+    }>("/api/settings")
+      .then((s) =>
+        setCompanions({
+          jpeg: Boolean(s.exportIncludeJpeg),
+          liveVideo: Boolean(s.exportIncludeLiveVideo),
+        }),
+      )
       .catch(() => {});
   }, [load]);
 
-  const toggleIncludeJpeg = useCallback(async (next: boolean) => {
-    setIncludeJpeg(next); // optimistic
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exportIncludeJpeg: next }),
-      });
-    } catch {
-      setIncludeJpeg(!next); // revert on failure
-    }
-  }, []);
+  // One writer for both: the two preferences differ only in which key they set,
+  // and a second hand-rolled copy is how exportIncludeLiveVideo ended up read
+  // by the picker but written by nothing.
+  const toggleCompanion = useCallback(
+    async (which: "jpeg" | "liveVideo", next: boolean) => {
+      setCompanions((c) => ({ ...c, [which]: next })); // optimistic
+      const key =
+        which === "jpeg" ? "exportIncludeJpeg" : "exportIncludeLiveVideo";
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [key]: next }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+      } catch {
+        setCompanions((c) => ({ ...c, [which]: !next })); // revert on failure
+      }
+    },
+    [],
+  );
 
   return (
     <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
@@ -57,10 +77,21 @@ export default function ExportsTab() {
         <label className="export-opt" title="When a picked photo is a RAW+JPEG pair, also copy the JPEG next to the RAW keeper.">
           <input
             type="checkbox"
-            checked={includeJpeg}
-            onChange={(e) => toggleIncludeJpeg(e.target.checked)}
+            checked={companions.jpeg}
+            onChange={(e) => toggleCompanion("jpeg", e.target.checked)}
           />
           <span>Include JPEG companion in exports</span>
+        </label>
+        <label
+          className="export-opt"
+          title="When a picked photo is a Live Photo, also copy its .mov motion next to the still keeper."
+        >
+          <input
+            type="checkbox"
+            checked={companions.liveVideo}
+            onChange={(e) => toggleCompanion("liveVideo", e.target.checked)}
+          />
+          <span>Include Live Photo motion in exports</span>
         </label>
       </div>
       {error && (
