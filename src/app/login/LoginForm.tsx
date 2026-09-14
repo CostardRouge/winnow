@@ -7,7 +7,7 @@
 //     the page the visit was headed to (?next=, path-only).
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Brand } from "../ui";
+import { Brand, Spinner } from "../ui";
 
 type Mode = "loading" | "login" | "setup";
 
@@ -171,11 +171,13 @@ export default function LoginForm() {
           type="submit"
           disabled={busy || mode === "loading"}
         >
-          {busy
-            ? "…"
-            : mode === "setup"
-              ? "Create admin & sign in"
-              : "Sign in"}
+          {busy ? (
+            <Spinner sm />
+          ) : mode === "setup" ? (
+            "Create admin & sign in"
+          ) : (
+            "Sign in"
+          )}
         </button>
       </form>
     </div>
