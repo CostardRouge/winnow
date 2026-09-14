@@ -3578,8 +3578,11 @@ html[data-theme="dark"] .btn-primary:hover {
      than reusing .view-toggle/.view-btn directly so the count-badge styling
      below stays scoped to this nav and doesn't leak into the other spots
      .view-toggle is used (gallery, sift, facet-head, pipeline toolbar). */
+  /* min-w-0: as a flex item of the (nowrap on phones) .shell-head-row the
+     pill never shrank below its content, so the max-w-full + overflow-x-auto
+     below never engaged and "Failures" was clipped off-screen (UI review S2). */
   .pipeline-tabs {
-    @apply inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
+    @apply inline-flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
     background: var(--color-surface);
     border-color: var(--color-border);
     scrollbar-width: none;
@@ -4286,11 +4289,21 @@ html[data-theme="dark"] .btn-primary:hover {
   .ml-search-examples::-webkit-scrollbar {
     display: none;
   }
+  /* Five Settings tabs overflow a 390px screen. The pill used to run past the
+     viewport and get clipped by the shell, its rounded end and "Database"
+     both cut off with no way to reach them. It now scrolls inside its own
+     border (hidden scrollbar), so a half-visible last tab inside an intact
+     pill is the cue; useRevealActiveTab keeps the current tab in view. The
+     Library's four tabs still fit and never scroll. UI review S2. */
   .tabs {
-    @apply gap-0.5 p-0.5;
+    @apply min-w-0 max-w-full gap-0.5 overflow-x-auto p-0.5;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
   .tab {
-    @apply px-2.5;
+    @apply shrink-0 px-2.5;
     /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
     padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
   }

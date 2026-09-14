@@ -6,7 +6,9 @@
 // conditional on there being errors).
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef } from "react";
 import { active, totalFailures, useStats } from "../../useStats";
+import { useRevealActiveTab } from "../../useRevealActiveTab";
 
 export default function PipelineNav() {
   const pathname = usePathname() ?? "/settings/pipeline";
@@ -64,8 +66,14 @@ export default function PipelineNav() {
     },
   ];
 
+  // The row overflows a phone and scrolls inside its pill; keep the current
+  // tab in view, re-checking when the ML tabs appear after the first stats
+  // poll shifts everything right of them (UI review S2).
+  const navRef = useRef<HTMLElement>(null);
+  useRevealActiveTab(navRef, `${pathname}:${tabs.length}`);
+
   return (
-    <nav className="pipeline-tabs" aria-label="Pipeline sections">
+    <nav ref={navRef} className="pipeline-tabs" aria-label="Pipeline sections">
       {tabs.map((t) => {
         // Overview matches exactly (every tab shares its prefix); the others
         // match by prefix so their own sub-routes — e.g. the failure families
