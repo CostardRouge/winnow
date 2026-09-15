@@ -62,7 +62,7 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Retention**: rows exist only by the owner's explicit gestures and go with the user (CASCADE); 1 MiB cap per body (`MAX_DOC_BYTES`, advertised in `/api/capabilities`). No automatic writer, no janitor.
 
-**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`.
+**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`. The kinds today (2026-09-15): `trip`, `project`, and `roll` + `presets` for Atelier's Develop tool (its `docs/develop-tool.md`); Atelier checks `capabilities.documents.kinds` before offering a kind, so an instance that predates an entry hides the feature instead of answering 400.
 
 ## `collapseGroups` over a large scope triggers Postgres JIT — measure before blaming the SQL (2026-09-07)
 

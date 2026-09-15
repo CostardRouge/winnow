@@ -18,7 +18,11 @@
 import { randomUUID } from "node:crypto";
 import { many, one } from "./db";
 
-export const DOC_KINDS = ["trip", "project"] as const;
+// trip and project: Atelier's Trips and Studio. roll and presets: its Develop
+// tool — a roll of pictures to develop, and the one personal preset book every
+// Develop host shares. Atelier reads this list from /api/capabilities and does
+// not offer to keep a kind an instance does not name.
+export const DOC_KINDS = ["trip", "project", "roll", "presets"] as const;
 export type DocKind = (typeof DOC_KINDS)[number];
 
 // Tens of KB is a big trip; 1 MiB is a generous ceiling that still keeps a
