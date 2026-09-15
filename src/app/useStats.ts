@@ -38,6 +38,10 @@ export type Stats = {
     mlPerHour: number;
     // Periodic re-scan interval (minutes, 0 = off) — cf. worker.ts.
     rescanMinutes: number;
+    // Reverse geocoding (lib/geocode.ts): calls/hour, and the grid step that
+    // snaps coordinates into a shared `places` cell.
+    geocodePerHour: number;
+    geocodePrecisionM: number;
   };
   // Whether the ML analysis feature is configured on the server (ML_ENABLED):
   // gates the ML slider/counters so a stage that can't progress isn't shown.
@@ -46,6 +50,9 @@ export type Stats = {
   // embedding under the current model vs the searchable library.
   clipEnabled?: boolean;
   clip?: { indexed: number; library: number } | null;
+  // Whether reverse geocoding is configured on the server (GEOCODE_ENABLED):
+  // gates its rate + cell-size controls, same reasoning as mlEnabled.
+  geocodeEnabled?: boolean;
   failures?: {
     derivative: number;
     scan: number;

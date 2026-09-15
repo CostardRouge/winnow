@@ -718,6 +718,16 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply w-full;
     accent-color: var(--color-accent);
   }
+  /* A labelled control in a .control-row that is NOT a range input — the
+     geocoding cell size is an OptionPicker. Same column shape and same label
+     treatment as .slider, under a name that does not claim to be one. */
+  .control-field {
+    @apply flex min-w-[200px] flex-1 flex-col gap-1.5;
+  }
+  .control-field > label {
+    @apply flex justify-between gap-2 text-[13px];
+    color: var(--color-muted);
+  }
 
   /* ---- Dual-thumb range filter (library facets, cf. RangeSlider.tsx) ------ */
   /* Two native range inputs are stacked over a shared track. Each input is made
