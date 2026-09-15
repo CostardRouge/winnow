@@ -393,16 +393,43 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex-none;
   }
 
-  /* ---- Page header bar -------------------------------------------------- */
-  .topbar {
-    @apply sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5;
+  /* ---- Page header: the one band a section wears (PageHeader.tsx) -------- */
+  /* Title, section tabs and trailing content on one line — sticky and frosted
+     like the .topbar it replaces, with the tab band that used to sit under it
+     folded in (UI review S1/S3). A section's chrome is this plus its own
+     toolbar, never a third band. */
+  .page-head {
+    /* shrink-0: on /sessions/[id] the header is a direct flex child of the
+       scrolling .root-main, next to a body taller than the viewport — without
+       it the column layout shrinks the header to nothing. */
+    @apply sticky top-0 z-20 flex shrink-0 items-center gap-4 px-5;
+    min-height: 56px;
+    padding-block: 8px;
     background: color-mix(in srgb, var(--color-bg) 80%, transparent);
     backdrop-filter: blur(12px) saturate(1.2);
     border-bottom: 1px solid var(--color-border);
   }
-  .topbar h1 {
-    @apply m-0;
+  .page-title {
+    @apply m-0 min-w-0;
     font-size: 1.6rem;
+  }
+  .page-title-text {
+    @apply min-w-0;
+  }
+  .page-back {
+    @apply shrink-0;
+  }
+  .page-tabs {
+    @apply flex min-w-0 items-center;
+  }
+  .page-trailing {
+    @apply ml-auto flex shrink-0 items-center gap-2;
+  }
+  /* A figure trailing the title ("36 media · 4 chapters"): the hint, in mono. */
+  .page-meta {
+    @apply text-xs;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
   }
 
   /* ---- Brand lockup ----------------------------------------------------- */
@@ -425,11 +452,11 @@ html[data-theme="dark"] .btn-primary:hover {
   .spacer {
     @apply flex-1;
   }
-  /* Full-width scroll body under the topbar. Same 20px inline padding as the
-     topbar's px-5 so the content (session header, filters, grid) stays aligned
-     with the back button/title at every viewport width — no centered max-width,
-     which used to inset the content past ~1440px while the topbar stayed
-     edge-to-edge.
+  /* Full-width scroll body under the page header. Same 20px inline padding as
+     the header's px-5 so the content (session header, filters, grid) stays
+     aligned with the back button/title at every viewport width — no centered
+     max-width, which used to inset the content past ~1440px while the header
+     stayed edge-to-edge.
      Named "session-view-body", not "container": Tailwind v4 reserves the bare
      "container" class name and generates its own responsive max-width utility
      for it in the utilities layer, which wins over this components-layer rule
@@ -447,10 +474,11 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex flex-col overflow-hidden;
     height: 100%;
   }
-  /* Symmetric vertical padding so the tabs row sits centered in the band
-     between the topbar and the controls toolbar below it (rather than hugging
-     the toolbar). The padding-block stays on .shell-head — not the row — so
-     the row's own box height tracks its content and centering is clean. */
+  /* A secondary control band under the page header (the Pipeline sub-nav, the
+     heatmap pickers, the search bar). Symmetric vertical padding so the row
+     sits centered in the band rather than hugging what follows. The
+     padding-block stays on .shell-head — not the row — so the row's own box
+     height tracks its content and centering is clean. */
   .shell-head {
     @apply px-5 py-3;
   }
@@ -2963,8 +2991,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Semantic search page (CLIP, cf. src/app/search/page.tsx) ----------
-     The page wears the same chrome as Library/Settings — topbar, header band,
-     controls band, full-bleed body — instead of the centered max-w-5xl column
+     The page wears the same chrome as Library/Settings — the page header,
+     a controls band, full-bleed body — instead of the centered max-w-5xl column
      it used to, which left the grid floating in a narrow strip with the rest of
      the viewport empty. Results render through the gallery's VirtualGrid, so a
      hit is the same .cell tile it is everywhere else.
@@ -4173,9 +4201,9 @@ html[data-theme="dark"] .btn-primary:hover {
   /* The rail is a bottom bar here, so its 7 nav items own the row. Lift the
      theme toggle out of that flow to a discreet bare icon in the top-right
      corner — reachable from every page without crowding the nav or needing a
-     per-page header slot. The container spans the single-line topbar band and
-     centres its content, so the icon lines up vertically with the page title.
-     Sits above the topbar (z-20) and slide-in panel. */
+     per-page header slot. The container spans the page header's title line
+     and centres its content, so the icon lines up vertically with the page
+     title. Sits above the header (z-20) and slide-in panel. */
   .rail-foot {
     position: fixed;
     top: env(safe-area-inset-top, 0px);
@@ -4183,7 +4211,7 @@ html[data-theme="dark"] .btn-primary:hover {
     bottom: auto;
     left: auto;
     width: auto;
-    height: 3.6rem; /* ≈ the single-line .topbar band (py-3.5 + h1 line box) */
+    height: 3.6rem; /* = the .page-head title line on a phone (see below) */
     margin: 0;
     padding: 0;
     display: flex;
@@ -4199,12 +4227,41 @@ html[data-theme="dark"] .btn-primary:hover {
     width: 19px;
     height: 19px;
   }
-  /* The rail foot above is fixed in the topbar band's top-right corner (theme
-     toggle 34px + account chip 36px + gaps), over whatever the band puts there:
-     a long session title wrapped under it and a trailing hint sat on top of
-     it. Reserve that corner so the band's content stops short of it. */
-  .topbar {
+  /* The rail foot above is fixed in the header band's top-right corner (theme
+     toggle 34px + account chip 36px + gaps). The page title keeps that first
+     line to itself, exactly the corner's height so the icons centre on it, and
+     stops short of the corner — a long session title used to wrap under the
+     toggle and a trailing hint sat on top of it. The tabs and the trailing
+     content take a second line, where the tabs scroll (see .tabs below); a
+     title-only header is therefore exactly 3.6rem tall. */
+  .page-head {
+    flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 0 12px;
+  }
+  .page-title {
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    min-height: 3.6rem;
     padding-right: calc(92px + env(safe-area-inset-right, 0px));
+  }
+  /* With a back chevron the title shares its line with it. */
+  .page-back ~ .page-title {
+    flex: 1 1 0;
+  }
+  .page-tabs,
+  .page-trailing {
+    margin-bottom: 8px;
+  }
+  .page-tabs {
+    flex: 1 1 auto;
+  }
+  /* A detail page's trailing content (a notice) cannot follow the title on its
+     line — that is the corner — so it takes a line of its own. */
+  .page-back ~ .page-trailing {
+    flex-basis: 100%;
+    margin-left: 0;
   }
   /* The connection pill shares the phone's header band with the theme toggle,
      so it is anchored rather than centred: a centred pill of any useful width
@@ -4270,10 +4327,10 @@ html[data-theme="dark"] .btn-primary:hover {
     padding-bottom: 132px;
   }
 
-  /* Keep the Library header on one line: the tabs and the (compact) media
-     counter share a row rather than stacking, which both saves vertical space
-     and keeps the counter pinned to the right edge so its popover opens on
-     screen instead of off the left side. */
+  /* The secondary control rows (the Pipeline sub-nav, the heatmap pickers, the
+     search bar) stay on one line rather than stacking; their scrolling parts
+     scroll inside themselves. The Library's tabs no longer live here — they
+     ride in the page header (.page-tabs). */
   .shell-head {
     @apply px-3 py-2;
   }
@@ -4922,15 +4979,6 @@ html[data-theme="dark"] .btn-primary:hover {
   /* =======================================================================
      Sift hub (/sift) — the fast-triage dashboard.
      ======================================================================= */
-  .sift-hub-title,
-  .sift-deck-title {
-    @apply inline-flex items-center gap-2;
-  }
-  .sift-hub-title svg {
-    width: 22px;
-    height: 22px;
-    color: var(--color-accent);
-  }
   .sift-hub-body {
     @apply flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4;
   }
@@ -5075,8 +5123,13 @@ html[data-theme="dark"] .btn-primary:hover {
   .sift-deck-page {
     @apply flex h-full min-h-0 flex-col;
   }
-  .topbar .sift-deck-title {
-    @apply min-w-0 flex-1 truncate text-base font-semibold;
+  /* The deck's header is the compact one: the session name at body size, on
+     one line, so the card gets the height. */
+  .sift-deck-head .page-title {
+    @apply min-w-0 flex-1 text-base font-semibold;
+  }
+  .sift-deck-head .page-title-text {
+    @apply block truncate;
   }
   /* Status bar above the carousel: "N left / total" · the overall progress bar
      (grows to fill) · a quick jump into the full session. Reuses the dead space
@@ -6894,6 +6947,11 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent
       p-0 text-left text-lg font-semibold;
     color: var(--color-text);
+  }
+  /* The rename control IS the page title on /people/[id] (the entity's name
+     as the h1, like a session's — UI review S4), so it wears the h1's face. */
+  .page-title .person-head-name {
+    font: inherit;
   }
   .person-head-pencil {
     color: var(--color-faint);

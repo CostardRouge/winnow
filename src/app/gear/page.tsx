@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import GearPanel from "./GearPanel";
+import PageHeader from "../PageHeader";
 import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "Gear" };
@@ -14,10 +15,7 @@ export default async function GearPage() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Gear</h1>
-        <span className="hint max-sm:hidden">what the library was shot with</span>
-      </div>
+      <PageHeader title="Gear" />
       <div className="pipeline-body">
         <GearPanel />
       </div>

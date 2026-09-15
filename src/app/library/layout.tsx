@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import PageHeader from "../PageHeader";
 import StatsStrip from "../StatsStrip";
 
-// Library chrome shared by every tab/view under /library. The tabs and the
-// active view are now real URL segments:
+// Library chrome shared by every tab/view under /library: one header band
+// (title, section tabs, the compact stats strip at its end — cf. PageHeader).
+// The tabs and the active view are real URL segments:
 //   /library/incoming/{sessions|grid|map}   ·   /library/gallery   ·   /library/exports
-// so each pane is shareable and reload-safe. The compact stats strip rides the
-// tabs row; the full pipeline control panel lives on its own /pipeline page.
+// so each pane is shareable and reload-safe. The full pipeline control panel
+// lives on its own /settings/pipeline page.
 
 const TABS: { id: string; label: string; href: string; match: (p: string) => boolean }[] = [
   {
@@ -43,14 +45,10 @@ export default function LibraryLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Library</h1>
-        <span className="hint max-sm:hidden">media triage — organize & review</span>
-      </div>
-
-      <div className="shell-head">
-        <div className="shell-head-row">
-          <div className="tabs">
+      <PageHeader
+        title="Library"
+        tabs={
+          <nav className="tabs" aria-label="Library sections">
             {TABS.map((t) => (
               <Link
                 key={t.id}
@@ -61,11 +59,10 @@ export default function LibraryLayout({ children }: { children: ReactNode }) {
                 {t.label}
               </Link>
             ))}
-          </div>
-          <span className="spacer" />
-          <StatsStrip />
-        </div>
-      </div>
+          </nav>
+        }
+        trailing={<StatsStrip />}
+      />
 
       <div className="tab-body">{children}</div>
     </div>

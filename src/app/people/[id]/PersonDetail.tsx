@@ -15,6 +15,7 @@ import MediaViewer from "@/app/MediaViewer";
 import VirtualGrid, { type VirtualGridHandle } from "@/app/gallery/VirtualGrid";
 import { PersonAvatar, type PersonRow } from "../PeoplePanel";
 import PersonPicker from "../PersonPicker";
+import PageHeader from "@/app/PageHeader";
 import type { AssetGridRow } from "@/lib/types";
 
 type FaceRow = { id: number; asset_id: number; score: number };
@@ -231,9 +232,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
   if (loadError) {
     return (
       <div className="app-shell">
-        <div className="topbar">
-          <h1>People</h1>
-        </div>
+        <PageHeader back="/people" backLabel="Back to People" title="People" />
         <EmptyState icon={Icons.alert} title="Person not found" hint={loadError}>
           <Link className="btn" href="/people">
             Back to People
@@ -245,10 +244,48 @@ export default function PersonDetail({ personId }: { personId: number }) {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>People</h1>
-        <span className="hint max-sm:hidden">one stack, all their media</span>
-      </div>
+      {/* The person's name is the page title — editable in place, like the
+          shelf's cards — and the chevron leads back to the shelf: the same
+          shape as a session's or a deck's header (UI review S4). */}
+      <PageHeader
+        back="/people"
+        backLabel="Back to People"
+        title={
+          !person ? (
+            "People"
+          ) : editingName ? (
+            <input
+              ref={nameRef}
+              className="input person-name-input"
+              value={draft}
+              placeholder="Name this person…"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveName();
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={() => setEditingName(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              className="person-head-name"
+              title={person.name ? "Rename" : "Name this person"}
+              onClick={() => {
+                setDraft(person.name ?? "");
+                setEditingName(true);
+              }}
+            >
+              <span className={person.name ? "" : "person-unnamed"}>
+                {person.name ?? "Unnamed"}
+              </span>
+              <span className="person-head-pencil" aria-hidden>
+                {Icons.pencil}
+              </span>
+            </button>
+          )
+        }
+      />
 
       {!person ? (
         <LoadingState label="Loading person…" />
@@ -261,37 +298,6 @@ export default function PersonDetail({ personId }: { personId: number }) {
               size="lg"
             />
             <div className="person-head-id">
-              {editingName ? (
-                <input
-                  ref={nameRef}
-                  className="input person-name-input"
-                  value={draft}
-                  placeholder="Name this person…"
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void saveName();
-                    if (e.key === "Escape") setEditingName(false);
-                  }}
-                  onBlur={() => setEditingName(false)}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="person-head-name"
-                  title={person.name ? "Rename" : "Name this person"}
-                  onClick={() => {
-                    setDraft(person.name ?? "");
-                    setEditingName(true);
-                  }}
-                >
-                  <span className={person.name ? "" : "person-unnamed"}>
-                    {person.name ?? "Unnamed"}
-                  </span>
-                  <span className="person-head-pencil" aria-hidden>
-                    {Icons.pencil}
-                  </span>
-                </button>
-              )}
               <span className="hint">
                 {person.asset_count.toLocaleString()}{" "}
                 {person.asset_count === 1 ? "media" : "media"} ·{" "}

@@ -19,6 +19,7 @@ import type {
   TimelineChapter,
 } from "@/lib/timeline";
 import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
+import PageHeader from "@/app/PageHeader";
 import {
   LibrarySourceTabs,
   LIBRARY_SOURCES,
@@ -318,16 +319,16 @@ export default function TimelinePanel() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Timeline</h1>
-        <span className="hint max-sm:hidden">the library read as a story</span>
-        <span className="spacer" />
-        {data && (
-          <span className="hint" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString()} media · {data.chapters.length} chapters
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Timeline"
+        trailing={
+          data && (
+            <span className="page-meta">
+              {total.toLocaleString()} media · {data.chapters.length} chapters
+            </span>
+          )
+        }
+      />
 
       <div className="gallery-controls">
         <div className="tabs" role="group" aria-label="Chapter rule">

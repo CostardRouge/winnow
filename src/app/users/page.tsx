@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PageHeader from "../PageHeader";
 import UsersPanel from "./UsersPanel";
 
 // Admin-only user management (the request guard redirects everyone else):
@@ -9,10 +10,7 @@ export const metadata: Metadata = { title: "Users" };
 export default function UsersPage() {
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Users</h1>
-        <span className="hint">accounts &amp; roles of the shared library</span>
-      </div>
+      <PageHeader title="Users" />
       <div className="pipeline-body">
         <UsersPanel />
       </div>

@@ -3,8 +3,8 @@
 // Layout 7 — "Record": one printed sheet per body.
 //
 // The editorial reading. Where every other layout compresses a body into a row,
-// a card or a bar, this one gives it a page: the display serif the topbar is
-// otherwise alone in wearing, the raw EXIF device string set as a subtitle
+// a card or a bar, this one gives it a page: the display serif the page header
+// is otherwise alone in wearing, the raw EXIF device string set as a subtitle
 // rather than hidden in a tooltip, a spec table, then the glass.
 //
 // It is the slowest of the eight on purpose — five bodies are five screens. That

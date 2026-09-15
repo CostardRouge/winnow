@@ -65,6 +65,7 @@ import {
   type MeasureId,
 } from "@/lib/heatScale";
 import { OptionPicker, type PickerOption } from "../OptionPicker";
+import PageHeader from "../PageHeader";
 import HeatGrid, { byMonth, type Granularity } from "./HeatGrid";
 import HeatMatrix, { type MatrixSort } from "./HeatMatrix";
 import HeatRibbon from "./HeatRibbon";
@@ -236,10 +237,7 @@ export default function HeatmapPanel() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Heatmap</h1>
-        <span className="hint max-sm:hidden">when and where the library was made</span>
-      </div>
+      <PageHeader title="Heatmap" />
 
       <div className="shell-head">
         <div className="shell-head-row">

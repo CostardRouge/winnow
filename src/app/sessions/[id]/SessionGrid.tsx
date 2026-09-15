@@ -23,6 +23,7 @@ import GeotagRecapModal from "@/app/GeotagRecapModal";
 import type { PickedLocation } from "@/app/LocationPickerModal";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import ExportSessionModal from "@/app/sessions/ExportSessionModal";
+import PageHeader from "@/app/PageHeader";
 import SessionActions from "@/app/sessions/SessionActions";
 import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
@@ -798,14 +799,12 @@ export default function SessionGrid({
 
   return (
     <>
-      <div className="topbar">
-        <Link href="/library/incoming/sessions" className="btn btn-icon" aria-label="Back to library">
-          {Icons.back}
-        </Link>
-        <h1>{session?.name ?? `Session #${id}`}</h1>
-        <span className="spacer" />
-        {notice && <span className="notice">{notice}</span>}
-      </div>
+      <PageHeader
+        back="/library/incoming/sessions"
+        backLabel="Back to library"
+        title={session?.name ?? `Session #${id}`}
+        trailing={notice && <span className="notice">{notice}</span>}
+      />
 
       <PullToRefresh className="session-view-body" onRefresh={refresh}>
         {session && (
@@ -1003,8 +1002,8 @@ export default function SessionGrid({
           </div>
         )}
 
-        {/* The loaded count reads under the grid it counts, not in the topbar:
-            on a phone the topbar's right end sits under the fixed theme toggle
+        {/* The loaded count reads under the grid it counts, not in the header:
+            on a phone the header's right end sits under the fixed theme toggle
             and account chip, and the hint collided with them (UI review M1). */}
         {assets.length > 0 && (
           <p className="hint session-foot">{assets.length} loaded</p>

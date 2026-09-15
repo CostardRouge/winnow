@@ -43,10 +43,10 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 
 | # | Finding | Status |
 |---|---|---|
-| S1 | **Three stacked header bands** on every Library screen (`library/layout.tsx`: `.topbar` with h1 + strapline, `.shell-head-row` with section tabs + `StatsStrip`, then `GalleryShell`'s `.gallery-controls`): 172 px on desktop, **390 of 844 px on a phone** before the first card; on `/sessions/[id]` the grid starts at 410 px (desktop) / 1,320 px (phone). | P1 |
+| S1 | **Three stacked header bands** on every Library screen (`library/layout.tsx`: `.topbar` with h1 + strapline, `.shell-head-row` with section tabs + `StatsStrip`, then `GalleryShell`'s `.gallery-controls`): 172 px on desktop, **390 of 844 px on a phone** before the first card; on `/sessions/[id]` the grid starts at 410 px (desktop) / 1,320 px (phone). | **Fixed** (the header) — `PageHeader` folds the tabs into the title band and retires the strapline: Library is 110 px on desktop, ~205 px on a phone to the first card; Settings 110 px · P1 (the toolbar band, still 56 px; the status filter into the drawer) |
 | S2 | **Settings tab rows clip without a scroll cue**: on 390 px "Database" (`SettingsNav`) and "Failures" (`PipelineNav`) are cut at the right edge, no fade, no wrap. The Pipeline section stacks three navigation levels (Settings › Pipeline › Overview). | **Fixed** (clip) — the pills scroll inside their own border under 768 px, `useRevealActiveTab` keeps the current tab in view · P1 (levels) |
-| S3 | **Section chrome is hand-typed 13 times** (`.topbar` + h1 + `.hint` + `.spacer`) in two different places — server `page.tsx` for `/gear`, `/people`, `/users`; the client panel for `/timeline`, `/heatmap`, `/search`, `/sift` — over **seven toolbar wrapper classes** (`.gallery-controls`, `.filterbar`, `.gear-head`, `.exports-toolbar`, `.trash-head`, `.sift-controls`, `.sift-deck-statusbar`), with `TimelinePanel` borrowing `.gallery-controls` and `PeoplePanel` borrowing `.gear-head`. `.pipeline-body` is the generic body class but is named after one section. | P1 |
-| S4 | **Detail pages disagree on their own shape**: `SessionGrid` and `SiftSession` put the entity name in `<h1>` and carry a back arrow despite `AppRail.tsx:13`'s rule; `PersonDetail` puts the section name in `<h1>`, the person in `.person-head-name`, and has no back affordance. | P2 |
+| S3 | **Section chrome is hand-typed 13 times** (`.topbar` + h1 + `.hint` + `.spacer`) in two different places — server `page.tsx` for `/gear`, `/people`, `/users`; the client panel for `/timeline`, `/heatmap`, `/search`, `/sift` — over **seven toolbar wrapper classes** (`.gallery-controls`, `.filterbar`, `.gear-head`, `.exports-toolbar`, `.trash-head`, `.sift-controls`, `.sift-deck-statusbar`), with `TimelinePanel` borrowing `.gallery-controls` and `PeoplePanel` borrowing `.gear-head`. `.pipeline-body` is the generic body class but is named after one section. | **Fixed** (the header) — the 13 topbars are one `PageHeader` (`src/app/PageHeader.tsx`); `.topbar` is gone · P1 (the seven toolbar wrappers; `.shell-head` stays as the secondary control band for now) |
+| S4 | **Detail pages disagree on their own shape**: `SessionGrid` and `SiftSession` put the entity name in `<h1>` and carry a back arrow despite `AppRail.tsx:13`'s rule; `PersonDetail` puts the section name in `<h1>`, the person in `.person-head-name`, and has no back affordance. | **Fixed** — all three carry the chevron and the entity's name as the h1 (`PageHeader back=…`); the person's name is editable in place, in the title |
 
 ### 2.2 Hierarchy and colour semantics
 
@@ -64,7 +64,7 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 |---|---|---|
 | M1 | **"N loaded" overlaps the theme toggle** in the session topbar at 390 px (`SessionGrid.tsx`, the trailing `.hint`). | **Fixed** — the count moved under the grid; the topbar reserves the rail-foot corner under 768 px |
 | M2 | **Verdict filters wrap into two rows** of 38 px `.btn`s with "Select" alone on the second; the **keyboard hint** ("Keyboard: P pick · X reject …") renders on a touch device. | **Fixed** — one sideways-scrolling row under 768 px (`.verdict-filters`); the hint hidden under `(pointer: coarse)` |
-| M3 | **1,320 px to the first frame** on `/sessions/[id]`, 390 px to the first card on `/library`. | P1 (via S1, H5) |
+| M3 | **1,320 px to the first frame** on `/sessions/[id]`, 390 px to the first card on `/library`. | Partly — ~205 px on `/library` after S1; the session page still opens on the path card (H5) · P1 |
 | M4 | **Viewer on a phone**: the action bar wraps and the "next" arrow drops to a second centred line; the zoom control floats alone in black mid-screen; the info sheet opens by default at 45 % of the height (and is a bottom sheet on desktop too, leaving 570 of 900 px to the photo on a 1440 screen). | **Fixed** (wrap, zoom) — the arrows and the zoom HUD are hidden under `(pointer: coarse)`, where swipe, pinch and double-tap already do their job; the bar's gaps tighten under 520 px · P1 (sheet) |
 | M5 | **Seven bottom-bar entries** at 10 px labels; Timeline and Heatmap are ways *into* the library, not daily tools. | P1 |
 | M6 | **No control reaches a touch target**: no `min-height` on any control, no `@media (pointer: coarse)`, and the ≤767 px block *shrinks* `.tab` to ≈22 px (`globals.css:4243`). See A3. | P1 |
@@ -165,7 +165,8 @@ border, the active tab revealed) · A1 (muted and faint lifted to 4.5:1 and
 root error page dressed and themed).
 
 **P1 — the visible step, one to two weeks, where the effort goes:** S1 + S3
-(`PageHeader`, two bands, the strapline retired) · H1–H3 (the session card) ·
+(`PageHeader`, two bands, the strapline retired — **the header half shipped
+2026-09-15**, the toolbar half is open) · S4 (**shipped with it**) · H1–H3 (the session card) ·
 H5 + M3 (the session page header and toolbar) · H4 (colour semantics applied:
 Pause neutral, sliders ink, counts uncoloured, red only for the destructive
 verb) · A3 + T2 (three control-height tokens, 44 px under `pointer: coarse`) ·
