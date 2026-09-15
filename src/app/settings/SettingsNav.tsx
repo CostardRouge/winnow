@@ -5,6 +5,8 @@
 // family. Text-only tabs: these panes have no meaningful count to badge.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef } from "react";
+import { useRevealActiveTab } from "../useRevealActiveTab";
 
 const TABS: { href: string; label: string }[] = [
   { href: "/settings/pipeline", label: "Pipeline" },
@@ -16,9 +18,13 @@ const TABS: { href: string; label: string }[] = [
 
 export default function SettingsNav() {
   const pathname = usePathname() ?? "/settings";
+  // Five tabs overflow a phone; the pill scrolls, and the current section
+  // must not be the one hidden past its edge (UI review S2).
+  const navRef = useRef<HTMLElement>(null);
+  useRevealActiveTab(navRef, pathname);
 
   return (
-    <nav className="tabs" aria-label="Settings sections">
+    <nav ref={navRef} className="tabs" aria-label="Settings sections">
       {TABS.map((t) => {
         // Prefix match, not exact: Pipeline has its own nested sub-routes
         // (/settings/pipeline/scanning, /failures, ...) that should still

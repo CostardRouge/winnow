@@ -1,10 +1,11 @@
 import PipelineNav from "./PipelineNav";
 
 // Nested chrome for Settings › Pipeline: the Overview / Media / Scanning /
-// Pending / Failures sub-nav sits directly under the Settings tabs (Pipeline /
-// Volumes / Import), the same way Library nests its Sessions/Grid/Calendar/Map
-// switcher under Incoming/Gallery/Exports/Trash — a fixed nav row above its
-// own padded, scrolling body, so the sub-nav never scrolls out of view.
+// Pending / Failures sub-nav sits in the toolbar band directly under the
+// Settings header (Pipeline / Volumes / Import), the same way Library nests its
+// Sessions/Grid/Calendar/Map switcher under its own header — a fixed band
+// above its own padded, scrolling body, so the sub-nav never scrolls out of
+// view.
 export default function SettingsPipelineLayout({
   children,
 }: {
@@ -12,10 +13,8 @@ export default function SettingsPipelineLayout({
 }) {
   return (
     <div className="tab-body">
-      <div className="shell-head">
-        <div className="shell-head-row">
-          <PipelineNav />
-        </div>
+      <div className="page-tools">
+        <PipelineNav />
       </div>
       <div className="pipeline-body">{children}</div>
     </div>

@@ -9,7 +9,7 @@ import {
   purgeTrash,
 } from "@/lib/assetActions";
 import { formatBytes } from "@/lib/format";
-import { SkeletonCards, EmptyState, LazyImage, ConfirmDialog } from "./ui";
+import { SkeletonCards, EmptyState, LazyImage, ConfirmDialog, Spinner } from "./ui";
 import PullToRefresh from "./PullToRefresh";
 import MediaViewer from "./MediaViewer";
 
@@ -191,193 +191,196 @@ export default function TrashTab() {
   );
 
   return (
-    <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
-      {error && (
-        <div className="error-box">
-          <span>Couldn’t load the trash: {error}</span>
-          <button className="btn" onClick={load}>
-            Retry
-          </button>
+    <>
+      {/* The trash figures and actions ride the shared toolbar band, flush
+          under the Library header, above the scrolling grid. */}
+      <div className="page-tools trash-head">
+        <div className="trash-stat">
+          <span className="trash-stat-num">{loading ? "…" : trashCount}</span>
+          <span className="trash-stat-label">
+            in trash · {formatBytes(trashBytes)} reclaimable
+          </span>
         </div>
-      )}
-
-      {loading ? (
-        <SkeletonCards rows={2} />
-      ) : (
-        <>
-          <div className="trash-head">
-            <div className="trash-stat">
-              <span className="trash-stat-num">{trashCount}</span>
-              <span className="trash-stat-label">
-                in trash · {formatBytes(trashBytes)} reclaimable
-              </span>
-            </div>
-            <span className="spacer" />
-            {notice && <span className="notice">{notice}</span>}
-            <button
-              className="btn"
-              onClick={moveRejects}
-              disabled={!rejectCount || busy === "reject"}
-              title="Soft-delete every rejected shot still in the library"
-            >
-              {busy === "reject" ? "…" : `Move rejects to trash (${rejectCount})`}
-            </button>
-            <button
-              className="btn"
-              onClick={restoreAll}
-              disabled={!trashCount || busy === "restore"}
-            >
-              {busy === "restore" ? "…" : "Restore all"}
-            </button>
-            <button
-              className="btn btn-reject"
-              onClick={() => setConfirmPurge(true)}
-              disabled={!trashCount || !purgeEnabled}
-              title={
-                purgeEnabled
-                  ? "Permanently delete the originals to free space"
-                  : "Purge is disabled (PURGE_ENABLED=false)"
-              }
-            >
-              🗑 Empty trash{trashBytes ? ` — reclaim ${formatBytes(trashBytes)}` : ""}
+        <span className="spacer" />
+        {notice && <span className="notice">{notice}</span>}
+        <button
+          className="btn"
+          onClick={moveRejects}
+          disabled={!rejectCount || busy === "reject"}
+          title="Soft-delete every rejected shot still in the library"
+        >
+          {busy === "reject" ? <Spinner sm /> : `Move rejects to trash (${rejectCount})`}
+        </button>
+        <button
+          className="btn"
+          onClick={restoreAll}
+          disabled={!trashCount || busy === "restore"}
+        >
+          {busy === "restore" ? <Spinner sm /> : "Restore all"}
+        </button>
+        <button
+          className="btn btn-reject"
+          onClick={() => setConfirmPurge(true)}
+          disabled={!trashCount || !purgeEnabled}
+          title={
+            purgeEnabled
+              ? "Permanently delete the originals to free space"
+              : "Purge is disabled (PURGE_ENABLED=false)"
+          }
+        >
+          🗑 Empty trash{trashBytes ? ` — reclaim ${formatBytes(trashBytes)}` : ""}
+        </button>
+      </div>
+      <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
+        {error && (
+          <div className="error-box">
+            <span>Couldn’t load the trash: {error}</span>
+            <button className="btn" onClick={load}>
+              Retry
             </button>
           </div>
+        )}
 
-          {!purgeEnabled && trashCount > 0 && (
-            <div className="trash-hint">
-              Purging is disabled on this instance (<code>PURGE_ENABLED=false</code>).
-              Items stay in the recycle bin; set it to <code>true</code> to reclaim
-              space.
-            </div>
-          )}
-
-          {trashCount === 0 ? (
-            <EmptyState
-              icon={TrashGlyph}
-              title="Trash is empty"
-              hint={
-                rejectCount
-                  ? `${rejectCount} rejected shot${rejectCount === 1 ? "" : "s"} in the library. Move them to the trash, then empty it to reclaim the space.`
-                  : "Reject shots while culling, then bin them here to slim the archive down. Soft-deleted items land here first — recoverable until you empty the trash."
-              }
-            />
-          ) : (
-            <div className="trash-grid">
-              {items.map((a) => (
-                <div key={a.id} className="trash-cell">
-                  {a.derivative_status === "ready" ? (
-                    <button
-                      type="button"
-                      className="trash-cell-view"
-                      onClick={() =>
-                        setViewer(viewable.findIndex((v) => v.id === a.id))
-                      }
-                      title="Preview"
-                      aria-label={`Preview ${a.filename}`}
-                    >
-                      <LazyImage src={`/api/assets/${a.id}/thumb`} alt={a.filename} />
-                    </button>
-                  ) : (
-                    <div className="trash-cell-ph">{a.ext.replace(".", "")}</div>
-                  )}
-                  <span className="trash-cell-size">{formatBytes(a.file_size)}</span>
-                  <button
-                    className="trash-restore"
-                    title="Restore to the library"
-                    onClick={() => restoreOne(a.id)}
-                  >
-                    ↺
-                  </button>
-                </div>
-              ))}
-              {trashCount > items.length && (
-                <div className="trash-cell trash-more">
-                  +{trashCount - items.length}
-                  <span>more</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {summary && summary.jobs.length > 0 && (
-            <div className="trash-jobs">
-              <div className="trash-jobs-title">Recent purges</div>
-              {summary.jobs.map((j) => {
-                const r = j.result;
-                const freed = r?.freed_bytes ? formatBytes(r.freed_bytes) : null;
-                const errs =
-                  r?.error_count ??
-                  (Array.isArray(r?.errors) ? r!.errors!.length : 0);
-                const skipped = r?.skipped ?? 0;
-                return (
-                  <div key={j.id} className="trash-job">
-                    <span className={`pill ${statusPill(j.status)}`}>{j.status}</span>
-                    <span className="meta">
-                      {r?.purged != null ? `${r.purged}/${r.total ?? r.purged} freed` : "queued"}
-                      {freed ? ` · ${freed} reclaimed` : ""}
-                      {errs ? ` · ${errs} couldn’t be freed` : ""}
-                      {skipped ? ` · ${skipped} skipped` : ""}
-                      {r?.error ? ` · ${r.error}` : ""}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {viewer != null && viewable[viewer] && (
-        <MediaViewer
-          items={viewable}
-          index={viewer}
-          onIndexChange={setViewer}
-          onClose={() => setViewer(null)}
-          renderActions={(it) => (
-            <>
-              <Link
-                className="btn"
-                href={`/sessions/${it.session_id}`}
-                title="Open the session this shot belongs to"
-              >
-                Open session
-              </Link>
-              <a className="btn" href={`/api/assets/${it.id}/download`} download>
-                Download
-              </a>
-              <button
-                className="btn"
-                onClick={() => {
-                  restoreOne(it.id);
-                  setViewer(null);
-                }}
-                title="Restore to the library"
-              >
-                ↺ Restore
-              </button>
-            </>
-          )}
-        />
-      )}
-
-      <ConfirmDialog
-        open={confirmPurge}
-        danger
-        busy={busy === "purge"}
-        title="Empty the trash?"
-        confirmLabel={`Reclaim ${formatBytes(trashBytes)}`}
-        requireAck="I understand the originals are permanently deleted from the NAS and this can't be undone."
-        message={
+        {loading ? (
+          <SkeletonCards rows={2} />
+        ) : (
           <>
-            This permanently removes <strong>{trashCount}</strong> original
-            {trashCount === 1 ? "" : "s"} (<strong>{formatBytes(trashBytes)}</strong>)
-            and their cached previews to free space on the NAS. Restore anything you
-            want to keep first — after this they’re gone.
+            {!purgeEnabled && trashCount > 0 && (
+              <div className="trash-hint">
+                Purging is disabled on this instance (<code>PURGE_ENABLED=false</code>).
+                Items stay in the recycle bin; set it to <code>true</code> to reclaim
+                space.
+              </div>
+            )}
+
+            {trashCount === 0 ? (
+              <EmptyState
+                icon={TrashGlyph}
+                title="Trash is empty"
+                hint={
+                  rejectCount
+                    ? `${rejectCount} rejected shot${rejectCount === 1 ? "" : "s"} in the library. Move them to the trash, then empty it to reclaim the space.`
+                    : "Reject shots while culling, then bin them here to slim the archive down. Soft-deleted items land here first — recoverable until you empty the trash."
+                }
+              />
+            ) : (
+              <div className="trash-grid">
+                {items.map((a) => (
+                  <div key={a.id} className="trash-cell">
+                    {a.derivative_status === "ready" ? (
+                      <button
+                        type="button"
+                        className="trash-cell-view"
+                        onClick={() =>
+                          setViewer(viewable.findIndex((v) => v.id === a.id))
+                        }
+                        title="Preview"
+                        aria-label={`Preview ${a.filename}`}
+                      >
+                        <LazyImage src={`/api/assets/${a.id}/thumb`} alt={a.filename} />
+                      </button>
+                    ) : (
+                      <div className="trash-cell-ph">{a.ext.replace(".", "")}</div>
+                    )}
+                    <span className="trash-cell-size">{formatBytes(a.file_size)}</span>
+                    <button
+                      className="trash-restore"
+                      title="Restore to the library"
+                      onClick={() => restoreOne(a.id)}
+                    >
+                      ↺
+                    </button>
+                  </div>
+                ))}
+                {trashCount > items.length && (
+                  <div className="trash-cell trash-more">
+                    +{trashCount - items.length}
+                    <span>more</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {summary && summary.jobs.length > 0 && (
+              <div className="trash-jobs">
+                <div className="trash-jobs-title">Recent purges</div>
+                {summary.jobs.map((j) => {
+                  const r = j.result;
+                  const freed = r?.freed_bytes ? formatBytes(r.freed_bytes) : null;
+                  const errs =
+                    r?.error_count ??
+                    (Array.isArray(r?.errors) ? r!.errors!.length : 0);
+                  const skipped = r?.skipped ?? 0;
+                  return (
+                    <div key={j.id} className="trash-job">
+                      <span className={`pill ${statusPill(j.status)}`}>{j.status}</span>
+                      <span className="meta">
+                        {r?.purged != null ? `${r.purged}/${r.total ?? r.purged} freed` : "queued"}
+                        {freed ? ` · ${freed} reclaimed` : ""}
+                        {errs ? ` · ${errs} couldn’t be freed` : ""}
+                        {skipped ? ` · ${skipped} skipped` : ""}
+                        {r?.error ? ` · ${r.error}` : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
-        }
-        onConfirm={emptyTrash}
-        onCancel={() => setConfirmPurge(false)}
-      />
-    </PullToRefresh>
+        )}
+
+        {viewer != null && viewable[viewer] && (
+          <MediaViewer
+            items={viewable}
+            index={viewer}
+            onIndexChange={setViewer}
+            onClose={() => setViewer(null)}
+            renderActions={(it) => (
+              <>
+                <Link
+                  className="btn"
+                  href={`/sessions/${it.session_id}`}
+                  title="Open the session this shot belongs to"
+                >
+                  Open session
+                </Link>
+                <a className="btn" href={`/api/assets/${it.id}/download`} download>
+                  Download
+                </a>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    restoreOne(it.id);
+                    setViewer(null);
+                  }}
+                  title="Restore to the library"
+                >
+                  ↺ Restore
+                </button>
+              </>
+            )}
+          />
+        )}
+
+        <ConfirmDialog
+          open={confirmPurge}
+          danger
+          busy={busy === "purge"}
+          title="Empty the trash?"
+          confirmLabel={`Reclaim ${formatBytes(trashBytes)}`}
+          requireAck="I understand the originals are permanently deleted from the NAS and this can't be undone."
+          message={
+            <>
+              This permanently removes <strong>{trashCount}</strong> original
+              {trashCount === 1 ? "" : "s"} (<strong>{formatBytes(trashBytes)}</strong>)
+              and their cached previews to free space on the NAS. Restore anything you
+              want to keep first — after this they’re gone.
+            </>
+          }
+          onConfirm={emptyTrash}
+          onCancel={() => setConfirmPurge(false)}
+        />
+      </PullToRefresh>
+    </>
   );
 }

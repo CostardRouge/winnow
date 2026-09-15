@@ -72,8 +72,10 @@ export default function ExportsTab() {
   );
 
   return (
-    <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
-      <div className="exports-toolbar">
+    <>
+      {/* The export preferences ride the shared toolbar band, flush under the
+          Library header, above the scrolling job list. */}
+      <div className="page-tools exports-toolbar">
         <label className="export-opt" title="When a picked photo is a RAW+JPEG pair, also copy the JPEG next to the RAW keeper.">
           <input
             type="checkbox"
@@ -94,29 +96,31 @@ export default function ExportsTab() {
           <span>Include Live Photo motion in exports</span>
         </label>
       </div>
-      {error && (
-        <div className="error-box">
-          <span>Couldn’t load exports: {error}</span>
-          <button className="btn" onClick={load}>
-            Retry
-          </button>
-        </div>
-      )}
-      {loading ? (
-        <SkeletonCards rows={3} />
-      ) : jobs.length === 0 ? (
-        <EmptyState
-          icon={Icons.export}
-          title="No exports yet"
-          hint="Pick photos in the gallery, then export them as a RAW copy for Capture One."
-        />
-      ) : (
-        <div className="session-list">
-          {jobs.map((job) => (
-            <ExportCard key={job.id} job={job} onChanged={load} />
-          ))}
-        </div>
-      )}
-    </PullToRefresh>
+      <PullToRefresh className="tab-pane sessions-pane" onRefresh={load}>
+        {error && (
+          <div className="error-box">
+            <span>Couldn’t load exports: {error}</span>
+            <button className="btn" onClick={load}>
+              Retry
+            </button>
+          </div>
+        )}
+        {loading ? (
+          <SkeletonCards rows={3} />
+        ) : jobs.length === 0 ? (
+          <EmptyState
+            icon={Icons.export}
+            title="No exports yet"
+            hint="Pick photos in the gallery, then export them as a RAW copy for Capture One."
+          />
+        ) : (
+          <div className="session-list">
+            {jobs.map((job) => (
+              <ExportCard key={job.id} job={job} onChanged={load} />
+            ))}
+          </div>
+        )}
+      </PullToRefresh>
+    </>
   );
 }

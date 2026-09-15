@@ -9,6 +9,7 @@ import Link from "next/link";
 import { active, totalFailures, useStats } from "./useStats";
 import PullToRefresh from "./PullToRefresh";
 import { OptionPicker, type PickerOption } from "./OptionPicker";
+import { Spinner } from "./ui";
 
 const RATE_MAX = 3000;
 const RATE_STEP = 50;
@@ -313,7 +314,7 @@ export default function ControlPanel() {
           disabled={busy || !stats}
           title="Suspend or resume scanning and analysis"
         >
-          {busy ? "…" : paused ? "▶ Resume scan" : "⏸ Pause scan"}
+          {busy ? <Spinner sm /> : paused ? "▶ Resume scan" : "⏸ Pause scan"}
         </button>
 
         <div className="slider">

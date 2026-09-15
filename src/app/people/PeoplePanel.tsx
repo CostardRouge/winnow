@@ -533,53 +533,69 @@ export default function PeoplePanel() {
     }
   }
 
+  // The panel owns the page below the header: the toolbar band, flush under
+  // it, then the padded scrolling shelf — so the band is the same band every
+  // other section wears rather than a row inside the padding. The early
+  // states have no band and wear the padded body alone.
   if (error) {
     return (
-      <div className="empty-state error" role="alert">
-        {error}
+      <div className="pipeline-body">
+        <div className="empty-state error" role="alert">
+          {error}
+        </div>
       </div>
     );
   }
-  if (!data) return <LoadingState label="Gathering the faces…" />;
+  if (!data) {
+    return (
+      <div className="pipeline-body">
+        <LoadingState label="Gathering the faces…" />
+      </div>
+    );
+  }
 
   if (!data.facesEnabled && data.people.length === 0) {
     return (
-      <EmptyState
-        icon={Icons.people}
-        title="Face detection is off"
-        hint="People appear here once the ML analysis runs over the library. Set ML_ENABLED=true and ML_FACES_ENABLED=true with ML_BASE_URL pointing at your immich-machine-learning container."
-      />
+      <div className="pipeline-body">
+        <EmptyState
+          icon={Icons.people}
+          title="Face detection is off"
+          hint="People appear here once the ML analysis runs over the library. Set ML_ENABLED=true and ML_FACES_ENABLED=true with ML_BASE_URL pointing at your immich-machine-learning container."
+        />
+      </div>
     );
   }
 
   if (data.people.length === 0) {
     return (
-      <EmptyState
-        icon={Icons.people}
-        title="No people yet"
-        hint={
-          data.unassigned > 0
-            ? `${num(data.unassigned)} detected face(s) are waiting to be grouped into people.`
-            : "Faces appear here as the ML analysis works through the library — people are grouped automatically as they are detected."
-        }
-      >
-        {data.unassigned > 0 &&
-          (grouping === "queued" ? (
+      <div className="pipeline-body">
+        <EmptyState
+          icon={Icons.people}
+          title="No people yet"
+          hint={
+            data.unassigned > 0
+              ? `${num(data.unassigned)} detected face(s) are waiting to be grouped into people.`
+              : "Faces appear here as the ML analysis works through the library — people are grouped automatically as they are detected."
+          }
+        >
+          {data.unassigned > 0 &&
+            (grouping === "queued" ? (
+              <span className="hint">
+                Grouping queued — the worker is sweeping the library. Reload in
+                a moment.
+              </span>
+            ) : (
+              <button className="btn btn-primary" onClick={groupNow}>
+                Group into people
+              </button>
+            ))}
+          {grouping === "error" && (
             <span className="hint">
-              Grouping queued — the worker is sweeping the library. Reload in a
-              moment.
+              Could not queue the grouping (admin required?).
             </span>
-          ) : (
-            <button className="btn btn-primary" onClick={groupNow}>
-              Group into people
-            </button>
-          ))}
-        {grouping === "error" && (
-          <span className="hint">
-            Could not queue the grouping (admin required?).
-          </span>
-        )}
-      </EmptyState>
+          )}
+        </EmptyState>
+      </div>
     );
   }
 
@@ -587,8 +603,8 @@ export default function PeoplePanel() {
   const totalAssets = data.people.reduce((s, p) => s + p.asset_count, 0);
 
   return (
-    <div className="people-shelf">
-      <div className="gear-head">
+    <>
+      <div className="page-tools gear-head">
         <div className="tabs" role="group" aria-label="Which people">
           {TABS.map((t) => (
             <button
@@ -656,175 +672,178 @@ export default function PeoplePanel() {
           </button>
         )}
       </div>
-
-      {selectedIds.size > 0 && (
-        // Selection actions: bulk merge into one target, and the two library
-        // searches — "together" (every selected person in the SAME media,
-        // person_mode=all, cf. lib/filter.ts) needs two people to mean
-        // anything; "any" works from one up. The bar sits where the
-        // suggestions banner does — same register, human-selected.
-        <div className="suggest-banner">
-          <span className="hint">
-            {num(selectedIds.size)}{" "}
-            {selectedIds.size === 1 ? "stack" : "stacks"} selected
-          </span>
-          <button
-            className="btn btn-primary"
-            disabled={selectedIds.size === 0}
-            onClick={() => setBulkOpen(true)}
-          >
-            Merge into…
-          </button>
-          {selectedIds.size > 1 && (
-            <Link
-              className="btn"
-              href={galleryHref(source, [...selectedIds], { person_mode: "all" })}
-              title="Media where every selected person is in frame together"
-            >
-              View together
-            </Link>
+      <div className="pipeline-body">
+        <div className="people-shelf">
+          {selectedIds.size > 0 && (
+            // Selection actions: bulk merge into one target, and the two library
+            // searches — "together" (every selected person in the SAME media,
+            // person_mode=all, cf. lib/filter.ts) needs two people to mean
+            // anything; "any" works from one up. The bar sits where the
+            // suggestions banner does — same register, human-selected.
+            <div className="suggest-banner">
+              <span className="hint">
+                {num(selectedIds.size)}{" "}
+                {selectedIds.size === 1 ? "stack" : "stacks"} selected
+              </span>
+              <button
+                className="btn btn-primary"
+                disabled={selectedIds.size === 0}
+                onClick={() => setBulkOpen(true)}
+              >
+                Merge into…
+              </button>
+              {selectedIds.size > 1 && (
+                <Link
+                  className="btn"
+                  href={galleryHref(source, [...selectedIds], { person_mode: "all" })}
+                  title="Media where every selected person is in frame together"
+                >
+                  View together
+                </Link>
+              )}
+              <Link
+                className="btn"
+                href={galleryHref(source, [...selectedIds])}
+                title="Media with any of the selected people"
+              >
+                {source === "gallery" ? "View in gallery" : "View in incoming"}
+              </Link>
+              <button className="btn" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+            </div>
           )}
-          <Link
-            className="btn"
-            href={galleryHref(source, [...selectedIds])}
-            title="Media with any of the selected people"
-          >
-            {source === "gallery" ? "View in gallery" : "View in incoming"}
-          </Link>
-          <button className="btn" onClick={() => setSelectedIds(new Set())}>
-            Clear
-          </button>
-        </div>
-      )}
 
-      {suggestions.length > 0 && (
-        // Proposed, never automatic: the banner counts the near-identical
-        // pairs and the modal walks them one merge (or dismissal) at a time.
-        <div className="suggest-banner">
-          <span className="hint">
-            {num(suggestions.length)}{" "}
-            {suggestions.length === 1 ? "pair" : "pairs"} of stacks look like
-            the same person.
-          </span>
-          <button className="btn" onClick={() => setSuggestOpen(true)}>
-            Review
-          </button>
-        </div>
-      )}
+          {suggestions.length > 0 && (
+            // Proposed, never automatic: the banner counts the near-identical
+            // pairs and the modal walks them one merge (or dismissal) at a time.
+            <div className="suggest-banner">
+              <span className="hint">
+                {num(suggestions.length)}{" "}
+                {suggestions.length === 1 ? "pair" : "pairs"} of stacks look like
+                the same person.
+              </span>
+              <button className="btn" onClick={() => setSuggestOpen(true)}>
+                Review
+              </button>
+            </div>
+          )}
 
-      {shown.length === 0 ? (
-        <EmptyState
-          icon={Icons.people}
-          title={
-            query.trim()
-              ? "No matching person"
-              : tab === "named"
-                ? "Nobody named yet"
-                : "Nothing here"
-          }
-          hint={
-            query.trim()
-              ? "Try fewer letters — unnamed stacks match “unnamed”."
-              : tab === "named"
-                ? "Use the pencil on a card to put a name on a stack."
-                : tab === "hidden"
-                  ? "Hide a stack from its card's ⋯ menu — it moves here."
-                  : grouped.inTab.length > 0
-                    ? "Every stack here is below the small-stack threshold — use “Show all”."
-                    : "Try another tab."
-          }
-        />
-      ) : (
-        <div className="people-grid">
-          {shown.map((p) => (
-            <PersonCard
-              key={p.id}
-              person={p}
-              source={source}
-              selected={selectedIds.has(p.id)}
-              selectionActive={selectedIds.size > 0}
-              onToggleSelect={toggleSelect}
-              onRenamed={rename}
-              onMergeRequest={(person) => setMerging({ person })}
-              onToggleHidden={toggleHidden}
+          {shown.length === 0 ? (
+            <EmptyState
+              icon={Icons.people}
+              title={
+                query.trim()
+                  ? "No matching person"
+                  : tab === "named"
+                    ? "Nobody named yet"
+                    : "Nothing here"
+              }
+              hint={
+                query.trim()
+                  ? "Try fewer letters — unnamed stacks match “unnamed”."
+                  : tab === "named"
+                    ? "Use the pencil on a card to put a name on a stack."
+                    : tab === "hidden"
+                      ? "Hide a stack from its card's ⋯ menu — it moves here."
+                      : grouped.inTab.length > 0
+                        ? "Every stack here is below the small-stack threshold — use “Show all”."
+                        : "Try another tab."
+              }
             />
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="people-grid">
+              {shown.map((p) => (
+                <PersonCard
+                  key={p.id}
+                  person={p}
+                  source={source}
+                  selected={selectedIds.has(p.id)}
+                  selectionActive={selectedIds.size > 0}
+                  onToggleSelect={toggleSelect}
+                  onRenamed={rename}
+                  onMergeRequest={(person) => setMerging({ person })}
+                  onToggleHidden={toggleHidden}
+                />
+              ))}
+            </div>
+          )}
 
-      {bulkOpen && (
-        <PersonPicker
-          selfId={[...selectedIds][0]}
-          excludeIds={[...selectedIds]}
-          title={`Merge ${num(selectedIds.size)} ${selectedIds.size === 1 ? "stack" : "stacks"} into…`}
-          hint="Every face of the selected stacks moves to the person you pick; they keep their name and cover. The selected stacks disappear."
-          onClose={() => setBulkOpen(false)}
-          confirm={async (target) => {
-            if (!target) return;
-            // One merge per source, sequential — each is its own transaction
-            // server-side, and the advisory lock serializes them anyway.
-            for (const sourceId of selectedIds) {
-              await fetchJson(`/api/people/${target.id}/merge`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ source_id: sourceId }),
-              });
-            }
-            setBulkOpen(false);
-            setSelectedIds(new Set());
-            void load();
-          }}
-        />
-      )}
+          {bulkOpen && (
+            <PersonPicker
+              selfId={[...selectedIds][0]}
+              excludeIds={[...selectedIds]}
+              title={`Merge ${num(selectedIds.size)} ${selectedIds.size === 1 ? "stack" : "stacks"} into…`}
+              hint="Every face of the selected stacks moves to the person you pick; they keep their name and cover. The selected stacks disappear."
+              onClose={() => setBulkOpen(false)}
+              confirm={async (target) => {
+                if (!target) return;
+                // One merge per source, sequential — each is its own transaction
+                // server-side, and the advisory lock serializes them anyway.
+                for (const sourceId of selectedIds) {
+                  await fetchJson(`/api/people/${target.id}/merge`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ source_id: sourceId }),
+                  });
+                }
+                setBulkOpen(false);
+                setSelectedIds(new Set());
+                void load();
+              }}
+            />
+          )}
 
-      {suggestOpen && data && (
-        <SuggestionsModal
-          suggestions={suggestions}
-          people={data.people}
-          onClose={() => setSuggestOpen(false)}
-          onMerged={() => void load()}
-        />
-      )}
+          {suggestOpen && data && (
+            <SuggestionsModal
+              suggestions={suggestions}
+              people={data.people}
+              onClose={() => setSuggestOpen(false)}
+              onMerged={() => void load()}
+            />
+          )}
 
-      {merging && (
-        <PersonPicker
-          selfId={merging.person.id}
-          title="Merge into…"
-          hint={
-            merging.hint ??
-            "Click a person to fold this stack into them — or tick several stacks to fold those into THIS one instead."
-          }
-          initialQuery={merging.initialQuery}
-          onClose={() => setMerging(null)}
-          confirm={async (target) => {
-            if (!target) return;
-            await fetchJson(`/api/people/${target.id}/merge`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ source_id: merging.person.id }),
-            });
-            // The folded stack is gone and the target's counts changed: the
-            // server list is the truth now.
-            setMerging(null);
-            void load();
-          }}
-          multi={{
-            label: (n) =>
-              `Merge ${num(n)} into “${merging.person.name ?? "this stack"}”`,
-            confirm: async (ids) => {
-              for (const sourceId of ids) {
-                await fetchJson(`/api/people/${merging.person.id}/merge`, {
+          {merging && (
+            <PersonPicker
+              selfId={merging.person.id}
+              title="Merge into…"
+              hint={
+                merging.hint ??
+                "Click a person to fold this stack into them — or tick several stacks to fold those into THIS one instead."
+              }
+              initialQuery={merging.initialQuery}
+              onClose={() => setMerging(null)}
+              confirm={async (target) => {
+                if (!target) return;
+                await fetchJson(`/api/people/${target.id}/merge`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ source_id: sourceId }),
+                  body: JSON.stringify({ source_id: merging.person.id }),
                 });
-              }
-              setMerging(null);
-              void load();
-            },
-          }}
-        />
-      )}
-    </div>
+                // The folded stack is gone and the target's counts changed: the
+                // server list is the truth now.
+                setMerging(null);
+                void load();
+              }}
+              multi={{
+                label: (n) =>
+                  `Merge ${num(n)} into “${merging.person.name ?? "this stack"}”`,
+                confirm: async (ids) => {
+                  for (const sourceId of ids) {
+                    await fetchJson(`/api/people/${merging.person.id}/merge`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ source_id: sourceId }),
+                    });
+                  }
+                  setMerging(null);
+                  void load();
+                },
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </>
   );
 }

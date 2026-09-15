@@ -5,8 +5,8 @@ import { Icons } from "@/app/ui";
 import type { DownloadFile } from "@/lib/assetActions";
 
 /**
- * The per-export action bar — the same segmented control language as the
- * sessions list (SessionActions): a labelled Download segment (the shared
+ * The per-export action bar — a `.seg-actions` segmented control (the language
+ * the map's zone actions also use): a labelled Download segment (the shared
  * DownloadMenu: ZIP / each file / save-to-folder) joined to an icon-only Delete.
  * The download source is the export's copied output; the menu itself is shared
  * with the session media download, which points it at the originals instead.

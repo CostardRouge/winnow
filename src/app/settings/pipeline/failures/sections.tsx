@@ -4,7 +4,7 @@
 // (pull-to-refresh + load error + action feedback) and the generic listing
 // sections with their retry/select plumbing.
 import { useEffect, useRef, useState } from "react";
-import { Icons } from "../../../ui";
+import { Icons, Spinner } from "../../../ui";
 import PullToRefresh from "../../../PullToRefresh";
 import type { RowData } from "./model";
 
@@ -234,7 +234,7 @@ export function Section({
             onClick={onRetry}
             disabled={busy || disabled || count === 0}
           >
-            {busy ? "…" : retryLabel}
+            {busy ? <Spinner sm /> : retryLabel}
           </button>
         )}
       </div>

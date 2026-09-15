@@ -65,6 +65,7 @@ import {
   type MeasureId,
 } from "@/lib/heatScale";
 import { OptionPicker, type PickerOption } from "../OptionPicker";
+import PageHeader from "../PageHeader";
 import HeatGrid, { byMonth, type Granularity } from "./HeatGrid";
 import HeatMatrix, { type MatrixSort } from "./HeatMatrix";
 import HeatRibbon from "./HeatRibbon";
@@ -236,13 +237,10 @@ export default function HeatmapPanel() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Heatmap</h1>
-        <span className="hint max-sm:hidden">when and where the library was made</span>
-      </div>
+      <PageHeader title="Heatmap" />
 
-      <div className="shell-head">
-        <div className="shell-head-row">
+      <div className="page-tools">
+        <div className="page-tools-row">
           <OptionPicker
             options={VIEWS}
             value={view}
@@ -253,7 +251,7 @@ export default function HeatmapPanel() {
           <LibrarySourceTabs source={source} onChange={setSource} />
         </div>
 
-        <div className="shell-head-row heat-controls">
+        <div className="page-tools-row heat-controls">
           <span className="heat-lab">Measure</span>
           <OptionPicker
             options={MEASURE_OPTIONS}
@@ -283,7 +281,7 @@ export default function HeatmapPanel() {
 
         {/* What is currently narrowing the view, and the way out of it. */}
         {filtered && (
-          <div className="shell-head-row heat-filters" role="status">
+          <div className="page-tools-row heat-filters" role="status">
             {span && (
               <span className="chip active">
                 {span[0] === span[1] ? pretty(span[0]) : `${pretty(span[0])} → ${pretty(span[1])}`}

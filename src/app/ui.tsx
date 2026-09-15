@@ -330,7 +330,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={blocked}
           >
-            {busy ? "…" : confirmLabel}
+            {busy ? <Spinner sm /> : confirmLabel}
           </button>
         </div>
       </div>

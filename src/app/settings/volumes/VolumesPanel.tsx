@@ -7,7 +7,7 @@
 // free-text "index this path" field (which made it too easy to scan "/").
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { EmptyState, Icons } from "@/app/ui";
+import { EmptyState, Icons, Spinner } from "@/app/ui";
 import PullToRefresh from "@/app/PullToRefresh";
 import {
   VOLUME_TYPES,
@@ -500,7 +500,7 @@ function AddVolumeModal({
             onClick={submit}
             disabled={busy || blocked}
           >
-            {busy ? "…" : "Add volume"}
+            {busy ? <Spinner sm /> : "Add volume"}
           </button>
         </div>
       </div>

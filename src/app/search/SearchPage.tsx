@@ -3,8 +3,8 @@
 // Semantic search surface: type a description in natural language and rank the
 // library by CLIP cosine similarity (GET /api/search, cf. lib/ml.ts).
 //
-// The page wears the section chrome every other surface wears — topbar, a
-// controls band, then a full-bleed body — and renders its results through the
+// The page wears the section chrome every other surface wears — the header
+// band, a controls band, then a full-bleed body — and renders its results through the
 // gallery's own VirtualGrid, so a hit tile is the same tile it is on Library
 // (same size, badges, verdict edge, Live Photo hover). Depends on ML being
 // enabled and the library being indexed — the coverage readout in the controls
@@ -32,6 +32,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { EmptyState, Icons, LoadingState } from "../ui";
+import PageHeader from "../PageHeader";
 import MediaViewer from "../MediaViewer";
 import VirtualGrid, { type VirtualGridHandle } from "../gallery/VirtualGrid";
 import {
@@ -310,14 +311,9 @@ function SearchPage() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Search</h1>
-        <span className="hint max-sm:hidden">
-          semantic — describe it, CLIP ranks the library
-        </span>
-      </div>
+      <PageHeader title="Search" />
 
-      <div className="shell-head">
+      <div className="page-tools">
         <form
           className="ml-search-bar"
           onSubmit={(e) => {
@@ -362,7 +358,7 @@ function SearchPage() {
       {/* Same band the gallery uses for its view controls: example queries on
           the left, what the last run actually covered on the right — so a
           thin index is visible above the results rather than under them. */}
-      <div className="gallery-controls ml-search-controls">
+      <div className="page-tools ml-search-controls">
         <span className="hint ml-search-label">Try</span>
         <div className="ml-search-examples">
           {EXAMPLES.map((ex) => (
