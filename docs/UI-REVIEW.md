@@ -52,9 +52,9 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 
 | # | Finding | Status |
 |---|---|---|
-| H1 | **Every session title and every Timeline chapter date is vermillion** because it is an `<a>` and `a { color: var(--color-accent) }` is the base rule. A column of red headlines reads as alerts, and the accent stops marking anything. | P1 |
-| H2 | **Action groups have no primary**: five equal `.seg-btn`s on a session card (Ignore · Export · Geotag · Download · Delete), six on the session page, the destructive one beside the safe ones; icon-only on phones where `title` does not exist. | P1 |
-| H3 | **The same count is drawn three or four times**: "10 ready / 0 pending / 2 picks" as three coloured pills (amber for a zero), then a full-width bar with a percentage; on the session page five pills + a bar + the Sift button for "5 of 14 to sort"; five stat tiles with coloured left borders on `/settings/pipeline` to show four zeros. | P1 |
+| H1 | **Every session title and every Timeline chapter date is vermillion** because it is an `<a>` and `a { color: var(--color-accent) }` is the base rule. A column of red headlines reads as alerts, and the accent stops marking anything. | **Fixed** (the cards) — session and export card titles are ink, the link inside inherits and underlines on hover · P1 (the Timeline's chapter dates) |
+| H2 | **Action groups have no primary**: five equal `.seg-btn`s on a session card (Ignore · Export · Geotag · Download · Delete), six on the session page, the destructive one beside the safe ones; icon-only on phones where `title` does not exist. | **Fixed** (the cards) — one primary verb (Sift N while frames are unrated, the grid when Sift is off; Export N picks once sorting is done and nothing was exported) and a `⋯` menu (`SessionMenu`: Ignore, Export, Geotag, the three download entries, Delete last and separated, each with a second line) · P1 (the session page, H5) |
+| H3 | **The same count is drawn three or four times**: "10 ready / 0 pending / 2 picks" as three coloured pills (amber for a zero), then a full-width bar with a percentage; on the session page five pills + a bar + the Sift button for "5 of 14 to sort"; five stat tiles with coloured left borders on `/settings/pipeline` to show four zeros. | **Fixed** (the cards) — one progress line with a legend (`SessionProgress legend`: picks · rejects · skipped · to sort, plus the percentage); the ready count, the picks pill and "✓ done" are gone; only pending previews, errors and the export state keep a chip, and only when non-zero · P1 (the session page, the pipeline tiles) |
 | H4 | **Red and vermillion where nothing is dangerous or live**: "Pause scan" is `.btn-reject`-red (pause is safe and reversible); the three rate sliders have vermillion thumbs and read as three alerts. | P1 |
 | H5 | **The absolute filesystem path is the first line of the session page**, in mono, wider than the title (`SessionHeader`); on a phone it wraps over four lines and is the largest text block on screen. | P1 |
 
@@ -166,7 +166,8 @@ root error page dressed and themed).
 
 **P1 — the visible step, one to two weeks, where the effort goes:** S1 + S3
 (`PageHeader` + `.page-tools`, two bands, the strapline retired — **shipped
-2026-09-15**) · S4 (**shipped with it**) · H1–H3 (the session card) ·
+2026-09-15**) · S4 (**shipped with it**) · H1–H3 (the session card — **shipped
+2026-09-15**; the session page and the Timeline dates remain) ·
 H5 + M3 (the session page header and toolbar) · H4 (colour semantics applied:
 Pause neutral, sliders ink, counts uncoloured, red only for the destructive
 verb) · A3 + T2 (three control-height tokens, 44 px under `pointer: coarse`) ·

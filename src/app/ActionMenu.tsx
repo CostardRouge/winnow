@@ -7,7 +7,7 @@
 // The placement and the dismissal live in `useAnchoredPanel` — shared with the
 // OptionPicker's menu form, which is the same floating panel around a listbox of
 // values rather than a list of actions.
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "./useAnchoredPanel";
 import { Icons } from "./ui";
@@ -19,6 +19,9 @@ export type MenuItem = {
   hint?: string;
   danger?: boolean;
   disabled?: boolean;
+  /** Draw a divider above this item — the destructive entry sits last and
+   *  set apart from the safe ones (UI review H2). */
+  sep?: boolean;
   onSelect: () => void;
 };
 
@@ -80,23 +83,25 @@ export default function ActionMenu({
           <div ref={panelRef} className="ctx-menu" role="menu" style={style}>
             {label && <div className="ctx-label">{label}</div>}
             {items.map((it) => (
-              <button
-                key={it.key}
-                type="button"
-                role="menuitem"
-                className={`ctx-item${it.danger ? " ctx-danger" : ""}`}
-                disabled={it.disabled}
-                onClick={() => {
-                  setOpen(false);
-                  it.onSelect();
-                }}
-              >
-                {it.icon != null && <span className="ctx-ic">{it.icon}</span>}
-                <span className="ctx-item-text">
-                  {it.label}
-                  {it.hint && <span className="ctx-item-hint">{it.hint}</span>}
-                </span>
-              </button>
+              <Fragment key={it.key}>
+                {it.sep && <div className="ctx-sep" role="separator" />}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`ctx-item${it.danger ? " ctx-danger" : ""}`}
+                  disabled={it.disabled}
+                  onClick={() => {
+                    setOpen(false);
+                    it.onSelect();
+                  }}
+                >
+                  {it.icon != null && <span className="ctx-ic">{it.icon}</span>}
+                  <span className="ctx-item-text">
+                    {it.label}
+                    {it.hint && <span className="ctx-item-hint">{it.hint}</span>}
+                  </span>
+                </button>
+              </Fragment>
             ))}
           </div>,
           document.body,

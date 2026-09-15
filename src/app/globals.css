@@ -1084,12 +1084,35 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-card.ignored {
     @apply opacity-55;
   }
+  /* Ink titles, in the list and the card layout and on the export cards. A
+     card in a list is a heading, not a link: the base `a { color: accent }`
+     used to paint every session title vermillion, and a column of red
+     headlines read as a column of alerts (UI review H1). The link inside
+     inherits the ink and only underlines. */
   .session-card h3 {
     @apply mb-1 text-[15px] font-semibold;
+    color: var(--color-text);
   }
+  .session-card h3 a {
+    color: inherit;
+  }
+  .session-card h3 a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--color-border-strong);
+    text-underline-offset: 3px;
+  }
+  /* The meta line: the sentence, then only the chips that carry a state worth
+     one (pending previews, errors, the export state). */
   .session-card .meta {
-    @apply text-[13px];
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px];
     color: var(--color-muted);
+  }
+  /* The primary verb + the ⋯ menu, one row (UI review H2). */
+  .card-actions {
+    @apply flex items-center gap-2;
+  }
+  .card-primary {
+    @apply whitespace-nowrap;
   }
 
   /* ---- Two-level media card: head (info | actions) over a media row ----- */
@@ -1105,11 +1128,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .card-info {
     @apply min-w-0 flex-1;
   }
-  /* Orange title in both contexts (sessions get it from the <a>; give plain
-     export titles the same accent). */
   .card-info h3 {
     @apply truncate;
-    color: var(--color-accent);
   }
   .card-side {
     @apply flex shrink-0 flex-col items-end gap-2;
@@ -1130,51 +1150,18 @@ html[data-theme="dark"] .btn-primary:hover {
       @apply justify-start;
     }
   }
-  /* The triage bar rides the very bottom of a stacked session card as a
-     full-width footer band: it cancels the card's padding to sit flush on the
-     edges, a top rule separates it from the body, and the percentage parks at
-     the right behind its own divider with left/right padding. */
-  .session-card.is-stacked .session-progress.is-footer {
-    margin: 0 -1rem -1rem;
-    align-items: stretch;
-    gap: 0;
-    min-height: 1em;
-    border-top: 1px solid var(--color-border);
-    /* Inner radius = card radius − the card's 1px border, so the band's bottom
-       corners stay concentric with the card's rounded border instead of leaving
-       a sliver of surface peeking through (worst at the bottom-left). */
-    border-bottom-left-radius: calc(var(--radius-lg) - 1px);
-    border-bottom-right-radius: calc(var(--radius-lg) - 1px);
-    background: var(--color-surface-2);
-    overflow: hidden;
-  }
-  /* The track fills the whole footer band — flush to the edges, no pill, no
-     hairline — so the green/red verdict bands read as one solid progress block
-     that spans the band's full height. The unfilled remainder is a faint sage
-     wash of the pick colour: a quiet "still to triage" ground that lets the
-     saturated fills read as "done" at a glance. */
-  .session-card.is-stacked .session-progress.is-footer .session-progress-track {
-    align-self: stretch;
-    margin: 0;
-    height: auto;
-    border: 0;
-    border-radius: 0;
-    background: color-mix(in srgb, var(--color-pick) 9%, var(--color-surface-2));
-  }
-  .session-card.is-stacked .session-progress.is-footer .session-progress-label {
-    @apply inline-flex items-center;
-    padding: 0.5em 0.875rem;
-    border-left: 1px solid var(--color-border);
-    color: var(--color-text);
-  }
   .counters {
     @apply flex flex-wrap gap-2 text-xs;
   }
   .pill {
-    @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium;
     background: var(--color-surface-2);
     border-color: var(--color-border);
     color: var(--color-muted);
+  }
+  .pill svg {
+    width: 12px;
+    height: 12px;
   }
   .pill.ready {
     color: var(--color-pick);
@@ -1477,6 +1464,39 @@ html[data-theme="dark"] .btn-primary:hover {
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
   }
+  /* With a legend the bar becomes two lines: the track + percentage, then the
+     counts keyed by the same colours. The one place a card states its numbers
+     (UI review H3). */
+  .session-progress.has-legend {
+    @apply flex-col items-stretch gap-1.5;
+  }
+  .session-progress-row {
+    @apply flex items-center gap-3;
+  }
+  .session-progress.is-compact .session-progress-row {
+    @apply gap-2;
+  }
+  .session-progress-legend {
+    @apply flex flex-wrap gap-x-3 gap-y-0.5 text-xs;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .session-progress-legend > span {
+    @apply inline-flex items-center gap-1.5;
+  }
+  .session-progress-legend i {
+    @apply inline-block h-2 w-2 rounded-[2px];
+    background: var(--color-border-strong);
+  }
+  .session-progress-legend i.is-pick {
+    background: var(--color-pick);
+  }
+  .session-progress-legend i.is-reject {
+    background: var(--color-reject);
+  }
+  .session-progress-legend i.is-skip {
+    background: var(--color-star);
+  }
 
   /* Cover thumbnails (session/export card previews, sift covers) are inert to
      the pointer so the Pinterest browser extension's hover "Save" badge never
@@ -1512,16 +1532,13 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-card.as-card .session-card-body {
     @apply flex flex-col gap-2;
   }
-  .session-card.as-card .seg-actions {
-    @apply mt-auto w-full;
+  /* In the narrow card footer the primary verb takes the width, the ⋯ its
+     corner. */
+  .session-card.as-card .card-actions {
+    @apply mt-auto;
   }
-  /* In the narrow card footer the segments share the width evenly and drop
-     their labels for a tidy, icon-only control. */
-  .session-card.as-card .seg-btn {
+  .session-card.as-card .card-primary {
     @apply flex-1;
-  }
-  .session-card.as-card .seg-label {
-    @apply hidden;
   }
   .session-card.as-card h3 {
     @apply truncate;
