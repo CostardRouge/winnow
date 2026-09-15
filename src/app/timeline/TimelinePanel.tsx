@@ -330,7 +330,7 @@ export default function TimelinePanel() {
         }
       />
 
-      <div className="gallery-controls">
+      <div className="page-tools">
         <div className="tabs" role="group" aria-label="Chapter rule">
           {MODES.map((m) => (
             <button
@@ -371,7 +371,7 @@ export default function TimelinePanel() {
         <LibrarySourceTabs source={source} onChange={setSource} />
       </div>
       {notice && (
-        <div className="gallery-controls" role="status">
+        <div className="page-tools" role="status">
           <span className="hint">{notice}</span>
           <span className="spacer" />
           <button className="btn btn-sm" onClick={() => setNotice(null)}>

@@ -16,9 +16,8 @@ export default async function PeoplePage() {
   return (
     <div className="app-shell">
       <PageHeader title="People" />
-      <div className="pipeline-body">
-        <PeoplePanel />
-      </div>
+      {/* The panel renders its own toolbar band and padded body. */}
+      <PeoplePanel />
     </div>
   );
 }

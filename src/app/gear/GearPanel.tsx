@@ -129,14 +129,25 @@ export default function GearPanel() {
     [data, source, sort],
   );
 
+  // The panel owns the page below the header: the toolbar band, flush under
+  // it, then the padded scrolling shelf — so the band is the same band every
+  // other section wears rather than a row inside the padding.
   if (error) {
     return (
-      <div className="empty-state error" role="alert">
-        {error}
+      <div className="pipeline-body">
+        <div className="empty-state error" role="alert">
+          {error}
+        </div>
       </div>
     );
   }
-  if (!data) return <LoadingState label="Reading the EXIF…" />;
+  if (!data) {
+    return (
+      <div className="pipeline-body">
+        <LoadingState label="Reading the EXIF…" />
+      </div>
+    );
+  }
 
   const current = VIEWS.find((v) => v.key === view) ?? VIEWS[0];
   // Empty tab vs empty library: only the second one is "no gear yet".
@@ -146,7 +157,7 @@ export default function GearPanel() {
   );
 
   const head = (
-    <div className="gear-head">
+    <div className="page-tools gear-head">
       <LibrarySourceTabs source={source} onChange={setSource} />
       <span className="hint">
         {kit.bodies.length} {kit.bodies.length === 1 ? "body" : "bodies"} ·{" "}
@@ -169,31 +180,39 @@ export default function GearPanel() {
 
   if (kit.bodies.length === 0) {
     return (
-      <div className="gear-shelf">
+      <>
         {head}
-        <EmptyState
-          icon={Icons.photos}
-          title={otherTotal > 0 ? "Nothing here yet" : "No gear yet"}
-          hint={
-            otherTotal > 0
-              ? source === "all"
-                ? "No media carries camera EXIF."
-                : `No media in ${source === "gallery" ? "the Gallery" : "Incoming"} carry camera EXIF — try another tab.`
-              : "Cameras and lenses appear here as soon as indexed media carry EXIF maker/model tags."
-          }
-        />
-      </div>
+        <div className="pipeline-body">
+          <div className="gear-shelf">
+            <EmptyState
+              icon={Icons.photos}
+              title={otherTotal > 0 ? "Nothing here yet" : "No gear yet"}
+              hint={
+                otherTotal > 0
+                  ? source === "all"
+                    ? "No media carries camera EXIF."
+                    : `No media in ${source === "gallery" ? "the Gallery" : "Incoming"} carry camera EXIF — try another tab.`
+                  : "Cameras and lenses appear here as soon as indexed media carry EXIF maker/model tags."
+              }
+            />
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="gear-shelf">
+    <>
       {head}
-      {/* The layouts are different enough that the toggle alone doesn't say what
-          it just did — one line does. */}
-      <p className="gear-caption">{current.hint}</p>
-      <Layout view={view} kit={kit} />
-    </div>
+      <div className="pipeline-body">
+        <div className="gear-shelf">
+          {/* The layouts are different enough that the toggle alone doesn't say
+              what it just did — one line does. */}
+          <p className="gear-caption">{current.hint}</p>
+          <Layout view={view} kit={kit} />
+        </div>
+      </div>
+    </>
   );
 }
 

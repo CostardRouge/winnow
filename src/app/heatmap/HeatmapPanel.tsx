@@ -239,8 +239,8 @@ export default function HeatmapPanel() {
     <div className="app-shell">
       <PageHeader title="Heatmap" />
 
-      <div className="shell-head">
-        <div className="shell-head-row">
+      <div className="page-tools">
+        <div className="page-tools-row">
           <OptionPicker
             options={VIEWS}
             value={view}
@@ -251,7 +251,7 @@ export default function HeatmapPanel() {
           <LibrarySourceTabs source={source} onChange={setSource} />
         </div>
 
-        <div className="shell-head-row heat-controls">
+        <div className="page-tools-row heat-controls">
           <span className="heat-lab">Measure</span>
           <OptionPicker
             options={MEASURE_OPTIONS}
@@ -281,7 +281,7 @@ export default function HeatmapPanel() {
 
         {/* What is currently narrowing the view, and the way out of it. */}
         {filtered && (
-          <div className="shell-head-row heat-filters" role="status">
+          <div className="page-tools-row heat-filters" role="status">
             {span && (
               <span className="chip active">
                 {span[0] === span[1] ? pretty(span[0]) : `${pretty(span[0])} → ${pretty(span[1])}`}

@@ -16,9 +16,8 @@ export default async function GearPage() {
   return (
     <div className="app-shell">
       <PageHeader title="Gear" />
-      <div className="pipeline-body">
-        <GearPanel />
-      </div>
+      {/* The panel renders its own toolbar band and padded body. */}
+      <GearPanel />
     </div>
   );
 }

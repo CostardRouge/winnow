@@ -179,7 +179,7 @@ export default function SiftSessionPage({
       {/* Status bar above the carousel: how much is left, the overall progress
           bar, and a quick jump into the full session view — all in the dead
           space that used to sit empty above the deck. */}
-      <div className="sift-deck-statusbar">
+      <div className="page-tools sift-deck-statusbar">
         <span className="sift-deck-left" aria-live="polite">
           {!cards ? (
             "Loading…"

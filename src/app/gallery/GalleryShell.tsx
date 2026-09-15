@@ -1025,7 +1025,7 @@ export default function GalleryShell({
 
   return (
     <div className="gallery-shell">
-      <div className="gallery-controls">
+      <div className="page-tools">
         <ViewSegments views={views} active={current.id} onSelect={selectView} />
         {current.controls}
         {showAside && (

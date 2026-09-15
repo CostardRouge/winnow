@@ -474,17 +474,47 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex flex-col overflow-hidden;
     height: 100%;
   }
-  /* A secondary control band under the page header (the Pipeline sub-nav, the
-     heatmap pickers, the search bar). Symmetric vertical padding so the row
-     sits centered in the band rather than hugging what follows. The
-     padding-block stays on .shell-head — not the row — so the row's own box
-     height tracks its content and centering is clean. */
-  .shell-head {
-    @apply px-5 py-3;
+  /* ---- Page tools: the one toolbar band under the header (S1/S3) ---------- */
+  /* Every section's second band — the gallery's view controls, the heatmap's
+     pickers, the search bar, the gear and people shelves' controls, the
+     exports options, the trash actions, the deck's status line — wears this one
+     class, so there is one padding, one height, one hairline and one control
+     scale; a page's own class (.gear-head, .trash-head…) only adds what is
+     specific to it. It used to be seven wrappers with seven heights. A band
+     that needs several lines stacks .page-tools-row children (the heatmap);
+     everything else is one wrapping row. */
+  .page-tools {
+    @apply flex shrink-0 flex-wrap items-center gap-2 px-5;
+    /* One compromise height for every control on the row (between the thin
+       text segments and the taller icon toggles) so swapping a view's
+       modifier — Select, list/card toggle, or nothing — never reflows it. */
+    --tb-control-h: 32px;
+    min-height: 48px;
+    padding-block: 7px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
   }
-  /* Tabs on the left, compact stats strip pushed to the right edge. */
-  .shell-head-row {
-    @apply flex flex-wrap items-center gap-3;
+  .page-tools-row {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
+    flex-basis: 100%;
+  }
+  .page-tools .view-toggle,
+  .page-tools .layout-toggle,
+  .page-tools .icon-toggle,
+  .page-tools .btn {
+    height: var(--tb-control-h);
+  }
+  /* Square icon toggles (sort flip, mobile panel) track the shared control
+     height on both axes so they read as the same size as the pill toggles. */
+  .page-tools .icon-toggle {
+    width: var(--tb-control-h);
+  }
+  /* Drop the inner vertical padding so the icon/text centre within the shared
+     height instead of dictating it. */
+  .page-tools .view-btn,
+  .page-tools .layout-btn,
+  .page-tools .btn {
+    @apply py-0;
   }
   /* Dedicated /pipeline page: the full control card in a padded scroll area. */
   .pipeline-body {
@@ -1784,10 +1814,8 @@ html[data-theme="dark"] .btn-primary:hover {
     }
   }
 
-  /* Exports tab: preferences toolbar above the job list */
-  .exports-toolbar {
-    @apply mb-3 flex flex-wrap items-center gap-3;
-  }
+  /* Exports tab: the preferences ride the shared .page-tools band above the
+     job list. */
   .export-opt {
     @apply inline-flex cursor-pointer select-none items-center gap-2 text-sm;
     color: var(--color-faint);
@@ -2249,35 +2277,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .gallery-shell {
     @apply flex min-h-0 flex-1 flex-col;
   }
-  .gallery-controls {
-    @apply flex items-center gap-2 px-5 py-2.5;
-    /* One compromise height for every control on this row (between the thin
-       text segments and the taller icon toggles) so swapping a view's modifier
-       — Select, list/card toggle, or nothing — never reflows the row. */
-    --tb-control-h: 32px;
-    min-height: calc(var(--tb-control-h) + 1.25rem + 2px);
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    border-bottom: 1px solid var(--color-border);
-  }
-  .gallery-controls .view-toggle,
-  .gallery-controls .layout-toggle,
-  .gallery-controls .icon-toggle,
-  .gallery-controls .btn {
-    height: var(--tb-control-h);
-  }
-  /* Square icon toggles (sort flip, mobile panel) track the shared control
-     height on both axes so they read as the same size as the pill toggles. */
-  .gallery-controls .icon-toggle {
-    width: var(--tb-control-h);
-  }
-  /* Drop the inner vertical padding so the icon/text centre within the shared
-     height instead of dictating it. */
-  .gallery-controls .view-btn,
-  .gallery-controls .layout-btn,
-  .gallery-controls .btn {
-    @apply py-0;
-  }
+  /* The view controls row is the shared .page-tools band (see it above). */
   .gallery-body {
     @apply relative flex min-h-0 flex-1;
   }
@@ -3613,9 +3613,9 @@ html[data-theme="dark"] .btn-primary:hover {
      than reusing .view-toggle/.view-btn directly so the count-badge styling
      below stays scoped to this nav and doesn't leak into the other spots
      .view-toggle is used (gallery, sift, facet-head, pipeline toolbar). */
-  /* min-w-0: as a flex item of the (nowrap on phones) .shell-head-row the
-     pill never shrank below its content, so the max-w-full + overflow-x-auto
-     below never engaged and "Failures" was clipped off-screen (UI review S2). */
+  /* min-w-0: as a flex item of the toolbar band the pill never shrank below
+     its content, so the max-w-full + overflow-x-auto below never engaged and
+     "Failures" was clipped off-screen (UI review S2). */
   .pipeline-tabs {
     @apply inline-flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
     background: var(--color-surface);
@@ -4075,9 +4075,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Trash tab (reclaim space) ---------------------------------------- */
-  .trash-head {
-    @apply mb-3 flex flex-wrap items-center gap-2;
-  }
+  /* .trash-head rides the shared .page-tools band; only its parts are styled. */
   .trash-stat {
     @apply flex items-baseline gap-2;
   }
@@ -4327,23 +4325,22 @@ html[data-theme="dark"] .btn-primary:hover {
     padding-bottom: 132px;
   }
 
-  /* The secondary control rows (the Pipeline sub-nav, the heatmap pickers, the
-     search bar) stay on one line rather than stacking; their scrolling parts
-     scroll inside themselves. The Library's tabs no longer live here — they
-     ride in the page header (.page-tabs). */
-  .shell-head {
-    @apply px-3 py-2;
+  /* The toolbar band tightens; a multi-line band's rows (the heatmap's pickers)
+     scroll sideways instead of clipping, the same rail the tab pills use. */
+  .page-tools {
+    @apply gap-1.5 px-3;
   }
-  .shell-head-row {
-    @apply flex-nowrap gap-2;
+  .page-tools-row {
+    @apply flex-nowrap overflow-x-auto;
+    scrollbar-width: none;
+  }
+  .page-tools-row::-webkit-scrollbar {
+    display: none;
   }
   /* Search page: the example queries scroll sideways rather than stacking into
      three rows, which on a phone pushed the results below the fold. Same
      hidden-scrollbar rail as .pipeline-tabs. The readout keeps its own line
      (the band still wraps) so the coverage figure stays readable. */
-  .ml-search-controls {
-    @apply px-3;
-  }
   .ml-search-examples {
     /* flex-1 + min-w-0: claim the rest of the line so the rail has a width to
        scroll inside, instead of overflowing the band at its content width. */
@@ -5132,11 +5129,8 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply block truncate;
   }
   /* Status bar above the carousel: "N left / total" · the overall progress bar
-     (grows to fill) · a quick jump into the full session. Reuses the dead space
-     that used to sit empty between the header and the deck. */
-  .sift-deck-statusbar {
-    @apply flex items-center gap-2.5 px-4 pt-2 sm:gap-3;
-  }
+     (grows to fill) · a quick jump into the full session. It is the deck's
+     .page-tools band; only its parts are styled here. */
   .sift-deck-left {
     @apply flex-shrink-0 text-[13px] tabular-nums;
     color: var(--color-muted);
@@ -5984,14 +5978,6 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
-/* On phones the Sessions/Grid toolbar gains a progress filter; let it wrap to a
-   second line rather than overflow the row. */
-@media (max-width: 760px) {
-  .gallery-controls {
-    flex-wrap: wrap;
-  }
-}
-
 
 /* ---- Gear: the kit, read four ways (page /gear) --------------------------
    The page used to lead with generated line-art portraits of every body and
@@ -6011,9 +5997,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-shelf {
     @apply flex flex-col gap-4;
   }
-  .gear-head {
-    @apply flex flex-wrap items-center gap-3;
-  }
+  /* .gear-head (the source tabs, the tally, the layout and sort pickers — also
+     worn by the People shelf) rides the shared .page-tools band. */
   /* Four layouts is three more than a toggle can explain on its own. */
   .gear-caption {
     @apply m-0 text-xs;
@@ -7225,9 +7210,6 @@ html[data-theme="dark"] .btn-primary:hover {
      carries the same sentence as its tooltip). */
   .gear-caption {
     display: none;
-  }
-  .gear-head {
-    @apply gap-2;
   }
   /* The tracks now run the full width, so the gridlines cross the labels —
      halve them rather than read a name through a ruler. */

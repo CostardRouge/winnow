@@ -291,7 +291,7 @@ export default function PersonDetail({ personId }: { personId: number }) {
         <LoadingState label="Loading person…" />
       ) : (
         <>
-          <div className="shell-head person-head">
+          <div className="page-tools person-head">
             <PersonAvatar
               coverFaceId={person.cover_face_id}
               name={person.name}

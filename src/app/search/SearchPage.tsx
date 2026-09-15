@@ -313,7 +313,7 @@ function SearchPage() {
     <div className="app-shell">
       <PageHeader title="Search" />
 
-      <div className="shell-head">
+      <div className="page-tools">
         <form
           className="ml-search-bar"
           onSubmit={(e) => {
@@ -358,7 +358,7 @@ function SearchPage() {
       {/* Same band the gallery uses for its view controls: example queries on
           the left, what the last run actually covered on the right — so a
           thin index is visible above the results rather than under them. */}
-      <div className="gallery-controls ml-search-controls">
+      <div className="page-tools ml-search-controls">
         <span className="hint ml-search-label">Try</span>
         <div className="ml-search-examples">
           {EXAMPLES.map((ex) => (
