@@ -53,18 +53,18 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 | # | Finding | Status |
 |---|---|---|
 | H1 | **Every session title and every Timeline chapter date is vermillion** because it is an `<a>` and `a { color: var(--color-accent) }` is the base rule. A column of red headlines reads as alerts, and the accent stops marking anything. | **Fixed** (the cards) — session and export card titles are ink, the link inside inherits and underlines on hover · P1 (the Timeline's chapter dates) |
-| H2 | **Action groups have no primary**: five equal `.seg-btn`s on a session card (Ignore · Export · Geotag · Download · Delete), six on the session page, the destructive one beside the safe ones; icon-only on phones where `title` does not exist. | **Fixed** (the cards) — one primary verb (Sift N while frames are unrated, the grid when Sift is off; Export N picks once sorting is done and nothing was exported) and a `⋯` menu (`SessionMenu`: Ignore, Export, Geotag, the three download entries, Delete last and separated, each with a second line) · P1 (the session page, H5) |
-| H3 | **The same count is drawn three or four times**: "10 ready / 0 pending / 2 picks" as three coloured pills (amber for a zero), then a full-width bar with a percentage; on the session page five pills + a bar + the Sift button for "5 of 14 to sort"; five stat tiles with coloured left borders on `/settings/pipeline` to show four zeros. | **Fixed** (the cards) — one progress line with a legend (`SessionProgress legend`: picks · rejects · skipped · to sort, plus the percentage); the ready count, the picks pill and "✓ done" are gone; only pending previews, errors and the export state keep a chip, and only when non-zero · P1 (the session page, the pipeline tiles) |
+| H2 | **Action groups have no primary**: five equal `.seg-btn`s on a session card (Ignore · Export · Geotag · Download · Delete), six on the session page, the destructive one beside the safe ones; icon-only on phones where `title` does not exist. | **Fixed** — one primary verb (Sift N while frames are unrated, the grid when Sift is off; Export N picks once sorting is done and nothing was exported) and a `⋯` menu (`SessionMenu`: Ignore, Export, Geotag, Restack on the page, the three download entries, Delete last and separated, each with a second line) on the cards and, since 2026-09-15, at the far end of the session page's header; the segmented `SessionActions` strip is deleted |
+| H3 | **The same count is drawn three or four times**: "10 ready / 0 pending / 2 picks" as three coloured pills (amber for a zero), then a full-width bar with a percentage; on the session page five pills + a bar + the Sift button for "5 of 14 to sort"; five stat tiles with coloured left borders on `/settings/pipeline` to show four zeros. | **Fixed** (the cards, the session page) — on the cards one progress line with a legend (`SessionProgress legend`: picks · rejects · skipped · to sort, plus the percentage); on the session page the counts are the verdict toggle's own labels ("All 14 · Unrated 5 · Picks 5 · Rejects 4 · Skipped 0") with the bar and its percentage beside them, so the five pills, "N media / N ready", "✓ done" and the Sift button's count no longer repeat them; everywhere only pending previews, errors and the export state keep a chip, and only when non-zero · P1 (the pipeline tiles) |
 | H4 | **Red and vermillion where nothing is dangerous or live**: "Pause scan" is `.btn-reject`-red (pause is safe and reversible); the three rate sliders have vermillion thumbs and read as three alerts. | P1 |
-| H5 | **The absolute filesystem path is the first line of the session page**, in mono, wider than the title (`SessionHeader`); on a phone it wraps over four lines and is the largest text block on screen. | P1 |
+| H5 | **The absolute filesystem path is the first line of the session page**, in mono, wider than the title (`SessionHeader`); on a phone it wraps over four lines and is the largest text block on screen. | **Fixed** — the 400 px card is gone: `PageHeader` carries a `subtitle` (date · device · files, then the chips that carry a state) and its trailing slot the primary verb + `⋯`; the path sits behind the root chip ("Incoming ›" opens it, mono, selected in one tap); the verdict filters, the bar, the keyboard hint and Select form the `.page-tools` band. 73 px + 48 px of chrome on desktop, 168 + 48 on a phone with a full-width 44 px primary |
 
 ### 2.3 Phone
 
 | # | Finding | Status |
 |---|---|---|
 | M1 | **"N loaded" overlaps the theme toggle** in the session topbar at 390 px (`SessionGrid.tsx`, the trailing `.hint`). | **Fixed** — the count moved under the grid; the topbar reserves the rail-foot corner under 768 px |
-| M2 | **Verdict filters wrap into two rows** of 38 px `.btn`s with "Select" alone on the second; the **keyboard hint** ("Keyboard: P pick · X reject …") renders on a touch device. | **Fixed** — one sideways-scrolling row under 768 px (`.verdict-filters`); the hint hidden under `(pointer: coarse)` |
-| M3 | **1,320 px to the first frame** on `/sessions/[id]`, 390 px to the first card on `/library`. | Partly — ~205 px on `/library` after S1; the session page still opens on the path card (H5) · P1 |
+| M2 | **Verdict filters wrap into two rows** of 38 px `.btn`s with "Select" alone on the second; the **keyboard hint** ("Keyboard: P pick · X reject …") renders on a touch device. | **Fixed** — first as one sideways-scrolling `.btn` row under 768 px (`.verdict-filters`), then, with H5, as the counted `.view-toggle` of the toolbar band, which scrolls inside its own border while Select keeps the far end; the hint hidden under `(pointer: coarse)` and under 1024 px |
+| M3 | **1,320 px to the first frame** on `/sessions/[id]`, 390 px to the first card on `/library`. | **Fixed** — ~205 px on `/library` after S1; 141 px to the first frame on `/sessions/[id]` on desktop (was 410) and 236 px on a phone (was 1,320), with H5 |
 | M4 | **Viewer on a phone**: the action bar wraps and the "next" arrow drops to a second centred line; the zoom control floats alone in black mid-screen; the info sheet opens by default at 45 % of the height (and is a bottom sheet on desktop too, leaving 570 of 900 px to the photo on a 1440 screen). | **Fixed** (wrap, zoom) — the arrows and the zoom HUD are hidden under `(pointer: coarse)`, where swipe, pinch and double-tap already do their job; the bar's gaps tighten under 520 px · P1 (sheet) |
 | M5 | **Seven bottom-bar entries** at 10 px labels; Timeline and Heatmap are ways *into* the library, not daily tools. | P1 |
 | M6 | **No control reaches a touch target**: no `min-height` on any control, no `@media (pointer: coarse)`, and the ≤767 px block *shrinks* `.tab` to ≈22 px (`globals.css:4243`). See A3. | P1 |
@@ -73,7 +73,7 @@ Measurements are of the screens and stylesheet at the reviewed commit.
 
 | # | Finding | Status |
 |---|---|---|
-| C1 | **Five segmented-control families**: `.tabs/.tab` (26 px), `.view-toggle/.view-btn` (24), `.pipeline-tabs/.pipeline-tab` (24, **byte-identical to `.view-btn`**), `.fail-tabs/.fail-tab` (33), `.seg-actions/.seg-btn` (36). `OptionPicker` already emits the first two; none of the four `<Link>` navs and none of the last three route through it. `SessionGrid` draws its verdict filters as `.btn`/`.btn-primary`. | P2 |
+| C1 | **Five segmented-control families**: `.tabs/.tab` (26 px), `.view-toggle/.view-btn` (24), `.pipeline-tabs/.pipeline-tab` (24, **byte-identical to `.view-btn`**), `.fail-tabs/.fail-tab` (33), `.seg-actions/.seg-btn` (36). `OptionPicker` already emits the first two; none of the four `<Link>` navs and none of the last three route through it. `SessionGrid` drew its verdict filters as `.btn`/`.btn-primary` (a `.view-toggle` since H5). | P2 |
 | C2 | **Four chip families with the same box**: `.chip` and `.pill` are `rounded-full px-2.5 py-1 text-xs` with different colours; `.tag` is a third; nine `*-badge` classes a fourth. TSX usage 11 / 5 / 4 / 3 — no winner. The 10–11 px overlay badge is re-declared ~13 times with three different radii. | P2 |
 | C3 | **Five loader treatments** (`LoadingState`, bare `<Spinner/>`, `<div class="spinner">Loading…</div>` ×9, `<p class="hint">Loading …</p>`, `SkeletonCards`) and **four empty-state classes** (`.empty`, `.empty-state`, `.cal-empty`, `.sift-recent-empty`) with three paddings and two colours; raw `<div class="empty" style={{padding:16}}>Nothing here. 🎉</div>` in the failures sections. `GalleryShell` alone uses three loaders. | P2 |
 | C4 | **Three context menus hand-rolled beside `ActionMenu`**: `SearchPage`'s `.ctx-menu` (its own comment says it copies `AssetActionMenu`), `PeoplePanel`'s `.person-menu`, and `AssetActionMenu` itself. Two hand-rolled `.modal-overlay` dialogs in `UsersPanel`, `PersonDetail`, `DedupModals`, `VolumesPanel` next to `ConfirmDialog`; `modal-title` is an `<h2>` in twelve places and an `<h3>` in the shared dialog. | P2 |
@@ -128,14 +128,15 @@ nothing else. The five moves, in the order they are visible:
   collapsed into **one segmented progress line with a legend**, one primary
   action (Sift, or Export once sorted) and a `⋯` menu holding the rest with
   Delete last and separated. Green and red appear only where a verdict is.
-- **C · The session page** (H5, M1, M2, M3). A single 64 px header with
-  breadcrumb, title, meta line and actions; the mount path behind an `ⓘ` chip;
-  verdict filters as a `.view-toggle` with counts in the labels; Select at the
-  far end of the toolbar; the keyboard hint at 11 px in the toolbar and hidden
-  under `(pointer: coarse)`; "N loaded" moved to the grid footer. 190 px to the
-  grid on desktop, 230 px on a phone, with a full-width 44 px primary. The
-  phone bar drops to five entries with Timeline, Heatmap and Gear behind
-  "More" (M5).
+- **C · The session page** (H5, M1, M2, M3 — **shipped 2026-09-15**; M5
+  stays open). A single 64 px header with breadcrumb, title, meta line and
+  actions; the mount path behind a chip (the root's name, opening to the
+  path, rather than an `ⓘ`); verdict filters as a `.view-toggle` with counts
+  in the labels; Select at the far end of the toolbar; the keyboard hint at
+  11 px in the toolbar and hidden under `(pointer: coarse)`; "N loaded" moved
+  to the grid footer. 190 px to the grid on desktop, 230 px on a phone, with
+  a full-width 44 px primary — measured 141 and 236 once built. The phone bar
+  drops to five entries with Timeline, Heatmap and Gear behind "More" (M5).
 - **D · Three control heights, six type steps, one chip** (T1, T2, A3, C1, C2).
   `--control-h-sm/md/lg` = 28 / 36 / 44, the icon button taking the same token
   as its text sibling, 44 px for every tappable control under
@@ -167,8 +168,8 @@ root error page dressed and themed).
 **P1 — the visible step, one to two weeks, where the effort goes:** S1 + S3
 (`PageHeader` + `.page-tools`, two bands, the strapline retired — **shipped
 2026-09-15**) · S4 (**shipped with it**) · H1–H3 (the session card — **shipped
-2026-09-15**; the session page and the Timeline dates remain) ·
-H5 + M3 (the session page header and toolbar) · H4 (colour semantics applied:
+2026-09-15**; the Timeline dates remain) · H5 + M3 (the session page header
+and toolbar — **shipped 2026-09-15**) · H4 (colour semantics applied:
 Pause neutral, sliders ink, counts uncoloured, red only for the destructive
 verb) · A3 + T2 (three control-height tokens, 44 px under `pointer: coarse`) ·
 M5 (five-entry phone bar with a "More" sheet) · M4 (viewer info as a side

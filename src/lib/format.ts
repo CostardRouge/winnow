@@ -54,6 +54,28 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short" });
 }
 
+// A human date for a session's capture span, en-GB: "5 Sep 2026",
+// "14–16 Jun 2026", "28 Jun → 2 Jul 2026", "30 Dec 2025 → 2 Jan 2026". The
+// session card and the session page print the same line, so it lives here; the
+// month table is the app's own (cf. gallery/Tree.tsx) rather than the
+// browser's: Chromium's en-GB says "Sept", and the rest of the app says "Sep".
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtDay(d: Date, year: boolean): string {
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year ? ` ${d.getFullYear()}` : ""}`;
+}
+export function formatCaptureSpan(min: string | null, max: string | null): string {
+  if (!min) return "undated";
+  const a = new Date(min);
+  const b = max ? new Date(max) : a;
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return min;
+  if (a.toDateString() === b.toDateString()) return fmtDay(a, true);
+  const sameYear = a.getFullYear() === b.getFullYear();
+  if (sameYear && a.getMonth() === b.getMonth()) {
+    return `${a.getDate()}–${fmtDay(b, true)}`;
+  }
+  return `${fmtDay(a, !sameYear)} → ${fmtDay(b, true)}`;
+}
+
 // Seconds -> "0:42" / "1:23" / "1:02:05".
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";

@@ -416,6 +416,28 @@ html[data-theme="dark"] .btn-primary:hover {
   .page-title-text {
     @apply min-w-0;
   }
+  /* The title and its optional subtitle, one column. On a detail page the
+     subtitle is the entity's facts line (a session's date · device · files,
+     then its state chips), 13px muted: the header then carries what the
+     session page used to spread over a 400px card (UI review H5). */
+  .page-heading {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+  .page-subtitle {
+    @apply text-[13px];
+    color: var(--color-muted);
+  }
+  /* A chip on the facts line is as tall as the line, not a button. */
+  .page-subtitle .pill {
+    @apply py-0.5;
+  }
+  /* A detail page's primary verb + its ⋯ menu, at the header's far end (H2). */
+  .page-actions {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .page-primary {
+    @apply whitespace-nowrap;
+  }
   .page-back {
     @apply shrink-0;
   }
@@ -452,8 +474,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .spacer {
     @apply flex-1;
   }
-  /* Full-width scroll body under the page header. Same 20px inline padding as
-     the header's px-5 so the content (session header, filters, grid) stays
+  /* Full-width scroll body under the page header and its toolbar band. Same
+     20px inline padding as the header's px-5 so the content (the grid) stays
      aligned with the back button/title at every viewport width — no centered
      max-width, which used to inset the content past ~1440px while the header
      stayed edge-to-edge.
@@ -1183,39 +1205,15 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
     background: var(--color-accent-wash);
   }
-  .pill.done {
-    color: var(--color-pick);
-    border-color: var(--color-pick);
-  }
-  .pill.rejects {
-    color: var(--color-reject);
-    border-color: color-mix(in srgb, var(--color-reject) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
-  }
-  .pill.skips {
-    color: var(--color-star);
-    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
-  }
-  .pill.unrated {
-    color: var(--color-muted);
-    border-color: var(--color-border-strong);
-  }
-  .pill.total {
-    color: var(--color-text);
-    border-color: var(--color-border-strong);
-    font-weight: 600;
-  }
-  /* Export status: live "exporting…" (accent) vs persistent "exported ×N". */
+  /* A live export ("exporting…", accent); the persistent "exported ×N" is a
+     neutral pill — a count is never green (UI review H3/H4). The verdict
+     pills (picks / rejects / skips / unrated / total / done) are gone with
+     the session page's stat strip: those numbers are drawn once, in the
+     progress line's legend or the verdict toggle's counts. */
   .pill.exporting {
     color: var(--color-accent);
     border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
     background: var(--color-accent-wash);
-  }
-  .pill.exported {
-    color: var(--color-pick);
-    border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
   }
 
   /* ---- Media strip: a responsive row of derivative tiles --------------- */
@@ -1394,47 +1392,63 @@ html[data-theme="dark"] .btn-primary:hover {
     }
   }
 
-  /* ---- Session detail header (sessions/[id]) ---------------------------- */
-  .session-detail {
-    @apply mb-4 flex flex-col gap-3.5 rounded-[var(--radius-xl)] border p-4;
-    background: var(--color-surface);
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-card);
+  /* ---- Session page (sessions/[id]) ------------------------------------ */
+  /* The header's subtitle: the facts sentence and the state chips on one
+     wrapping line. The mount path is one click away behind the root chip
+     (UI review H5 — it used to be the first and widest line of the page, in
+     mono, four lines deep on a phone). */
+  .session-meta {
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1;
   }
-  .session-detail.ignored {
-    opacity: 0.7;
-  }
-  .session-detail-top {
-    @apply flex flex-wrap items-start justify-between gap-3;
-  }
-  .session-detail-info {
-    @apply flex min-w-[220px] flex-col gap-1.5;
-  }
-  .session-detail-loc {
-    @apply flex flex-wrap items-center gap-2 text-sm;
+  .session-path-chip {
+    @apply cursor-pointer;
     color: var(--color-text);
   }
-  .session-detail-loc svg {
-    color: var(--color-muted);
-    flex-shrink: 0;
+  .session-path-chip:hover {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-3);
   }
-  .session-detail-path {
-    @apply break-all font-medium;
+  .session-path-chip svg:last-child {
+    width: 11px;
+    height: 11px;
+    color: var(--color-faint);
+    transition: rotate 0.15s var(--ease-out);
+  }
+  .session-path-chip.is-open svg:last-child {
+    rotate: 90deg;
+  }
+  .session-path {
+    @apply mt-1 break-all text-xs;
     font-family: var(--font-mono);
-    font-size: 13px;
+    color: var(--color-muted);
+    user-select: all;
   }
-  .session-detail-kind {
-    text-transform: capitalize;
+  /* The toolbar band's parts: the counted verdict toggle, the triage bar at a
+     fixed width beside it (its track would otherwise grow to fill the band),
+     the keyboard hint in the spare room, Select at the far end. */
+  .session-tools .session-progress {
+    width: 220px;
   }
-  .session-detail-meta {
-    @apply text-[13px];
+  .view-count {
+    @apply ml-1 text-[11px];
+    font-variant-numeric: tabular-nums;
     color: var(--color-muted);
   }
-  .session-detail-stats {
-    @apply flex flex-wrap items-center gap-x-5 gap-y-2;
+  .kbd-hint {
+    @apply text-[11px];
+    color: var(--color-muted);
   }
-  .session-stat-group {
-    @apply flex flex-wrap items-center gap-2;
+  /* Keyboard shortcuts mean nothing to a touch screen… */
+  @media (pointer: coarse) {
+    .kbd-hint {
+      display: none;
+    }
+  }
+  /* …and a narrow window has no room for them on the band's one line. */
+  @media (max-width: 1023px) {
+    .kbd-hint {
+      display: none;
+    }
   }
   /* Two-tone triage progress: picks (green) + rejects (red) of the total. */
   .session-progress {
@@ -1814,21 +1828,10 @@ html[data-theme="dark"] .btn-primary:hover {
     color: #fff;
   }
 
+  /* The in-body filter row of the settings panes — not a band: it wraps with
+     its mixed content and sits inside the pane's padding. */
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
-  }
-  /* The session page's verdict filters: six buttons that wrapped into two rows
-     on a phone, "Select" alone on the second. Under 768px the row scrolls
-     sideways instead (below); every other .filterbar keeps wrapping, which is
-     what its mixed content wants. UI review M2. */
-  .verdict-filters .btn {
-    @apply shrink-0;
-  }
-  /* Keyboard shortcuts mean nothing to a touch screen. */
-  @media (pointer: coarse) {
-    .kbd-hint {
-      display: none;
-    }
   }
 
   /* Exports tab: the preferences ride the shared .page-tools band above the
@@ -4254,16 +4257,29 @@ html[data-theme="dark"] .btn-primary:hover {
     gap: 0 8px;
     padding: 0 12px;
   }
-  .page-title {
+  .page-heading {
     flex: 1 1 100%;
+    gap: 0;
+  }
+  .page-title {
     display: flex;
     align-items: center;
     min-height: 3.6rem;
     padding-right: calc(92px + env(safe-area-inset-right, 0px));
   }
-  /* With a back chevron the title shares its line with it. */
-  .page-back ~ .page-title {
+  /* With a back chevron the heading shares its line with it, and the chevron
+     centres on the title line (the corner's height), not on the title +
+     subtitle block. */
+  .page-back ~ .page-heading {
     flex: 1 1 0;
+  }
+  .page-back {
+    align-self: flex-start;
+    margin-top: calc((3.6rem - 36px) / 2);
+  }
+  /* The subtitle sits under the corner, so it may run the full width. */
+  .page-subtitle {
+    padding-bottom: 8px;
   }
   .page-tabs,
   .page-trailing {
@@ -4272,11 +4288,25 @@ html[data-theme="dark"] .btn-primary:hover {
   .page-tabs {
     flex: 1 1 auto;
   }
-  /* A detail page's trailing content (a notice) cannot follow the title on its
-     line — that is the corner — so it takes a line of its own. */
+  /* A detail page's trailing content (a notice, the primary verb + ⋯) cannot
+     follow the title on its line — that is the corner — so it takes a line of
+     its own: the notice above the actions when both show, the primary verb
+     running the full width at a thumb's height beside a same-size ⋯. */
   .page-back ~ .page-trailing {
     flex-basis: 100%;
+    flex-wrap: wrap;
     margin-left: 0;
+  }
+  .page-back ~ .page-trailing .page-actions {
+    flex: 1 1 100%;
+  }
+  .page-actions .page-primary {
+    flex: 1;
+    height: 44px;
+  }
+  .page-actions .card-more {
+    width: 44px;
+    height: 44px;
   }
   /* The connection pill shares the phone's header band with the theme toggle,
      so it is anchored rather than centred: a centred pill of any useful width
@@ -4385,14 +4415,26 @@ html[data-theme="dark"] .btn-primary:hover {
     /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
     padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
   }
-  /* One scrolling row for the session verdict filters (see .verdict-filters).
-     The vertical pad/negative margin pair leaves room for the focus ring,
-     which the scroll container would otherwise clip. */
-  .verdict-filters {
-    @apply -mt-1 mb-2 flex-nowrap overflow-x-auto py-1;
+  /* The session page's band stays one line: the counted verdict toggle
+     scrolls inside its own border (five labels with their counts outrun a
+     phone), the triage bar steps aside (the counts say the same thing) and
+     Select keeps the far end. UI review M2/H5. */
+  .session-tools {
+    flex-wrap: nowrap;
+  }
+  .session-tools .view-toggle {
+    min-width: 0;
+    overflow-x: auto;
     scrollbar-width: none;
   }
-  .verdict-filters::-webkit-scrollbar {
+  .session-tools .view-toggle::-webkit-scrollbar {
+    display: none;
+  }
+  .session-tools .view-btn,
+  .session-tools .btn {
+    flex-shrink: 0;
+  }
+  .session-tools .session-progress {
     display: none;
   }
   /* The compact summary chip + popover is now the default at every width (see
@@ -4981,15 +5023,6 @@ html[data-theme="dark"] .btn-primary:hover {
     font-weight: 600;
   }
 
-  /* "Sift N unrated" CTA under the session detail progress bar. */
-  .session-detail-sift {
-    @apply mt-1 inline-flex w-fit items-center gap-1.5;
-  }
-  .session-detail-sift svg {
-    width: 18px;
-    height: 18px;
-  }
-
   /* =======================================================================
      Sift hub (/sift) — the fast-triage dashboard.
      ======================================================================= */
@@ -5139,8 +5172,11 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   /* The deck's header is the compact one: the session name at body size, on
      one line, so the card gets the height. */
+  .sift-deck-head .page-heading {
+    @apply min-w-0 flex-1;
+  }
   .sift-deck-head .page-title {
-    @apply min-w-0 flex-1 text-base font-semibold;
+    @apply min-w-0 text-base font-semibold;
   }
   .sift-deck-head .page-title-text {
     @apply block truncate;

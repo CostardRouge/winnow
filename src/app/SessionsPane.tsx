@@ -18,6 +18,7 @@ import {
 } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
+import { formatCaptureSpan } from "@/lib/format";
 import { useFeatures } from "./FeaturesProvider";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import ExportSessionModal from "./sessions/ExportSessionModal";
@@ -100,33 +101,14 @@ function fmtDate(s: string | null): string {
   }
 }
 
-// A human date for the capture span, en-GB: "5 Sep 2026", "14–16 Jun 2026",
-// "28 Jun → 2 Jul 2026", "30 Dec 2025 → 2 Jan 2026". The card used to print
-// two numeric dates with an arrow even when they were the same day. The month
-// table is the app's own (cf. gallery/Tree.tsx) rather than the browser's:
-// Chromium's en-GB says "Sept", and the rest of the app says "Sep".
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function fmtDay(d: Date, year: boolean): string {
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year ? ` ${d.getFullYear()}` : ""}`;
-}
-function fmtSpan(min: string | null, max: string | null): string {
-  if (!min) return "undated";
-  const a = new Date(min);
-  const b = max ? new Date(max) : a;
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return min;
-  if (a.toDateString() === b.toDateString()) return fmtDay(a, true);
-  const sameYear = a.getFullYear() === b.getFullYear();
-  if (sameYear && a.getMonth() === b.getMonth()) {
-    return `${a.getDate()}–${fmtDay(b, true)}`;
-  }
-  return `${fmtDay(a, !sameYear)} → ${fmtDay(b, true)}`;
-}
-
-// One line under the title: when, what shot it, how many files — then only the
-// states worth a chip: previews still pending or in error, and the export
+// One line under the title: when (the capture span humanised by
+// formatCaptureSpan — the card used to print two numeric dates with an arrow
+// even when they were the same day), what shot it, how many files — then only
+// the states worth a chip: previews still pending or in error, and the export
 // state (a live "exporting…", or "exported" once it has been). The ready
 // count, the picks pill and the "✓ done" badge are gone: the progress line
-// below the strip says all three (UI review H3).
+// below the strip says all three (UI review H3). The session page's subtitle
+// prints the same line (SessionGrid).
 function SessionMeta({ s }: { s: SessionRow }) {
   const pending = Number(s.pending_count) || 0;
   const errors = Number(s.error_count) || 0;
@@ -134,7 +116,7 @@ function SessionMeta({ s }: { s: SessionRow }) {
   return (
     <div className="meta">
       <span>
-        {fmtSpan(s.captured_at_min, s.captured_at_max)} ·{" "}
+        {formatCaptureSpan(s.captured_at_min, s.captured_at_max)} ·{" "}
         {s.device_hint ?? "unknown device"} · {s.asset_count}{" "}
         {s.asset_count === 1 ? "file" : "files"}
       </span>

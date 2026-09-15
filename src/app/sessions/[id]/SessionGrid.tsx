@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   use as usePromise,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -24,11 +25,12 @@ import type { PickedLocation } from "@/app/LocationPickerModal";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import ExportSessionModal from "@/app/sessions/ExportSessionModal";
 import PageHeader from "@/app/PageHeader";
-import SessionActions from "@/app/sessions/SessionActions";
+import SessionMenu from "@/app/sessions/SessionMenu";
 import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
+import { useFeatures } from "@/app/FeaturesProvider";
 import { Icons } from "@/app/ui";
-import { formatBadge } from "@/lib/format";
+import { formatBadge, formatCaptureSpan } from "@/lib/format";
 import {
   deleteAssets,
   downloadAssetOriginal,
@@ -147,12 +149,19 @@ type SessionInfo = {
   last_exported_at: string | null;
 };
 
-const VERDICT_FILTERS: Array<{ key: string; label: string }> = [
-  { key: "", label: "All" },
-  { key: "unrated", label: "Unrated" },
-  { key: "pick", label: "Picks" },
-  { key: "reject", label: "Rejects" },
-  { key: "skip", label: "Skipped" },
+// The verdict filters, each with the session count it stands for so the toggle
+// doubles as the status readout ("Unrated 5 · Picks 5 · Rejects 4" — UI review
+// H3/H5: the same numbers used to be drawn again as five pills and a legend).
+const VERDICT_FILTERS: Array<{
+  key: string;
+  label: string;
+  count: (s: SessionInfo) => number;
+}> = [
+  { key: "", label: "All", count: (s) => Number(s.live_count) || 0 },
+  { key: "unrated", label: "Unrated", count: (s) => Number(s.unrated_count) || 0 },
+  { key: "pick", label: "Picks", count: (s) => Number(s.pick_count) || 0 },
+  { key: "reject", label: "Rejects", count: (s) => Number(s.reject_count) || 0 },
+  { key: "skip", label: "Skipped", count: (s) => Number(s.skip_count) || 0 },
 ];
 
 function fmtDate(s: string | null): string {
@@ -166,7 +175,10 @@ function fmtDate(s: string | null): string {
 
 // "incoming" sessions (source/inbox) are cullable; finals are view-only.
 function roleLabel(kind: SessionInfo["root_kind"]): string {
-  return kind === "finals" ? "final" : kind === "export" ? "export" : "incoming";
+  return kind === "finals" ? "Final" : kind === "export" ? "Export" : "Incoming";
+}
+function isCullable(s: SessionInfo): boolean {
+  return s.root_kind === "source" || s.root_kind === "inbox";
 }
 
 export default function SessionGrid({
@@ -797,53 +809,79 @@ export default function SessionGrid({
     [rate],
   );
 
+  // The header's far end: the page's one primary verb + the ⋯ menu (H2/H5),
+  // preceded by the transient notice when there is one. Undefined while the
+  // session is still loading so the header renders no empty trailing slot
+  // (which takes a line of its own on a phone).
+  const headActions = session && (
+    <SessionHeadActions
+      s={session}
+      onIgnore={toggleIgnore}
+      onExportPicks={exportPicks}
+      onGeotag={() => void openSessionGeotag()}
+      onRestack={() => void restack()}
+      onDelete={() => setConfirming(true)}
+      onMessage={setNotice}
+    />
+  );
+
   return (
     <>
       <PageHeader
         back="/library/incoming/sessions"
         backLabel="Back to library"
         title={session?.name ?? `Session #${id}`}
-        trailing={notice && <span className="notice">{notice}</span>}
+        subtitle={session && <SessionMeta s={session} />}
+        trailing={
+          notice || headActions ? (
+            <>
+              {notice && <span className="notice">{notice}</span>}
+              {headActions}
+            </>
+          ) : undefined
+        }
       />
 
-      <PullToRefresh className="session-view-body" onRefresh={refresh}>
-        {session && (
-          <SessionHeader
-            s={session}
-            onIgnore={toggleIgnore}
-            onExportPicks={exportPicks}
-            onGeotag={() => void openSessionGeotag()}
-            onRestack={() => void restack()}
-            onDelete={() => setConfirming(true)}
-            onMessage={setNotice}
-          />
-        )}
-
-        <div className="filterbar verdict-filters">
+      {/* The one toolbar band (S3): the verdict filters as a counted segmented
+          control, the triage bar beside them, Select at the far end. */}
+      <div className="page-tools session-tools">
+        <div className="view-toggle" role="group" aria-label="Show">
           {VERDICT_FILTERS.map((f) => (
             <button
               key={f.key}
-              className={`btn${verdict === f.key ? " btn-primary" : ""}`}
+              className={`view-btn${verdict === f.key ? " active" : ""}`}
+              aria-pressed={verdict === f.key}
               onClick={() => setVerdict(f.key)}
             >
               {f.label}
+              {session && <span className="view-count">{f.count(session)}</span>}
             </button>
           ))}
-          <button
-            className={`btn${selectMode ? " btn-primary" : ""}`}
-            onClick={() => {
-              setSelectMode((m) => !m);
-              setSelected(new Set());
-            }}
-          >
-            {selectMode ? "Done" : "Select"}
-          </button>
-          <span className="spacer" />
-          <span className="hint kbd-hint">
-            Keyboard: P pick · X reject · U clear · 1-5 stars · ←/→
-          </span>
         </div>
+        {session && (
+          <SessionProgress
+            picks={Number(session.pick_count) || 0}
+            rejects={Number(session.reject_count) || 0}
+            skips={Number(session.skip_count) || 0}
+            total={Number(session.live_count) || 0}
+            className="session-tools-progress"
+          />
+        )}
+        <span className="spacer" />
+        <span className="kbd-hint">P pick · X reject · U clear · 1–5 stars · ←/→</span>
+        <button
+          className={`btn${selectMode ? " btn-primary" : ""}`}
+          aria-pressed={selectMode}
+          onClick={() => {
+            setSelectMode((m) => !m);
+            setSelected(new Set());
+          }}
+        >
+          {selectMode ? "Done" : "Select"}
+        </button>
+      </div>
 
+      <PullToRefresh className="session-view-body" onRefresh={refresh}>
         {selectMode && (
           <BulkActionBar
             count={selected.size}
@@ -1169,9 +1207,86 @@ export default function SessionGrid({
   );
 }
 
-// Detail header: where the session lives, where it stands (status breakdown +
-// triage progress) and the session-level actions found everywhere else.
-function SessionHeader({
+// The line under the title (UI review H5): when, what shot it, how many files
+// — the same sentence as the session card — then only the chips that carry a
+// state: where the session lives (its root, opening to the full mount path on
+// demand: the absolute path used to be the first and widest line of the page),
+// previews pending or in error, the export state, and "ignored". The ready
+// count and "✓ done" are gone — the bar in the toolbar says both.
+function SessionMeta({ s }: { s: SessionInfo }) {
+  const [pathOpen, setPathOpen] = useState(false);
+  const pending = Number(s.pending_count) || 0;
+  const errors = Number(s.error_count) || 0;
+  const exportCount = Number(s.export_count) || 0;
+  return (
+    <>
+      <div className="session-meta">
+        <span>
+          {formatCaptureSpan(s.captured_at_min, s.captured_at_max)} ·{" "}
+          {s.device_hint ?? "unknown device"} · {s.asset_count}{" "}
+          {s.asset_count === 1 ? "file" : "files"}
+        </span>
+        <button
+          type="button"
+          className={`pill session-path-chip${pathOpen ? " is-open" : ""}`}
+          aria-expanded={pathOpen}
+          title={pathOpen ? "Hide the folder path" : s.source_path}
+          onClick={() => setPathOpen((o) => !o)}
+        >
+          {Icons.folder}
+          {roleLabel(s.root_kind)}
+          {Icons.chevronRight}
+        </button>
+        {pending > 0 && (
+          <span className="pill pending" title="Previews still being built">
+            {pending} pending
+          </span>
+        )}
+        {errors > 0 && (
+          <span className="pill error" title="Previews that failed to build">
+            {errors} {errors === 1 ? "error" : "errors"}
+          </span>
+        )}
+        {s.exporting ? (
+          <span className="pill exporting" title="An export is queued or running">
+            exporting…
+          </span>
+        ) : exportCount > 0 ? (
+          <span
+            className="pill"
+            title={
+              s.last_exported_at
+                ? `Last exported ${fmtDate(s.last_exported_at)}`
+                : "Already exported"
+            }
+          >
+            {Icons.keep} exported{exportCount > 1 ? ` ×${exportCount}` : ""}
+          </span>
+        ) : null}
+        {s.ignored && (
+          <span className="pill" title="Skipped as a whole; reactivate it from the ⋯ menu">
+            ignored
+          </span>
+        )}
+      </div>
+      {pathOpen && (
+        <div className="session-path" title="The folder on the NAS this session was indexed from">
+          <code>{s.source_path}</code>
+        </div>
+      )}
+    </>
+  );
+}
+
+// The header's far end: one primary verb — the thing the session is waiting
+// for — and the ⋯ menu with the rest (UI review H2/H5, the same rule as the
+// session card). While frames are unrated the verb is to sift them, when the
+// Sift section is on; the grid under this header is the fallback, so there is
+// no "Sort N" here. Once sorting is done and there are picks nobody exported,
+// the verb is Export. Anything else (exported, ignored, view-only, empty) has
+// no primary. The six-button strip these replace put the trash beside the
+// download and gave no verb more weight than another.
+function SessionHeadActions({
   s,
   onIgnore,
   onExportPicks,
@@ -1191,100 +1306,57 @@ function SessionHeader({
   /** Surface the Download menu's transient status to the page notice. */
   onMessage: (msg: string | null) => void;
 }) {
-  const total = Number(s.live_count) || 0;
-  const ready = Number(s.ready_count) || 0;
-  const pending = Number(s.pending_count) || 0;
-  const errors = Number(s.error_count) || 0;
+  const features = useFeatures();
   const picks = Number(s.pick_count) || 0;
-  const rejects = Number(s.reject_count) || 0;
-  const skips = Number(s.skip_count) || 0;
   const unrated = Number(s.unrated_count) || 0;
-  const cullable = s.root_kind === "source" || s.root_kind === "inbox";
+  const cullable = isCullable(s);
+
+  let primary: ReactNode = null;
+  if (!s.ignored && cullable) {
+    if (unrated > 0) {
+      if (features.sift) {
+        primary = (
+          <Link href={`/sift/${s.id}`} className="btn btn-primary page-primary">
+            {Icons.sift} Sift {unrated} unrated
+          </Link>
+        );
+      }
+    } else if (picks > 0 && !s.exporting && !(Number(s.export_count) > 0)) {
+      primary = (
+        <button
+          className="btn btn-primary page-primary"
+          onClick={onExportPicks}
+          title="Export the RAW picks to the Capture One export folder"
+        >
+          {Icons.upload} Export {picks} {picks === 1 ? "pick" : "picks"}
+        </button>
+      );
+    }
+  }
 
   return (
-    <section className={`session-detail${s.ignored ? " ignored" : ""}`}>
-      <div className="session-detail-top">
-        <div className="session-detail-info">
-          <div className="session-detail-loc" title={s.source_path}>
-            {Icons.folder}
-            <span className="session-detail-path">{s.source_path}</span>
-            <span className="chip session-detail-kind">{roleLabel(s.root_kind)}</span>
-            {s.status === "done" && <span className="pill done">✓ done</span>}
-            {s.ignored && <span className="pill">ignored</span>}
-            {s.exporting ? (
-              <span className="pill exporting" title="An export is queued or running">
-                ⏳ exporting…
-              </span>
-            ) : (
-              (Number(s.export_count) || 0) > 0 && (
-                <span
-                  className="pill exported"
-                  title={
-                    s.last_exported_at
-                      ? `Last exported ${fmtDate(s.last_exported_at)}`
-                      : "Already exported"
-                  }
-                >
-                  ✓ exported
-                  {(Number(s.export_count) || 0) > 1
-                    ? ` ×${Number(s.export_count)}`
-                    : ""}
-                </span>
-              )
-            )}
-          </div>
-          <div className="session-detail-meta">
-            {(s.device_hint ?? "device ?") + " · "}
-            {fmtDate(s.captured_at_min)} → {fmtDate(s.captured_at_max)}
-            {" · "}
-            {s.asset_count} files
-          </div>
-        </div>
-
-        <SessionActions
-          ignored={s.ignored}
-          canExport={picks > 0}
-          onIgnore={onIgnore}
-          onExportPicks={onExportPicks}
-          onGeotag={onGeotag}
-          onRestack={cullable ? onRestack : undefined}
-          onDelete={onDelete}
-          download={{
-            zipHref: `/api/sessions/${s.id}/download`,
-            zipName: `${s.name}.zip`,
-            listFiles: () => sessionDownloadFiles(s.id),
-            onMessage,
-          }}
-          deleteTitle={
-            cullable
-              ? "Remove this session (optionally delete its files)"
-              : "Remove this session from the database"
-          }
-        />
-      </div>
-
-      <div className="session-detail-stats">
-        <div className="session-stat-group" aria-label="Derivatives">
-          <span className="pill total">{total} media</span>
-          <span className="pill ready">{ready} ready</span>
-          {pending > 0 && <span className="pill pending">{pending} pending</span>}
-          {errors > 0 && <span className="pill error">{errors} errors</span>}
-        </div>
-        <div className="session-stat-group" aria-label="Triage">
-          <span className="pill picks">{picks} picks</span>
-          <span className="pill rejects">{rejects} rejects</span>
-          {skips > 0 && <span className="pill skips">{skips} skipped</span>}
-          <span className="pill unrated">{unrated} unrated</span>
-        </div>
-      </div>
-
-      <SessionProgress picks={picks} rejects={rejects} skips={skips} total={total} />
-
-      {cullable && total > 0 && unrated > 0 && (
-        <Link href={`/sift/${s.id}`} className="btn btn-primary session-detail-sift">
-          {Icons.sift} Sift {unrated} unrated
-        </Link>
-      )}
-    </section>
+    <div className="page-actions">
+      {primary}
+      <SessionMenu
+        ignored={s.ignored}
+        canExport={picks > 0}
+        onIgnore={onIgnore}
+        onExportPicks={onExportPicks}
+        onGeotag={onGeotag}
+        onRestack={cullable ? onRestack : undefined}
+        onDelete={onDelete}
+        download={{
+          zipHref: `/api/sessions/${s.id}/download`,
+          zipName: `${s.name}.zip`,
+          listFiles: () => sessionDownloadFiles(s.id),
+          onMessage,
+        }}
+        deleteHint={
+          cullable
+            ? "Remove the session; its files can go with it"
+            : "Remove the session from the database only"
+        }
+      />
+    </div>
   );
 }

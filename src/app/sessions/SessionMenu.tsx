@@ -12,9 +12,10 @@ import {
  * A session card shows one primary verb (Sift what is left, or Export the
  * picks once sorting is done) and keeps the rest here — Ignore, Export picks,
  * Geotag, Restack, the three download options — with Delete last and set
- * apart (UI review H2). It takes the same props as the segmented
- * SessionActions strip it replaces on the cards, so the session page can
- * adopt it in turn.
+ * apart (UI review H2). The session page's header wears the same menu beside
+ * its own primary verb (H5), so the two surfaces offer the same verbs in the
+ * same order; it replaced the segmented strip (`SessionActions`, six equal
+ * buttons with the trash beside the download) on both.
  *
  * There is no "complete" entry: whether a session is done is computed from its
  * verdict coverage, not hand-set. "Ignore" is the lone manual flag — "skip this
