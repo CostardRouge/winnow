@@ -1465,8 +1465,11 @@ export default function MediaViewer<T extends ViewerItem>({
             </button>
           </div>
         )}
+        {/* viewer-step: hidden on touch screens, where the swipe gesture above
+            is the way between frames and the two arrows only pushed the bar
+            onto a second line at phone widths (UI review M4). */}
         <button
-          className="btn"
+          className="btn viewer-step"
           onClick={() => stepBurst(-1)}
           disabled={index === 0 && !canStepBackInPile}
           aria-label="Previous"
@@ -1475,7 +1478,7 @@ export default function MediaViewer<T extends ViewerItem>({
         </button>
         {renderActions?.(item)}
         <button
-          className="btn"
+          className="btn viewer-step"
           onClick={() => stepBurst(1)}
           // Only the true end of the feed (no further pages, and no further
           // frame left in the pile when burst-aware nav is on) disables Next;

@@ -19,8 +19,14 @@
 
   /* Ink */
   --color-text: #1b1813;
-  --color-muted: #7c7464;
-  --color-faint: #a99f8d;
+  /* The two lighter inks, measured on paper (#f4f0e7) and on a well (#efe9dd):
+     muted 4.9:1 / 4.6:1 — AA for the 12–13px copy it carries; faint 3.4:1 /
+     3.2:1 — the floor for large text and UI glyphs, not for small copy (moving
+     the sub-12px labels off faint is P1/P2 work in docs/UI-REVIEW.md). They
+     were #7c7464 (4.1:1) and #a99f8d (2.3:1, on 45 rules of sub-12px text).
+     UI review A1. */
+  --color-muted: #6f675a;
+  --color-faint: #8b8170;
 
   /* Single accent — vermillion */
   --color-accent: #d9442a;
@@ -113,7 +119,8 @@ html[data-theme="dark"] {
   --color-border: #2d2820; /* hairlines */
   --color-border-strong: #40392e;
 
-  /* Ink — warm off-white */
+  /* Ink — warm off-white. On night paper muted is 6.7:1 and faint 3.3:1, so
+     both already clear the floors the light tokens were lifted to (A1). */
   --color-text: #f2ece0;
   --color-muted: #a49a86;
   --color-faint: #6f6656;
@@ -326,16 +333,125 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply inline-flex;
   }
 
-  /* ---- Page header bar -------------------------------------------------- */
-  .topbar {
-    @apply sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5;
+  /* ---- Connection status ------------------------------------------------- */
+  /* A slim pill dropped into the header band when the app loses its server,
+     and once more (in the pick colour) when it comes back. Deliberately NOT a
+     takeover: public/offline.html replaces the document, which is right for a
+     cold navigation with nothing cached and wrong for an outage mid-cull —
+     losing the network must not cost you your scroll position, your selection
+     or the frame you were judging. Reads the paper tokens, so it is in the
+     active theme by construction rather than by a second copy of the palette.
+     z-[1300]: above the viewer (z-50) and its overlays (z-[500]), menus
+     (z-[60]), modals (z-[80]) and the viewer boot card (z-[1200]) — a
+     connection you no longer have is worth knowing about whatever is on
+     screen. See src/app/ConnectionStatus.tsx for how the state is detected. */
+  .conn-bar {
+    @apply fixed z-[1300] flex items-center gap-2 border py-1.5 pl-3 pr-1.5 text-xs;
+    left: 50%;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    translate: -50% 0;
+    /* Sized to content: a fixed box offset by left:50% would otherwise take
+       the right half of the viewport (same trap as .bulk-bar). */
+    width: max-content;
+    max-width: min(92vw, 520px);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-pop);
+    color: var(--color-text);
+    animation: conn-in 0.18s var(--ease-out);
+  }
+  @keyframes conn-in {
+    from {
+      opacity: 0;
+      translate: -50% -8px;
+    }
+  }
+  /* The state is in the words; the dot only tells the two apart at a glance. */
+  .conn-dot {
+    @apply flex-none rounded-full;
+    width: 7px;
+    height: 7px;
+    background: var(--color-reject);
+  }
+  .conn-bar.is-back .conn-dot {
+    background: var(--color-pick);
+  }
+  .conn-bar.is-checking .conn-dot {
+    animation: conn-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes conn-pulse {
+    50% {
+      opacity: 0.3;
+    }
+  }
+  .conn-text {
+    @apply truncate font-medium;
+  }
+  .conn-act {
+    @apply flex-none;
+  }
+
+  /* ---- Page header: the one band a section wears (PageHeader.tsx) -------- */
+  /* Title, section tabs and trailing content on one line — sticky and frosted
+     like the .topbar it replaces, with the tab band that used to sit under it
+     folded in (UI review S1/S3). A section's chrome is this plus its own
+     toolbar, never a third band. */
+  .page-head {
+    /* shrink-0: on /sessions/[id] the header is a direct flex child of the
+       scrolling .root-main, next to a body taller than the viewport — without
+       it the column layout shrinks the header to nothing. */
+    @apply sticky top-0 z-20 flex shrink-0 items-center gap-4 px-5;
+    min-height: 56px;
+    padding-block: 8px;
     background: color-mix(in srgb, var(--color-bg) 80%, transparent);
     backdrop-filter: blur(12px) saturate(1.2);
     border-bottom: 1px solid var(--color-border);
   }
-  .topbar h1 {
-    @apply m-0;
+  .page-title {
+    @apply m-0 min-w-0;
     font-size: 1.6rem;
+  }
+  .page-title-text {
+    @apply min-w-0;
+  }
+  /* The title and its optional subtitle, one column. On a detail page the
+     subtitle is the entity's facts line (a session's date · device · files,
+     then its state chips), 13px muted: the header then carries what the
+     session page used to spread over a 400px card (UI review H5). */
+  .page-heading {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+  .page-subtitle {
+    @apply text-[13px];
+    color: var(--color-muted);
+  }
+  /* A chip on the facts line is as tall as the line, not a button. */
+  .page-subtitle .pill {
+    @apply py-0.5;
+  }
+  /* A detail page's primary verb + its ⋯ menu, at the header's far end (H2). */
+  .page-actions {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .page-primary {
+    @apply whitespace-nowrap;
+  }
+  .page-back {
+    @apply shrink-0;
+  }
+  .page-tabs {
+    @apply flex min-w-0 items-center;
+  }
+  .page-trailing {
+    @apply ml-auto flex shrink-0 items-center gap-2;
+  }
+  /* A figure trailing the title ("36 media · 4 chapters"): the hint, in mono. */
+  .page-meta {
+    @apply text-xs;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
   }
 
   /* ---- Brand lockup ----------------------------------------------------- */
@@ -358,11 +474,11 @@ html[data-theme="dark"] .btn-primary:hover {
   .spacer {
     @apply flex-1;
   }
-  /* Full-width scroll body under the topbar. Same 20px inline padding as the
-     topbar's px-5 so the content (session header, filters, grid) stays aligned
-     with the back button/title at every viewport width — no centered max-width,
-     which used to inset the content past ~1440px while the topbar stayed
-     edge-to-edge.
+  /* Full-width scroll body under the page header and its toolbar band. Same
+     20px inline padding as the header's px-5 so the content (the grid) stays
+     aligned with the back button/title at every viewport width — no centered
+     max-width, which used to inset the content past ~1440px while the header
+     stayed edge-to-edge.
      Named "session-view-body", not "container": Tailwind v4 reserves the bare
      "container" class name and generates its own responsive max-width utility
      for it in the utilities layer, which wins over this components-layer rule
@@ -371,20 +487,56 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-view-body {
     @apply w-full p-5;
   }
+  /* The "N loaded" line under the session grid (it used to trail the topbar,
+     where a phone's fixed theme toggle covered it — UI review M1). */
+  .session-foot {
+    @apply m-0 mt-3 text-center;
+  }
   .app-shell {
     @apply flex flex-col overflow-hidden;
     height: 100%;
   }
-  /* Symmetric vertical padding so the tabs row sits centered in the band
-     between the topbar and the controls toolbar below it (rather than hugging
-     the toolbar). The padding-block stays on .shell-head — not the row — so
-     the row's own box height tracks its content and centering is clean. */
-  .shell-head {
-    @apply px-5 py-3;
+  /* ---- Page tools: the one toolbar band under the header (S1/S3) ---------- */
+  /* Every section's second band — the gallery's view controls, the heatmap's
+     pickers, the search bar, the gear and people shelves' controls, the
+     exports options, the trash actions, the deck's status line — wears this one
+     class, so there is one padding, one height, one hairline and one control
+     scale; a page's own class (.gear-head, .trash-head…) only adds what is
+     specific to it. It used to be seven wrappers with seven heights. A band
+     that needs several lines stacks .page-tools-row children (the heatmap);
+     everything else is one wrapping row. */
+  .page-tools {
+    @apply flex shrink-0 flex-wrap items-center gap-2 px-5;
+    /* One compromise height for every control on the row (between the thin
+       text segments and the taller icon toggles) so swapping a view's
+       modifier — Select, list/card toggle, or nothing — never reflows it. */
+    --tb-control-h: 32px;
+    min-height: 48px;
+    padding-block: 7px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
   }
-  /* Tabs on the left, compact stats strip pushed to the right edge. */
-  .shell-head-row {
-    @apply flex flex-wrap items-center gap-3;
+  .page-tools-row {
+    @apply flex min-w-0 flex-wrap items-center gap-2;
+    flex-basis: 100%;
+  }
+  .page-tools .view-toggle,
+  .page-tools .layout-toggle,
+  .page-tools .icon-toggle,
+  .page-tools .btn {
+    height: var(--tb-control-h);
+  }
+  /* Square icon toggles (sort flip, mobile panel) track the shared control
+     height on both axes so they read as the same size as the pill toggles. */
+  .page-tools .icon-toggle {
+    width: var(--tb-control-h);
+  }
+  /* Drop the inner vertical padding so the icon/text centre within the shared
+     height instead of dictating it. */
+  .page-tools .view-btn,
+  .page-tools .layout-btn,
+  .page-tools .btn {
+    @apply py-0;
   }
   /* Dedicated /pipeline page: the full control card in a padded scroll area. */
   .pipeline-body {
@@ -657,6 +809,16 @@ html[data-theme="dark"] .btn-primary:hover {
   .slider input[type="range"] {
     @apply w-full;
     accent-color: var(--color-accent);
+  }
+  /* A labelled control in a .control-row that is NOT a range input — the
+     geocoding cell size is an OptionPicker. Same column shape and same label
+     treatment as .slider, under a name that does not claim to be one. */
+  .control-field {
+    @apply flex min-w-[200px] flex-1 flex-col gap-1.5;
+  }
+  .control-field > label {
+    @apply flex justify-between gap-2 text-[13px];
+    color: var(--color-muted);
   }
 
   /* ---- Dual-thumb range filter (library facets, cf. RangeSlider.tsx) ------ */
@@ -944,12 +1106,35 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-card.ignored {
     @apply opacity-55;
   }
+  /* Ink titles, in the list and the card layout and on the export cards. A
+     card in a list is a heading, not a link: the base `a { color: accent }`
+     used to paint every session title vermillion, and a column of red
+     headlines read as a column of alerts (UI review H1). The link inside
+     inherits the ink and only underlines. */
   .session-card h3 {
     @apply mb-1 text-[15px] font-semibold;
+    color: var(--color-text);
   }
+  .session-card h3 a {
+    color: inherit;
+  }
+  .session-card h3 a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--color-border-strong);
+    text-underline-offset: 3px;
+  }
+  /* The meta line: the sentence, then only the chips that carry a state worth
+     one (pending previews, errors, the export state). */
   .session-card .meta {
-    @apply text-[13px];
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px];
     color: var(--color-muted);
+  }
+  /* The primary verb + the ⋯ menu, one row (UI review H2). */
+  .card-actions {
+    @apply flex items-center gap-2;
+  }
+  .card-primary {
+    @apply whitespace-nowrap;
   }
 
   /* ---- Two-level media card: head (info | actions) over a media row ----- */
@@ -965,11 +1150,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .card-info {
     @apply min-w-0 flex-1;
   }
-  /* Orange title in both contexts (sessions get it from the <a>; give plain
-     export titles the same accent). */
   .card-info h3 {
     @apply truncate;
-    color: var(--color-accent);
   }
   .card-side {
     @apply flex shrink-0 flex-col items-end gap-2;
@@ -990,51 +1172,18 @@ html[data-theme="dark"] .btn-primary:hover {
       @apply justify-start;
     }
   }
-  /* The triage bar rides the very bottom of a stacked session card as a
-     full-width footer band: it cancels the card's padding to sit flush on the
-     edges, a top rule separates it from the body, and the percentage parks at
-     the right behind its own divider with left/right padding. */
-  .session-card.is-stacked .session-progress.is-footer {
-    margin: 0 -1rem -1rem;
-    align-items: stretch;
-    gap: 0;
-    min-height: 1em;
-    border-top: 1px solid var(--color-border);
-    /* Inner radius = card radius − the card's 1px border, so the band's bottom
-       corners stay concentric with the card's rounded border instead of leaving
-       a sliver of surface peeking through (worst at the bottom-left). */
-    border-bottom-left-radius: calc(var(--radius-lg) - 1px);
-    border-bottom-right-radius: calc(var(--radius-lg) - 1px);
-    background: var(--color-surface-2);
-    overflow: hidden;
-  }
-  /* The track fills the whole footer band — flush to the edges, no pill, no
-     hairline — so the green/red verdict bands read as one solid progress block
-     that spans the band's full height. The unfilled remainder is a faint sage
-     wash of the pick colour: a quiet "still to triage" ground that lets the
-     saturated fills read as "done" at a glance. */
-  .session-card.is-stacked .session-progress.is-footer .session-progress-track {
-    align-self: stretch;
-    margin: 0;
-    height: auto;
-    border: 0;
-    border-radius: 0;
-    background: color-mix(in srgb, var(--color-pick) 9%, var(--color-surface-2));
-  }
-  .session-card.is-stacked .session-progress.is-footer .session-progress-label {
-    @apply inline-flex items-center;
-    padding: 0.5em 0.875rem;
-    border-left: 1px solid var(--color-border);
-    color: var(--color-text);
-  }
   .counters {
     @apply flex flex-wrap gap-2 text-xs;
   }
   .pill {
-    @apply inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium;
     background: var(--color-surface-2);
     border-color: var(--color-border);
     color: var(--color-muted);
+  }
+  .pill svg {
+    width: 12px;
+    height: 12px;
   }
   .pill.ready {
     color: var(--color-pick);
@@ -1056,39 +1205,15 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
     background: var(--color-accent-wash);
   }
-  .pill.done {
-    color: var(--color-pick);
-    border-color: var(--color-pick);
-  }
-  .pill.rejects {
-    color: var(--color-reject);
-    border-color: color-mix(in srgb, var(--color-reject) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-reject) 8%, var(--color-surface));
-  }
-  .pill.skips {
-    color: var(--color-star);
-    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
-  }
-  .pill.unrated {
-    color: var(--color-muted);
-    border-color: var(--color-border-strong);
-  }
-  .pill.total {
-    color: var(--color-text);
-    border-color: var(--color-border-strong);
-    font-weight: 600;
-  }
-  /* Export status: live "exporting…" (accent) vs persistent "exported ×N". */
+  /* A live export ("exporting…", accent); the persistent "exported ×N" is a
+     neutral pill — a count is never green (UI review H3/H4). The verdict
+     pills (picks / rejects / skips / unrated / total / done) are gone with
+     the session page's stat strip: those numbers are drawn once, in the
+     progress line's legend or the verdict toggle's counts. */
   .pill.exporting {
     color: var(--color-accent);
     border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
     background: var(--color-accent-wash);
-  }
-  .pill.exported {
-    color: var(--color-pick);
-    border-color: color-mix(in srgb, var(--color-pick) 35%, var(--color-border));
-    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
   }
 
   /* ---- Media strip: a responsive row of derivative tiles --------------- */
@@ -1267,47 +1392,63 @@ html[data-theme="dark"] .btn-primary:hover {
     }
   }
 
-  /* ---- Session detail header (sessions/[id]) ---------------------------- */
-  .session-detail {
-    @apply mb-4 flex flex-col gap-3.5 rounded-[var(--radius-xl)] border p-4;
-    background: var(--color-surface);
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-card);
+  /* ---- Session page (sessions/[id]) ------------------------------------ */
+  /* The header's subtitle: the facts sentence and the state chips on one
+     wrapping line. The mount path is one click away behind the root chip
+     (UI review H5 — it used to be the first and widest line of the page, in
+     mono, four lines deep on a phone). */
+  .session-meta {
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1;
   }
-  .session-detail.ignored {
-    opacity: 0.7;
-  }
-  .session-detail-top {
-    @apply flex flex-wrap items-start justify-between gap-3;
-  }
-  .session-detail-info {
-    @apply flex min-w-[220px] flex-col gap-1.5;
-  }
-  .session-detail-loc {
-    @apply flex flex-wrap items-center gap-2 text-sm;
+  .session-path-chip {
+    @apply cursor-pointer;
     color: var(--color-text);
   }
-  .session-detail-loc svg {
-    color: var(--color-muted);
-    flex-shrink: 0;
+  .session-path-chip:hover {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-3);
   }
-  .session-detail-path {
-    @apply break-all font-medium;
+  .session-path-chip svg:last-child {
+    width: 11px;
+    height: 11px;
+    color: var(--color-faint);
+    transition: rotate 0.15s var(--ease-out);
+  }
+  .session-path-chip.is-open svg:last-child {
+    rotate: 90deg;
+  }
+  .session-path {
+    @apply mt-1 break-all text-xs;
     font-family: var(--font-mono);
-    font-size: 13px;
+    color: var(--color-muted);
+    user-select: all;
   }
-  .session-detail-kind {
-    text-transform: capitalize;
+  /* The toolbar band's parts: the counted verdict toggle, the triage bar at a
+     fixed width beside it (its track would otherwise grow to fill the band),
+     the keyboard hint in the spare room, Select at the far end. */
+  .session-tools .session-progress {
+    width: 220px;
   }
-  .session-detail-meta {
-    @apply text-[13px];
+  .view-count {
+    @apply ml-1 text-[11px];
+    font-variant-numeric: tabular-nums;
     color: var(--color-muted);
   }
-  .session-detail-stats {
-    @apply flex flex-wrap items-center gap-x-5 gap-y-2;
+  .kbd-hint {
+    @apply text-[11px];
+    color: var(--color-muted);
   }
-  .session-stat-group {
-    @apply flex flex-wrap items-center gap-2;
+  /* Keyboard shortcuts mean nothing to a touch screen… */
+  @media (pointer: coarse) {
+    .kbd-hint {
+      display: none;
+    }
+  }
+  /* …and a narrow window has no room for them on the band's one line. */
+  @media (max-width: 1023px) {
+    .kbd-hint {
+      display: none;
+    }
   }
   /* Two-tone triage progress: picks (green) + rejects (red) of the total. */
   .session-progress {
@@ -1336,6 +1477,39 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply text-xs font-medium;
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
+  }
+  /* With a legend the bar becomes two lines: the track + percentage, then the
+     counts keyed by the same colours. The one place a card states its numbers
+     (UI review H3). */
+  .session-progress.has-legend {
+    @apply flex-col items-stretch gap-1.5;
+  }
+  .session-progress-row {
+    @apply flex items-center gap-3;
+  }
+  .session-progress.is-compact .session-progress-row {
+    @apply gap-2;
+  }
+  .session-progress-legend {
+    @apply flex flex-wrap gap-x-3 gap-y-0.5 text-xs;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .session-progress-legend > span {
+    @apply inline-flex items-center gap-1.5;
+  }
+  .session-progress-legend i {
+    @apply inline-block h-2 w-2 rounded-[2px];
+    background: var(--color-border-strong);
+  }
+  .session-progress-legend i.is-pick {
+    background: var(--color-pick);
+  }
+  .session-progress-legend i.is-reject {
+    background: var(--color-reject);
+  }
+  .session-progress-legend i.is-skip {
+    background: var(--color-star);
   }
 
   /* Cover thumbnails (session/export card previews, sift covers) are inert to
@@ -1372,16 +1546,13 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-card.as-card .session-card-body {
     @apply flex flex-col gap-2;
   }
-  .session-card.as-card .seg-actions {
-    @apply mt-auto w-full;
+  /* In the narrow card footer the primary verb takes the width, the ⋯ its
+     corner. */
+  .session-card.as-card .card-actions {
+    @apply mt-auto;
   }
-  /* In the narrow card footer the segments share the width evenly and drop
-     their labels for a tidy, icon-only control. */
-  .session-card.as-card .seg-btn {
+  .session-card.as-card .card-primary {
     @apply flex-1;
-  }
-  .session-card.as-card .seg-label {
-    @apply hidden;
   }
   .session-card.as-card h3 {
     @apply truncate;
@@ -1657,14 +1828,14 @@ html[data-theme="dark"] .btn-primary:hover {
     color: #fff;
   }
 
+  /* The in-body filter row of the settings panes — not a band: it wraps with
+     its mixed content and sits inside the pane's padding. */
   .filterbar {
     @apply mb-3 flex flex-wrap items-center gap-2;
   }
 
-  /* Exports tab: preferences toolbar above the job list */
-  .exports-toolbar {
-    @apply mb-3 flex flex-wrap items-center gap-3;
-  }
+  /* Exports tab: the preferences ride the shared .page-tools band above the
+     job list. */
   .export-opt {
     @apply inline-flex cursor-pointer select-none items-center gap-2 text-sm;
     color: var(--color-faint);
@@ -2060,6 +2231,20 @@ html[data-theme="dark"] .btn-primary:hover {
     .vbar-label {
       @apply hidden;
     }
+    .viewer .controls {
+      @apply gap-1.5 px-2;
+    }
+  }
+  /* Touch screens already carry every gesture these two controls offer — a
+     swipe steps between frames, a pinch zooms and a double-tap returns to the
+     last zoom (MediaViewer's gesture layer) — and at 390px they were what
+     pushed the action bar onto a second line and left a zoom pill floating
+     in the black under a letterboxed frame. UI review M4. */
+  @media (pointer: coarse) {
+    .viewer-step,
+    .viewer-zoom {
+      display: none;
+    }
   }
 
   /* Structured metadata list inside the viewer. The gap above it is owned by
@@ -2112,35 +2297,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .gallery-shell {
     @apply flex min-h-0 flex-1 flex-col;
   }
-  .gallery-controls {
-    @apply flex items-center gap-2 px-5 py-2.5;
-    /* One compromise height for every control on this row (between the thin
-       text segments and the taller icon toggles) so swapping a view's modifier
-       — Select, list/card toggle, or nothing — never reflows the row. */
-    --tb-control-h: 32px;
-    min-height: calc(var(--tb-control-h) + 1.25rem + 2px);
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    border-bottom: 1px solid var(--color-border);
-  }
-  .gallery-controls .view-toggle,
-  .gallery-controls .layout-toggle,
-  .gallery-controls .icon-toggle,
-  .gallery-controls .btn {
-    height: var(--tb-control-h);
-  }
-  /* Square icon toggles (sort flip, mobile panel) track the shared control
-     height on both axes so they read as the same size as the pill toggles. */
-  .gallery-controls .icon-toggle {
-    width: var(--tb-control-h);
-  }
-  /* Drop the inner vertical padding so the icon/text centre within the shared
-     height instead of dictating it. */
-  .gallery-controls .view-btn,
-  .gallery-controls .layout-btn,
-  .gallery-controls .btn {
-    @apply py-0;
-  }
+  /* The view controls row is the shared .page-tools band (see it above). */
   .gallery-body {
     @apply relative flex min-h-0 flex-1;
   }
@@ -2854,8 +3011,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Semantic search page (CLIP, cf. src/app/search/page.tsx) ----------
-     The page wears the same chrome as Library/Settings — topbar, header band,
-     controls band, full-bleed body — instead of the centered max-w-5xl column
+     The page wears the same chrome as Library/Settings — the page header,
+     a controls band, full-bleed body — instead of the centered max-w-5xl column
      it used to, which left the grid floating in a narrow strip with the rest of
      the viewport empty. Results render through the gallery's VirtualGrid, so a
      hit is the same .cell tile it is everywhere else.
@@ -3476,8 +3633,11 @@ html[data-theme="dark"] .btn-primary:hover {
      than reusing .view-toggle/.view-btn directly so the count-badge styling
      below stays scoped to this nav and doesn't leak into the other spots
      .view-toggle is used (gallery, sift, facet-head, pipeline toolbar). */
+  /* min-w-0: as a flex item of the toolbar band the pill never shrank below
+     its content, so the max-w-full + overflow-x-auto below never engaged and
+     "Failures" was clipped off-screen (UI review S2). */
   .pipeline-tabs {
-    @apply inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
+    @apply inline-flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
     background: var(--color-surface);
     border-color: var(--color-border);
     scrollbar-width: none;
@@ -3935,9 +4095,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Trash tab (reclaim space) ---------------------------------------- */
-  .trash-head {
-    @apply mb-3 flex flex-wrap items-center gap-2;
-  }
+  /* .trash-head rides the shared .page-tools band; only its parts are styled. */
   .trash-stat {
     @apply flex items-baseline gap-2;
   }
@@ -4061,9 +4219,9 @@ html[data-theme="dark"] .btn-primary:hover {
   /* The rail is a bottom bar here, so its 7 nav items own the row. Lift the
      theme toggle out of that flow to a discreet bare icon in the top-right
      corner — reachable from every page without crowding the nav or needing a
-     per-page header slot. The container spans the single-line topbar band and
-     centres its content, so the icon lines up vertically with the page title.
-     Sits above the topbar (z-20) and slide-in panel. */
+     per-page header slot. The container spans the page header's title line
+     and centres its content, so the icon lines up vertically with the page
+     title. Sits above the header (z-20) and slide-in panel. */
   .rail-foot {
     position: fixed;
     top: env(safe-area-inset-top, 0px);
@@ -4071,7 +4229,7 @@ html[data-theme="dark"] .btn-primary:hover {
     bottom: auto;
     left: auto;
     width: auto;
-    height: 3.6rem; /* ≈ the single-line .topbar band (py-3.5 + h1 line box) */
+    height: 3.6rem; /* = the .page-head title line on a phone (see below) */
     margin: 0;
     padding: 0;
     display: flex;
@@ -4086,6 +4244,89 @@ html[data-theme="dark"] .btn-primary:hover {
   .theme-toggle .theme-ic svg {
     width: 19px;
     height: 19px;
+  }
+  /* The rail foot above is fixed in the header band's top-right corner (theme
+     toggle 34px + account chip 36px + gaps). The page title keeps that first
+     line to itself, exactly the corner's height so the icons centre on it, and
+     stops short of the corner — a long session title used to wrap under the
+     toggle and a trailing hint sat on top of it. The tabs and the trailing
+     content take a second line, where the tabs scroll (see .tabs below); a
+     title-only header is therefore exactly 3.6rem tall. */
+  .page-head {
+    flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 0 12px;
+  }
+  .page-heading {
+    flex: 1 1 100%;
+    gap: 0;
+  }
+  .page-title {
+    display: flex;
+    align-items: center;
+    min-height: 3.6rem;
+    padding-right: calc(92px + env(safe-area-inset-right, 0px));
+  }
+  /* With a back chevron the heading shares its line with it, and the chevron
+     centres on the title line (the corner's height), not on the title +
+     subtitle block. */
+  .page-back ~ .page-heading {
+    flex: 1 1 0;
+  }
+  .page-back {
+    align-self: flex-start;
+    margin-top: calc((3.6rem - 36px) / 2);
+  }
+  /* The subtitle sits under the corner, so it may run the full width. */
+  .page-subtitle {
+    padding-bottom: 8px;
+  }
+  .page-tabs,
+  .page-trailing {
+    margin-bottom: 8px;
+  }
+  .page-tabs {
+    flex: 1 1 auto;
+  }
+  /* A detail page's trailing content (a notice, the primary verb + ⋯) cannot
+     follow the title on its line — that is the corner — so it takes a line of
+     its own: the notice above the actions when both show, the primary verb
+     running the full width at a thumb's height beside a same-size ⋯. */
+  .page-back ~ .page-trailing {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+  .page-back ~ .page-trailing .page-actions {
+    flex: 1 1 100%;
+  }
+  .page-actions .page-primary {
+    flex: 1;
+    height: 44px;
+  }
+  .page-actions .card-more {
+    width: 44px;
+    height: 44px;
+  }
+  /* The connection pill shares the phone's header band with the theme toggle,
+     so it is anchored rather than centred: a centred pill of any useful width
+     runs under the toggle's fixed corner (z-45). It covers the page title while
+     it shows — the one thing on screen you already know — and never the media
+     underneath, which is the whole point of not being a full-page takeover. */
+  .conn-bar {
+    left: 8px;
+    top: calc(env(safe-area-inset-top, 0px) + 13px);
+    translate: 0 0;
+    /* Still sized to content (the base rule's width: max-content), capped so it
+       stops short of the toggle's corner instead of running under it. */
+    max-width: calc(100vw - 66px - env(safe-area-inset-right, 0px));
+    animation-name: conn-in-sheet;
+  }
+  @keyframes conn-in-sheet {
+    from {
+      opacity: 0;
+      translate: 0 -8px;
+    }
   }
   /* Reserve the bottom bar's height — including the safe-area inset on notched
      phones — so scrollable content (and the slide-in panel, which stops at the
@@ -4131,23 +4372,22 @@ html[data-theme="dark"] .btn-primary:hover {
     padding-bottom: 132px;
   }
 
-  /* Keep the Library header on one line: the tabs and the (compact) media
-     counter share a row rather than stacking, which both saves vertical space
-     and keeps the counter pinned to the right edge so its popover opens on
-     screen instead of off the left side. */
-  .shell-head {
-    @apply px-3 py-2;
+  /* The toolbar band tightens; a multi-line band's rows (the heatmap's pickers)
+     scroll sideways instead of clipping, the same rail the tab pills use. */
+  .page-tools {
+    @apply gap-1.5 px-3;
   }
-  .shell-head-row {
-    @apply flex-nowrap gap-2;
+  .page-tools-row {
+    @apply flex-nowrap overflow-x-auto;
+    scrollbar-width: none;
+  }
+  .page-tools-row::-webkit-scrollbar {
+    display: none;
   }
   /* Search page: the example queries scroll sideways rather than stacking into
      three rows, which on a phone pushed the results below the fold. Same
      hidden-scrollbar rail as .pipeline-tabs. The readout keeps its own line
      (the band still wraps) so the coverage figure stays readable. */
-  .ml-search-controls {
-    @apply px-3;
-  }
   .ml-search-examples {
     /* flex-1 + min-w-0: claim the rest of the line so the rail has a width to
        scroll inside, instead of overflowing the band at its content width. */
@@ -4157,13 +4397,45 @@ html[data-theme="dark"] .btn-primary:hover {
   .ml-search-examples::-webkit-scrollbar {
     display: none;
   }
+  /* Five Settings tabs overflow a 390px screen. The pill used to run past the
+     viewport and get clipped by the shell, its rounded end and "Database"
+     both cut off with no way to reach them. It now scrolls inside its own
+     border (hidden scrollbar), so a half-visible last tab inside an intact
+     pill is the cue; useRevealActiveTab keeps the current tab in view. The
+     Library's four tabs still fit and never scroll. UI review S2. */
   .tabs {
-    @apply gap-0.5 p-0.5;
+    @apply min-w-0 max-w-full gap-0.5 overflow-x-auto p-0.5;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
   .tab {
-    @apply px-2.5;
+    @apply shrink-0 px-2.5;
     /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
     padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
+  }
+  /* The session page's band stays one line: the counted verdict toggle
+     scrolls inside its own border (five labels with their counts outrun a
+     phone), the triage bar steps aside (the counts say the same thing) and
+     Select keeps the far end. UI review M2/H5. */
+  .session-tools {
+    flex-wrap: nowrap;
+  }
+  .session-tools .view-toggle {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .session-tools .view-toggle::-webkit-scrollbar {
+    display: none;
+  }
+  .session-tools .view-btn,
+  .session-tools .btn {
+    flex-shrink: 0;
+  }
+  .session-tools .session-progress {
+    display: none;
   }
   /* The compact summary chip + popover is now the default at every width (see
      the base .stats-strip rules), so the header needs no phone-specific stats
@@ -4751,27 +5023,9 @@ html[data-theme="dark"] .btn-primary:hover {
     font-weight: 600;
   }
 
-  /* "Sift N unrated" CTA under the session detail progress bar. */
-  .session-detail-sift {
-    @apply mt-1 inline-flex w-fit items-center gap-1.5;
-  }
-  .session-detail-sift svg {
-    width: 18px;
-    height: 18px;
-  }
-
   /* =======================================================================
      Sift hub (/sift) — the fast-triage dashboard.
      ======================================================================= */
-  .sift-hub-title,
-  .sift-deck-title {
-    @apply inline-flex items-center gap-2;
-  }
-  .sift-hub-title svg {
-    width: 22px;
-    height: 22px;
-    color: var(--color-accent);
-  }
   .sift-hub-body {
     @apply flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4;
   }
@@ -4916,15 +5170,20 @@ html[data-theme="dark"] .btn-primary:hover {
   .sift-deck-page {
     @apply flex h-full min-h-0 flex-col;
   }
-  .topbar .sift-deck-title {
-    @apply min-w-0 flex-1 truncate text-base font-semibold;
+  /* The deck's header is the compact one: the session name at body size, on
+     one line, so the card gets the height. */
+  .sift-deck-head .page-heading {
+    @apply min-w-0 flex-1;
+  }
+  .sift-deck-head .page-title {
+    @apply min-w-0 text-base font-semibold;
+  }
+  .sift-deck-head .page-title-text {
+    @apply block truncate;
   }
   /* Status bar above the carousel: "N left / total" · the overall progress bar
-     (grows to fill) · a quick jump into the full session. Reuses the dead space
-     that used to sit empty between the header and the deck. */
-  .sift-deck-statusbar {
-    @apply flex items-center gap-2.5 px-4 pt-2 sm:gap-3;
-  }
+     (grows to fill) · a quick jump into the full session. It is the deck's
+     .page-tools band; only its parts are styled here. */
   .sift-deck-left {
     @apply flex-shrink-0 text-[13px] tabular-nums;
     color: var(--color-muted);
@@ -5772,14 +6031,6 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 }
 
-/* On phones the Sessions/Grid toolbar gains a progress filter; let it wrap to a
-   second line rather than overflow the row. */
-@media (max-width: 760px) {
-  .gallery-controls {
-    flex-wrap: wrap;
-  }
-}
-
 
 /* ---- Gear: the kit, read four ways (page /gear) --------------------------
    The page used to lead with generated line-art portraits of every body and
@@ -5799,9 +6050,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-shelf {
     @apply flex flex-col gap-4;
   }
-  .gear-head {
-    @apply flex flex-wrap items-center gap-3;
-  }
+  /* .gear-head (the source tabs, the tally, the layout and sort pickers — also
+     worn by the People shelf) rides the shared .page-tools band. */
   /* Four layouts is three more than a toggle can explain on its own. */
   .gear-caption {
     @apply m-0 text-xs;
@@ -6280,17 +6530,19 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Blocks: the kit as one surface ----------------------------------
-     A row per body, its height proportional to its media (with a declared
-     floor — cf. BlocksView MIN_ROW), sliced into a tile per lens. Needs a
-     definite height: proportional flex has nothing to divide otherwise. */
+     A row per body, its height proportional to its media above a pixel floor,
+     sliced into a tile per lens. The row heights come from BlocksView (floor +
+     share of a budget) and the surface is as tall as they add up to: a fixed
+     container height would divide by the number of bodies instead, and cut the
+     labels through the middle as soon as the kit grows.
+     The line heights below are declared, not inherited, because that floor is
+     computed against them. */
   .gear-blocks {
     @apply flex flex-col;
     gap: 2px;
-    height: 520px;
   }
   .gear-blk-row {
-    @apply flex min-h-0;
-    flex-basis: 0;
+    @apply flex shrink-0;
     gap: 2px;
   }
   .gear-blk-label {
@@ -6307,10 +6559,12 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply truncate text-[12px] font-medium;
     font-family: var(--font-mono);
     letter-spacing: -0.01em;
+    line-height: 1.25;
   }
   .gear-blk-label small {
     @apply truncate text-[10px];
     color: var(--color-faint);
+    line-height: 1.25;
   }
   .gear-blk-tile {
     @apply flex shrink flex-col justify-end overflow-hidden rounded-[var(--radius-sm)] px-2.5 py-1.5;
@@ -6325,11 +6579,13 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply truncate text-[11px] font-medium;
     font-family: var(--font-mono);
     letter-spacing: -0.01em;
+    line-height: 1.25;
   }
   .gear-blk-tile small {
     @apply truncate text-[10px];
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    line-height: 1.25;
     opacity: 0.75;
   }
 
@@ -6730,6 +6986,11 @@ html[data-theme="dark"] .btn-primary:hover {
       p-0 text-left text-lg font-semibold;
     color: var(--color-text);
   }
+  /* The rename control IS the page title on /people/[id] (the entity's name
+     as the h1, like a session's — UI review S4), so it wears the h1's face. */
+  .page-title .person-head-name {
+    font: inherit;
+  }
   .person-head-pencil {
     color: var(--color-faint);
     opacity: 0;
@@ -7003,9 +7264,6 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-caption {
     display: none;
   }
-  .gear-head {
-    @apply gap-2;
-  }
   /* The tracks now run the full width, so the gridlines cross the labels —
      halve them rather than read a name through a ruler. */
   .gear-axis-line {
@@ -7061,14 +7319,12 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-stk-seg {
     @apply px-1;
   }
-  /* Blocks and Marks are the two that a phone genuinely squeezes: give them
-     the height back that the narrower tracks cost them. */
-  .gear-blocks {
-    height: 600px;
-  }
+  /* Blocks sizes its own rows in pixels, so a phone costs it only width. */
   .gear-blk-label {
     width: 88px;
   }
+  /* Marks is the layout a phone genuinely squeezes: give it the height back
+     that the narrower tracks cost it. */
   .gear-mk-chart {
     height: 300px;
     grid-template-columns: 34px minmax(0, 1fr);

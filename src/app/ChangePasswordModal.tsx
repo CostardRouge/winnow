@@ -6,6 +6,7 @@
 // account while keeping this browser signed in on a fresh cookie
 // (cf. PATCH /api/auth/me).
 import { useState, type FormEvent } from "react";
+import { Spinner } from "./ui";
 
 export default function ChangePasswordModal({
   onClose,
@@ -125,7 +126,7 @@ export default function ChangePasswordModal({
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy}>
-                {busy ? "…" : "Change password"}
+                {busy ? <Spinner sm /> : "Change password"}
               </button>
             </div>
           </>

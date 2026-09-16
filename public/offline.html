@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Offline — Winnow</title>
+    <!-- Fallbacks for the no-JS case only; the script below replaces them with
+         the one that matches the user's actual choice. -->
     <meta
       name="theme-color"
       content="#f4f0e7"
@@ -14,24 +16,70 @@
       content="#16130e"
       media="(prefers-color-scheme: dark)"
     />
+    <script>
+      // Same pre-paint theme resolution as the app (src/app/layout.tsx): the
+      // explicit choice wins, the OS preference is only the default. The worker
+      // serves this page from Winnow's own origin, so the key is readable here.
+      // Without it the page followed prefers-color-scheme alone and showed
+      // night paper to someone who had chosen light — the app's one screen that
+      // ignored the switch, and it appears exactly when nothing else is on
+      // screen to explain itself.
+      try {
+        var t = localStorage.getItem("winnow.theme");
+        if (t !== "light" && t !== "dark") {
+          t = matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+        // A media-scoped <meta theme-color> cannot express an explicit choice,
+        // so swap the pair above for the single one that applies. This is what
+        // paints the browser/standalone chrome around the card.
+        var metas = document.querySelectorAll('meta[name="theme-color"]');
+        for (var i = 0; i < metas.length; i++) metas[i].remove();
+        var m = document.createElement("meta");
+        m.setAttribute("name", "theme-color");
+        m.setAttribute("content", t === "dark" ? "#16130e" : "#f4f0e7");
+        document.head.appendChild(m);
+      } catch (e) {}
+    </script>
     <style>
       :root {
         --bg: #f4f0e7;
         --surface: #fbf8f1;
         --border: #e2dac9;
+        --border-strong: #d2c8b3;
         --text: #1b1813;
         --muted: #7c7464;
         --accent: #d9442a;
+        --accent-hover: #b2331e;
       }
-      /* "Papier nuit" — mirror the app's dark tokens for the offline fallback. */
+      /* "Papier nuit" — mirror the app's dark tokens for the offline fallback.
+         Keyed on the data-theme the script above stamps, so an explicit choice
+         is honoured; the media query is the no-JS fallback and must therefore
+         not fire once a choice has been applied. */
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #16130e;
+        --surface: #2a251c;
+        --border: #2d2820;
+        --border-strong: #40392e;
+        --text: #f2ece0;
+        --muted: #a49a86;
+        --accent: #ef5638;
+        --accent-hover: #f5745a;
+      }
       @media (prefers-color-scheme: dark) {
-        :root {
+        html:not([data-theme]) {
+          color-scheme: dark;
           --bg: #16130e;
           --surface: #2a251c;
           --border: #2d2820;
+          --border-strong: #40392e;
           --text: #f2ece0;
           --muted: #a49a86;
           --accent: #ef5638;
+          --accent-hover: #f5745a;
         }
       }
       * { box-sizing: border-box; }
@@ -63,9 +111,10 @@
         margin: 0 0 8px;
       }
       p { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
+      .acts { display: flex; gap: 8px; justify-content: center; }
       button {
         appearance: none;
-        border: none;
+        border: 1px solid transparent;
         background: var(--accent);
         color: #fff;
         font: inherit;
@@ -74,7 +123,17 @@
         border-radius: 11px;
         cursor: pointer;
       }
-      button:hover { background: #b2331e; }
+      button:hover { background: var(--accent-hover); }
+      /* "Go back" is the quiet one but the one that restores state, so it sits
+         first and reads as a plain control, not a second call to action. */
+      .ghost {
+        background: transparent;
+        border-color: var(--border-strong);
+        color: var(--text);
+      }
+      .ghost:hover { background: var(--bg); }
+      #back[hidden] { display: none; }
+      #retry.is-busy { opacity: 0.55; pointer-events: none; }
     </style>
   </head>
   <body>
@@ -99,10 +158,57 @@
       </svg>
       <h1>You're offline</h1>
       <p>
-        Winnow needs a connection to your NAS to index, triage and export media.
-        Reconnect and try again.
+        Winnow needs the network to reach your NAS. This page comes back on its
+        own as soon as the connection does.
       </p>
-      <button onclick="location.reload()">Retry</button>
+      <div class="acts">
+        <button id="back" class="ghost" type="button" hidden>Go back</button>
+        <button id="retry" type="button">Retry</button>
+      </div>
     </div>
+    <script>
+      // A full-page fallback that needs a tap to leave is the dead end this
+      // page is trying not to be, so it lets itself out: it watches for the
+      // connection and reloads. The document URL is still the page that was
+      // requested — the worker answered the navigation without redirecting —
+      // so a reload retries THAT page, not this one.
+      (function () {
+        var retry = document.getElementById("retry");
+        var back = document.getElementById("back");
+        var busy = false;
+
+        function probe() {
+          if (busy) return;
+          busy = true;
+          retry.classList.add("is-busy");
+          // /api/health is public and never cached by the worker, so it is the
+          // one request that answers "is the server there" and nothing else.
+          fetch("/api/health", { cache: "no-store" })
+            .then(function () {
+              location.reload();
+            })
+            .catch(function () {
+              busy = false;
+              retry.classList.remove("is-busy");
+            });
+        }
+
+        retry.addEventListener("click", probe);
+        addEventListener("online", probe);
+        setInterval(function () {
+          if (!document.hidden && navigator.onLine !== false) probe();
+        }, 5000);
+
+        // Stepping back usually lands on a page the browser still holds intact
+        // (bfcache) or that the worker has in its shell cache — either way it
+        // is the fastest route back to where the outage caught you.
+        if (history.length > 1) {
+          back.hidden = false;
+          back.addEventListener("click", function () {
+            history.back();
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

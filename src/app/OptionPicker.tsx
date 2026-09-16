@@ -17,7 +17,7 @@
 //
 // Two things make the swap safe for the twenty existing call sites: the segments
 // form emits the project's existing markup verbatim, so every contextual
-// override (`.gallery-controls .view-btn`, `.facet-head`, `.pl-toolbar`,
+// override (`.page-tools .view-btn`, `.facet-head`, `.pl-toolbar`,
 // `.sift-controls`) keeps applying untouched; and the menu form wears the
 // `.view-toggle` shell for its trigger and the `.ctx-menu` skin for its panel,
 // so it reads as a member of the same family rather than a foreign widget.

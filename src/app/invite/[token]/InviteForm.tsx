@@ -6,7 +6,7 @@
 // pointing back to the admin, never a form.
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Brand } from "../../ui";
+import { Brand, Spinner } from "../../ui";
 
 type State =
   | { step: "loading" }
@@ -144,7 +144,7 @@ export default function InviteForm({ token }: { token: string }) {
             {error && <div className="login-error">{error}</div>}
 
             <button className="btn btn-primary login-submit" type="submit" disabled={busy}>
-              {busy ? "…" : "Set password & sign in"}
+              {busy ? <Spinner sm /> : "Set password & sign in"}
             </button>
           </>
         )}

@@ -19,6 +19,7 @@ import type {
   TimelineChapter,
 } from "@/lib/timeline";
 import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
+import PageHeader from "@/app/PageHeader";
 import {
   LibrarySourceTabs,
   LIBRARY_SOURCES,
@@ -318,18 +319,18 @@ export default function TimelinePanel() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>Timeline</h1>
-        <span className="hint max-sm:hidden">the library read as a story</span>
-        <span className="spacer" />
-        {data && (
-          <span className="hint" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString()} media · {data.chapters.length} chapters
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Timeline"
+        trailing={
+          data && (
+            <span className="page-meta">
+              {total.toLocaleString()} media · {data.chapters.length} chapters
+            </span>
+          )
+        }
+      />
 
-      <div className="gallery-controls">
+      <div className="page-tools">
         <div className="tabs" role="group" aria-label="Chapter rule">
           {MODES.map((m) => (
             <button
@@ -370,7 +371,7 @@ export default function TimelinePanel() {
         <LibrarySourceTabs source={source} onChange={setSource} />
       </div>
       {notice && (
-        <div className="gallery-controls" role="status">
+        <div className="page-tools" role="status">
           <span className="hint">{notice}</span>
           <span className="spacer" />
           <button className="btn btn-sm" onClick={() => setNotice(null)}>

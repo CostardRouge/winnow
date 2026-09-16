@@ -8,8 +8,9 @@ import type { Filters } from "../../gallery/FilterPanel";
 
 // /library/gallery — the finals gallery, now a Library tab. A read-only view of
 // finalized exports only (scope="final"): incoming / inbox / export-staging
-// assets are excluded. The Library layout supplies the topbar + tabs, so this
-// page is just the shell (mirrors how Incoming embeds the same GalleryShell).
+// assets are excluded. The Library layout supplies the header band (title +
+// tabs), so this page is just the shell (mirrors how Incoming embeds the same
+// GalleryShell).
 //
 // Filters live in the query string, exactly as they do on Incoming: the tab is
 // then shareable, reload-safe, and — the reason this plumbing exists — a deep

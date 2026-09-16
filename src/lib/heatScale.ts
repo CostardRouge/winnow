@@ -38,6 +38,13 @@ export const RATE_FLOOR = 20;
 export type Measure = {
   id: MeasureId;
   label: string;
+  /**
+   * One sentence about what the rung counts. The picker shows it — as a segment
+   * `title`, and as a second line if the list ever outgrows a segmented row —
+   * because four one-word labels do not say which question they answer, and
+   * "Backlog" against "Keepers" is exactly the pair that needs saying.
+   */
+  hint: string;
   /** The legend's two ends, in words. */
   lo: string;
   hi: string;
@@ -53,6 +60,7 @@ export const MEASURES: readonly Measure[] = [
   {
     id: "backlog",
     label: "Backlog",
+    hint: "Frames never triaged — where the culling work still is",
     lo: "nothing left",
     hi: "a pile",
     of: (x) => x.u,
@@ -61,6 +69,7 @@ export const MEASURES: readonly Measure[] = [
   {
     id: "volume",
     label: "Volume",
+    hint: "How many frames were made, culled or not",
     lo: "no frames",
     hi: "a heavy day",
     of: (x) => x.c,
@@ -69,6 +78,7 @@ export const MEASURES: readonly Measure[] = [
   {
     id: "keepers",
     label: "Keepers",
+    hint: "Frames rated a pick — what survived the cull",
     lo: "no keepers",
     hi: "many keepers",
     of: (x) => x.p,
@@ -77,6 +87,7 @@ export const MEASURES: readonly Measure[] = [
   {
     id: "rate",
     label: "Keeper rate",
+    hint: `Share of frames kept — no answer under ${RATE_FLOOR} frames`,
     lo: "low",
     hi: "high",
     of: (x) => (x.c < RATE_FLOOR ? null : x.p / x.c),

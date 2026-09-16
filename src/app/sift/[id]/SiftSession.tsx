@@ -11,6 +11,7 @@ import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons } from "@/app/ui";
 import SessionProgress from "@/app/sessions/SessionProgress";
+import PageHeader from "@/app/PageHeader";
 import SwipeDeck, { type DeckCard } from "@/app/sift/SwipeDeck";
 
 type SessionInfo = {
@@ -168,17 +169,17 @@ export default function SiftSessionPage({
 
   return (
     <div className="sift-deck-page">
-      <div className="topbar">
-        <Link href="/sift" className="btn btn-icon" aria-label="Back to Sift">
-          {Icons.back}
-        </Link>
-        <h1 className="sift-deck-title">{name || `Session #${id}`}</h1>
-      </div>
+      <PageHeader
+        className="sift-deck-head"
+        back="/sift"
+        backLabel="Back to Sift"
+        title={name || `Session #${id}`}
+      />
 
       {/* Status bar above the carousel: how much is left, the overall progress
           bar, and a quick jump into the full session view — all in the dead
           space that used to sit empty above the deck. */}
-      <div className="sift-deck-statusbar">
+      <div className="page-tools sift-deck-statusbar">
         <span className="sift-deck-left" aria-live="polite">
           {!cards ? (
             "Loading…"

@@ -9,7 +9,7 @@
 // surfaces them.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import { ConfirmDialog, EmptyState, Icons, LoadingState } from "../ui";
+import { ConfirmDialog, EmptyState, Icons, LoadingState, Spinner } from "../ui";
 import type { UserRole } from "@/lib/authz";
 
 type UserItem = {
@@ -427,7 +427,7 @@ function CreateUserModal({
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "…" : "Create & get link"}
+            {busy ? <Spinner sm /> : "Create & get link"}
           </button>
         </div>
       </form>

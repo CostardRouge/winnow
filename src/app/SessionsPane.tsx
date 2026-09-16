@@ -18,9 +18,11 @@ import {
 } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
 import { SkeletonCards, EmptyState, Icons, LazyImage } from "./ui";
+import { formatCaptureSpan } from "@/lib/format";
+import { useFeatures } from "./FeaturesProvider";
 import DeleteSessionModal from "./sessions/DeleteSessionModal";
 import ExportSessionModal from "./sessions/ExportSessionModal";
-import SessionActions from "./sessions/SessionActions";
+import SessionMenu from "./sessions/SessionMenu";
 import SessionProgress from "./sessions/SessionProgress";
 import GeotagRecapModal from "./GeotagRecapModal";
 import type { PickedLocation } from "./LocationPickerModal";
@@ -99,56 +101,51 @@ function fmtDate(s: string | null): string {
   }
 }
 
+// One line under the title: when (the capture span humanised by
+// formatCaptureSpan — the card used to print two numeric dates with an arrow
+// even when they were the same day), what shot it, how many files — then only
+// the states worth a chip: previews still pending or in error, and the export
+// state (a live "exporting…", or "exported" once it has been). The ready
+// count, the picks pill and the "✓ done" badge are gone: the progress line
+// below the strip says all three (UI review H3). The session page's subtitle
+// prints the same line (SessionGrid).
 function SessionMeta({ s }: { s: SessionRow }) {
+  const pending = Number(s.pending_count) || 0;
+  const errors = Number(s.error_count) || 0;
+  const exportCount = Number(s.export_count) || 0;
   return (
     <div className="meta">
-      {s.device_hint ?? "device ?"} · {fmtDate(s.captured_at_min)}
-      {" → "}
-      {fmtDate(s.captured_at_max)} · {s.asset_count} files
-    </div>
-  );
-}
-
-// A session's export state: a live "exporting…" pill while a job is in flight,
-// otherwise a persistent "exported ×N" pill (with the last date on hover) once
-// it has ever been exported. Nothing shown for a never-exported session.
-function ExportBadge({ s }: { s: SessionRow }) {
-  if (s.exporting) {
-    return (
-      <span className="pill exporting" title="An export is queued or running">
-        ⏳ exporting…
+      <span>
+        {formatCaptureSpan(s.captured_at_min, s.captured_at_max)} ·{" "}
+        {s.device_hint ?? "unknown device"} · {s.asset_count}{" "}
+        {s.asset_count === 1 ? "file" : "files"}
       </span>
-    );
-  }
-  const count = Number(s.export_count) || 0;
-  if (count > 0) {
-    return (
-      <span
-        className="pill exported"
-        title={
-          s.last_exported_at
-            ? `Last exported ${fmtDate(s.last_exported_at)}`
-            : "Already exported"
-        }
-      >
-        ✓ exported{count > 1 ? ` ×${count}` : ""}
-      </span>
-    );
-  }
-  return null;
-}
-
-function SessionCounters({ s }: { s: SessionRow }) {
-  return (
-    <div className="counters">
-      <span className="pill ready">{s.ready_count} ready</span>
-      <span className="pill pending">{s.pending_count} pending</span>
-      {s.error_count > 0 && (
-        <span className="pill error">{s.error_count} errors</span>
+      {pending > 0 && (
+        <span className="pill pending" title="Previews still being built">
+          {pending} pending
+        </span>
       )}
-      <span className="pill picks">{s.pick_count} picks</span>
-      {s.status === "done" && <span className="pill done">✓ done</span>}
-      <ExportBadge s={s} />
+      {errors > 0 && (
+        <span className="pill error" title="Previews that failed to build">
+          {errors} {errors === 1 ? "error" : "errors"}
+        </span>
+      )}
+      {s.exporting ? (
+        <span className="pill exporting" title="An export is queued or running">
+          exporting…
+        </span>
+      ) : exportCount > 0 ? (
+        <span
+          className="pill"
+          title={
+            s.last_exported_at
+              ? `Last exported ${fmtDate(s.last_exported_at)}`
+              : "Already exported"
+          }
+        >
+          {Icons.keep} exported{exportCount > 1 ? ` ×${exportCount}` : ""}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -229,6 +226,7 @@ export default function SessionsPane({
   progress?: string;
 }) {
   const router = useRouter();
+  const features = useFeatures();
   const cacheKey = paneKey(query, sortDir, progress);
   // The live key, reachable from the scroll listener without re-subscribing it.
   const cacheKeyRef = useRef(cacheKey);
@@ -368,22 +366,60 @@ export default function SessionsPane({
     await load();
   }
 
+  // One primary verb per card — the thing the session is waiting for — and the
+  // rest behind ⋯ (UI review H2). While frames are unrated the verb is to sort
+  // them: the Sift deck when that section is on, the session grid otherwise.
+  // Once sorting is done and there are picks that were never exported, the
+  // verb is Export. Anything else (exported, ignored, empty) has no primary:
+  // the card is the link, the menu has the rest.
+  function primaryAction(s: SessionRow) {
+    const unrated = Number(s.unrated_count) || 0;
+    const picks = Number(s.pick_count) || 0;
+    if (s.ignored) return null;
+    if (unrated > 0) {
+      return features.sift ? (
+        <Link href={`/sift/${s.id}`} className="btn btn-primary card-primary">
+          {Icons.sift} Sift {unrated}
+        </Link>
+      ) : (
+        <Link href={`/sessions/${s.id}`} className="btn btn-primary card-primary">
+          Sort {unrated}
+        </Link>
+      );
+    }
+    if (picks > 0 && !s.exporting && !(Number(s.export_count) > 0)) {
+      return (
+        <button
+          className="btn btn-primary card-primary"
+          onClick={() => setExporting(s)}
+          title="Export the RAW picks to the Capture One export folder"
+        >
+          {Icons.upload} Export {picks} {picks === 1 ? "pick" : "picks"}
+        </button>
+      );
+    }
+    return null;
+  }
+
   function sessionActions(s: SessionRow) {
     return (
-      <SessionActions
-        ignored={s.ignored}
-        canExport={s.pick_count > 0}
-        onIgnore={() => toggleIgnore(s)}
-        onExportPicks={() => setExporting(s)}
-        onGeotag={() => void openGeotag(s)}
-        onDelete={() => setConfirming(s)}
-        download={{
-          zipHref: `/api/sessions/${s.id}/download`,
-          zipName: `${s.name}.zip`,
-          listFiles: () => sessionDownloadFiles(s.id),
-          onMessage: setNotice,
-        }}
-      />
+      <div className="card-actions">
+        {primaryAction(s)}
+        <SessionMenu
+          ignored={s.ignored}
+          canExport={s.pick_count > 0}
+          onIgnore={() => toggleIgnore(s)}
+          onExportPicks={() => setExporting(s)}
+          onGeotag={() => void openGeotag(s)}
+          onDelete={() => setConfirming(s)}
+          download={{
+            zipHref: `/api/sessions/${s.id}/download`,
+            zipName: `${s.name}.zip`,
+            listFiles: () => sessionDownloadFiles(s.id),
+            onMessage: setNotice,
+          }}
+        />
+      </div>
     );
   }
 
@@ -454,13 +490,13 @@ export default function SessionsPane({
                   <Link href={`/sessions/${s.id}`}>{s.name}</Link>
                 </h3>
                 <SessionMeta s={s} />
-                <SessionCounters s={s} />
                 <SessionProgress
                   picks={Number(s.pick_count)}
                   rejects={Number(s.reject_count)}
                   skips={Number(s.skip_count)}
                   total={triageTotal(s)}
                   compact
+                  legend
                 />
               </div>
               {sessionActions(s)}
@@ -481,10 +517,7 @@ export default function SessionsPane({
                   </h3>
                   <SessionMeta s={s} />
                 </div>
-                <div className="card-side">
-                  {sessionActions(s)}
-                  <SessionCounters s={s} />
-                </div>
+                <div className="card-side">{sessionActions(s)}</div>
               </div>
               <ThumbStrip
                 items={sessionStripItems(s.sample_assets)}
@@ -498,7 +531,7 @@ export default function SessionsPane({
                 skips={Number(s.skip_count)}
                 total={triageTotal(s)}
                 compact
-                className="is-footer"
+                legend
               />
             </div>
           ))}

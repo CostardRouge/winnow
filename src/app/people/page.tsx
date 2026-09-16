@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PeoplePanel from "./PeoplePanel";
+import PageHeader from "../PageHeader";
 import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "People" };
@@ -14,13 +15,9 @@ export default async function PeoplePage() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <h1>People</h1>
-        <span className="hint max-sm:hidden">who the library sees</span>
-      </div>
-      <div className="pipeline-body">
-        <PeoplePanel />
-      </div>
+      <PageHeader title="People" />
+      {/* The panel renders its own toolbar band and padded body. */}
+      <PeoplePanel />
     </div>
   );
 }

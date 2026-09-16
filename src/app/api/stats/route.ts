@@ -98,11 +98,17 @@ export async function GET() {
         analyzePerHour: settings.analyzePerHour,
         mlPerHour: settings.mlPerHour,
         rescanMinutes: settings.rescanMinutes,
+        geocodePerHour: settings.geocodePerHour,
+        geocodePrecisionM: settings.geocodePrecisionM,
       },
       // ML is only surfaced when the feature is on: the sliders/counters would
       // otherwise show a pipeline stage that can never progress.
       mlEnabled: config.ml.enabled,
       clipEnabled: config.ml.clip.enabled,
+      // Same gating for geocoding: with GEOCODE_ENABLED=false the worker leaves
+      // every asset 'pending' on purpose (lib/geocode.ts), so a rate and a cell
+      // size would be knobs on a stage that cannot run.
+      geocodeEnabled: config.geocode.enabled,
       // null when CLIP is off (tile hidden), {indexed, library} otherwise.
       clip,
       // Same source as the /pipeline/failures tabs (lib/failures.failureCounts),
