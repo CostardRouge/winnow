@@ -8,24 +8,29 @@ import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { useRevealActiveTab } from "../useRevealActiveTab";
 
-const TABS: { href: string; label: string }[] = [
+const TABS: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: "/settings/pipeline", label: "Pipeline" },
   { href: "/settings/features", label: "Features" },
   { href: "/settings/volumes", label: "Volumes" },
   { href: "/settings/import", label: "Import" },
   { href: "/settings/database", label: "Database" },
+  // Admin-only in `lib/authz.ts`, so a viewer following this link would simply
+  // be bounced to /library. The role comes from the layout's server-side read
+  // rather than another /api/auth/me fetch: the tab must be right on the first
+  // paint, and an entry that appears a beat later reads as a glitch.
+  { href: "/settings/instance", label: "Instance", adminOnly: true },
 ];
 
-export default function SettingsNav() {
+export default function SettingsNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname() ?? "/settings";
-  // Five tabs overflow a phone; the pill scrolls, and the current section
-  // must not be the one hidden past its edge (UI review S2).
+  // Five tabs overflow a phone — six for an admin; the pill scrolls, and the
+  // current section must not be the one hidden past its edge (UI review S2).
   const navRef = useRef<HTMLElement>(null);
   useRevealActiveTab(navRef, pathname);
 
   return (
     <nav ref={navRef} className="tabs" aria-label="Settings sections">
-      {TABS.map((t) => {
+      {TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => {
         // Prefix match, not exact: Pipeline has its own nested sub-routes
         // (/settings/pipeline/scanning, /failures, ...) that should still
         // light up the Pipeline tab, the same way Library's tabs stay active
