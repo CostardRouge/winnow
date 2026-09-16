@@ -57,7 +57,16 @@ const ADMIN_WRITE_PREFIXES = [
 // sensitive). The /users management page itself is guarded too. A database
 // dump is the whole library INCLUDING password hashes and invite tokens, so
 // downloading one — a GET — is admin despite the every-GET-is-viewer default.
-const ADMIN_ONLY_PREFIXES = ["/api/auth/users", "/users", "/api/db/backup"];
+// Settings › Instance is the same class: it prints the effective environment —
+// internal hostnames, the filesystem layout, which credentials exist — which is
+// an operator's reference, not a reader's. It renders server-side with no
+// endpoint behind it, so this prefix is the whole guard.
+const ADMIN_ONLY_PREFIXES = [
+  "/api/auth/users",
+  "/users",
+  "/api/db/backup",
+  "/settings/instance",
+];
 
 // Account self-service: any signed-in role, mutations included. Signing out
 // and changing one's OWN password/display name are not library writes — a

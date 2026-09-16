@@ -7602,3 +7602,116 @@ html[data-theme="dark"] .btn-primary:hover {
   font-size: 1.1rem;
   text-shadow: 0 1px 3px rgba(16, 15, 13, 0.9);
 }
+
+/* =========================================================================
+   Pane + section headings — the shape every Settings pane should open with.
+
+   Introduced here by the pane that needed one first (Settings › Instance).
+   Until now the section had no header pattern at all: Features opened with a
+   .control card and an h2, Database and Volumes with a .filterbar holding a
+   paragraph and a button, Failures with a bare span, and EVERY h3 inside them
+   carried its own inline margin — seven of them, no two guaranteed to match
+   (finding B6 in docs/SETTINGS-UI.md). These two classes are that finding's
+   fix; applying them to the other five panes is the presentation pass, not
+   this page's job.
+
+   .pane-head takes an optional actions slot on the right, which is what the
+   .filterbar was really being used for on Volumes ("Add folder") and Database
+   ("Download backup").
+   ========================================================================= */
+@layer components {
+  .pane-head {
+    @apply mb-4 flex flex-wrap items-start justify-between gap-3;
+  }
+  .pane-title {
+    @apply text-base leading-tight;
+  }
+  /* A comfortable measure: the pane fills the page width and a 200-character
+     line of explanation is not read, it is skipped. */
+  .pane-desc {
+    @apply mt-1 max-w-[76ch];
+  }
+  .section-head {
+    @apply mb-2.5 flex flex-col gap-1;
+  }
+  .section-title {
+    @apply m-0 flex items-center gap-2 text-sm font-semibold;
+  }
+  .section-desc {
+    @apply m-0 max-w-[76ch];
+  }
+
+  /* ---- Settings › Instance --------------------------------------------- */
+  .inst-page {
+    @apply flex w-full flex-col gap-6;
+  }
+  .inst-statbar {
+    @apply mb-1;
+  }
+  .inst-caveat {
+    @apply -mt-3 max-w-[76ch];
+  }
+  .inst-group {
+    @apply flex flex-col;
+  }
+  /* The subsystem is switched off — stated beside the heading, because an
+     empty-looking section and a disabled one are different answers and the
+     page exists to answer "is this configured at all". */
+  .inst-off {
+    color: var(--color-muted);
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-2);
+  }
+  /* Twelve of these tables sit stacked down the page, so their columns must be
+     the SAME columns: left to size themselves, each one lands its value in a
+     different place and the eye has to re-find it at every heading. Fixed
+     layout, a percentage for the two text columns and a pixel width for the
+     badge — which is the one column whose content never changes size. */
+  .inst-table {
+    table-layout: fixed;
+  }
+  .inst-table th:nth-child(1) {
+    width: 55%;
+  }
+  .inst-table th:nth-child(3) {
+    width: 96px;
+  }
+  .inst-table td {
+    @apply align-top;
+  }
+  .inst-label {
+    @apply text-sm;
+  }
+  .inst-env {
+    @apply mt-0.5;
+    font-size: 0.72rem;
+    color: var(--color-muted);
+  }
+  .inst-note {
+    @apply mt-1 max-w-[62ch] text-xs;
+  }
+  .inst-value {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    word-break: break-word;
+  }
+  /* A credential is never printed — the row says whether one exists, and the
+     muted italic keeps "set" from reading like the value itself. */
+  .inst-value.is-secret {
+    @apply italic;
+    font-family: var(--font-sans);
+    color: var(--color-muted);
+  }
+  /* The whole point of the third column: a value on its schema default is the
+     one that catches a knob you believe you tuned and did not. Warm enough to
+     find by scanning, quiet enough not to read as an error — it usually is not
+     one. */
+  .inst-default {
+    color: color-mix(in srgb, var(--color-star) 80%, #000);
+    border-color: color-mix(in srgb, var(--color-star) 35%, var(--color-border));
+    background: color-mix(in srgb, var(--color-star) 10%, var(--color-surface));
+  }
+  html[data-theme="dark"] .inst-default {
+    color: var(--color-star);
+  }
+}

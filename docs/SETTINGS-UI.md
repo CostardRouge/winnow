@@ -115,7 +115,9 @@ every `h3` carries its margins inline — 7 of them, no two guaranteed to match
 `RelinkSection.tsx:167`, `MissingSection.tsx:245`). **Fix**: two component
 classes in `globals.css` — `.pane-head` (title, one-line description, actions
 slot) and `.section-head` for the `h3` level. The 7 inline margins then delete
-themselves. *Status: open.*
+themselves. *Status: **the classes exist**, written by Settings › Instance, the
+first pane that needed a header pattern (D18). Applying them to the other five
+panes and deleting the inline margins is the presentation pass, still open.*
 
 **B7 — 63 inline styles against a system whose stated rule is not to.**
 `DatabasePanel` 15 · `failures/sections` 10 · `RelinkSection` 10 ·
@@ -206,10 +208,16 @@ right place for them — the answer is standing, but you set it where you export
 Since D16 was fixed, every key in the tier has a writer somewhere.
 
 68 environment variables holding paths and credentials is *correct* — nobody
-wants an S3 secret editable from a web form. The finding is that nothing
+wants an S3 secret editable from a web form. The finding was that nothing
 distinguishes the ones that are genuinely deployment from the ones that are
-simply on the wrong tier, and that the app never shows any of them, even
+simply on the wrong tier, and that the app never showed any of them, even
 read-only.
+
+The second half of that is fixed: the environment row is still **0 managed** by
+design, but 62 of its 68 are now *visible*, with their source, on Settings ›
+Instance (D18). The six not listed are the pure S3 alternatives that only apply
+under the other storage driver. What remains open is the first half — which tier
+a knob belongs on (D15).
 
 **D14 — There are four tiers and only three are admitted.** Sixteen
 `localStorage` keys accumulated one page at a time (`winnow.theme`,
@@ -276,11 +284,35 @@ row on the Database page. "Is Immich push configured?" is unanswerable from the
 UI. This is the same problem `docs/memory/configuration.md` records from the
 other side — eight documented variables missing from the Optiplex compose
 anchor, failing silently — and a read-only page of *effective* values is exactly
-what surfaces that drift. **Fix**: fold it into A3's Overview pane, grouped by
-subsystem, secrets redacted to a present/absent badge. The values are already
-parsed and validated in one place, so this is the cheapest fix in the document
-and the one that makes the other 68 knobs legible without making them editable.
-*Status: open.*
+what surfaces that drift.
+**Status: Fixed.** Settings › Instance (`src/lib/instance.ts` +
+`src/app/settings/instance/`) prints 62 settings in twelve subsystem groups,
+credentials reduced to a present/absent word and connection strings stripped of
+theirs. It renders server-side with **no endpoint behind it** — the data is this
+container's `process.env`, so there is nothing to fetch and no reason to serve
+the configuration as JSON; admin-only through `ADMIN_ONLY_PREFIXES`, which is
+therefore the whole guard.
+
+Three things it does that the finding did not ask for, and that turned out to be
+the point:
+
+- **Every row states its source**, `env` or `default`. The effective value alone
+  cannot catch the failure this page exists for: a variable missing from the
+  compose environment and one deliberately set to the default look identical,
+  and the defaults keep production running. A knob you believe you tuned,
+  showing "default", is the whole bug on one line — and the count is a tile at
+  the top.
+- **A disabled subsystem still lists its fields**, marked off. "Is Immich push
+  configured?" was the finding's own question, and an empty section is not an
+  answer.
+- **It states its own limits**: the worker is a separate container with its own
+  environment and this is the app's view; a value equal to its default still
+  counts as set.
+
+It did not fold into A3's Overview pane, because A3 does not exist and is
+blocked on D15 — but D18 is the one piece of the shape work D15 *cannot* change:
+it is read-only and it is exactly one decider's tier, so it belongs in the same
+place whichever way D15 is settled.
 
 ---
 
@@ -348,11 +380,11 @@ Three passes, each shippable alone, each ending green on the gate this repo
 actually runs (`typecheck` + `migrate` + `build`). **No migration is needed for
 any of it.**
 
-1. **The shared shapes** — B5, B6, B7, B8. Add `.pane-head`, `.section-head`
-   and `.meter` to `globals.css`, then apply them across the six panes and
-   delete the inline styles, the five wait states and the emoji. Pure
-   presentation: no route moves, no endpoint changes, ~12 files. Largest visible
-   gain for the lowest risk, so it goes first.
+1. **The shared shapes** — B5, B6, B7, B8. `.pane-head` and `.section-head`
+   already exist (D18 wrote them); add `.meter`, then apply all three across the
+   six panes and delete the inline styles, the five wait states and the emoji.
+   Pure presentation: no route moves, no endpoint changes, ~12 files. Largest
+   visible gain for the lowest risk, so it goes first.
 2. **The dialogs and the controls** — C10, C11, C12, B9. `ConfirmDialog` for
    volume removal, `useOverlayDismiss` on the remaining modals, `OptionPicker`
    for the volume type, numeric fields and a saved-state on the rate sliders.
@@ -360,8 +392,9 @@ any of it.**
    Closes one latent data-loss bug (C11), ~8 files.
 3. **The shape** — A1–A4. The rail, the breadcrumb, the Overview pane, Users and
    Account coming home. The only step that moves routes, and the one worth
-   deciding before it is built. D18's read-only view of the environment belongs
-   in the same Overview pane, so build them together.
+   deciding before it is built. Settings › Instance (D18) already exists as its
+   own pane and needs no decision to keep; whether it stays a tab or becomes a
+   section of the Overview is one of the things A1 settles.
 4. **The coverage gaps** — ~~D16 and E22/E26 are three controls over settings
    that already exist~~ **done**. E25 needs one migration to move four
    thresholds into `app_settings`. E19, E20, E21 and E23 are features rather
