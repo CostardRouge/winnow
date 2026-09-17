@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import PeoplePanel from "./PeoplePanel";
-import PageHeader from "../PageHeader";
 import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "People" };
@@ -15,8 +14,9 @@ export default async function PeoplePage() {
 
   return (
     <div className="app-shell">
-      <PageHeader title="People" />
-      {/* The panel renders its own toolbar band and padded body. */}
+      {/* The panel renders the header too, not just the toolbar band and the
+          padded body: the header's tabs are the library-source picker, whose
+          state is the panel's. */}
       <PeoplePanel />
     </div>
   );

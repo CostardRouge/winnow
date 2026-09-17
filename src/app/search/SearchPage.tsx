@@ -311,7 +311,18 @@ function SearchPage() {
 
   return (
     <div className="app-shell">
-      <PageHeader title="Search" />
+      <PageHeader
+        title="Search"
+        tabs={
+          <LibrarySourceTabs
+            source={source}
+            onChange={(s) => {
+              setSource(s);
+              if (ran) run(ran, s);
+            }}
+          />
+        }
+      />
 
       <div className="page-tools">
         <form
@@ -375,13 +386,6 @@ function SearchPage() {
           ))}
         </div>
         <span className="spacer" />
-        <LibrarySourceTabs
-          source={source}
-          onChange={(s) => {
-            setSource(s);
-            if (ran) run(ran, s);
-          }}
-        />
         {state === "idle" && items && items.length > 0 && (
           <span className="hint ml-search-readout">
             {items.length === LIMIT

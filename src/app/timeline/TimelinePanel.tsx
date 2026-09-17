@@ -321,6 +321,7 @@ export default function TimelinePanel() {
     <div className="app-shell">
       <PageHeader
         title="Timeline"
+        tabs={<LibrarySourceTabs source={source} onChange={setSource} />}
         trailing={
           data && (
             <span className="page-meta">
@@ -367,8 +368,6 @@ export default function TimelinePanel() {
             <span className="chip-count">{data.chapters.filter((c) => c.place_inferred).length}</span>
           </button>
         )}
-        <span className="spacer" />
-        <LibrarySourceTabs source={source} onChange={setSource} />
       </div>
       {notice && (
         <div className="page-tools" role="status">
