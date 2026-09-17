@@ -237,7 +237,10 @@ export default function HeatmapPanel() {
 
   return (
     <div className="app-shell">
-      <PageHeader title="Heatmap" />
+      <PageHeader
+        title="Heatmap"
+        tabs={<LibrarySourceTabs source={source} onChange={setSource} />}
+      />
 
       <div className="page-tools">
         <div className="page-tools-row">
@@ -247,8 +250,6 @@ export default function HeatmapPanel() {
             onChange={(v) => patch({ view: v })}
             ariaLabel="Reading"
           />
-          <span className="spacer" />
-          <LibrarySourceTabs source={source} onChange={setSource} />
         </div>
 
         <div className="page-tools-row heat-controls">

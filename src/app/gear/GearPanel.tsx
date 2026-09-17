@@ -41,10 +41,11 @@
 // drives both the counts and where every entry points (cf. lib/gear.ts, which
 // tallies per source). "All" sums both — its entries link to whichever half the
 // piece of gear actually has frames in, Incoming first (effectiveLibrarySource).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import type { GearResponse } from "@/lib/gearTypes";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
+import PageHeader from "@/app/PageHeader";
 import { LibrarySourceTabs, useStoredLibrarySource } from "@/app/LibrarySourceTabs";
 import { OptionPicker, type PickerOption } from "@/app/OptionPicker";
 import { buildKit, num, SORTS, type Sort } from "./model";
@@ -129,23 +130,37 @@ export default function GearPanel() {
     [data, source, sort],
   );
 
+  // The header is the PANEL's, not the page's: its tabs are the library-source
+  // picker, and that state lives here. Every return goes through this so the
+  // header — and the picker — is there while the EXIF is still being read,
+  // rather than appearing a beat later once the data lands.
+  const shell = (body: ReactNode) => (
+    <>
+      <PageHeader
+        title="Gear"
+        tabs={<LibrarySourceTabs source={source} onChange={setSource} />}
+      />
+      {body}
+    </>
+  );
+
   // The panel owns the page below the header: the toolbar band, flush under
   // it, then the padded scrolling shelf — so the band is the same band every
   // other section wears rather than a row inside the padding.
   if (error) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <div className="empty-state error" role="alert">
           {error}
         </div>
-      </div>
+      </div>,
     );
   }
   if (!data) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <LoadingState label="Reading the EXIF…" />
-      </div>
+      </div>,
     );
   }
 
@@ -158,7 +173,6 @@ export default function GearPanel() {
 
   const head = (
     <div className="page-tools gear-head">
-      <LibrarySourceTabs source={source} onChange={setSource} />
       <span className="hint">
         {kit.bodies.length} {kit.bodies.length === 1 ? "body" : "bodies"} ·{" "}
         {kit.lensCount} {kit.lensCount === 1 ? "lens" : "lenses"} ·{" "}
@@ -179,7 +193,7 @@ export default function GearPanel() {
   );
 
   if (kit.bodies.length === 0) {
-    return (
+    return shell(
       <>
         {head}
         <div className="pipeline-body">
@@ -197,11 +211,11 @@ export default function GearPanel() {
             />
           </div>
         </div>
-      </>
+      </>,
     );
   }
 
-  return (
+  return shell(
     <>
       {head}
       <div className="pipeline-body">
@@ -212,7 +226,7 @@ export default function GearPanel() {
           <Layout view={view} kit={kit} />
         </div>
       </div>
-    </>
+    </>,
   );
 }
 

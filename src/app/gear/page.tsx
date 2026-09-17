@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import GearPanel from "./GearPanel";
-import PageHeader from "../PageHeader";
 import { requireFeature } from "@/lib/featureGate";
 
 export const metadata: Metadata = { title: "Gear" };
@@ -15,8 +14,9 @@ export default async function GearPage() {
 
   return (
     <div className="app-shell">
-      <PageHeader title="Gear" />
-      {/* The panel renders its own toolbar band and padded body. */}
+      {/* The panel renders the header too, not just the toolbar band and the
+          padded body: the header's tabs are the library-source picker, whose
+          state is the panel's. */}
       <GearPanel />
     </div>
   );

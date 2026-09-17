@@ -26,11 +26,12 @@
 // show a zero — same rule as the gear shelf — and reappear the moment another
 // tab is picked. "All" sums both halves; a card/link under "All" still needs
 // to pick ONE grid, so it defers to effectiveLibrarySource (Incoming first).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { normalizeName } from "@/lib/nameMatch";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
+import PageHeader from "@/app/PageHeader";
 import {
   effectiveLibrarySource,
   LibrarySourceTabs,
@@ -533,41 +534,55 @@ export default function PeoplePanel() {
     }
   }
 
+  // The header is the PANEL's, not the page's: its tabs are the library-source
+  // picker, and that state lives here. Every return goes through this so the
+  // header — and the picker — is there while the faces are still being
+  // gathered, rather than appearing a beat later once the data lands.
+  const shell = (body: ReactNode) => (
+    <>
+      <PageHeader
+        title="People"
+        tabs={<LibrarySourceTabs source={source} onChange={setSource} />}
+      />
+      {body}
+    </>
+  );
+
   // The panel owns the page below the header: the toolbar band, flush under
   // it, then the padded scrolling shelf — so the band is the same band every
   // other section wears rather than a row inside the padding. The early
   // states have no band and wear the padded body alone.
   if (error) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <div className="empty-state error" role="alert">
           {error}
         </div>
-      </div>
+      </div>,
     );
   }
   if (!data) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <LoadingState label="Gathering the faces…" />
-      </div>
+      </div>,
     );
   }
 
   if (!data.facesEnabled && data.people.length === 0) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <EmptyState
           icon={Icons.people}
           title="Face detection is off"
           hint="People appear here once the ML analysis runs over the library. Set ML_ENABLED=true and ML_FACES_ENABLED=true with ML_BASE_URL pointing at your immich-machine-learning container."
         />
-      </div>
+      </div>,
     );
   }
 
   if (data.people.length === 0) {
-    return (
+    return shell(
       <div className="pipeline-body">
         <EmptyState
           icon={Icons.people}
@@ -595,14 +610,14 @@ export default function PeoplePanel() {
             </span>
           )}
         </EmptyState>
-      </div>
+      </div>,
     );
   }
 
   const shown = showAll ? grouped.inTab : grouped.visible;
   const totalAssets = data.people.reduce((s, p) => s + p.asset_count, 0);
 
-  return (
+  return shell(
     <>
       <div className="page-tools gear-head">
         <div className="tabs" role="group" aria-label="Which people">
@@ -637,7 +652,6 @@ export default function PeoplePanel() {
           )}
         </span>
         <span className="spacer" />
-        <LibrarySourceTabs source={source} onChange={setSource} />
         <div className="search-field people-search">
           <span className="search-icon" aria-hidden>
             {Icons.search}
@@ -844,6 +858,6 @@ export default function PeoplePanel() {
           )}
         </div>
       </div>
-    </>
+    </>,
   );
 }
