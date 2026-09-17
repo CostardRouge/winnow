@@ -5689,6 +5689,20 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply w-full overflow-hidden rounded-[var(--radius-lg)] border;
     border-color: var(--color-border);
     background: var(--color-surface-2);
+    /* This element IS the Leaflet container (HeatBins initializes L.map()
+       directly onto it), so Leaflet's own panes — tiles/overlay/marker/
+       tooltip/popup, z-index 200 to 700 by its own stylesheet — are its direct
+       children. Without a stacking context of its own they are promoted
+       straight to the page's root context and outrank anything else on the
+       page that isn't ALSO isolated: measured (a real .leaflet-map-pane
+       injected here, pre-fix), they painted over the rail's account popover,
+       whose own z-index:60 only matters inside .rail's context — .rail is a
+       flex item with z-index:30, so 30 is what it actually contends with, and
+       every one of Leaflet's panes clears that. `.map-wrap` (gallery Map view)
+       and `.picker-map` (the geotag location picker) hit the same thing first
+       and fixed it the same way — isolate here rather than juggle a z-index
+       against a library's internals. */
+    isolation: isolate;
   }
   .heat-map.is-loading {
     @apply h-[340px];
