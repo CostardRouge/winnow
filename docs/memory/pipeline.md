@@ -26,7 +26,7 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **Why**: a re-scan of an unchanged 80k library then hashes nothing and spawns no exiftool — that is what makes a periodic rescan (60 s tick) affordable on a spinning HDD.
 
-**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this).
+**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this) — and that backfill has to be reachable from the UI, not only from a shell (see MEMORY.md, working preferences).
 
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
