@@ -26,7 +26,7 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **Why**: a re-scan of an unchanged 80k library then hashes nothing and spawns no exiftool — that is what makes a periodic rescan (60 s tick) affordable on a spinning HDD.
 
-**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this).
+**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this) — and that backfill has to be reachable from the UI, not only from a shell (see MEMORY.md, working preferences).
 
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
@@ -199,3 +199,50 @@ re-read. `BURST_BRACKET_EV_EPSILON` isn't yet in `docker-compose-optiplex.yml`'s
 **Why**: this runs on an Optiplex in a home, not in a rack. "Faster" is not automatically better here.
 
 **How to apply**: do not raise scan concurrency or parallelise exports for a spinning NAS. If a task feels too slow, propose a rate change (live, no restart) before a concurrency change (restart, memory implications).
+
+## A DJI clip carries no camera at all, and device is a join key (2026-09-19)
+
+**Fact**: `readMetadata` builds `assets.device` by joining `Make` + `Model`
+(`src/lib/extract.ts`). A DJI **photo** yields `DJI FC8482` — the
+flight-controller board code, prettified for display only by
+`lib/cameraLabels.ts`. A DJI **video** yields nothing: the MP4 carries neither
+atom. Sony XAVC-S and iPhone clips carry both, which is why the gap looks like a
+drone problem rather than a video problem.
+
+**Consequence**: `device` is the grouping key of every gear-shaped view, so those
+clips are not missing from a filter — they are absent from the whole dimension.
+`lib/gear.ts`'s aggregate requires `a.device IS NOT NULL AND a.device <> ''`,
+`/api/facets` drops null/empty values, `?device=` is `a.device IN (…)`
+(`lib/filter.ts`), and the viewer's Camera/Device rows are omitted when null
+(`gallery/AssetMeta.tsx`). The drone's card on `/gear` therefore counts
+`videos: 0` and links to a grid that can never hold them.
+
+**What the file does hold**: the bundled ExifTool knows
+`dvtm_Mini4_Pro.proto` and maps `dvtm_Mini4_Pro_1-1-10 → Model`, `1-1-5 →
+SerialNumber` (`Image::ExifTool::DJI`'s protobuf table) — but only out of the
+`djmd` **timed-metadata track**, which `QuickTime.pm` parses only under `-ee`
+(ExtractEmbedded). exiftool-vendored reads with `readArgs: ["-fast"]`, so the
+track is skipped entirely. Reaching it means a second, video-only
+`exiftool.read(p, { readArgs: ["-ee", …] })` that walks samples interleaved
+through a multi-hundred-MB file on the spinning HDD — measure it on a real clip
+before promising it, and keep it behind the stat gate like everything else.
+
+**The trap that survives whichever fix is chosen**: the embedded `Model` is the
+aircraft's own name, not `FC8482`, so writing it raw into `device` buys a
+*second* gear card for one aircraft. Anything that fills the column for videos
+must land on the string the photos already use, or the body needs a canonical key
+both spellings resolve to. `cameraLabels.ts` cannot be that key: it is
+display-only by design, because the raw value is what the grids filter on (the
+count/grid guarantee argued at the top of `lib/gear.ts`).
+
+**What already identifies a drone clip for free**: its `.SRT` flight log, recorded
+as an `asset_sidecars` row with `kind='srt'` (`lib/sidecars.ts`), plus the `DJI_*`
+filename and the folder. Coverage is partial — not every clip has an SRT — but the
+inference is the same one the indexer already trusts when it backfills the clip's
+`gps` from that sidecar.
+
+**Precedent for a value a human or a rule supplies**: `gps_source='manual'`
+(migration 0031) and the indexer's `CASE WHEN … gps_source='manual' THEN gps END`
+guard, which is the only reason a hand-set position survives a re-index. A
+device assigned by hand or by rule needs that same provenance column and that
+same guard, or the next scan overwrites it with the EXIF's null.
