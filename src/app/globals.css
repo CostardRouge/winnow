@@ -1689,11 +1689,14 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply relative w-full;
     aspect-ratio: 4 / 3;
   }
-  /* No width/height of its own: the inline right/bottom insets ThumbStack sets
-     are what size a card (a `width: 100%` beside `left: 0` would win over
-     `right`, and every card would spill past the box). */
+  /* Anchored top-left and SIZED BY ThumbStack, in pixels, never by insets: an
+     <img> is a replaced element, so with `width`/`height` on auto the browser
+     takes its INTRINSIC size and drops `right`/`bottom` on the floor — a
+     portrait thumbnail then drew itself 400px tall in a 197px box and over the
+     card's own text. `object-fit` cannot save that: it fits the image to the
+     box the box already has. */
   .thumb-stack-item {
-    @apply absolute inset-0 rounded-[var(--radius)] border object-cover;
+    @apply absolute left-0 top-0 rounded-[var(--radius)] border object-cover;
     border-color: var(--color-border);
     background: var(--color-surface-2);
     box-shadow: var(--shadow-card);
