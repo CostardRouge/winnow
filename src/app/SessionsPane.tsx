@@ -72,6 +72,9 @@ type SessionRow = {
   reject_count: number;
   skip_count: number;
   unrated_count: number;
+  // No position and not exempted (cf. docs/UNPLACED.md) — drawn as a pill
+  // linking to the Unplaced view when non-zero.
+  unplaced_count: number;
   last_reviewed_at: string | null;
   raw_jpeg_pairs: number;
   live_photo_pairs: number;
@@ -137,6 +140,7 @@ function SessionMetaLine({ s }: { s: SessionRow }) {
 function SessionFlags({ s }: { s: SessionRow }) {
   const pending = Number(s.pending_count) || 0;
   const errors = Number(s.error_count) || 0;
+  const unplaced = Number(s.unplaced_count) || 0;
   const exportCount = Number(s.export_count) || 0;
   return (
     <>
@@ -149,6 +153,19 @@ function SessionFlags({ s }: { s: SessionRow }) {
         <span className="pill error" title="Previews that failed to build">
           {errors} {errors === 1 ? "error" : "errors"}
         </span>
+      )}
+      {/* The invite that docs/UNPLACED.md started from: a folder that still
+          holds media with no position says so where the folder is, and the
+          pill is the way into the view that places them. Neutral on purpose —
+          a count is never a colour (UI review H4). */}
+      {unplaced > 0 && !s.ignored && (
+        <Link
+          href="/library/incoming/unplaced"
+          className="pill"
+          title="Media with no GPS position — open Unplaced"
+        >
+          {unplaced} unplaced
+        </Link>
       )}
       {s.exporting ? (
         <span className="pill exporting" title="An export is queued or running">
@@ -527,16 +544,21 @@ export default function SessionsPane({
               key={s.id}
               className={`session-card as-card${s.ignored ? " ignored" : ""}`}
             >
-              <Link href={`/sessions/${s.id}`} className="session-preview">
-                <ThumbStack samples={s.sample_assets} />
-                {/* The state chips ride the cover rather than the meta line:
-                    in a grid, a chip that wraps onto a second line stretches
-                    every card of the row, and these appear on a minority of
-                    sessions. Over the deck they cost no layout at all. */}
+              {/* The state chips ride the cover rather than the meta line: in
+                  a grid, a chip that wraps onto a second line stretches every
+                  card of the row, and these appear on a minority of sessions.
+                  Over the deck they cost no layout at all. They are a SIBLING
+                  of the cover link, never a child — one of them (unplaced) is
+                  itself a link, and an <a> inside an <a> is a DOM the parser
+                  rewrites and a click both destinations answer. */}
+              <div className="session-cover">
+                <Link href={`/sessions/${s.id}`} className="session-preview">
+                  <ThumbStack samples={s.sample_assets} />
+                </Link>
                 <span className="card-flags">
                   <SessionFlags s={s} />
                 </span>
-              </Link>
+              </div>
               <div className="session-card-body">
                 <h3>
                   <Link href={`/sessions/${s.id}`}>{s.name}</Link>

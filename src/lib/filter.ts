@@ -201,6 +201,14 @@ export const FilterSchema = z
     // absent → no constraint. Was z.coerce.boolean, under which "0" and
     // "false" read as true.
     has_gps: boolish,
+    // The geotagging backlog, as three states rather than one boolean (cf.
+    // docs/UNPLACED.md, migration 0042_geo_exempt): `placed` → has a position;
+    // `todo` → no position AND not exempted — the pile Unplaced works through,
+    // and exactly the predicate of the assets_geo_todo_idx partial index;
+    // `exempt` → a human marked it as never needing one (a screenshot, a
+    // scan). `has_gps` stays for the API callers that already use it (the
+    // Timeline's `has_gps=0`); the gallery's own Position chips write this.
+    geo_state: z.enum(["placed", "todo", "exempt"]).optional(),
     // Map zone: bounding box "w,s,e,n" (filters on the materialized gps_lat/lon).
     bbox,
   })
@@ -511,6 +519,14 @@ export function buildFilter(
   if (filter.has_gps === true) conditions.push(`a.gps IS NOT NULL`);
   else if (filter.has_gps === false) conditions.push(`a.gps IS NULL`);
 
+  // `todo` is written on the materialized gps_lat (not the jsonb) so the
+  // planner can serve it from assets_geo_todo_idx.
+  if (filter.geo_state === "placed") conditions.push(`a.gps_lat IS NOT NULL`);
+  else if (filter.geo_state === "todo")
+    conditions.push(`a.gps_lat IS NULL AND a.geo_exempt_at IS NULL`);
+  else if (filter.geo_state === "exempt")
+    conditions.push(`a.geo_exempt_at IS NOT NULL`);
+
   if (filter.bbox) {
     const { w, s, e, n } = filter.bbox;
     // Always require a geotag; then a latitude band + a longitude band on the
@@ -592,6 +608,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "sharpness_min",
     "sharpness_max",
     "has_gps",
+    "geo_state",
     "bbox",
     "q",
     "under",

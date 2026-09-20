@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 // labels in sync with VIEWS in page.tsx / the Library layout's view switcher.
 const VIEW_LABELS: Record<string, string> = {
   sessions: "Sessions",
+  unplaced: "Unplaced",
   grid: "Grid",
   calendar: "Calendar",
   map: "Map",

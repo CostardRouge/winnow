@@ -294,34 +294,55 @@ choice, and one CHECK constraint.
 
 ---
 
-## 7. What is not in this document
+## 7. The screen
 
-The screen. A new **Unplaced** view — presumably a fifth view under
-`/library/incoming`, beside Sessions · Grid · Calendar · Map — is where this
-lands, and its layout, its progress reading and its keyboard handling are not
-designed here. This document's job is the **model, the API contract and the
-census that justify them**; `docs/UI-REVIEW.md` governs the screen when it is
-drawn.
+*Shipped 2026-09-20, the same day as the brief.* `/library/incoming/unplaced`
+is a fifth view beside Sessions · Grid · Calendar · Map. It sits **right after
+Sessions**: `GalleryShell` places injected views before its built-in ones, and
+the two folder-level views reading side by side, ahead of the asset-level
+ones, is the better order anyway. One card per folder group, drawn with the
+session card's own markup (`.session-card`, the meta line, `ThumbStrip`) — a
+folder group is a session-shaped thing and a second card family for the same
+object would be drift. The primary verb is **Place N**; the `⋯` menu holds
+*Pick a different place…*, *Exempt N without camera EXIF* and *Open in grid*.
+The suggestion, its confidence and its provenance are printed on the card;
+the rules that produced them are printed above the list (§8). Every session
+card in the Sessions view now carries an **N unplaced** pill linking here —
+the invite this brief started from. `GET /api/assets/unplaced`
+(`src/lib/unplaced.ts`) is two scans under `jit = off`: the folders with
+something left to place, then the donors for every group at once, the group
+windows passed as `unnest` arrays.
 
 ---
 
-## 8. Still open
+## 8. What the build settled
 
-1. **The donor search's window and thresholds.** The minute/hour cutoffs, and
-   what degree of overlap makes a suggestion high-confidence (pre-checked)
-   versus merely shown, are tuning decisions and are not fixed. Whatever
-   values ship must be **visible in the UI** — the rule the Timeline's
-   granularity chip follows and the Heatmap's keeper-rate floor follows: an
-   automatic decision nobody can see is one nobody trusts
-   (`docs/memory/frontend.md`). A suggestion that cannot say *why* it is
-   suggesting is a suggestion that gets accepted 400 times without thought.
-2. **Per-media exemption.** "This will never have a position" — a screenshot,
-   a scan, a screen recording — is a real need, and §2 demotes it to a small
-   one: ~1.7 % of the backlog. The column exists —
-   `assets.geo_exempt_at` (migration `0042_geo_exempt.sql`, landed alongside
-   `gps_source`'s `'inferred'` value) — set once, by hand, one asset at a time,
-   never folder-scoped, because a folder mixes real photographs and
-   screenshots and a folder-wide exemption would hide the former. What is
-   still undesigned is everything that *reads* it: no filter dimension, no
-   bulk-exempt action, no UI. Needed, minor, and deliberately not designed
-   here.
+1. **The donor rules, fixed and printed** (`UNPLACED_RULES`,
+   `src/lib/unplacedTypes.ts`; the route returns them with the data). Folders
+   whose capture windows come within **2 h** share a card. Donors are the
+   **trustworthy** located frames — `gps_source` NULL or `'manual'`; an
+   inferred position never seeds another inference, or the backlog would fill
+   itself with copies of one iPhone frame — within **±1 h** of the card's
+   window, **±24 h** failing that. The suggestion is the dominant geocoding
+   cell's median point; its confidence is the share of donors in that cell,
+   **≥ 90 % high, ≥ 60 % medium**, else low, and never above low under
+   **5 donors**. High and medium pre-fill the map; low is shown and not
+   seeded. Accepting the pin as offered (within **100 m**) records
+   `'inferred'`; moving it further, or placing with no suggestion, records
+   `'manual'`. All six numbers are on screen, in a sentence, above the list —
+   the rule the Timeline's granularity chip and the Heatmap's keeper-rate
+   floor already follow.
+2. **Per-media exemption shipped.** `assets.geo_exempt_at` (`0042`),
+   `POST /api/assets/geo-exempt`, the bulk bar's *Never needs a position* /
+   *Needs a position again* in both grids, the card's *Exempt N without camera
+   EXIF* (`camera_model IS NULL AND lens IS NULL`, §2's discriminator), and
+   `geo_state=exempt` in the shared filter to find them again. Per asset,
+   never per folder.
+3. **The recap folds.** Past 200 media, `GeotagRecapModal` summarises the
+   position-less rows in one line and keeps the table for the rows that
+   already carry a position — the ones the dialog exists to protect.
+
+**Still open**: the Place action fetches every row of the group through the
+paged session-assets route before the picker opens (a 3 886-frame folder is
+eight requests); a dedicated ids endpoint would make it one. The 36 donor-less
+folders stay a hand job, by design.

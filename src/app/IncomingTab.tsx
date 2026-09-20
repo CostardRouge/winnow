@@ -6,17 +6,23 @@ import GalleryShell from "./gallery/GalleryShell";
 import { decodeFilters, encodeFilters } from "./gallery/filterParams";
 import type { Filters } from "./gallery/FilterPanel";
 import SessionsPane, { type Layout, type SortDir } from "./SessionsPane";
+import UnplacedPane from "./UnplacedPane";
 import type { SectionView } from "./gallery/ViewSwitch";
 import { Icons } from "./ui";
 
-// Incoming = everything to cull. It is one gallery section with three views:
-//   Sessions (default) · Grid · Map
+// Incoming = everything to cull. It is one gallery section with five views:
+//   Sessions (default) · Unplaced · Grid · Calendar · Map
 // The active view is a real route segment (/library/incoming/<view>) and the
 // filters live in the query string, so any state is shareable and reload-safe.
 // The Sessions view is injected into the shared GalleryShell as an extra view,
 // carrying its own toolbar modifiers (the list/card layout toggle and a newest/
-// oldest sort toggle) and sharing the host's Filters/Browse panel. Grid and Map
-// are GalleryShell's built-in, filter-driven views.
+// oldest sort toggle) and sharing the host's Filters/Browse panel. Unplaced
+// (docs/UNPLACED.md) is injected the same way — the geotagging backlog as
+// folder groups; it reads the whole Incoming backlog rather than the filtered
+// feed, so it takes no filter panel. Grid, Calendar and Map are GalleryShell's
+// built-in, filter-driven views. Injected views come before the built-in ones,
+// which puts the two folder-level views side by side ahead of the asset-level
+// ones — the better order anyway.
 
 const LAYOUT_KEY = "winnow.sessions.layout";
 
@@ -147,10 +153,16 @@ export default function IncomingTab({ view }: { view: string }) {
     ),
   };
 
+  const unplacedView: SectionView = {
+    id: "unplaced",
+    label: "Unplaced",
+    render: () => <UnplacedPane />,
+  };
+
   return (
     <GalleryShell
       scope="incoming"
-      extraViews={[sessionsView]}
+      extraViews={[sessionsView, unplacedView]}
       view={view}
       onSelectView={onSelectView}
       initialFilters={initialFilters}

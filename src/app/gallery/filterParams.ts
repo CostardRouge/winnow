@@ -43,7 +43,7 @@ const STRS = ["date_from", "date_to", "q"] as const;
 // Truthy-only flags. `has_edit`/`is_edit` deliberately live OUTSIDE this list:
 // they're tri-state (cf. below), and this list's decode tests the *string's*
 // truthiness — `?has_edit=0` would come back as `true`.
-const BOOLS = ["has_gps", "show_ignored", "has_text", "near_dup"] as const;
+const BOOLS = ["show_ignored", "has_text", "near_dup"] as const;
 
 export function encodeFilters(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();
@@ -71,6 +71,7 @@ export function encodeFilters(f: Filters): URLSearchParams {
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   if (f.person_mode === "all") sp.set("person_mode", "all");
+  if (f.geo_state) sp.set("geo_state", f.geo_state);
   if (f.bbox) sp.set("bbox", f.bbox.join(","));
   return sp;
 }
@@ -140,6 +141,13 @@ export function decodeFilters(params: URLSearchParams): Filters {
   // People combinator (cf. lib/filter.ts): only "all" is ever encoded ("any"
   // is the default and stays out of the URL).
   if (params.get("person_mode") === "all") f.person_mode = "all";
+
+  // Position (cf. lib/filter.ts). The old `has_gps=1` checkbox is gone; a
+  // bookmarked link that still carries it means the same as "placed".
+  const geoState = params.get("geo_state");
+  if (geoState === "placed" || geoState === "todo" || geoState === "exempt")
+    f.geo_state = geoState;
+  else if (params.get("has_gps")) f.geo_state = "placed";
 
   const bbox = csv(params.get("bbox")).map(Number);
   if (bbox.length === 4 && bbox.every((n) => !Number.isNaN(n)))
