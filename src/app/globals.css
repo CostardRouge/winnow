@@ -1596,6 +1596,17 @@ html[data-theme="dark"] .btn-primary:hover {
        can still draw 230px cards. The meta line below keys on this. */
     container-type: inline-size;
   }
+  /* The legend is a fixed TWO-column grid, never a wrapping row: it is then
+     always exactly two lines, whether the session has three entries or the
+     four a skipped count adds, and whatever the width of the numbers. A flex
+     row wraps on its content, so two cards of the same width could take a
+     different number of lines — and in a grid the taller one wins for the
+     whole row. Declared before the query below, which overrides it: a
+     container query adds no specificity, so only the source order decides. */
+  .session-card.as-card .session-progress-legend {
+    @apply grid gap-x-3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   /* Under ~15rem of card (two columns on a phone) the three facts cannot share
      a line even with the device fully ellipsed, and the file count used to
      spill out of the card. The line then becomes exactly TWO — the span, then
@@ -1617,6 +1628,22 @@ html[data-theme="dark"] .btn-primary:hover {
     .session-card.as-card .meta-device {
       @apply basis-0;
       flex-grow: 1;
+    }
+  }
+  /* The legend gives up later than the meta line, and it has to: the card grid
+     packs down to its 230px minimum on a wide screen — 206px of container once
+     the card's padding is out, which still leaves two 97px columns, enough for
+     a five-digit count — so hiding it at the meta line's threshold would empty
+     the legends of a desktop showing five columns. (A container query measures
+     the CONTENT box: 12rem here is a 216px card, not a 192px one.) Below that,
+     at two columns on a phone (~115px), no arrangement of "340 picks · 0
+     rejects · 864 to sort" is a line, so it is dropped rather than wrapped
+     into an unpredictable number of them: the bar and its percentage still say
+     how far along the session is, and the actionable count is already printed
+     on the primary verb ("Sift 864"). */
+  @container (max-width: 12rem) {
+    .session-card.as-card .session-progress-legend {
+      @apply hidden;
     }
   }
   .session-card.as-card .session-card-body {
