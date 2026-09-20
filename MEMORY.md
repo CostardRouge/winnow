@@ -112,3 +112,11 @@ or a new way of reading the library at large:
   accessibility, polish) with measurements, §3 the five moves of the rework,
   §4 the P0/P1/P2 roadmap, §5 how the screens were produced and what they did
   not cover. Read it before touching a header, a card, a toolbar or a colour.
+- **`docs/UNPLACED.md`** — the brief (2026-09-20, nothing built yet) for
+  "Unplaced", bulk geotagging of the 84 452 position-less Incoming media by
+  folder group: §2 the census that justifies it (~400 gestures close 99 %),
+  §4 the taken decisions (Incoming only, a new `gps_source='inferred'` that is
+  never written into the original's EXIF, temporal grouping only, no fourth
+  path past the recap), §5 the `by=day` API contract and §6 the cross-repo
+  invariant Atelier's trip legs depend on. Read it before touching
+  `gps_source`, the geotag flow or `/api/assets/geo`.
