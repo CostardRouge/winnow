@@ -102,6 +102,24 @@ export function formatBadge(
   return companionExt ? `${e}/RAW` : e;
 }
 
+// Bytes over seconds -> "94 Mb/s", the clip's AVERAGE bitrate.
+//
+// Derived, not read: Winnow indexes no stream metadata (no codec, no frame
+// rate, no nominal bitrate — nothing calls ffprobe), so this is the whole file
+// divided by its duration, audio and container overhead included. It is the
+// honest figure for "how heavy is this footage", not the encoder's setting, and
+// callers label it as an average for exactly that reason.
+export function formatBitrate(
+  bytes: number | null | undefined,
+  seconds: number | null | undefined,
+): string | null {
+  if (!bytes || !seconds || seconds <= 0) return null;
+  const mbps = (bytes * 8) / seconds / 1_000_000;
+  if (mbps >= 10) return `${Math.round(mbps)} Mb/s`;
+  if (mbps >= 1) return `${mbps.toFixed(1)} Mb/s`;
+  return `${Math.round(mbps * 1000)} kb/s`;
+}
+
 // Width × height -> "6000 × 4000 (24 MP)". Megapixels omitted when tiny.
 export function formatDimensions(
   width: number | null | undefined,

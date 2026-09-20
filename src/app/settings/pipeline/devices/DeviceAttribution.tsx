@@ -24,12 +24,19 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import ActionMenu, { type MenuItem } from "../../../ActionMenu";
+import MediaViewer from "../../../MediaViewer";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
-import { EmptyState, Icons, Spinner } from "../../../ui";
+import { EmptyState, Icons, LazyImage, Spinner } from "../../../ui";
 import { useStats } from "../../../useStats";
 import { friendlyCameraName } from "@/lib/cameraLabels";
-import { formatCaptureSpan } from "@/lib/format";
+import {
+  formatBitrate,
+  formatBytes,
+  formatCaptureSpan,
+  formatDateTime,
+  formatDuration,
+} from "@/lib/format";
 import { fetchJson } from "@/lib/fetchJson";
 import type {
   DeviceCandidate,
@@ -139,6 +146,10 @@ export default function DeviceAttribution() {
   // Per-medium overrides inside an opened card: id → included in the next
   // apply. Unset means "follow the vote", which is what the row shows.
   const [picked, setPicked] = useState<Record<number, boolean>>({});
+  // The full-screen preview, as an index into the opened folder's media. The
+  // viewer is the app's own: a medium waiting for a body is looked AT before it
+  // is decided, and a triage page that cannot show the frame is a spreadsheet.
+  const [viewer, setViewer] = useState<number | null>(null);
 
   const load = useCallback(async (s: FolderSort) => {
     setLoading(true);
@@ -160,7 +171,13 @@ export default function DeviceAttribution() {
     void load(sort);
   }, [load, sort]);
 
-  async function openFolder(f: DeviceFolder, offset = 0) {
+  // Opens (or pages) a folder's media. Returns what is loaded afterwards so a
+  // caller can act on it — which is how a click on a card's thumbnail opens the
+  // folder AND lands the viewer on that exact medium in one gesture.
+  async function openFolder(
+    f: DeviceFolder,
+    offset = 0,
+  ): Promise<DeviceCandidate[]> {
     setOpen((o) =>
       offset === 0
         ? { sessionId: f.session_id, items: [], total: f.total, loading: true }
@@ -171,20 +188,36 @@ export default function DeviceAttribution() {
       const page = await fetchJson<{ items: DeviceCandidate[]; total: number }>(
         `/api/pipeline/device-attribution?session_id=${f.session_id}&limit=${PAGE}&offset=${offset}`,
       );
-      setOpen((o) =>
-        o && o.sessionId === f.session_id
-          ? {
-              sessionId: f.session_id,
-              items: offset === 0 ? page.items : [...o.items, ...page.items],
-              total: page.total,
-              loading: false,
-            }
-          : o,
-      );
+      let loaded: DeviceCandidate[] = page.items;
+      setOpen((o) => {
+        loaded =
+          offset === 0 || !o || o.sessionId !== f.session_id
+            ? page.items
+            : [...o.items, ...page.items];
+        return {
+          sessionId: f.session_id,
+          items: loaded,
+          total: page.total,
+          loading: false,
+        };
+      });
+      return loaded;
     } catch (err) {
       setMsg((err as Error).message);
       setOpen(null);
+      return [];
     }
+  }
+
+  // A thumbnail on a CLOSED card: open the folder, then put the viewer on the
+  // medium that was clicked. The strip's samples are the folder's newest media
+  // in the same order the list uses, so the index lines up — but the id is what
+  // decides, so it stays right if either order ever changes.
+  async function previewSample(f: DeviceFolder, index: number) {
+    const wanted = f.sample[index]?.id;
+    const items = await openFolder(f);
+    const at = items.findIndex((i) => i.id === wanted);
+    if (at >= 0) setViewer(at);
   }
 
   // Every write goes through here: a folder (a predicate the server resolves at
@@ -474,18 +507,41 @@ export default function DeviceAttribution() {
                 </div>
               </div>
 
-              <ThumbStrip items={stripItems(f)} total={f.total} />
+              <ThumbStrip
+                items={stripItems(f)}
+                total={f.total}
+                onItemActivate={(i) => void previewSample(f, i)}
+                onOverflowActivate={() => void openFolder(f)}
+              />
 
               {isOpen && open && (
                 <FolderMedia
                   folder={f}
                   state={open}
+                  bodies={data.bodies}
                   picked={picked}
                   onToggle={(id, on) =>
                     setPicked((p) => ({ ...p, [id]: on }))
                   }
                   onMore={() => void openFolder(f, open.items.length)}
                   onApply={(ids) => void applySelection(f, ids)}
+                  onAssignOne={(id, body) =>
+                    void apply(
+                      f.session_id,
+                      body
+                        ? {
+                            ids: [id],
+                            device: body.device,
+                            camera_model: body.camera_model ?? undefined,
+                          }
+                        : { ids: [id] },
+                      (r) =>
+                        r.updated
+                          ? `1 medium attributed${body ? ` to ${friendlyCameraName(body.device)}` : ""}.`
+                          : "Nothing written — that medium has no proposal of its own.",
+                    )
+                  }
+                  onPreview={(i) => setViewer(i)}
                   busy={busy != null}
                 />
               )}
@@ -493,39 +549,138 @@ export default function DeviceAttribution() {
           );
         })}
       </div>
+
+      {/* The preview, over the opened folder's media — the same viewer the
+          gallery and every pipeline list use, so navigation, the info panel and
+          the RAW/JPEG toggle come for free. Its actions are the attribution
+          ones: decide while looking at the frame. */}
+      {viewer != null && open && open.items[viewer] && (
+        <MediaViewer
+          items={open.items}
+          index={viewer}
+          onIndexChange={setViewer}
+          onClose={() => setViewer(null)}
+          hasMore={open.items.length < open.total}
+          loading={open.loading}
+          loadMore={() => {
+            const f = data.folders.find((x) => x.session_id === open.sessionId);
+            if (f) void openFolder(f, open.items.length);
+          }}
+          renderActions={(it) => (
+            <>
+              <a className="btn" href={`/api/assets/${it.id}/download`} download>
+                {Icons.download} Download
+              </a>
+              {it.suggested_device && (
+                <button
+                  className="btn"
+                  disabled={busy != null}
+                  onClick={() =>
+                    void apply(
+                      open.sessionId,
+                      { ids: [it.id] },
+                      (r) =>
+                        r.updated
+                          ? `1 medium attributed to ${friendlyCameraName(it.suggested_device!)}.`
+                          : "Nothing written.",
+                    )
+                  }
+                >
+                  → {friendlyCameraName(it.suggested_device)}
+                </button>
+              )}
+            </>
+          )}
+        />
+      )}
     </div>
   );
 }
 
-// The per-file list inside an opened card. Deliberately plain: it is the
-// exception path, not the screen. Each row shows what the vote saw and what it
-// scored, and the selection starts from the vote's own verdict.
+// The per-file table inside an opened card — the exception path, for a folder
+// that held two cameras. It prints what the index actually knows about each
+// medium (what it weighs, how long it runs, how heavy it is) beside what the
+// vote made of it, so a decision taken here is taken on facts rather than on a
+// filename. The thumbnail opens the viewer; the row's menu assigns that one
+// medium to any body without touching the rest of the folder.
+//
+// Codec and frame rate are deliberately absent: nothing indexes them (see
+// DeviceCandidate). Bitrate is size over duration, labelled as the average it
+// is.
 function FolderMedia({
   folder,
   state,
+  bodies,
   picked,
   onToggle,
   onMore,
   onApply,
+  onAssignOne,
+  onPreview,
   busy,
 }: {
   folder: DeviceFolder;
   state: { items: DeviceCandidate[]; total: number; loading: boolean };
+  bodies: KnownBody[];
   picked: Record<number, boolean>;
   onToggle: (id: number, on: boolean) => void;
   onMore: () => void;
   onApply: (ids: number[]) => void;
+  onAssignOne: (id: number, body: KnownBody | null) => void;
+  onPreview: (index: number) => void;
   busy: boolean;
 }) {
   const isOn = (c: DeviceCandidate) => picked[c.id] ?? c.confident;
   const ids = state.items.filter(isOn).map((c) => c.id);
+
+  const rowMenu = (c: DeviceCandidate, index: number): MenuItem[] => [
+    {
+      key: "view",
+      label: "Preview",
+      hint: "Open the full-screen viewer here",
+      icon: Icons.view,
+      onSelect: () => onPreview(index),
+    },
+    ...(c.suggested_device
+      ? [
+          {
+            key: "suggested",
+            label: `Assign to ${friendlyCameraName(c.suggested_device)}`,
+            hint: "This medium’s own proposal",
+            icon: "→",
+            onSelect: () => onAssignOne(c.id, null),
+          } as MenuItem,
+        ]
+      : []),
+    ...bodies
+      .filter((b) => b.device !== c.suggested_device)
+      .map(
+        (b): MenuItem => ({
+          key: `body-${b.device}`,
+          label: `Assign to ${friendlyCameraName(b.device)}`,
+          hint: b.device,
+          icon: "→",
+          onSelect: () => onAssignOne(c.id, b),
+        }),
+      ),
+    {
+      key: "download",
+      label: "Download",
+      icon: Icons.download,
+      sep: true,
+      onSelect: () => {
+        window.location.href = `/api/assets/${c.id}/download`;
+      },
+    },
+  ];
 
   return (
     <div className="dev-media">
       <div className="dev-media-head">
         <span className="hint">
           {state.items.length.toLocaleString()} of{" "}
-          {state.total.toLocaleString()} shown · ticked as the vote sees them
+          {state.total.toLocaleString()} shown · ticked as the vote sees them ·
+          bitrate is the average over the whole file
         </span>
         <span className="spacer" />
         <button
@@ -537,27 +692,136 @@ function FolderMedia({
           Assign the {ids.length} ticked
         </button>
       </div>
-      {state.items.map((c) => (
-        <label key={c.id} className="dev-row">
-          <input
-            type="checkbox"
-            checked={isOn(c)}
-            onChange={(e) => onToggle(c.id, e.target.checked)}
-          />
-          <span className="dev-file">{c.filename}</span>
-          <span className="dev-sig">
-            {c.signals.map((s) => (
-              <span key={s} className="pill" title={SIGNAL_HINT[s]}>
-                {SIGNAL_LABEL[s]}
-              </span>
+
+      <div className="dev-table-block">
+        <table className="dev-table">
+          <thead>
+            <tr>
+              <th scope="col" className="dev-c-check">
+                <span className="sr-only">Include</span>
+              </th>
+              <th scope="col" className="dev-c-thumb">
+                <span className="sr-only">Preview</span>
+              </th>
+              <th scope="col">Name</th>
+              <th scope="col" className="dev-c-type">
+                Type
+              </th>
+              <th scope="col" className="dev-c-num dev-c-size">
+                Size
+              </th>
+              <th scope="col" className="dev-c-num dev-c-dur">
+                Duration
+              </th>
+              <th scope="col" className="dev-c-num dev-c-px">
+                Pixels
+              </th>
+              <th scope="col" className="dev-c-num dev-c-rate">
+                Bitrate
+              </th>
+              <th scope="col" className="dev-c-when">
+                Captured
+              </th>
+              <th scope="col" className="dev-c-sig">
+                Signals
+              </th>
+              <th scope="col" className="dev-c-num dev-c-score">
+                Score
+              </th>
+              <th scope="col" className="dev-c-menu">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.items.map((c, i) => (
+              <tr key={c.id}>
+                <td className="dev-c-check">
+                  <input
+                    type="checkbox"
+                    checked={isOn(c)}
+                    aria-label={`Include ${c.filename}`}
+                    onChange={(e) => onToggle(c.id, e.target.checked)}
+                  />
+                </td>
+                <td className="dev-c-thumb">
+                  <button
+                    type="button"
+                    className="dev-thumb"
+                    onClick={() => onPreview(i)}
+                    aria-label={`Preview ${c.filename}`}
+                    title="Preview"
+                  >
+                    {c.derivative_status === "ready" ? (
+                      // The house lazy image: a table of 50 rows should not
+                      // fire 50 thumbnail requests before you scroll to them.
+                      <LazyImage src={`/api/assets/${c.id}/thumb`} />
+                    ) : (
+                      <span className="dev-thumb-empty">
+                        {c.media_type === "video" ? "▶" : "▢"}
+                      </span>
+                    )}
+                  </button>
+                </td>
+                <td className="dev-c-name" title={c.rel_path}>
+                  {c.filename}
+                </td>
+                <td className="dev-c-type">
+                  {c.ext.replace(/^\./, "").toUpperCase()}
+                </td>
+                <td className="dev-c-num dev-c-size">
+                  {formatBytes(c.file_size)}
+                </td>
+                <td className="dev-c-num dev-c-dur">
+                  {c.duration_s != null ? formatDuration(c.duration_s) : "—"}
+                </td>
+                {/* Pixels only: megapixels are a photographer's unit for a
+                    still, and this table is mostly clips. */}
+                <td className="dev-c-num dev-c-px">
+                  {c.width && c.height ? `${c.width} × ${c.height}` : "—"}
+                </td>
+                <td className="dev-c-num dev-c-rate">
+                  {formatBitrate(c.file_size, c.duration_s) ?? "—"}
+                </td>
+                <td className="dev-c-when">{formatDateTime(c.captured_at)}</td>
+                <td className="dev-c-sig">
+                  <span className="dev-sig">
+                    {c.signals.map((s) => (
+                      <span key={s} className="pill" title={SIGNAL_HINT[s]}>
+                        {SIGNAL_LABEL[s]}
+                      </span>
+                    ))}
+                  </span>
+                </td>
+                <td className="dev-c-num dev-c-score">
+                  <span
+                    className={`dev-score${c.confident ? " is-confident" : ""}`}
+                    title={
+                      c.confident
+                        ? "Two independent signals agree — ticked by default"
+                        : "Below the confidence bar — decide it yourself"
+                    }
+                  >
+                    {c.score}
+                  </span>
+                </td>
+                <td className="dev-c-menu">
+                  <ActionMenu
+                    ariaLabel={`Actions for ${c.filename}`}
+                    items={rowMenu(c, i)}
+                  />
+                </td>
+              </tr>
             ))}
-          </span>
-          <span className={`dev-score${c.confident ? " is-confident" : ""}`}>
-            {c.score}
-          </span>
-        </label>
-      ))}
-      {state.loading && <div className="pl-more"><Spinner sm /></div>}
+          </tbody>
+        </table>
+      </div>
+
+      {state.loading && (
+        <div className="pl-more">
+          <Spinner sm />
+        </div>
+      )}
       {!state.loading && state.items.length < state.total && (
         <div className="pl-more">
           <button className="btn btn-sm" onClick={onMore}>
@@ -567,8 +831,8 @@ function FolderMedia({
       )}
       {folder.suggested_device == null && (
         <p className="hint">
-          These have no proposal of their own: use the card’s menu to give the
-          whole folder a body.
+          These have no proposal of their own: give a body to one medium from
+          its row menu, or to the whole folder from the card’s.
         </p>
       )}
     </div>
