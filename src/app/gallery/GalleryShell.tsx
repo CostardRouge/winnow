@@ -844,8 +844,10 @@ export default function GalleryShell({
         return void rate(it.id, { verdict: it.verdict === "reject" ? "unrated" : "reject" });
       if (e.key.toLowerCase() === "u") return void rate(it.id, { verdict: "unrated" });
       if (/^[0-5]$/.test(e.key)) return void rate(it.id, { star: Number(e.key) });
+      // Same soft-delete + confirm as the overflow menu's Delete entry.
+      if (e.key === "Delete") return void removeAssets([it.id]);
     },
-    [rate, readOnly],
+    [rate, readOnly, removeAssets],
   );
 
   // What the full-screen viewer is showing: the grid feed (navigable, paged) or
