@@ -103,23 +103,43 @@ function fmtDate(s: string | null): string {
 
 // One line under the title: when (the capture span humanised by
 // formatCaptureSpan — the card used to print two numeric dates with an arrow
-// even when they were the same day), what shot it, how many files — then only
-// the states worth a chip: previews still pending or in error, and the export
-// state (a live "exporting…", or "exported" once it has been). The ready
-// count, the picks pill and the "✓ done" badge are gone: the progress line
-// below the strip says all three (UI review H3). The session page's subtitle
-// prints the same line (SessionGrid).
-function SessionMeta({ s }: { s: SessionRow }) {
+// even when they were the same day), what shot it, how many files. The three
+// facts are separate spans because only ONE of them may be sacrificed when the
+// line is too narrow: the device name is the long, unpredictable token (a lens
+// or body string, or "unknown device"), so it alone shrinks and ellipses while
+// the span and the file count always print in full. Letting the whole sentence
+// wrap is what made a card two or three lines taller than the ones beside it
+// in the grid, and a grid row is as tall as its tallest card.
+function SessionMetaLine({ s }: { s: SessionRow }) {
+  const device = s.device_hint ?? "unknown device";
+  return (
+    <span className="meta-line">
+      <span className="meta-when">
+        {formatCaptureSpan(s.captured_at_min, s.captured_at_max)}
+      </span>
+      <span className="meta-sep">·</span>
+      <span className="meta-device" title={device}>
+        {device}
+      </span>
+      <span className="meta-sep">·</span>
+      <span className="meta-count">
+        {s.asset_count} {s.asset_count === 1 ? "file" : "files"}
+      </span>
+    </span>
+  );
+}
+
+// Only the states worth a chip: previews still pending or in error, and the
+// export state (a live "exporting…", or "exported" once it has been). The
+// ready count, the picks pill and the "✓ done" badge are gone: the progress
+// line below the strip says all three (UI review H3). The session page's
+// subtitle prints the same line (SessionGrid).
+function SessionFlags({ s }: { s: SessionRow }) {
   const pending = Number(s.pending_count) || 0;
   const errors = Number(s.error_count) || 0;
   const exportCount = Number(s.export_count) || 0;
   return (
-    <div className="meta">
-      <span>
-        {formatCaptureSpan(s.captured_at_min, s.captured_at_max)} ·{" "}
-        {s.device_hint ?? "unknown device"} · {s.asset_count}{" "}
-        {s.asset_count === 1 ? "file" : "files"}
-      </span>
+    <>
       {pending > 0 && (
         <span className="pill pending" title="Previews still being built">
           {pending} pending
@@ -146,6 +166,16 @@ function SessionMeta({ s }: { s: SessionRow }) {
           {Icons.keep} exported{exportCount > 1 ? ` ×${exportCount}` : ""}
         </span>
       ) : null}
+    </>
+  );
+}
+
+// The list layout has the width for the sentence and its chips on one line.
+function SessionMeta({ s }: { s: SessionRow }) {
+  return (
+    <div className="meta">
+      <SessionMetaLine s={s} />
+      <SessionFlags s={s} />
     </div>
   );
 }
@@ -162,12 +192,23 @@ function sessionStripItems(samples: SampleAsset[]): StripItem[] {
   }));
 }
 
+/** How far each card of the deck peeks out from under the one in front. */
+const STACK_PEEK = 8;
+
 // An overlapping "deck" of a few thumbnails (card layout): front-most first.
+//
+// The deck's FOOTPRINT is the same box whatever the count — the room the back
+// cards need is taken out of the front card, not added around the deck. A
+// session with one preview therefore fills the box edge to edge instead of
+// leaving a strip of paper down its right side, and every card in a grid row
+// still gets the same height (a box that grew with the sample count would make
+// the row as tall as its deepest deck).
 function ThumbStack({ samples }: { samples: SampleAsset[] }) {
   const shown = (samples ?? []).slice(0, 3).map((a) => a.id);
   if (shown.length === 0) {
     return <div className="thumb-stack is-empty">No preview yet</div>;
   }
+  const reserved = (shown.length - 1) * STACK_PEEK;
   return (
     <div className="thumb-stack">
       {shown.map((id, i) => {
@@ -179,8 +220,12 @@ function ThumbStack({ samples }: { samples: SampleAsset[] }) {
             src={`/api/assets/${id}/thumb`}
             alt=""
             style={{
+              // Every card is the front card's size; the deeper ones are slid
+              // down-right until the last one touches the box's corner.
+              right: reserved,
+              bottom: reserved,
               zIndex: shown.length - depth,
-              transform: `translate(${depth * 8}px, ${depth * 8}px) scale(${1 - depth * 0.04})`,
+              transform: `translate(${depth * STACK_PEEK}px, ${depth * STACK_PEEK}px)`,
               opacity: 1 - depth * 0.12,
             }}
           />
@@ -484,12 +529,21 @@ export default function SessionsPane({
             >
               <Link href={`/sessions/${s.id}`} className="session-preview">
                 <ThumbStack samples={s.sample_assets} />
+                {/* The state chips ride the cover rather than the meta line:
+                    in a grid, a chip that wraps onto a second line stretches
+                    every card of the row, and these appear on a minority of
+                    sessions. Over the deck they cost no layout at all. */}
+                <span className="card-flags">
+                  <SessionFlags s={s} />
+                </span>
               </Link>
               <div className="session-card-body">
                 <h3>
                   <Link href={`/sessions/${s.id}`}>{s.name}</Link>
                 </h3>
-                <SessionMeta s={s} />
+                <div className="meta">
+                  <SessionMetaLine s={s} />
+                </div>
                 <SessionProgress
                   picks={Number(s.pick_count)}
                   rejects={Number(s.reject_count)}
