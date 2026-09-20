@@ -4010,6 +4010,52 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-pick);
     font-weight: 600;
   }
+
+  /* "Set camera body…", the grid-side bulk attribution (DevicePickerModal).
+     One row per body the library already holds — never a free-text field: the
+     value written has to be one the gear dimension is already grouping on. */
+  .dev-pick-list {
+    @apply mt-2 flex max-h-[42vh] flex-col overflow-y-auto rounded-[var(--radius)] border;
+    border-color: var(--color-border);
+  }
+  .dev-pick-row {
+    @apply flex cursor-pointer items-center gap-2.5 border-t px-3 py-2 text-sm;
+    border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+  .dev-pick-row:first-child {
+    @apply border-t-0;
+  }
+  .dev-pick-row:hover {
+    background: var(--color-surface-2);
+  }
+  .dev-pick-row.is-on {
+    background: var(--color-accent-wash);
+  }
+  .dev-pick-row input {
+    @apply h-4 w-4 shrink-0 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+  .dev-pick-name {
+    @apply min-w-0 flex-1 truncate font-medium;
+  }
+  .dev-pick-raw {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dev-pick-count {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .dev-pick-note {
+    @apply mt-2.5 text-[12px];
+    color: var(--color-muted);
+  }
+  .dev-pick-warn {
+    @apply mb-2 text-[13px];
+    color: var(--color-reject);
+  }
   .pl-more {
     @apply flex justify-center py-3;
   }

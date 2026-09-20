@@ -21,6 +21,7 @@ import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
 import GeotagRecapModal from "@/app/GeotagRecapModal";
+import DevicePickerModal from "@/app/DevicePickerModal";
 import type { PickedLocation } from "@/app/LocationPickerModal";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import ExportSessionModal from "@/app/sessions/ExportSessionModal";
@@ -682,6 +683,26 @@ export default function SessionGrid({
     if (ids.length) setGeotag({ ids });
   }, []);
 
+  // Set camera body (cf. DevicePickerModal), the grid-side half of Pipeline ›
+  // Devices. `withoutBody` is counted from the rows already loaded so the
+  // dialog can say what it will leave alone without a request of its own.
+  const [deviceFlow, setDeviceFlow] = useState<{
+    ids: number[];
+    withoutBody: number;
+  } | null>(null);
+
+  const openSetDevice = useCallback(
+    (ids: number[]) => {
+      if (!ids.length) return;
+      const idset = new Set(ids);
+      setDeviceFlow({
+        ids,
+        withoutBody: assets.filter((a) => idset.has(a.id) && !a.device).length,
+      });
+    },
+    [assets],
+  );
+
   // Header action: geotag the WHOLE session. The grid may only have a page
   // loaded, so pull the full media list (paged) first.
   const openSessionGeotag = useCallback(async () => {
@@ -942,6 +963,7 @@ export default function SessionGrid({
             onRegenerate={() => regenerate([...selected])}
             onGeocode={() => geocode([...selected])}
             onGeotag={() => openGeotag([...selected])}
+            onSetDevice={() => openSetDevice([...selected])}
             onExempt={(exempt) => exemptSelection([...selected], exempt)}
             onMl={() => mlAnalyze([...selected])}
             onDelete={() => removeAssets([...selected])}
@@ -1166,6 +1188,27 @@ export default function SessionGrid({
           }
           onClose={() => setGeotag(null)}
           onPicked={(loc) => setGeotag({ ids: geotag.ids, loc })}
+        />
+      )}
+      {deviceFlow && (
+        <DevicePickerModal
+          ids={deviceFlow.ids}
+          withoutBody={deviceFlow.withoutBody}
+          onClose={() => setDeviceFlow(null)}
+          onApplied={(message, ids, body) => {
+            // Only the rows that HAD no body changed: the write fills gaps and
+            // never overwrites what a file declared.
+            const idset = new Set(ids);
+            setAssets((prev) =>
+              prev.map((a) =>
+                idset.has(a.id) && !a.device
+                  ? { ...a, device: body.device }
+                  : a,
+              ),
+            );
+            setDeviceFlow(null);
+            setNotice(message);
+          }}
         />
       )}
       {geotag?.loc && (

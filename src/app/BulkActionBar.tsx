@@ -29,6 +29,7 @@ export default function BulkActionBar({
   onRegenerate,
   onGeocode,
   onGeotag,
+  onSetDevice,
   onExempt,
   onMl,
   onDelete,
@@ -59,6 +60,9 @@ export default function BulkActionBar({
   /** Manually set the GPS position of the selection (picker + recap flow).
    * Omitted when the host surface doesn't offer it. */
   onGeotag?: () => void;
+  /** Give the selection a camera body (cf. DevicePickerModal) — for the media
+   * whose file named none. Omitted when the host surface doesn't offer it. */
+  onSetDevice?: () => void;
   /** Mark the selection as never needing a position (`true` — screenshots,
    * scans) or put it back into the geotag backlog (`false`). Cf.
    * api/assets/geo-exempt. Omitted when the host surface doesn't offer it. */
@@ -128,6 +132,18 @@ export default function BulkActionBar({
             icon: "📌",
             disabled: none,
             onSelect: onGeotag,
+          } as MenuItem,
+        ]
+      : []),
+    ...(onSetDevice
+      ? [
+          {
+            key: "device",
+            label: "Set camera body…",
+            hint: "For media whose file names none",
+            icon: "📷",
+            disabled: none,
+            onSelect: onSetDevice,
           } as MenuItem,
         ]
       : []),

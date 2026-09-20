@@ -286,6 +286,16 @@ listed with its score and no proposal, and the picker (populated from the bodies
 the library actually holds) is the answer. Keep it that way — the value written
 must be one the gear dimension is already grouping on.
 
+**An attribution fills a HOLE and never overwrites what a file declared**, from
+every surface — the folder cards, the per-row menus, and the grids' bulk *Set
+camera body…* (`DevicePickerModal`, in the gallery and a session, on the same
+endpoint). The reason is the guard below, read backwards: EXIF wins on every
+re-index, so a hand-made override of a real EXIF value would silently revert
+the next time the file's mtime changed. The dialog therefore counts what it
+will skip and says why, rather than offering something that would not hold.
+Correcting a body a camera actually wrote is a different feature and needs a
+different mechanism.
+
 **The write is guarded, and that guard is the load-bearing part**:
 `assets.device_source` ('exif' | 'derived' | 'manual' | 'embedded') plus the
 indexer's `CASE WHEN $6 IS NOT NULL THEN $6 WHEN device_source IN (…) THEN
