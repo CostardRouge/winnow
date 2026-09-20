@@ -72,6 +72,9 @@ type SessionRow = {
   reject_count: number;
   skip_count: number;
   unrated_count: number;
+  // No position and not exempted (cf. docs/UNPLACED.md) — drawn as a pill
+  // linking to the Unplaced view when non-zero.
+  unplaced_count: number;
   last_reviewed_at: string | null;
   raw_jpeg_pairs: number;
   live_photo_pairs: number;
@@ -112,6 +115,7 @@ function fmtDate(s: string | null): string {
 function SessionMeta({ s }: { s: SessionRow }) {
   const pending = Number(s.pending_count) || 0;
   const errors = Number(s.error_count) || 0;
+  const unplaced = Number(s.unplaced_count) || 0;
   const exportCount = Number(s.export_count) || 0;
   return (
     <div className="meta">
@@ -129,6 +133,19 @@ function SessionMeta({ s }: { s: SessionRow }) {
         <span className="pill error" title="Previews that failed to build">
           {errors} {errors === 1 ? "error" : "errors"}
         </span>
+      )}
+      {/* The invite that docs/UNPLACED.md started from: a folder that still
+          holds media with no position says so where the folder is, and the
+          pill is the way into the view that places them. Neutral on purpose —
+          a count is never a colour (UI review H4). */}
+      {unplaced > 0 && !s.ignored && (
+        <Link
+          href="/library/incoming/unplaced"
+          className="pill"
+          title="Media with no GPS position — open Unplaced"
+        >
+          {unplaced} unplaced
+        </Link>
       )}
       {s.exporting ? (
         <span className="pill exporting" title="An export is queued or running">

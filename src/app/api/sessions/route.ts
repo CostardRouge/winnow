@@ -133,6 +133,9 @@ export async function GET(req: NextRequest) {
          COALESCE(d.rejects, 0) AS reject_count,
          COALESCE(d.skips, 0)   AS skip_count,
          COALESCE(d.unrated, 0) AS unrated_count,
+         -- Media with no position and not exempted — the card's "N unplaced"
+         -- pill, which links to the Unplaced view (docs/UNPLACED.md).
+         COALESCE(d.unplaced, 0) AS unplaced_count,
          -- Computed lifecycle: empty (no live media) · done (every media has a
          -- verdict) · to_sort (some still unrated). Orthogonal to s.ignored.
          CASE
@@ -167,6 +170,7 @@ export async function GET(req: NextRequest) {
            count(*) FILTER (WHERE r.verdict = 'reject')                                AS rejects,
            count(*) FILTER (WHERE r.verdict = 'skip')                                  AS skips,
            count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')          AS unrated,
+           count(*) FILTER (WHERE a.gps_lat IS NULL AND a.geo_exempt_at IS NULL)       AS unplaced,
            max(r.reviewed_at)                                                          AS last_reviewed,
            -- Fraction triaged (every verdict ÷ all media); NULL for an empty
            -- session so NULLS LAST parks it at the end of a progress sort.
