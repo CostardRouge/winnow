@@ -236,7 +236,7 @@ display-only by design, because the raw value is what the grids filter on (the
 count/grid guarantee argued at the top of `lib/gear.ts`).
 
 **How it is answered today** (2026-09-20, `lib/deviceAttribution.ts`, migration
-0042): not by reading the file again but by **voting on what the index already
+0043): not by reading the file again but by **voting on what the index already
 knows**, and letting a human apply the verdict from Settings › Pipeline ›
 Devices. Five signals, weighted: a parsed DJI flight log (3), a tied `.SRT` at
 all (2), a maker filename (2), the busiest body of the SAME folder (3), a folder

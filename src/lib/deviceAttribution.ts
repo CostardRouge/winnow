@@ -11,7 +11,7 @@
 // This is a REPAIR, not a second metadata pipeline. It never reads an original:
 // every signal it weighs is already in Postgres, put there by the indexer. What
 // it does is vote, propose, and let a human apply — the attribution is stored
-// with its provenance (`device_source`, migration 0042) so the next re-index
+// with its provenance (`device_source`, migration 0043) so the next re-index
 // cannot quietly wipe it, exactly as `gps_source = 'manual'` has worked since
 // 0031.
 //

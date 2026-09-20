@@ -20,7 +20,7 @@
 //     (device_source='manual'). The escape hatch, and the one that handles a
 //     folder with no attributed sibling to learn from.
 // Either way the write only ever fills a hole, and the provenance it stamps is
-// what stops the next re-index wiping it (migration 0042).
+// what stops the next re-index wiping it (migration 0043).
 import { useCallback, useEffect, useState } from "react";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
 import { EmptyState, Icons, Spinner } from "../../../ui";
