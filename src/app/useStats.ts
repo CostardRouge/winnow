@@ -23,6 +23,9 @@ export type Stats = {
     ml_pending: number;
     ml_errors: number;
     ml_skipped: number;
+    // Logical media carrying no camera body — what the Devices tab triages
+    // (cf. lib/deviceAttribution.ts). Absent on a server older than the column.
+    device_missing?: number;
   };
   queues: {
     scan: QueueCounts;

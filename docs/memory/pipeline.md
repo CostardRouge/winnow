@@ -235,14 +235,33 @@ both spellings resolve to. `cameraLabels.ts` cannot be that key: it is
 display-only by design, because the raw value is what the grids filter on (the
 count/grid guarantee argued at the top of `lib/gear.ts`).
 
-**What already identifies a drone clip for free**: its `.SRT` flight log, recorded
-as an `asset_sidecars` row with `kind='srt'` (`lib/sidecars.ts`), plus the `DJI_*`
-filename and the folder. Coverage is partial — not every clip has an SRT — but the
-inference is the same one the indexer already trusts when it backfills the clip's
-`gps` from that sidecar.
+**How it is answered today** (2026-09-20, `lib/deviceAttribution.ts`, migration
+0042): not by reading the file again but by **voting on what the index already
+knows**, and letting a human apply the verdict from Settings › Pipeline ›
+Devices. Five signals, weighted: a parsed DJI flight log (3), a tied `.SRT` at
+all (2), a maker filename (2), the busiest body of the SAME folder (3), a folder
+name that says drone (1); at 5 the row is pre-ticked. No signal is decisive
+alone, which is the whole reason it is a vote — `.srt` is also the world's most
+common subtitle extension, and a `DJI_` prefix dies on rename.
 
-**Precedent for a value a human or a rule supplies**: `gps_source='manual'`
-(migration 0031) and the indexer's `CASE WHEN … gps_source='manual' THEN gps END`
-guard, which is the only reason a hand-set position survives a re-index. A
-device assigned by hand or by rule needs that same provenance column and that
-same guard, or the next scan overwrites it with the EXIF's null.
+**The sibling signal is what dodges the two-spellings trap**: the proposal is
+always the body of a neighbouring medium, so an attributed clip lands on the
+card its own stills already built instead of minting a second one. Signals that
+merely argue "this is a drone" never invent a string; with no sibling the row is
+listed with its score and no proposal, and the picker (populated from the bodies
+the library actually holds) is the answer. Keep it that way — the value written
+must be one the gear dimension is already grouping on.
+
+**The write is guarded, and that guard is the load-bearing part**:
+`assets.device_source` ('exif' | 'derived' | 'manual' | 'embedded') plus the
+indexer's `CASE WHEN $6 IS NOT NULL THEN $6 WHEN device_source IN (…) THEN
+device END`, the exact contract `gps_source='manual'` has carried since 0031.
+The file always wins when it has something to say; when it says nothing, the
+attribution survives. Without it an attributed body lives only until the clip's
+mtime changes. Both directions are worth re-checking if you touch that UPDATE.
+
+**Still open**: the `-ee` read above is not wired. It is the only source of the
+aircraft's `SerialNumber`, which is what would tell two identical bodies apart —
+the vote cannot. Wire it as an enqueue-only pass over the **index** queue (job
+name `device-probe`, told apart like `relink` on integrity), never inline: it is
+the only step here that touches an original.

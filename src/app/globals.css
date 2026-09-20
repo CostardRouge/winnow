@@ -3737,6 +3737,16 @@ html[data-theme="dark"] .btn-primary:hover {
   .pl-disabled {
     @apply pointer-events-none opacity-45;
   }
+  /* Row checkbox for the triage lists that act on a SELECTION rather than on
+     one row at a time (Devices › attribution). Same accent and hit area as the
+     export options — the only new thing here is that it lives in a .pl-row. */
+  .pl-check {
+    @apply flex shrink-0 cursor-pointer items-center justify-center px-1;
+  }
+  .pl-check input {
+    @apply h-4 w-4 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
   .pl-more {
     @apply flex justify-center py-3;
   }
