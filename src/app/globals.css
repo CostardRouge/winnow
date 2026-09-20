@@ -1129,9 +1129,33 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px];
     color: var(--color-muted);
   }
-  /* The primary verb + the ⋯ menu, one row (UI review H2). */
+  /* The facts sentence: one line that never wraps. The three facts sit on a
+     shrinkable row where only the device may give ground — it is the long,
+     unpredictable token, while the date span and the file count are short and
+     are what the card is read for. `min-width: 0` on both the row and the
+     device is what lets the ellipsis happen at all (a flex item's floor is its
+     content width until you say otherwise). */
+  .meta-line {
+    @apply flex min-w-0 max-w-full items-baseline gap-x-1.5 whitespace-nowrap;
+  }
+  .meta-when,
+  .meta-count,
+  .meta-sep {
+    @apply shrink-0;
+  }
+  .meta-device {
+    @apply min-w-0 truncate;
+  }
+  /* The primary verb + the ⋯ menu, one row (UI review H2). Both controls take
+     the same 36px height — .btn's padding made it 38px and .btn-icon is a
+     fixed 36px square, so the pair sat two pixels out of register on every
+     card. */
   .card-actions {
     @apply flex items-center gap-2;
+  }
+  .card-actions .btn {
+    @apply py-0;
+    height: 2.25rem;
   }
   /* Unplaced (docs/UNPLACED.md): the cards reuse .session-card; these are the
      two lines that are its own — the suggestion under the meta line, and the
@@ -1567,6 +1591,60 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .session-card.as-card {
     @apply flex-col flex-nowrap items-stretch gap-3 p-3;
+    /* The cards are a `auto-fill, minmax(230px, 1fr)` grid, so how much room
+       one has is a property of the CARD, not of the viewport — a wide screen
+       can still draw 230px cards. The meta line below keys on this. */
+    container-type: inline-size;
+  }
+  /* The legend is a fixed TWO-column grid, never a wrapping row: it is then
+     always exactly two lines, whether the session has three entries or the
+     four a skipped count adds, and whatever the width of the numbers. A flex
+     row wraps on its content, so two cards of the same width could take a
+     different number of lines — and in a grid the taller one wins for the
+     whole row. Declared before the query below, which overrides it: a
+     container query adds no specificity, so only the source order decides. */
+  .session-card.as-card .session-progress-legend {
+    @apply grid gap-x-3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Under ~15rem of card (two columns on a phone) the three facts cannot share
+     a line even with the device fully ellipsed, and the file count used to
+     spill out of the card. The line then becomes exactly TWO — the span, then
+     the device and the count, the device still the one that gives ground — so
+     the card keeps a height its neighbours share and nothing is cut off. */
+  @container (max-width: 15rem) {
+    .session-card.as-card .meta-line {
+      @apply flex-wrap;
+    }
+    .session-card.as-card .meta-when {
+      @apply w-full truncate;
+    }
+    .session-card.as-card .meta-when + .meta-sep {
+      @apply hidden;
+    }
+    /* A zero flex-basis, or the device's full name is what the browser wraps
+       ON — it lays items out at their natural width first and only then
+       shrinks them, so the count would land on a third line. */
+    .session-card.as-card .meta-device {
+      @apply basis-0;
+      flex-grow: 1;
+    }
+  }
+  /* The legend gives up later than the meta line, and it has to: the card grid
+     packs down to its 230px minimum on a wide screen — 206px of container once
+     the card's padding is out, which still leaves two 97px columns, enough for
+     a five-digit count — so hiding it at the meta line's threshold would empty
+     the legends of a desktop showing five columns. (A container query measures
+     the CONTENT box: 12rem here is a 216px card, not a 192px one.) Below that,
+     at two columns on a phone (~115px), no arrangement of "340 picks · 0
+     rejects · 864 to sort" is a line, so it is dropped rather than wrapped
+     into an unpredictable number of them: the bar and its percentage still say
+     how far along the session is, and the actionable count is already printed
+     on the primary verb ("Sift 864"). */
+  @container (max-width: 12rem) {
+    .session-card.as-card .session-progress-legend {
+      @apply hidden;
+    }
   }
   .session-card.as-card .session-card-body {
     @apply flex flex-col gap-2;
@@ -1582,17 +1660,37 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-card.as-card h3 {
     @apply truncate;
   }
-  /* Padding reserves room for the deck's back cards to peek out. */
+  /* The deck takes the card's full width and reserves the back cards' peek
+     INSIDE its own box (ThumbStack sets each card's right/bottom inset), so a
+     session with a single preview fills the width instead of leaving a margin
+     of paper down its side, and the box is the same height whatever the count.
+     The wrapper is what the chips are positioned against — they sit beside the
+     link, not inside it. */
+  .session-cover {
+    @apply relative;
+  }
   .session-preview {
     @apply block;
-    padding: 0 16px 16px 0;
+  }
+  /* Pending / errors / exported, over the deck's top-left corner: a chip that
+     wraps in the meta line stretches every card of the grid row. */
+  .card-flags {
+    @apply absolute left-1.5 top-1.5 z-[5] flex flex-wrap items-start gap-1;
+    max-width: calc(100% - 0.75rem);
+  }
+  .card-flags .pill {
+    @apply px-2 py-0.5 text-[11px];
+    box-shadow: var(--shadow-card);
   }
   .thumb-stack {
     @apply relative w-full;
     aspect-ratio: 4 / 3;
   }
+  /* No width/height of its own: the inline right/bottom insets ThumbStack sets
+     are what size a card (a `width: 100%` beside `left: 0` would win over
+     `right`, and every card would spill past the box). */
   .thumb-stack-item {
-    @apply absolute inset-0 h-full w-full rounded-[var(--radius)] border object-cover;
+    @apply absolute inset-0 rounded-[var(--radius)] border object-cover;
     border-color: var(--color-border);
     background: var(--color-surface-2);
     box-shadow: var(--shadow-card);
