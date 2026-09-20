@@ -3888,29 +3888,118 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex items-center gap-2 border-b px-3 py-2;
     border-color: var(--color-border);
   }
-  .dev-row {
-    @apply flex cursor-pointer items-center gap-3 border-t px-3 py-2 text-[12px];
-    border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  /* The table of one folder's media. A real <table>: the columns are facts to
+     compare down a column (size, duration, bitrate, score), which is what a
+     table is for — and it is the one place on the page dense enough to need
+     one.
+     It must NEVER become a horizontal scroll container, and that is a hard
+     constraint rather than a preference: focusing a control inside a scrolling
+     box makes the browser fire a scroll event — even when it ends up moving
+     nothing — and `useAnchoredPanel` closes any open panel on a scroll
+     anywhere, so a row's ⋯ menu would dismiss itself the instant it was
+     clicked. Hence `table-layout: fixed` with a width per column, the filename
+     truncating, and columns dropping out on narrow screens instead. */
+  .dev-table {
+    @apply w-full border-collapse text-[12px];
+    table-layout: fixed;
   }
-  .dev-row:first-of-type {
-    @apply border-t-0;
+  .dev-table th {
+    @apply whitespace-nowrap px-2.5 py-1.5 text-left text-[11px] font-medium;
+    color: var(--color-muted);
+    border-bottom: 1px solid var(--color-border);
   }
-  .dev-row:hover {
+  .dev-table td {
+    @apply whitespace-nowrap px-2.5 py-1.5 align-middle;
+    border-top: 1px solid
+      color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+  .dev-table tbody tr:hover td {
     background: var(--color-surface-3);
   }
-  .dev-row input {
-    @apply h-4 w-4 shrink-0 cursor-pointer;
+  .dev-table input[type="checkbox"] {
+    @apply h-4 w-4 cursor-pointer;
     accent-color: var(--color-accent);
   }
-  .dev-file {
-    @apply min-w-0 flex-1 truncate;
+  /* Fixed widths, so the name column absorbs whatever is left. */
+  .dev-c-check {
+    width: 34px;
+  }
+  .dev-c-thumb {
+    width: 50px;
+  }
+  .dev-c-type {
+    width: 58px;
+  }
+  .dev-c-size {
+    width: 84px;
+  }
+  .dev-c-dur {
+    width: 68px;
+  }
+  .dev-c-px {
+    width: 108px;
+  }
+  .dev-c-rate {
+    width: 86px;
+  }
+  .dev-c-when {
+    width: 150px;
+  }
+  .dev-c-sig {
+    width: 250px;
+  }
+  .dev-c-score {
+    width: 52px;
+  }
+  .dev-c-menu {
+    width: 46px;
+  }
+  .dev-c-num {
+    @apply text-right;
     font-family: var(--font-mono);
   }
+  .dev-c-name {
+    @apply overflow-hidden text-ellipsis;
+    font-family: var(--font-mono);
+  }
+  /* Narrow screens drop the columns that inform rather than decide, in that
+     order. What is left always identifies the medium (thumbnail, name) and
+     always carries the verdict (signals, score, menu). */
+  @media (max-width: 1100px) {
+    .dev-c-px,
+    .dev-c-when {
+      @apply hidden;
+    }
+  }
+  @media (max-width: 860px) {
+    .dev-c-rate,
+    .dev-c-dur,
+    .dev-c-sig {
+      @apply hidden;
+    }
+  }
+  .dev-thumb {
+    @apply flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border p-0;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    cursor: pointer;
+  }
+  .dev-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .dev-thumb-empty {
+    color: var(--color-faint);
+  }
+  /* One line, never wrapped: a wrapping pill column makes every row a
+     different height and the eye loses the column it was scanning. It clips at
+     the column's width instead — the score beside it is the summary of exactly
+     these pills, and every one of them is on the card above. Clipping also
+     keeps the fixed layout honest: a cell that refuses to shrink is what would
+     push the table past its container. */
   .dev-sig {
-    @apply flex shrink-0 flex-wrap items-center gap-1.5;
+    @apply flex flex-nowrap items-center gap-1.5 overflow-hidden;
   }
   .dev-score {
-    @apply w-8 shrink-0 text-right;
     font-family: var(--font-mono);
     color: var(--color-muted);
   }

@@ -264,6 +264,15 @@ lookaround). After touching either, check them against each other on real
 rows; a fixture comparing SQL's per-folder `confident` with the JS verdict is
 what caught this working.
 
+**Winnow indexes no stream metadata** — no codec, no frame rate, no nominal
+bitrate — because nothing calls `ffprobe`: the derivative worker hands the file
+straight to `ffmpeg` (`lib/video.ts`). The Devices table therefore prints an
+AVERAGE bitrate derived from size over duration (`formatBitrate`), labelled as
+such, and says nothing about codecs. Adding them means a column, a pass and a
+decision about re-reading originals — but note the cheap route before reaching
+for a backfill: ffmpeg already walks every video to build its proxy, so the
+figures could be captured from that run rather than from a second read.
+
 **A folder apply is a predicate, never a list of ids**: `applyFolder` resolves
 "this folder's unattributed media, optionally only the confident ones" inside
 the UPDATE, so a 129-clip folder costs one statement and cannot drift between

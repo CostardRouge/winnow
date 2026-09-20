@@ -65,12 +65,25 @@ export type KnownBody = {
   count: number;
 };
 
-/** A medium carrying no body, with the evidence gathered about it. */
+/** A medium carrying no body, with the evidence gathered about it — plus the
+ *  facts the opened folder's table prints and the viewer needs to draw it.
+ *
+ *  What is NOT here, because Winnow does not index it: codec, frame rate and
+ *  the stream's nominal bitrate. Nothing in the pipeline calls ffprobe — the
+ *  derivative worker hands the file straight to ffmpeg — so those would need a
+ *  column and a pass of their own. The table derives an AVERAGE bitrate from
+ *  size over duration instead, and says so. */
 export type DeviceCandidate = {
   id: number;
   filename: string;
   rel_path: string;
+  ext: string;
   media_type: "photo" | "video";
+  file_size: number | null;
+  width: number | null;
+  height: number | null;
+  duration_s: number | null;
+  derivative_status: string;
   captured_at: string | null;
   session_name: string | null;
   signals: DeviceSignal[];
@@ -88,7 +101,13 @@ type CandidateRow = {
   id: number;
   filename: string;
   rel_path: string;
+  ext: string;
   media_type: "photo" | "video";
+  file_size: number | null;
+  width: number | null;
+  height: number | null;
+  duration_s: number | null;
+  derivative_status: string;
   captured_at: string | null;
   session_name: string | null;
   session_path: string | null;
@@ -444,8 +463,9 @@ async function candidateRows(opts: {
   const { where: extra = "", tail: order, params } = opts;
   return many<CandidateRow>(
     `WITH cand AS (
-       SELECT a.id, a.filename, a.rel_path, a.media_type, a.captured_at,
-              a.session_id
+       SELECT a.id, a.filename, a.rel_path, a.ext, a.media_type, a.captured_at,
+              a.file_size, a.width, a.height, a.duration_s,
+              a.derivative_status, a.session_id
          FROM assets a
         WHERE ${CANDIDATE_SCOPE}
           ${extra}
@@ -467,7 +487,8 @@ async function candidateRows(opts: {
        ) ranked
         WHERE rn = 1
      )
-     SELECT c.id, c.filename, c.rel_path, c.media_type, c.captured_at,
+     SELECT c.id, c.filename, c.rel_path, c.ext, c.media_type, c.captured_at,
+            c.file_size, c.width, c.height, c.duration_s, c.derivative_status,
             s.name                AS session_name,
             s.source_path         AS session_path,
             sib.device            AS sibling_device,
@@ -494,7 +515,13 @@ function toCandidate(r: CandidateRow): DeviceCandidate {
     id: r.id,
     filename: r.filename,
     rel_path: r.rel_path,
+    ext: r.ext,
     media_type: r.media_type,
+    file_size: r.file_size,
+    width: r.width,
+    height: r.height,
+    duration_s: r.duration_s,
+    derivative_status: r.derivative_status,
     captured_at: r.captured_at,
     session_name: r.session_name,
     signals,
