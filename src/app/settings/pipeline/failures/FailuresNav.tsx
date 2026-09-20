@@ -28,6 +28,11 @@ const FAMILIES: {
     label: "Missing files",
     count: (s) => s?.failures?.missing ?? 0,
   },
+  {
+    slug: "gpswrite",
+    label: "GPS write",
+    count: (s) => s?.failures?.gpsWrite ?? 0,
+  },
 ];
 
 export default function FailuresNav() {

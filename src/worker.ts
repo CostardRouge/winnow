@@ -197,10 +197,23 @@ const geocodeWorker = new Worker(
 // GPS write-back (cf. lib/exifWrite.ts): stamps a manually-set position into the
 // original file's EXIF. Serialized — it's a per-file write on the NAS, and the
 // shared exiftool process pool is already bounded; one at a time keeps a bulk
-// geotag of a whole session from ganging up on the disk.
-const gpsWriteWorker = new Worker(
+// geotag of a whole session from ganging up on the disk. Also drip-fed by
+// gpsWritePerHour: each job is a short, discrete write (not a long walk like
+// scan), so it follows the derivativeWorker's rate-limit-and-requeue pattern
+// (Worker.RateLimitError()) rather than scan's sleep-loop — a future
+// bulk-geotag feature can enqueue tens of thousands of these at once, and this
+// is what stops it from hammering the NAS's HDD with back-to-back writes.
+const gpsWriteWorker: Worker = new Worker(
   QUEUES.gpswrite,
   async (job) => {
+    const { gpsWritePerHour } = await getSettings();
+    if (gpsWritePerHour > 0) {
+      const wait = await reserveSlot("gpswrite", gpsWritePerHour);
+      if (wait > 0) {
+        await gpsWriteWorker.rateLimit(wait);
+        throw Worker.RateLimitError();
+      }
+    }
     await runGpsWriteJob((job.data as GpsWriteJob).assetId);
   },
   { connection, concurrency: 1 },

@@ -51,12 +51,23 @@ export type MissingItem = {
   // row stays in the trash and would otherwise look like nothing happened.
   purge_error: string | null;
 };
+// A live asset whose GPS write-back into the ORIGINAL file's EXIF failed (cf.
+// lib/exifWrite.ts) — the message is stored in gps_write_error.
+export type GpsWriteItem = {
+  asset_id: number;
+  filename: string;
+  abs_path: string;
+  media_type: string;
+  error: string | null;
+  updated_at: string;
+};
 export type Failures = {
   derivative: { count: number; items: DerivItem[] };
   scan: { count: number; items: ScanItem[] };
   import: { count: number; items: ImportItem[] };
   ml: { count: number; items: MlItem[] };
   missing: { count: number; items: MissingItem[] };
+  gpsWrite: { count: number; items: GpsWriteItem[] };
 };
 
 // --- Relink (moved originals) ----------------------------------------------
@@ -104,7 +115,13 @@ export type RelinkJobInfo = {
   failedReason: string | null;
 };
 
-export type Kind = "derivative" | "scan" | "import" | "missing" | "ml";
+export type Kind =
+  | "derivative"
+  | "scan"
+  | "import"
+  | "missing"
+  | "ml"
+  | "gpswrite";
 export type Scope = { ids?: number[]; paths?: string[] };
 
 export type RowData<K extends string | number> = {

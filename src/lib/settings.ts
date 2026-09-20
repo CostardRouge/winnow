@@ -25,6 +25,15 @@ export type AppSettings = {
   //     calls + coarser tags; 5 km groups a region under one place.
   geocodePerHour: number;
   geocodePrecisionM: number;
+  // GPS write-back into original files (cf. lib/exifWrite.ts, worker.ts's
+  // gpsWriteWorker): max EXIF writes per hour (0 = unlimited). A single manual
+  // geotag is negligible, but a future bulk-geotag action can enqueue tens of
+  // thousands of these jobs at once — this is what stops it from hammering the
+  // NAS's HDD with back-to-back exiftool writes. Default 600 (10/minute):
+  // conservative for spinning disk write-back, but fast enough that a normal
+  // session's worth of manual geotags never feels throttled; tune from the
+  // Pipeline page.
+  gpsWritePerHour: number;
   // ML analysis (faces + OCR, cf. lib/ml.ts): max /predict calls per hour
   // (0 = unlimited). The default drips an 80k backfill over ~3 days instead of
   // pinning the box's CPU for hours — raise it live from the Pipeline page.
@@ -46,6 +55,7 @@ const DEFAULTS: AppSettings = {
   exportIncludeLiveVideo: false,
   geocodePerHour: 3600,
   geocodePrecisionM: 5000,
+  gpsWritePerHour: 600,
   mlPerHour: 1200,
   rescanMinutes: 60,
 };
@@ -74,6 +84,8 @@ export async function getSettings(force = false): Promise<AppSettings> {
         value.geocodePerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "geocode_precision_m")
         value.geocodePrecisionM = Math.max(1, Number(r.value) || DEFAULTS.geocodePrecisionM);
+      else if (r.key === "gps_write_per_hour")
+        value.gpsWritePerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "ml_per_hour")
         value.mlPerHour = Math.max(0, Number(r.value) || 0);
       else if (r.key === "rescan_minutes")
@@ -113,6 +125,11 @@ export async function setSettings(
     entries.push([
       "geocode_precision_m",
       JSON.stringify(Math.max(1, Math.floor(patch.geocodePrecisionM))),
+    ]);
+  if (patch.gpsWritePerHour !== undefined)
+    entries.push([
+      "gps_write_per_hour",
+      JSON.stringify(Math.max(0, Math.floor(patch.gpsWritePerHour))),
     ]);
   if (patch.mlPerHour !== undefined)
     entries.push([

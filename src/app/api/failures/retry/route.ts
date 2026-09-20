@@ -12,6 +12,9 @@
 //   kind="missing"    : re-stats the missing originals (ids, or all) — whichever
 //                       answer again are restored (flag + auto-trash lifted, a
 //                       broken derivative re-enqueued). Cf. lib/integrity.ts.
+//   kind="gpswrite"   : resets the assets to 'pending' and re-enqueues the
+//                       EXIF write-back (ids = asset ids; otherwise every
+//                       gpswrite error). Cf. lib/exifWrite.ts.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many, one, q } from "@/lib/db";
@@ -21,6 +24,7 @@ import {
   enqueueDerivative,
   enqueueImport,
   enqueueMlBulk,
+  enqueueGpsWrite,
   PRIORITY,
 } from "@/lib/queue";
 import { quarantineDir } from "@/lib/import";
@@ -30,7 +34,7 @@ import { json, badRequest, serverError } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  kind: z.enum(["derivative", "scan", "import", "missing", "ml"]),
+  kind: z.enum(["derivative", "scan", "import", "missing", "ml", "gpswrite"]),
   ids: z.array(z.number().int()).optional(),
   paths: z.array(z.string()).optional(),
 });
@@ -152,6 +156,33 @@ export async function POST(req: NextRequest) {
       // (auto-trash lifted); the rest stay listed for restore/purge triage.
       const restored = await recheckMissing(ids);
       return json({ kind, retried: restored });
+    }
+
+    if (kind === "gpswrite") {
+      // Re-run the EXIF write-back for the errored assets. runGpsWriteJob
+      // re-reads the coordinates at job time, so resetting the status here is
+      // enough — it also self-resolves as 'skipped' if the coordinates were
+      // cleared or the asset went away meanwhile.
+      const rows =
+        ids && ids.length
+          ? await many<{ id: number }>(
+              `SELECT id FROM assets
+                WHERE id = ANY($1) AND gps_write_status = 'error' AND deleted_at IS NULL`,
+              [ids],
+            )
+          : await many<{ id: number }>(
+              `SELECT id FROM assets
+                WHERE gps_write_status = 'error' AND deleted_at IS NULL`,
+            );
+      const idList = rows.map((r) => r.id);
+      if (idList.length) {
+        await q(
+          "UPDATE assets SET gps_write_status='pending', gps_write_error=NULL, updated_at=now() WHERE id = ANY($1)",
+          [idList],
+        );
+        for (const id of idList) await enqueueGpsWrite(id);
+      }
+      return json({ kind, retried: idList.length });
     }
 
     // import: re-imports the quarantine (batch tracked so that any further
