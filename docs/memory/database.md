@@ -62,7 +62,19 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Retention**: rows exist only by the owner's explicit gestures and go with the user (CASCADE); 1 MiB cap per body (`MAX_DOC_BYTES`, advertised in `/api/capabilities`). No automatic writer, no janitor.
 
-**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`. The kinds today (2026-09-15): `trip`, `project`, and `roll` + `presets` for Atelier's Develop tool (its `docs/develop-tool.md`); Atelier checks `capabilities.documents.kinds` before offering a kind, so an instance that predates an entry hides the feature instead of answering 400.
+**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`. The kinds today (2026-09-20): `trip`, `project`, `roll` + `presets` for Atelier's Develop tool (its `docs/develop-tool.md`), and `lutpack` — the INDEX of a purchased LUT pack, whose lattices are too big for a document and live in the file bucket below; Atelier checks `capabilities.documents.kinds` before offering a kind, so an instance that predates an entry hides the feature instead of answering 400.
+
+## The same idea in BYTES: a client app's files are content-addressed (2026-09-20)
+
+**Decision**: migration `0044_app_files.sql` adds `app_files (app, id, user_id) PK, bytes, media_type, storage_key` and `lib/appFiles.ts` + `api/apps/[app]/files[/:id]` serve it — where a client keeps what a 1 MiB JSON document cannot hold. Atelier is the first caller: a purchased LUT lattice is 1.5–2 MB and a pack is ~40 MB (its `docs/lut-packs.md`), so the pack's index stays a `lutpack` document and its lattices come here. The BYTES go through `lib/storage`, under `app-files/<user_id>/<app>/<sha256>`, so an instance on MinIO stores them there with no code change; this table is the index and the quota ledger.
+
+**Why content-addressed**: the id IS the SHA-256, and the route hashes what it received and refuses a mismatch (400), so a blob can never be served under a name that does not describe it. That buys three things at once — a `PUT` of bytes already here is a no-op (a retry, or a second device pushing the same pack, costs nothing), the answer is `immutable` and cacheable forever with the hash as `ETag`, and a client can ask "which of these hashes do you hold?" before sending 40 MB. There is therefore **no etag dance and no `If-Match`**: the revision problem the documents have cannot exist when the name is the content. Rows are per USER even for identical bytes — one shared row would reveal that another account holds the same file.
+
+**Order of writes**: bytes first, row second. A crash between them leaves an orphan blob a janitor can find by listing the prefix against this table; the other order would leave a row promising bytes that are not there — which the GET also guards, answering 404 rather than an empty body a client would decode as a broken file.
+
+**Caps**: 16 MiB a file, 512 MiB per (user, app), both advertised in `/api/capabilities` (`files.maxBytes`, `files.quotaBytes`) and enforced by the route — a full account answers **507**, which is not the same thing as a too-big file (413). `Cache-Control` is `private`: an asset's derivative may be public on this instance, an app's file never is.
+
+**How to apply**: keep Winnow ignorant of what a blob means, exactly as with `doc`; a new client app is a new `app` value; do not add a mutable "latest" pointer here — a mutable name would give back the revision problem the hash removes, and a client that needs one puts it in its document.
 
 ## `collapseGroups` over a large scope triggers Postgres JIT — measure before blaming the SQL (2026-09-07)
 

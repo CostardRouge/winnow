@@ -17,6 +17,7 @@ import { config } from "@/lib/config";
 import { identityFromHeaders } from "@/lib/auth";
 import { json, serverError } from "@/lib/api";
 import { DOC_KINDS, MAX_DOC_BYTES } from "@/lib/appDocuments";
+import { MAX_FILE_BYTES, MAX_USER_BYTES } from "@/lib/appFiles";
 import { getFeatures } from "@/lib/featureGate";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,12 @@ export async function GET(req: NextRequest) {
       // migration 0041): own rows for any signed-in role, an etag that
       // refuses a stale write, a body cap the client checks before sending.
       documents: { bucket: true, kinds: [...DOC_KINDS], maxBytes: MAX_DOC_BYTES },
+      // The binary half of the same idea (api/apps/[app]/files, migration
+      // 0044): blobs a client keeps here, content-addressed by SHA-256, own
+      // rows for any signed-in role. A client that must hold something bigger
+      // than a document — Atelier's purchased LUT lattices, 1.5-2 MB apiece —
+      // asks here before offering to keep it.
+      files: { bucket: true, maxBytes: MAX_FILE_BYTES, quotaBytes: MAX_USER_BYTES },
       // Server-side reminders / proactive work. Not built, and a browser tab
       // cannot do it alone — so a client shows nothing rather than a button.
       scheduling: { reminders: false },
