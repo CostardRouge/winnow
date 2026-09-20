@@ -236,13 +236,38 @@ display-only by design, because the raw value is what the grids filter on (the
 count/grid guarantee argued at the top of `lib/gear.ts`).
 
 **How it is answered today** (2026-09-20, `lib/deviceAttribution.ts`, migration
-0042): not by reading the file again but by **voting on what the index already
+0043): not by reading the file again but by **voting on what the index already
 knows**, and letting a human apply the verdict from Settings › Pipeline ›
 Devices. Five signals, weighted: a parsed DJI flight log (3), a tied `.SRT` at
 all (2), a maker filename (2), the busiest body of the SAME folder (3), a folder
 name that says drone (1); at 5 the row is pre-ticked. No signal is decisive
 alone, which is the whole reason it is a vote — `.srt` is also the world's most
 common subtitle extension, and a `DJI_` prefix dies on rename.
+
+**It is browsed by FOLDER, and that is the design, not the presentation**
+(2026-09-20). A flat list of media ranked by date is unusable past a few
+hundred: the drone clips of May sit between a January screenshot and a June
+Sony clip, and "keep attributing the drone" becomes hunting — the first cut
+shipped that way and the maintainer hit it within one session. One folder is
+one shoot is, very nearly always, one body, so a folder is a card with one
+verb, a body facet turns "the drone ones" into a click, and the per-file list
+inside a card is the exception path for a folder that held two cameras. The
+card is the same `.session-card` as Unplaced's, on purpose.
+
+**The score is written twice and must stay identical.** `scoreCandidate()`
+weighs one row in JS; `scoreSql()` weighs a whole folder in SQL, because the
+folder aggregate and the folder apply cannot afford a row trip. Both read
+`SIGNAL_WEIGHTS`, and both regexes are passed to Postgres as `.source`
+parameters — so the rule has one home, at the cost of one constraint: the
+patterns must stay inside the POSIX ERE subset (no `\d`, no `\b`, no
+lookaround). After touching either, check them against each other on real
+rows; a fixture comparing SQL's per-folder `confident` with the JS verdict is
+what caught this working.
+
+**A folder apply is a predicate, never a list of ids**: `applyFolder` resolves
+"this folder's unattributed media, optionally only the confident ones" inside
+the UPDATE, so a 129-clip folder costs one statement and cannot drift between
+what the card promised and what the write touched.
 
 **The sibling signal is what dodges the two-spellings trap**: the proposal is
 always the body of a neighbouring medium, so an attributed clip lands on the

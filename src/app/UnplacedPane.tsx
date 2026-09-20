@@ -264,7 +264,7 @@ export default function UnplacedPane() {
               <> · {data.totals.no_exif} without camera EXIF</>
             )}
             {rules && (
-              <div className="hint unplaced-rules">
+              <div className="hint card-rules">
                 Folders shot within {rules.gap_h} h of each other share a card.
                 A suggestion comes from the located frames within ±{rules.near_h} h
                 of the card’s window (±{rules.day_h} h failing that), camera fixes
@@ -324,13 +324,13 @@ export default function UnplacedPane() {
                         )}
                       </div>
                       {s ? (
-                        <div className="unplaced-suggest">
+                        <div className="card-suggest">
                           Suggested: <strong>{s.name ?? `${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`}</strong>
                           <span className="conf">{s.confidence}</span>
                           <span className="hint"> — {suggestionNote(g)}</span>
                         </div>
                       ) : (
-                        <div className="unplaced-suggest is-none">
+                        <div className="card-suggest is-none">
                           No located frame within a day of these — place by hand.
                         </div>
                       )}
