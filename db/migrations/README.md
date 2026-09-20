@@ -45,7 +45,7 @@ and to reason about when something fails.
 
 ## History
 
-Three rounds of collisions from parallel work were renumbered into the strict
+Four rounds of collisions from parallel work were renumbered into the strict
 sequence above:
 
 **2026-06** — `0006_` and `0007_` once had two files each:
@@ -99,6 +99,24 @@ migration appended at the tail would never be reached — `migrate` still aborts
 the old file first. Editing in place is the only fix that reaches those
 databases, and it is inert everywhere else: where the original succeeded, the
 shim below marks the file applied and the new text is never executed.
+
+**2026-09** — `0042_device_attribution.sql` (PR #253) collided with
+`0042_geo_exempt.sql` (PR #254). Per rule 1 the one that merged *second* moves,
+and this time it is the only one that can: the geo migration merged first and
+had already been applied on the server by the time the collision was noticed.
+
+| Old name                          | New name                          | Collided with            |
+| --------------------------------- | --------------------------------- | ------------------------ |
+| `0042_device_attribution.sql`     | `0043_device_attribution.sql`     | `0042_geo_exempt.sql`    |
+
+The move is safe in both directions: the two files are independent (one adds
+`assets.device_source` and a partial index, the other `assets.geo_exempt_at`
+and a widened `gps_source` CHECK), and nothing between `0042` and the tail
+touches either. That independence is *why* the accidental `d` < `g` tie-break
+worked — and why renumbering now, before something does depend on the order,
+costs a shim entry and nothing else. The file is itself idempotent
+(`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`), so a database that
+recorded the old name and somehow missed the shim would re-run it harmlessly.
 
 Because migrations are tracked by filename, databases migrated *before* a
 renumbering recorded the old names. `migrate.ts` carries a one-time

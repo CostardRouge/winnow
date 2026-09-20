@@ -29,6 +29,13 @@ const MIGRATIONS_DIR = path.resolve(__dirname, "../../db/migrations");
 //     `0026_manual_geotag` (vs `0026_dedup_self_hits`) → 0031. Both are safe to
 //     move later — nothing between them and the tail touches asset_clip or the
 //     assets.gps_* columns they add.
+//   * 2026-09 — `0042_device_attribution` (PR #253) collided with
+//     `0042_geo_exempt` (PR #254, merged first and already applied). Per rule 1
+//     the second one moves: → 0043. The two are independent (a device_source
+//     column and its partial index, against a geo_exempt_at column and the
+//     gps_source CHECK), so the order between them never mattered — which is
+//     exactly why the accidental `d` < `g` tie-break held and why it was worth
+//     fixing before something did depend on it.
 const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
   ["0006_session_completed.sql", "0007_session_completed.sql"],
   ["0007_duplicate_hits.sql", "0008_duplicate_hits.sql"],
@@ -38,6 +45,7 @@ const RENUMBERED: ReadonlyArray<readonly [oldName: string, newName: string]> = [
   ["0016_bursts.sql", "0029_bursts.sql"],
   ["0025_clip_embeddings.sql", "0030_clip_embeddings.sql"],
   ["0026_manual_geotag.sql", "0031_manual_geotag.sql"],
+  ["0042_device_attribution.sql", "0043_device_attribution.sql"],
 ];
 
 async function reconcileRenumbered(client: PoolClient): Promise<void> {
