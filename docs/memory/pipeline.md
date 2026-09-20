@@ -26,7 +26,7 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **Why**: a re-scan of an unchanged 80k library then hashes nothing and spawns no exiftool — that is what makes a periodic rescan (60 s tick) affordable on a spinning HDD.
 
-**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this).
+**How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this) — and that backfill has to be reachable from the UI, not only from a shell (see MEMORY.md, working preferences).
 
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
@@ -199,3 +199,69 @@ re-read. `BURST_BRACKET_EV_EPSILON` isn't yet in `docker-compose-optiplex.yml`'s
 **Why**: this runs on an Optiplex in a home, not in a rack. "Faster" is not automatically better here.
 
 **How to apply**: do not raise scan concurrency or parallelise exports for a spinning NAS. If a task feels too slow, propose a rate change (live, no restart) before a concurrency change (restart, memory implications).
+
+## A DJI clip carries no camera at all, and device is a join key (2026-09-19)
+
+**Fact**: `readMetadata` builds `assets.device` by joining `Make` + `Model`
+(`src/lib/extract.ts`). A DJI **photo** yields `DJI FC8482` — the
+flight-controller board code, prettified for display only by
+`lib/cameraLabels.ts`. A DJI **video** yields nothing: the MP4 carries neither
+atom. Sony XAVC-S and iPhone clips carry both, which is why the gap looks like a
+drone problem rather than a video problem.
+
+**Consequence**: `device` is the grouping key of every gear-shaped view, so those
+clips are not missing from a filter — they are absent from the whole dimension.
+`lib/gear.ts`'s aggregate requires `a.device IS NOT NULL AND a.device <> ''`,
+`/api/facets` drops null/empty values, `?device=` is `a.device IN (…)`
+(`lib/filter.ts`), and the viewer's Camera/Device rows are omitted when null
+(`gallery/AssetMeta.tsx`). The drone's card on `/gear` therefore counts
+`videos: 0` and links to a grid that can never hold them.
+
+**What the file does hold**: the bundled ExifTool knows
+`dvtm_Mini4_Pro.proto` and maps `dvtm_Mini4_Pro_1-1-10 → Model`, `1-1-5 →
+SerialNumber` (`Image::ExifTool::DJI`'s protobuf table) — but only out of the
+`djmd` **timed-metadata track**, which `QuickTime.pm` parses only under `-ee`
+(ExtractEmbedded). exiftool-vendored reads with `readArgs: ["-fast"]`, so the
+track is skipped entirely. Reaching it means a second, video-only
+`exiftool.read(p, { readArgs: ["-ee", …] })` that walks samples interleaved
+through a multi-hundred-MB file on the spinning HDD — measure it on a real clip
+before promising it, and keep it behind the stat gate like everything else.
+
+**The trap that survives whichever fix is chosen**: the embedded `Model` is the
+aircraft's own name, not `FC8482`, so writing it raw into `device` buys a
+*second* gear card for one aircraft. Anything that fills the column for videos
+must land on the string the photos already use, or the body needs a canonical key
+both spellings resolve to. `cameraLabels.ts` cannot be that key: it is
+display-only by design, because the raw value is what the grids filter on (the
+count/grid guarantee argued at the top of `lib/gear.ts`).
+
+**How it is answered today** (2026-09-20, `lib/deviceAttribution.ts`, migration
+0042): not by reading the file again but by **voting on what the index already
+knows**, and letting a human apply the verdict from Settings › Pipeline ›
+Devices. Five signals, weighted: a parsed DJI flight log (3), a tied `.SRT` at
+all (2), a maker filename (2), the busiest body of the SAME folder (3), a folder
+name that says drone (1); at 5 the row is pre-ticked. No signal is decisive
+alone, which is the whole reason it is a vote — `.srt` is also the world's most
+common subtitle extension, and a `DJI_` prefix dies on rename.
+
+**The sibling signal is what dodges the two-spellings trap**: the proposal is
+always the body of a neighbouring medium, so an attributed clip lands on the
+card its own stills already built instead of minting a second one. Signals that
+merely argue "this is a drone" never invent a string; with no sibling the row is
+listed with its score and no proposal, and the picker (populated from the bodies
+the library actually holds) is the answer. Keep it that way — the value written
+must be one the gear dimension is already grouping on.
+
+**The write is guarded, and that guard is the load-bearing part**:
+`assets.device_source` ('exif' | 'derived' | 'manual' | 'embedded') plus the
+indexer's `CASE WHEN $6 IS NOT NULL THEN $6 WHEN device_source IN (…) THEN
+device END`, the exact contract `gps_source='manual'` has carried since 0031.
+The file always wins when it has something to say; when it says nothing, the
+attribution survives. Without it an attributed body lives only until the clip's
+mtime changes. Both directions are worth re-checking if you touch that UPDATE.
+
+**Still open**: the `-ee` read above is not wired. It is the only source of the
+aircraft's `SerialNumber`, which is what would tell two identical bodies apart —
+the vote cannot. Wire it as an enqueue-only pass over the **index** queue (job
+name `device-probe`, told apart like `relink` on integrity), never inline: it is
+the only step here that touches an original.

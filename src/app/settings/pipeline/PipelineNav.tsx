@@ -58,6 +58,19 @@ export default function PipelineNav() {
           },
         ]
       : []),
+    // Media whose file named no camera body (cf. lib/deviceAttribution.ts).
+    // Only shown once there is something to triage: a library whose every file
+    // carries EXIF should not be handed a permanently empty stage.
+    ...(a?.device_missing
+      ? [
+          {
+            href: "/settings/pipeline/devices",
+            label: "Devices",
+            count: a.device_missing,
+            tone: "warn" as const,
+          },
+        ]
+      : []),
     {
       href: "/settings/pipeline/failures",
       label: "Failures",

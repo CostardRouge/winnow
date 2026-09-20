@@ -28,6 +28,7 @@ export async function GET() {
       ml_pending: number;
       ml_errors: number;
       ml_skipped: number;
+      device_missing: number;
     }>(
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
@@ -49,7 +50,13 @@ export async function GET() {
          count(*) FILTER (WHERE ml_status = 'ready')                         AS ml_ready,
          count(*) FILTER (WHERE ml_status IN ('pending','processing'))       AS ml_pending,
          count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors,
-         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped
+         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped,
+         -- Media carrying no camera body at all (cf. lib/deviceAttribution.ts).
+         -- Counted on logical media, like the media column above, so a pair
+         -- never reports twice. Drives the Devices tab badge, which is the
+         -- progress bar of the attribution pass.
+         count(*) FILTER (WHERE (device IS NULL OR device = '')
+                            AND group_role IS DISTINCT FROM 'companion')     AS device_missing
        FROM assets a
        WHERE a.deleted_at IS NULL`,
     );
@@ -90,6 +97,7 @@ export async function GET() {
         ml_pending: 0,
         ml_errors: 0,
         ml_skipped: 0,
+        device_missing: 0,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,

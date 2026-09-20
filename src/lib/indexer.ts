@@ -222,9 +222,23 @@ export async function indexRoot(
       const willDerive = !ignored;
       await q(
         `UPDATE assets SET
-           rel_path=$2, filename=$3, ext=$4, media_type=$5, device=$6,
+           rel_path=$2, filename=$3, ext=$4, media_type=$5,
+           -- Keep an attributed body (cf. lib/deviceAttribution.ts) when the
+           -- file itself still names none — a DJI MP4 carries no Make/Model at
+           -- all, so without this guard every re-index of the clip would wipe
+           -- the body a human (or the confidence vote) gave it. Same contract
+           -- as the manual geotag below: the FILE always wins when it has
+           -- something to say.
+           device=CASE WHEN $6::text IS NOT NULL THEN $6
+                       WHEN device_source IN ('derived','manual','embedded')
+                         THEN device END,
+           device_source=CASE WHEN $6::text IS NOT NULL THEN 'exif'
+                              ELSE device_source END,
            file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
-           camera_model=$11, lens=$12, iso=$13, shutter=$14, aperture=$15,
+           camera_model=CASE WHEN $11::text IS NOT NULL THEN $11
+                             WHEN device_source IN ('derived','manual','embedded')
+                               THEN camera_model END,
+           lens=$12, iso=$13, shutter=$14, aperture=$15,
            focal_length=$16,
            -- Keep a hand-set position (cf. api/assets/geotag) when the file
            -- itself carries none — e.g. the EXIF write-back failed or the
@@ -322,10 +336,16 @@ export async function indexRoot(
            derivative_status, processing_state, content_id,
            gimbal_pitch, gimbal_yaw, gimbal_roll,
            relative_altitude, absolute_altitude, shutter_count,
-           exposure_compensation, bracket_shot_number
+           exposure_compensation, bracket_shot_number,
+           -- Provenance of the device column (cf. migration 0042). Derived from the
+           -- value itself rather than passed in: a fresh row can only ever be
+           -- 'exif' (the file named a body) or nothing at all (it did not,
+           -- and the attribution pass may later give it one).
+           device_source
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,
+           CASE WHEN $7::text IS NOT NULL THEN 'exif' END
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
          RETURNING id`,
