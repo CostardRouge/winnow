@@ -1133,6 +1133,31 @@ html[data-theme="dark"] .btn-primary:hover {
   .card-actions {
     @apply flex items-center gap-2;
   }
+  /* Unplaced (docs/UNPLACED.md): the cards reuse .session-card; these are the
+     two lines that are its own — the suggestion under the meta line, and the
+     rules block above the list. The thresholds are printed there, never
+     hidden: a decision nobody can see is one nobody trusts. */
+  .unplaced-suggest {
+    @apply mt-1 text-[13px];
+    color: var(--color-text);
+  }
+  .unplaced-suggest.is-none {
+    color: var(--color-muted);
+  }
+  .unplaced-suggest .conf {
+    @apply ml-1.5 text-[11px] uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  .unplaced-head {
+    @apply mb-3 text-[13px];
+    color: var(--color-muted);
+  }
+  .unplaced-head strong {
+    color: var(--color-text);
+  }
+  .unplaced-rules {
+    @apply mt-1 max-w-[72ch];
+  }
   .card-primary {
     @apply whitespace-nowrap;
   }

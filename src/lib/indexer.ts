@@ -240,12 +240,16 @@ export async function indexRoot(
                                THEN camera_model END,
            lens=$12, iso=$13, shutter=$14, aperture=$15,
            focal_length=$16,
-           -- Keep a hand-set position (cf. api/assets/geotag) when the file
-           -- itself carries none — e.g. the EXIF write-back failed or the
-           -- format can't hold GPS. A file WITH coordinates always wins: after
-           -- a successful write-back it echoes the manual value anyway.
+           -- Keep a human-set position (cf. api/assets/geotag) when the file
+           -- itself carries none. For 'manual' that is the exception (the
+           -- EXIF write-back failed, or the format can't hold GPS — after a
+           -- successful write-back the file echoes the value anyway). For
+           -- 'inferred' it is the RULE: a bulk-accepted suggestion is never
+           -- written into the original (docs/UNPLACED.md §4.3), so the file
+           -- never carries it and, without this guard, every re-index would
+           -- wipe it. A file WITH coordinates always wins over both.
            gps=CASE WHEN $17::jsonb IS NOT NULL THEN $17::jsonb
-                    WHEN gps_source='manual' THEN gps END,
+                    WHEN gps_source IN ('manual','inferred') THEN gps END,
            width=$18, height=$19, duration_s=$20,
            content_id=$23,
            gimbal_pitch=$24, gimbal_yaw=$25, gimbal_roll=$26,

@@ -82,14 +82,23 @@ export type Asset = {
   // maker records no such counter (phones, drones, most video).
   shutter_count: number | null;
   gps: { lat: number; lon: number } | null;
-  // Manual geotag (cf. api/assets/geotag): 'manual' when a human set the
-  // coordinates through the geotag action, NULL when they came from the file's
-  // EXIF or a telemetry sidecar. `gps_write_status` follows the async write-back
-  // of a manual position into the ORIGINAL file's EXIF (lib/exifWrite.ts) —
+  // Where the coordinates came from (cf. api/assets/geotag, docs/UNPLACED.md
+  // §4.2): NULL when they came from the file's EXIF or a telemetry sidecar;
+  // 'manual' when a human placed a pin knowing where the shot was taken;
+  // 'inferred' when a human accepted a folder-scale suggestion in bulk without
+  // verifying each frame. The two human values are not interchangeable — an
+  // 'inferred' position is never written into the original (a re-index would
+  // read it back as a camera fix) and a consumer such as Atelier treats it as
+  // a bridge, not a vote. `gps_write_status` follows the async write-back of a
+  // MANUAL position into the ORIGINAL file's EXIF (lib/exifWrite.ts) —
   // 'skipped' (the default) means there is nothing to write.
-  gps_source: "manual" | null;
+  gps_source: "manual" | "inferred" | null;
   gps_write_status: "pending" | "processing" | "ready" | "error" | "skipped";
   gps_write_error: string | null;
+  // Set once, by hand, when a human decides this media will never need a
+  // position (a screenshot, a scan). Takes it out of the geotag backlog
+  // (`geo_state=todo`) without inventing coordinates. Migration 0042_geo_exempt.
+  geo_exempt_at: string | null;
   width: number | null;
   height: number | null;
   duration_s: number | null;
