@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   sessionDownloadFiles,
-  sessionGeotagAssets,
+  geotagTargets,
   type GeotagAsset,
 } from "@/lib/assetActions";
 import type { SessionStatus } from "@/lib/types";
@@ -404,7 +404,7 @@ export default function SessionsPane({
       if (geotagLoading) return;
       setGeotagLoading(true);
       try {
-        const assets = await sessionGeotagAssets(s.id);
+        const assets = await geotagTargets([s.id]);
         if (!assets.length) {
           setNotice("No media in this session to geotag.");
           return;
