@@ -280,33 +280,37 @@ export type GeotagAsset = {
   lens?: string | null;
 };
 
-// Every live media of a session, in the recap shape — the session-level geotag
-// entry points (the Geotag segment on a session card/header) start from here,
-// where the caller has no asset grid loaded. Pages through the session assets
-// route (keyset cursor) so a large session comes back whole; `collapse=0` so
-// BOTH members of a RAW+JPEG / Live Photo pair are listed and written — the
-// companion file needs the coordinates in its metadata too.
-export async function sessionGeotagAssets(
-  sessionId: number,
+// Every live, non-exempt media of these sessions, in the recap shape — the
+// entry points that have no asset grid loaded start here: the Geotag action on
+// a session card and on the session page's header (one session), and the
+// Unplaced view's Place (a folder group, several). ONE unpaged request to
+// api/assets/geotag/targets, which returns exactly these nine columns; it used
+// to page through the session assets route for the full grid projection, eight
+// requests for a large folder.
+//
+// Throws when the answer is truncated rather than returning a subset: a recap
+// that silently lists 20 000 of 25 000 media would write 20 000 and look like
+// it was done.
+export async function geotagTargets(
+  sessionIds: number[],
 ): Promise<GeotagAsset[]> {
-  const out: GeotagAsset[] = [];
-  let cursor: string | null = null;
-  do {
-    const sp = new URLSearchParams({ limit: "500" });
-    if (cursor) sp.set("cursor", cursor);
-    const res = await fetch(`/api/sessions/${sessionId}/assets?${sp}`);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `Couldn’t list the session (${res.status})`);
-    }
-    const body = (await res.json()) as {
-      assets?: GeotagAsset[];
-      next_cursor?: string | null;
-    };
-    out.push(...(body.assets ?? []));
-    cursor = body.next_cursor ?? null;
-  } while (cursor);
-  return out;
+  if (!sessionIds.length) return [];
+  const sp = new URLSearchParams({ session_ids: sessionIds.join(",") });
+  const res = await fetch(`/api/assets/geotag/targets?${sp}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Couldn’t list the media (${res.status})`);
+  }
+  const body = (await res.json()) as {
+    assets?: GeotagAsset[];
+    truncated?: boolean;
+  };
+  if (body.truncated) {
+    throw new Error(
+      "Too many media to geotag in one go — narrow the selection and try again.",
+    );
+  }
+  return body.assets ?? [];
 }
 
 // One place suggestion returned by the geotag autocomplete (cf.

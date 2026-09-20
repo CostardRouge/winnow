@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   exemptAssets,
-  sessionGeotagAssets,
+  geotagTargets,
   type GeotagAsset,
   type GeotagSource,
 } from "@/lib/assetActions";
@@ -122,14 +122,12 @@ export default function UnplacedPane() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  // Every live media of the group's folders, paged through the session assets
-  // route, minus the exempted ones — they left the backlog for good and must
-  // not come back through a bulk apply.
+  // Every live media of the group's folders in one request. The endpoint drops
+  // the exempted ones itself — they left the backlog for good and must not come
+  // back through a bulk apply.
   const loadGroupAssets = useCallback(
-    async (g: UnplacedGroup): Promise<GeotagAsset[]> => {
-      const lists = await Promise.all(g.sessions.map((s) => sessionGeotagAssets(s.id)));
-      return lists.flat().filter((a) => !a.geo_exempt_at);
-    },
+    (g: UnplacedGroup): Promise<GeotagAsset[]> =>
+      geotagTargets(g.sessions.map((s) => s.id)),
     [],
   );
 

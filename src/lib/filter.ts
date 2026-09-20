@@ -76,6 +76,11 @@ export const FilterSchema = z
     ids: intList,
     // Scope
     session_id: z.coerce.number().int().optional(),
+    // Several sessions at once (CSV). `session_id` stays the single-session
+    // scope every grid uses; this is for the surfaces whose unit of work spans
+    // folders — the Unplaced view's folder groups (docs/UNPLACED.md §4.4),
+    // where one outing shot with two bodies is two sessions and one gesture.
+    session_ids: intList,
     root_id: z.coerce.number().int().optional(),
     // Scope by folder role (Incoming/Final) - mapped to Postgres kinds.
     kind: z.enum(["incoming", "final"]).optional(),
@@ -272,6 +277,7 @@ export function buildFilter(
 
   if (filter.ids) inAny("a.id", filter.ids);
   if (filter.session_id != null) eq("a.session_id", filter.session_id);
+  if (filter.session_ids) inAny("a.session_id", filter.session_ids);
   if (filter.root_id != null) {
     conditions.push(
       `a.session_id IN (SELECT id FROM sessions WHERE root_id = $${i++})`,
@@ -557,6 +563,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
   const keys = [
     "ids",
     "session_id",
+    "session_ids",
     "root_id",
     "kind",
     "processing_state",

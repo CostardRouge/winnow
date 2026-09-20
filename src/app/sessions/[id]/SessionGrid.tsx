@@ -42,7 +42,7 @@ import {
   selectionDownloadFiles,
   selectionZipHref,
   sessionDownloadFiles,
-  sessionGeotagAssets,
+  geotagTargets,
   tagAssets,
   type GeotagAsset,
   type GeotagSource,
@@ -686,7 +686,7 @@ export default function SessionGrid({
   // loaded, so pull the full media list (paged) first.
   const openSessionGeotag = useCallback(async () => {
     try {
-      const recap = await sessionGeotagAssets(Number(id));
+      const recap = await geotagTargets([Number(id)]);
       if (!recap.length) {
         setNotice("No media in this session to geotag.");
         return;

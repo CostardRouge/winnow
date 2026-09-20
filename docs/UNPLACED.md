@@ -342,7 +342,16 @@ windows passed as `unnest` arrays.
    position-less rows in one line and keeps the table for the rows that
    already carry a position — the ones the dialog exists to protect.
 
-**Still open**: the Place action fetches every row of the group through the
-paged session-assets route before the picker opens (a 3 886-frame folder is
-eight requests); a dedicated ids endpoint would make it one. The 36 donor-less
-folders stay a hand job, by design.
+4. **The media list is one lean request.** `GET /api/assets/geotag/targets`
+   returns exactly the nine columns the recap draws, unpaged, for one session
+   or a whole folder group (`session_ids`). The first cut paged through
+   `/api/sessions/:id/assets` — the full `GRID_SELECT` projection, 500 rows at
+   a time, eight requests for a 3 886-frame folder — to populate a table of
+   five columns. The endpoint drops exempted media itself (they are not
+   targets) and keeps both members of a RAW+JPEG pair (the companion file
+   needs the coordinates too). Past a 20 000-row cap it answers `truncated`
+   and the client refuses to apply: a recap listing 20 000 of 25 000 media
+   would write 20 000 and look finished. The three no-grid entry points — the
+   session card, the session header, Place — share it.
+
+**Still open**: the 36 donor-less folders stay a hand job, by design.
