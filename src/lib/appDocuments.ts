@@ -20,9 +20,12 @@ import { many, one } from "./db";
 
 // trip and project: Atelier's Trips and Studio. roll and presets: its Develop
 // tool — a roll of pictures to develop, and the one personal preset book every
-// Develop host shares. Atelier reads this list from /api/capabilities and does
-// not offer to keep a kind an instance does not name.
-export const DOC_KINDS = ["trip", "project", "roll", "presets"] as const;
+// Develop host shares. lutpack: the INDEX of a purchased LUT pack — its names,
+// its tree, what its owner hides — whose lattices are too big for a document
+// and live in the file bucket beside it (appFiles.ts). Atelier reads this list
+// from /api/capabilities and does not offer to keep a kind an instance does
+// not name.
+export const DOC_KINDS = ["trip", "project", "roll", "presets", "lutpack"] as const;
 export type DocKind = (typeof DOC_KINDS)[number];
 
 // Tens of KB is a big trip; 1 MiB is a generous ceiling that still keeps a
