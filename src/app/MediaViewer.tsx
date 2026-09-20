@@ -488,6 +488,16 @@ export default function MediaViewer<T extends ViewerItem>({
     }
   }, [scale, tx, ty]);
 
+  // Home key: jump straight back to fit, same as clicking the readout while
+  // zoomed in (snapshots the current zoom/pan first so it can still be
+  // restored via the readout or by zooming back in).
+  const resetZoom = useCallback(() => {
+    if (scale > MIN_SCALE) zoomMemory.current = { scale, tx, ty };
+    setScale(MIN_SCALE);
+    setTx(0);
+    setTy(0);
+  }, [scale, tx, ty]);
+
   // Once back to fit, drop any leftover pan so the media re-centres.
   useEffect(() => {
     if (scale <= MIN_SCALE) {
@@ -512,11 +522,27 @@ export default function MediaViewer<T extends ViewerItem>({
       // Viewer-wide state (see burstArrowNav), so it can be armed from any
       // item — not just one whose filmstrip (and its ⇄ toggle) is showing.
       if (e.key === "b" || e.key === "B") return setBurstArrowNav((v) => !v);
+      // Zoom: +/- step like the HUD buttons ("=" is the unshifted key that
+      // carries "+" on a US layout; both it and the numpad "+" are accepted).
+      // Home resets to fit — 0 is already taken by the star-rating shortcuts.
+      if (e.key === "+" || e.key === "=") return zoomBy(1.15);
+      if (e.key === "-") return zoomBy(1 / 1.15);
+      if (e.key === "Home") return resetZoom();
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, index, stepBurst, onClose, onKeyDown, panelOpen, setPanel]);
+  }, [
+    items,
+    index,
+    stepBurst,
+    onClose,
+    onKeyDown,
+    panelOpen,
+    setPanel,
+    zoomBy,
+    resetZoom,
+  ]);
 
   // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
   // deltas; a plain mouse wheel sends coarse notches. Both zoom the stage (it
