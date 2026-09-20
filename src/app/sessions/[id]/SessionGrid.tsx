@@ -839,8 +839,10 @@ export default function SessionGrid({
         return void rate(a.id, { verdict: a.verdict === "reject" ? "unrated" : "reject" });
       if (e.key.toLowerCase() === "u") return void rate(a.id, { verdict: "unrated" });
       if (/^[0-5]$/.test(e.key)) return void rate(a.id, { star: Number.parseInt(e.key, 10) });
+      // Same soft-delete + confirm as the overflow menu's Delete entry.
+      if (e.key === "Delete") return void removeAssets([a.id]);
     },
-    [rate],
+    [rate, removeAssets],
   );
 
   // The header's far end: the page's one primary verb + the ⋯ menu (H2/H5),
