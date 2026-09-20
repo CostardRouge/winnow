@@ -170,7 +170,11 @@ export type Filters = {
   // look-alike in the same session. A simple toggle (the "only loners" inverse
   // isn't exposed in the panel).
   near_dup?: boolean;
-  has_gps?: boolean;
+  // The geotag backlog as three states (cf. lib/filter.ts, docs/UNPLACED.md):
+  // placed · todo (no position, not exempted) · exempt (never needs one).
+  // Replaced the old `has_gps` checkbox; `?has_gps=1` deep links decode to
+  // `placed` (filterParams.ts).
+  geo_state?: "placed" | "todo" | "exempt";
   // Pairing: narrow to one kind of pair. The "Live Photos" toggle sets
   // `group_kind="live_photo"` (cf. lib/pairing.ts).
   group_kind?: "raw_jpeg" | "live_photo";
@@ -886,15 +890,32 @@ export default function FilterPanel({
         </div>
       )}
 
+      {/* Position: the geotag backlog as three states (cf. lib/filter.ts).
+          Tri-state like the Before/after chips below — re-click the lit chip
+          to clear. "Unplaced" is the pile the Unplaced view works through;
+          "Exempt" is what a human took out of it for good. */}
       <div className="facet">
-        <label className="hint" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={!!filters.has_gps}
-            onChange={(e) => u({ has_gps: e.target.checked || undefined })}
-          />
-          Has GPS
-        </label>
+        <div className="facet-title">Position</div>
+        <div className="chips">
+          {(
+            [
+              ["placed", "Placed", "Media with a GPS position — from the camera or set by hand"],
+              ["todo", "Unplaced", "No position yet and not exempted — the geotag backlog"],
+              ["exempt", "Exempt", "Marked as never needing a position (screenshots, scans)"],
+            ] as const
+          ).map(([key, label, title]) => (
+            <button
+              key={key}
+              className={`chip${filters.geo_state === key ? " active" : ""}`}
+              onClick={() =>
+                u({ geo_state: filters.geo_state === key ? undefined : key })
+              }
+              title={title}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Finals ↔ sources (cf. lib/reconcile.ts). The link has a direction, and

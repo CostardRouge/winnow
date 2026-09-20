@@ -207,21 +207,28 @@ export async function geocodeAssets(
   return body.queued;
 }
 
-// Manually sets the GPS position of these assets (the geotag action — cf.
-// api/assets/geotag): updates the DB, re-resolves the place names and queues
-// the EXIF write-back into the originals. The caller (GeotagRecapModal) has
-// already had the user confirm the per-asset before/after, including any
-// overwrite of an existing position. Works for one (ids:[id]) or many. Returns
-// how many rows were actually updated, or throws on a non-2xx response.
+// How a human-set position came to be (cf. api/assets/geotag, docs/UNPLACED.md
+// §4.2): a pin placed knowing the place, or a folder-scale suggestion accepted
+// in bulk. Only 'manual' is ever written back into the original file.
+export type GeotagSource = "manual" | "inferred";
+
+// Sets the GPS position of these assets by hand (the geotag action — cf.
+// api/assets/geotag): updates the DB, re-resolves the place names and, for a
+// 'manual' pin, queues the EXIF write-back into the originals. The caller
+// (GeotagRecapModal) has already had the user confirm the per-asset
+// before/after, including any overwrite of an existing position. Works for one
+// (ids:[id]) or many. Returns how many rows were actually updated, or throws on
+// a non-2xx response.
 export async function geotagAssets(
   ids: number[],
   gps: { lat: number; lon: number },
+  source: GeotagSource = "manual",
 ): Promise<number> {
   if (!ids.length) return 0;
   const res = await fetch("/api/assets/geotag", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, lat: gps.lat, lon: gps.lon }),
+    body: JSON.stringify({ ids, lat: gps.lat, lon: gps.lon, source }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -231,17 +238,46 @@ export async function geotagAssets(
   return body.updated;
 }
 
+// Marks these assets as never needing a position (exempt=true) or returns
+// them to the geotag backlog (cf. api/assets/geo-exempt). Returns how many
+// rows changed.
+export async function exemptAssets(
+  ids: number[],
+  exempt: boolean,
+): Promise<number> {
+  if (!ids.length) return 0;
+  const res = await fetch("/api/assets/geo-exempt", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids, exempt }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(
+      body.error ?? `${exempt ? "Exempt" : "Un-exempt"} failed (${res.status})`,
+    );
+  }
+  const body = (await res.json()) as { updated: number };
+  return body.updated;
+}
+
 // What the geotag recap modal needs to know about one media (a subset of the
 // grid row). Kept here so the session-level flows (sessions list, session
-// header) and the grid flows share one shape.
+// header, the Unplaced view) and the grid flows share one shape. The optional
+// tail (`geo_exempt_at`, `camera_model`, `lens`) rides along when the source
+// is a full grid row — the Unplaced view reads it to leave exempted media out
+// of a bulk apply and to spot the no-camera-EXIF ones (likely screenshots).
 export type GeotagAsset = {
   id: number;
   filename: string;
   media_type: "photo" | "video";
   gps: { lat: number; lon: number } | null;
-  gps_source?: "manual" | null;
+  gps_source?: GeotagSource | null;
   place_city?: string | null;
   place_country?: string | null;
+  geo_exempt_at?: string | null;
+  camera_model?: string | null;
+  lens?: string | null;
 };
 
 // Every live media of a session, in the recap shape — the session-level geotag

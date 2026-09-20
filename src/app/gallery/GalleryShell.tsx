@@ -28,12 +28,14 @@ import { fetchJson } from "@/lib/fetchJson";
 import {
   deleteAssets,
   downloadAssetOriginal,
+  exemptAssets,
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
   regenerateAssets,
   selectionDownloadFiles,
   selectionZipHref,
+  type GeotagSource,
 } from "@/lib/assetActions";
 import ExportSelectionModal from "../exports/ExportSelectionModal";
 import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
@@ -67,9 +69,12 @@ type Row = GalleryAsset & {
   duration_s?: number | null;
   device?: string | null;
   gps?: { lat: number; lon: number } | null;
-  // 'manual' when the position was hand-set through the geotag action (cf.
-  // api/assets/geotag) — the recap modal badges it to tell it from a camera fix.
-  gps_source?: "manual" | null;
+  // 'manual' when a human placed the pin, 'inferred' when a folder suggestion
+  // was accepted in bulk (cf. api/assets/geotag) — the recap modal badges it to
+  // tell either from a camera fix. `geo_exempt_at`: taken out of the geotag
+  // backlog for good (cf. api/assets/geo-exempt).
+  gps_source?: "manual" | "inferred" | null;
+  geo_exempt_at?: string | null;
   rel_path?: string | null;
   // Reverse-geocoded place (cf. lib/geocode.ts) — fed to the viewer's metadata
   // panel and reflected optimistically while a "Resolve location" job runs.
@@ -193,7 +198,7 @@ function toQuery(
   }
   if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
   if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
-  if (f.has_gps) sp.set("has_gps", "true");
+  if (f.geo_state) sp.set("geo_state", f.geo_state);
   if (f.group_kind) sp.set("group_kind", f.group_kind);
   // Finals ↔ sources (cf. lib/reconcile.ts) — tri-state, like has_faces/stacked:
   // `false` asks for the complement (not edited yet / no original found).
@@ -244,7 +249,7 @@ function countActiveFilters(f: Filters): number {
   if (f.aperture_min != null || f.aperture_max != null) n++;
   if (f.size_min != null || f.size_max != null) n++;
   if (f.sharpness_min != null || f.sharpness_max != null) n++;
-  if (f.has_gps) n++;
+  if (f.geo_state) n++;
   if (f.group_kind) n++;
   if (f.has_edit != null) n++;
   if (f.is_edit != null) n++;
@@ -658,6 +663,34 @@ export default function GalleryShell({
     }
   }, []);
 
+  // Take the selection out of the geotag backlog (or put it back): sets
+  // geo_exempt_at on the rows and nothing else (cf. api/assets/geo-exempt).
+  // Optimistic like the other bulk actions; a `geo_state=todo` grid keeps the
+  // rows until the next refetch rather than making them vanish under the hand.
+  const exemptSelection = useCallback(
+    async (ids: number[], exempt: boolean) => {
+      if (!ids.length) return;
+      try {
+        const n = await exemptAssets(ids, exempt);
+        const idset = new Set(ids);
+        const stamp = exempt ? new Date().toISOString() : null;
+        setItems((prev) =>
+          prev.map((a) =>
+            idset.has(a.id) ? { ...a, geo_exempt_at: stamp } : a,
+          ),
+        );
+        setNotice(
+          exempt
+            ? `${n} media marked as never needing a position`
+            : `${n} media back in the geotag backlog`,
+        );
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [],
+  );
+
   // --- Manual geotag (two-step: location picker, then before/after recap) ---
   // `ids` is the frozen selection the flow was opened for; `loc` flips the flow
   // from step 1 (pick a point) to step 2 (confirm per-media).
@@ -670,10 +703,12 @@ export default function GalleryShell({
     if (ids.length) setGeotag({ ids });
   }, []);
 
-  // Recap confirmed & applied: reflect the new position (and the two queued
+  // Recap confirmed & applied: reflect the new position (and the queued
   // pipelines) in the grid rows without a refetch, like the other bulk actions.
+  // `source` is what the recap recorded — 'manual' from these entry points (a
+  // pin placed by hand); the write-back only ran for that case.
   const geotagApplied = useCallback(
-    (message: string, ids: number[], loc: PickedLocation) => {
+    (message: string, ids: number[], loc: PickedLocation, source: GeotagSource) => {
       const idset = new Set(ids);
       setItems((prev) =>
         prev.map((a) =>
@@ -681,7 +716,8 @@ export default function GalleryShell({
             ? {
                 ...a,
                 gps: { lat: loc.lat, lon: loc.lon },
-                gps_source: "manual" as const,
+                gps_source: source,
+                gps_write_status: source === "manual" ? "pending" : "skipped",
                 geocode_status: "pending",
               }
             : a,
@@ -1107,6 +1143,7 @@ export default function GalleryShell({
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
           onGeotag={() => geotagSelection([...selected])}
+          onExempt={(exempt) => exemptSelection([...selected], exempt)}
           onMl={() => mlSelection([...selected])}
           onDelete={() => removeAssets([...selected])}
         />
@@ -1156,7 +1193,9 @@ export default function GalleryShell({
           })}
           target={geotag.loc}
           onClose={() => setGeotag(null)}
-          onApplied={(message, ids) => geotagApplied(message, ids, geotag.loc!)}
+          onApplied={(message, ids, source) =>
+            geotagApplied(message, ids, geotag.loc!, source)
+          }
         />
       )}
 

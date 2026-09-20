@@ -29,6 +29,7 @@ export default function BulkActionBar({
   onRegenerate,
   onGeocode,
   onGeotag,
+  onExempt,
   onMl,
   onDelete,
 }: {
@@ -58,6 +59,10 @@ export default function BulkActionBar({
   /** Manually set the GPS position of the selection (picker + recap flow).
    * Omitted when the host surface doesn't offer it. */
   onGeotag?: () => void;
+  /** Mark the selection as never needing a position (`true` — screenshots,
+   * scans) or put it back into the geotag backlog (`false`). Cf.
+   * api/assets/geo-exempt. Omitted when the host surface doesn't offer it. */
+  onExempt?: (exempt: boolean) => void;
   /** (Re)run the ML analysis (faces + OCR) on the selection. Omitted when the
    * host surface doesn't offer it. */
   onMl?: () => void;
@@ -123,6 +128,26 @@ export default function BulkActionBar({
             icon: "📌",
             disabled: none,
             onSelect: onGeotag,
+          } as MenuItem,
+        ]
+      : []),
+    ...(onExempt
+      ? [
+          {
+            key: "exempt",
+            label: "Never needs a position",
+            hint: "Screenshots, scans — leave the geotag backlog",
+            icon: "⊘",
+            disabled: none,
+            onSelect: () => onExempt(true),
+          } as MenuItem,
+          {
+            key: "unexempt",
+            label: "Needs a position again",
+            hint: "Back into the geotag backlog",
+            icon: "↩",
+            disabled: none,
+            onSelect: () => onExempt(false),
           } as MenuItem,
         ]
       : []),

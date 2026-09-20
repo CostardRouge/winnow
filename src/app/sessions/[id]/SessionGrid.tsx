@@ -37,6 +37,7 @@ import {
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
+  exemptAssets,
   regenerateAssets,
   selectionDownloadFiles,
   selectionZipHref,
@@ -44,6 +45,7 @@ import {
   sessionGeotagAssets,
   tagAssets,
   type GeotagAsset,
+  type GeotagSource,
 } from "@/lib/assetActions";
 import ExportSelectionModal from "@/app/exports/ExportSelectionModal";
 import type { SessionStatus } from "@/lib/types";
@@ -75,9 +77,12 @@ type AssetRow = {
   duration_s: number | null;
   device: string | null;
   gps: { lat: number; lon: number } | null;
-  // 'manual' when the position was hand-set through the geotag action (cf.
-  // api/assets/geotag) — the recap modal badges it to tell it from a camera fix.
-  gps_source?: "manual" | null;
+  // 'manual' when a human placed the pin, 'inferred' when a folder suggestion
+  // was accepted in bulk (cf. api/assets/geotag) — the recap modal badges it to
+  // tell either from a camera fix. `geo_exempt_at`: taken out of the geotag
+  // backlog for good (cf. api/assets/geo-exempt).
+  gps_source?: "manual" | "inferred" | null;
+  geo_exempt_at?: string | null;
   rel_path: string | null;
   // Reverse-geocoded place (cf. lib/geocode.ts) — surfaced in the viewer's
   // metadata panel; `geocode_status` flips optimistically during a resolve.
@@ -636,6 +641,32 @@ export default function SessionGrid({
     }
   }, []);
 
+  // Take the selection out of the geotag backlog (or put it back): sets
+  // geo_exempt_at on the rows and nothing else (cf. api/assets/geo-exempt).
+  const exemptSelection = useCallback(
+    async (ids: number[], exempt: boolean) => {
+      if (!ids.length) return;
+      try {
+        const n = await exemptAssets(ids, exempt);
+        const idset = new Set(ids);
+        const stamp = exempt ? new Date().toISOString() : null;
+        setAssets((prev) =>
+          prev.map((a) =>
+            idset.has(a.id) ? { ...a, geo_exempt_at: stamp } : a,
+          ),
+        );
+        setNotice(
+          exempt
+            ? `${n} media marked as never needing a position`
+            : `${n} media back in the geotag backlog`,
+        );
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [],
+  );
+
   // --- Manual geotag (two-step: location picker, then before/after recap) ---
   // `ids` is the frozen selection the flow was opened for; `loc` flips the flow
   // from step 1 (pick a point) to step 2 (confirm per-media). `recap`, when
@@ -668,8 +699,10 @@ export default function SessionGrid({
 
   // Recap confirmed & applied: reflect the new position (and the queued
   // pipelines) in the grid rows without a refetch, like the other bulk actions.
+  // `source` is what the recap recorded — 'manual' from these entry points (a
+  // pin placed by hand); the write-back only ran for that case.
   const geotagApplied = useCallback(
-    (message: string, ids: number[], loc: PickedLocation) => {
+    (message: string, ids: number[], loc: PickedLocation, source: GeotagSource) => {
       const idset = new Set(ids);
       setAssets((prev) =>
         prev.map((a) =>
@@ -677,7 +710,8 @@ export default function SessionGrid({
             ? {
                 ...a,
                 gps: { lat: loc.lat, lon: loc.lon },
-                gps_source: "manual" as const,
+                gps_source: source,
+                gps_write_status: source === "manual" ? "pending" : "skipped",
                 geocode_status: "pending",
               }
             : a,
@@ -906,6 +940,7 @@ export default function SessionGrid({
             onRegenerate={() => regenerate([...selected])}
             onGeocode={() => geocode([...selected])}
             onGeotag={() => openGeotag([...selected])}
+            onExempt={(exempt) => exemptSelection([...selected], exempt)}
             onMl={() => mlAnalyze([...selected])}
             onDelete={() => removeAssets([...selected])}
           />
@@ -1154,7 +1189,9 @@ export default function SessionGrid({
           }
           target={geotag.loc}
           onClose={() => setGeotag(null)}
-          onApplied={(message, ids) => geotagApplied(message, ids, geotag.loc!)}
+          onApplied={(message, ids, source) =>
+            geotagApplied(message, ids, geotag.loc!, source)
+          }
         />
       )}
 
