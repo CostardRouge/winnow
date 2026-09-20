@@ -101,6 +101,13 @@ type CandidateRow = {
 // Maker naming schemes that identify a file on its name alone. DJI is the one
 // that matters here; the others are listed because the vote is generic and a
 // clip named by its camera is evidence whoever made it.
+//
+// Both patterns below are evaluated TWICE — here by JS, per row, and by
+// Postgres' `~*` when the folder aggregate counts how much of a folder each
+// signal carries. `.source` is handed to the query as a parameter so the rule
+// still lives in exactly one place, which costs one constraint: they must stay
+// inside the POSIX ERE subset both engines share. No `\d`, no `\b`, no
+// lookaround — spell character classes out, as these do.
 const FILENAME_PATTERNS = /^(dji_|mav_|fpv_)/i;
 
 // Folder names people give gear. Weak by construction (one folder, two
@@ -144,10 +151,15 @@ const CANDIDATE_SCOPE = `
     AND a.group_role IS DISTINCT FROM 'companion'
     AND (a.device IS NULL OR a.device = '')`;
 
-/** How many media are waiting for a body — the nav badge and the page header. */
-export async function countUnattributed(): Promise<number> {
+/** How many media are waiting for a body — the nav badge and the page header.
+ *  Scoped to one folder when `sessionId` is given (what an opened card pages
+ *  through). */
+export async function countUnattributed(sessionId?: number): Promise<number> {
   const row = await one<{ count: number }>(
-    `SELECT count(*)::int AS count FROM assets a WHERE ${CANDIDATE_SCOPE}`,
+    `SELECT count(*)::int AS count FROM assets a
+      WHERE ${CANDIDATE_SCOPE}
+        ${sessionId != null ? "AND a.session_id = $1" : ""}`,
+    sessionId != null ? [sessionId] : [],
   );
   return row?.count ?? 0;
 }
@@ -171,6 +183,199 @@ export async function listKnownBodies(): Promise<KnownBody[]> {
   );
 }
 
+// ------------------------------------------------------------- folders ----
+//
+// The list is browsed by FOLDER, not by file. One folder is one shoot is, very
+// nearly always, one body: 300 rows collapse into 30 cards, each carrying a
+// single verb. The per-file list below exists for the one case that needs it —
+// a folder that held two cameras — and is fetched only when a card is opened.
+// Same shape as the geotag backlog's folder groups (`docs/UNPLACED.md` §7), for
+// the same reason: the decision is taken per folder, so the list should be too.
+//
+// The per-row predicates, spelled once and reused by the aggregate, the score
+// expression and the folder apply. `a` is `assets` wherever they land.
+const HAS_SIDECAR_SQL = `EXISTS (SELECT 1 FROM asset_sidecars sc
+                                  WHERE sc.asset_id = a.id AND sc.kind = 'srt')`;
+const HAS_TELEMETRY_SQL = `EXISTS (SELECT 1 FROM asset_sidecars sc
+                                    WHERE sc.asset_id = a.id AND sc.kind = 'srt'
+                                      AND sc.sample_count > 0)`;
+// $1 = FILENAME_PATTERNS.source, $2 = FOLDER_PATTERNS.source (see the note on
+// the constants). `sess` is the joined `sessions` row; `sib` the folder's body.
+const NAME_SQL = `a.filename ~* $1`;
+const FOLDER_SQL = `sess.source_path ~* $2`;
+const SIBLING_SQL = `sib.device IS NOT NULL`;
+
+// The vote, as one arithmetic expression, with the weights interpolated from
+// SIGNAL_WEIGHTS so the two engines can never disagree about them. Kept beside
+// scoreCandidate() deliberately: if you change one, the diff shows the other.
+//
+// The sibling term is a parameter rather than a fixed expression because the
+// two callers know it differently: the folder aggregate joins `sib` and reads
+// it per row, while the folder apply has no such join — there the folder's
+// sibling is one boolean, already resolved, passed in.
+const scoreSql = (sibling: string) => `(
+    CASE WHEN ${HAS_TELEMETRY_SQL} THEN ${SIGNAL_WEIGHTS.telemetry} ELSE 0 END
+  + CASE WHEN ${HAS_SIDECAR_SQL}   THEN ${SIGNAL_WEIGHTS.sidecar}   ELSE 0 END
+  + CASE WHEN ${NAME_SQL}          THEN ${SIGNAL_WEIGHTS.filename}  ELSE 0 END
+  + CASE WHEN ${sibling}           THEN ${SIGNAL_WEIGHTS.sibling}   ELSE 0 END
+  + CASE WHEN ${FOLDER_SQL}        THEN ${SIGNAL_WEIGHTS.folder}    ELSE 0 END
+)`;
+const SCORE_SQL = scoreSql(SIBLING_SQL);
+
+/** A thumbnail the card's strip draws — the same shape Unplaced's cards use. */
+export type DeviceSample = {
+  id: number;
+  ext: string;
+  media_type: "photo" | "video";
+};
+
+/** One folder with media waiting for a body: a card on the Devices page. */
+export type DeviceFolder = {
+  session_id: number;
+  name: string;
+  source_path: string;
+  /** Media in this folder carrying no body — what the card's verb acts on. */
+  total: number;
+  photos: number;
+  videos: number;
+  /** How many of them the vote is confident about (score >= CONFIDENT_SCORE). */
+  confident: number;
+  first_capture: string | null;
+  last_capture: string | null;
+  /** The signals carried by MORE THAN HALF the folder — what the card prints.
+   *  A signal two files out of 129 carry says nothing about the folder. */
+  signals: DeviceSignal[];
+  suggested_device: string | null;
+  suggested_camera_model: string | null;
+  sample: DeviceSample[];
+};
+
+type FolderRow = {
+  session_id: number;
+  name: string;
+  source_path: string;
+  total: number;
+  photos: number;
+  videos: number;
+  confident: number;
+  first_capture: string | null;
+  last_capture: string | null;
+  n_telemetry: number;
+  n_sidecar: number;
+  n_filename: number;
+  n_sibling: number;
+  n_folder: number;
+  suggested_device: string | null;
+  suggested_camera_model: string | null;
+  sample: DeviceSample[] | null;
+};
+
+/** How folders are ordered on the page. */
+export type FolderSort = "size" | "recent";
+
+/**
+ * Every folder holding unattributed media, with its aggregate evidence.
+ *
+ * One scan. The per-signal counts are what let the card say "flight log" only
+ * when the folder really is flight logs, and the confident count is what the
+ * "confident only" actions target. `sample` is the four newest thumbnails, cut
+ * server-side — a card never loads a folder to draw four tiles.
+ */
+export async function listFolders(
+  opts: { sort?: FolderSort } = {},
+): Promise<DeviceFolder[]> {
+  const order =
+    opts.sort === "recent"
+      ? "ORDER BY last_capture DESC NULLS LAST, session_id DESC"
+      : "ORDER BY total DESC, last_capture DESC NULLS LAST";
+
+  const rows = await many<FolderRow>(
+    `WITH sib AS (
+       SELECT session_id, device, camera_model FROM (
+         SELECT a.session_id,
+                a.device,
+                mode() WITHIN GROUP (ORDER BY a.camera_model) AS camera_model,
+                row_number() OVER (
+                  PARTITION BY a.session_id
+                  ORDER BY count(*) DESC, a.device
+                ) AS rn
+           FROM assets a
+          WHERE a.deleted_at IS NULL
+            AND a.device IS NOT NULL AND a.device <> ''
+          GROUP BY a.session_id, a.device
+       ) ranked
+        WHERE rn = 1
+     ),
+     cand AS (
+       SELECT a.id, a.session_id, a.ext, a.media_type, a.captured_at,
+              sess.name                AS name,
+              sess.source_path         AS source_path,
+              sib.device               AS suggested_device,
+              sib.camera_model         AS suggested_camera_model,
+              ${HAS_TELEMETRY_SQL}     AS has_telemetry,
+              ${HAS_SIDECAR_SQL}       AS has_sidecar,
+              ${NAME_SQL}              AS has_name,
+              ${SIBLING_SQL}           AS has_sibling,
+              ${FOLDER_SQL}            AS has_folder,
+              ${SCORE_SQL}             AS score
+         FROM assets a
+         JOIN sessions sess ON sess.id = a.session_id
+         LEFT JOIN sib ON sib.session_id = a.session_id
+        WHERE ${CANDIDATE_SCOPE}
+     )
+     SELECT c.session_id, c.name, c.source_path,
+            count(*)::int                                            AS total,
+            count(*) FILTER (WHERE c.media_type = 'photo')::int       AS photos,
+            count(*) FILTER (WHERE c.media_type = 'video')::int       AS videos,
+            count(*) FILTER (WHERE c.score >= ${CONFIDENT_SCORE})::int AS confident,
+            min(c.captured_at)                                       AS first_capture,
+            max(c.captured_at)                                       AS last_capture,
+            count(*) FILTER (WHERE c.has_telemetry)::int              AS n_telemetry,
+            count(*) FILTER (WHERE c.has_sidecar)::int                AS n_sidecar,
+            count(*) FILTER (WHERE c.has_name)::int                   AS n_filename,
+            count(*) FILTER (WHERE c.has_sibling)::int                AS n_sibling,
+            count(*) FILTER (WHERE c.has_folder)::int                 AS n_folder,
+            max(c.suggested_device)                                  AS suggested_device,
+            max(c.suggested_camera_model)                            AS suggested_camera_model,
+            (SELECT json_agg(s)
+               FROM (SELECT d.id, d.ext, d.media_type
+                       FROM cand d
+                      WHERE d.session_id = c.session_id
+                      ORDER BY d.captured_at DESC NULLS LAST, d.id DESC
+                      LIMIT 4) s)                                    AS sample
+       FROM cand c
+      GROUP BY c.session_id, c.name, c.source_path
+      ${order}`,
+    [FILENAME_PATTERNS.source, FOLDER_PATTERNS.source],
+  );
+
+  return rows.map((r) => {
+    const half = r.total / 2;
+    const counts: [DeviceSignal, number][] = [
+      ["telemetry", r.n_telemetry],
+      ["sidecar", r.n_sidecar],
+      ["filename", r.n_filename],
+      ["sibling", r.n_sibling],
+      ["folder", r.n_folder],
+    ];
+    return {
+      session_id: r.session_id,
+      name: r.name,
+      source_path: r.source_path,
+      total: r.total,
+      photos: r.photos,
+      videos: r.videos,
+      confident: r.confident,
+      first_capture: r.first_capture,
+      last_capture: r.last_capture,
+      signals: counts.filter(([, n]) => n > half).map(([s]) => s),
+      suggested_device: r.suggested_device,
+      suggested_camera_model: r.suggested_camera_model,
+      sample: r.sample ?? [],
+    };
+  });
+}
+
 /**
  * The candidates with their evidence, newest capture first.
  *
@@ -181,15 +386,30 @@ export async function listKnownBodies(): Promise<KnownBody[]> {
  * all yields no sibling, and its rows simply come back without a proposal.
  */
 export async function listCandidates(
-  opts: { limit?: number; offset?: number } = {},
+  opts: { sessionId?: number; limit?: number; offset?: number } = {},
 ): Promise<{ items: DeviceCandidate[]; total: number }> {
-  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1000);
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 1000);
   const offset = Math.max(opts.offset ?? 0, 0);
-  const rows = await candidateRows(
-    "ORDER BY c.captured_at DESC NULLS LAST, c.id DESC LIMIT $1 OFFSET $2",
-    [limit, offset],
-  );
-  return { items: rows.map(toCandidate), total: await countUnattributed() };
+  const params: unknown[] = [];
+  let where = "";
+  if (opts.sessionId != null) {
+    params.push(opts.sessionId);
+    where = `AND a.session_id = $${params.length}`;
+  }
+  params.push(limit, offset);
+  const rows = await candidateRows({
+    where,
+    tail: `ORDER BY c.captured_at DESC NULLS LAST, c.id DESC
+           LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  });
+  return {
+    items: rows.map(toCandidate),
+    total:
+      opts.sessionId != null
+        ? await countUnattributed(opts.sessionId)
+        : await countUnattributed(),
+  };
 }
 
 /**
@@ -204,20 +424,24 @@ export async function candidatesByIds(
   if (!ids.length) return [];
   // The predicate lands INSIDE the candidate CTE, where the table is aliased
   // `a` — not `c`, which only exists in the outer select.
-  const rows = await candidateRows("AND a.id = ANY($1)", [ids], "AND");
+  const rows = await candidateRows({
+    where: "AND a.id = ANY($1)",
+    tail: "ORDER BY c.captured_at DESC NULLS LAST",
+    params: [ids],
+  });
   return rows.map(toCandidate);
 }
 
-// Shared body of the two lookups above. `tail` is appended after the main
-// SELECT (an ORDER/LIMIT clause, or an extra predicate when `mode` is "AND", in
-// which case it lands inside the candidate CTE instead).
-async function candidateRows(
-  tail: string,
-  params: unknown[],
-  mode: "ORDER" | "AND" = "ORDER",
-): Promise<CandidateRow[]> {
-  const extra = mode === "AND" ? tail : "";
-  const order = mode === "AND" ? "ORDER BY c.captured_at DESC NULLS LAST" : tail;
+// Shared body of the two lookups above. `where` is an extra predicate inside
+// the candidate CTE (where the table is `a`); `tail` is the ORDER/LIMIT clause
+// after the outer SELECT (where it is `c`). Both carry their own placeholders,
+// numbered by the caller against one `params` array.
+async function candidateRows(opts: {
+  where?: string;
+  tail: string;
+  params: unknown[];
+}): Promise<CandidateRow[]> {
+  const { where: extra = "", tail: order, params } = opts;
   return many<CandidateRow>(
     `WITH cand AS (
        SELECT a.id, a.filename, a.rel_path, a.media_type, a.captured_at,
@@ -343,4 +567,75 @@ export async function applyAttribution(opts: {
     updated += res.rowCount ?? 0;
   }
   return { updated, skipped: ids.length - updated };
+}
+
+/**
+ * Attribute a WHOLE folder in one statement — the page's primary verb.
+ *
+ * Deliberately not "read the ids, then apply them": a 129-clip folder would
+ * mean shipping 129 numbers to the browser and back to write one value, and the
+ * set could have changed in between. The selection is expressed as a predicate
+ * instead, evaluated at write time, so what gets the body is exactly what the
+ * card said it would — the folder's unattributed media, optionally only those
+ * the vote is confident about.
+ *
+ * `device` given → that body, `device_source = 'manual'`. Omitted → the
+ * folder's own suggestion, `'derived'`; a folder with no suggestion writes
+ * nothing and says so rather than guessing.
+ */
+export async function applyFolder(opts: {
+  sessionId: number;
+  /** Only attribute media scoring at least this much (the card's "confident
+   *  only" action passes CONFIDENT_SCORE). */
+  minScore?: number;
+  device?: string;
+  cameraModel?: string | null;
+}): Promise<ApplyResult> {
+  const pending = await countUnattributed(opts.sessionId);
+
+  // The folder's own body, always looked up: it names the device in suggestion
+  // mode, AND it is the sibling term of the score in both modes — a folder that
+  // has one gives every medium in it those 3 points whichever body is written.
+  const sib = await one<{ device: string; camera_model: string | null }>(
+    `SELECT a.device,
+            mode() WITHIN GROUP (ORDER BY a.camera_model) AS camera_model
+       FROM assets a
+      WHERE a.session_id = $1 AND a.deleted_at IS NULL
+        AND a.device IS NOT NULL AND a.device <> ''
+      GROUP BY a.device
+      ORDER BY count(*) DESC, a.device
+      LIMIT 1`,
+    [opts.sessionId],
+  );
+
+  const device = opts.device ?? sib?.device;
+  if (!device) return { updated: 0, skipped: pending };
+  const cameraModel = opts.device
+    ? (opts.cameraModel ?? null)
+    : (sib?.camera_model ?? null);
+
+  // $1 filename pattern, $2 folder pattern — the score expression's own
+  // placeholders, so they keep those numbers here; the rest follow.
+  const res = await q(
+    `UPDATE assets a
+        SET device = $4, camera_model = COALESCE(a.camera_model, $5),
+            device_source = $6, updated_at = now()
+       FROM sessions sess
+      WHERE sess.id = a.session_id
+        AND a.session_id = $3
+        AND ${CANDIDATE_SCOPE}
+        AND ${scoreSql("$8::boolean")} >= $7`,
+    [
+      FILENAME_PATTERNS.source,
+      FOLDER_PATTERNS.source,
+      opts.sessionId,
+      device,
+      cameraModel,
+      opts.device ? "manual" : "derived",
+      opts.minScore ?? 0,
+      sib != null,
+    ],
+  );
+  const updated = res.rowCount ?? 0;
+  return { updated, skipped: Math.max(0, pending - updated) };
 }

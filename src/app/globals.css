@@ -1157,18 +1157,21 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply py-0;
     height: 2.25rem;
   }
-  /* Unplaced (docs/UNPLACED.md): the cards reuse .session-card; these are the
-     two lines that are its own — the suggestion under the meta line, and the
-     rules block above the list. The thresholds are printed there, never
-     hidden: a decision nobody can see is one nobody trusts. */
-  .unplaced-suggest {
+  /* The line under a card's meta that states what is PROPOSED and how sure the
+     proposal is, plus the rules block above such a list. Shared by the two
+     screens built on that shape — Unplaced (docs/UNPLACED.md, a position) and
+     Pipeline › Devices (a camera body) — because it is one thing, and a second
+     name for it would be exactly the component drift docs/UI-REVIEW.md §2.4
+     counts. The thresholds are printed above the list, never hidden: a
+     decision nobody can see is one nobody trusts. */
+  .card-suggest {
     @apply mt-1 text-[13px];
     color: var(--color-text);
   }
-  .unplaced-suggest.is-none {
+  .card-suggest.is-none {
     color: var(--color-muted);
   }
-  .unplaced-suggest .conf {
+  .card-suggest .conf {
     @apply ml-1.5 text-[11px] uppercase tracking-wide;
     color: var(--color-muted);
   }
@@ -1179,7 +1182,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .unplaced-head strong {
     color: var(--color-text);
   }
-  .unplaced-rules {
+  .card-rules {
     @apply mt-1 max-w-[72ch];
   }
   .card-primary {
@@ -3872,15 +3875,48 @@ html[data-theme="dark"] .btn-primary:hover {
   .pl-disabled {
     @apply pointer-events-none opacity-45;
   }
-  /* Row checkbox for the triage lists that act on a SELECTION rather than on
-     one row at a time (Devices › attribution). Same accent and hit area as the
-     export options — the only new thing here is that it lives in a .pl-row. */
-  .pl-check {
-    @apply flex shrink-0 cursor-pointer items-center justify-center px-1;
+  /* Pipeline › Devices: the per-file list INSIDE an opened folder card. It is
+     the exception path — a folder that held two cameras — so it is a plain
+     list inside the card rather than a second card family. Everything else on
+     that page is .session-card, shared with Unplaced. */
+  .dev-media {
+    @apply flex flex-col rounded-[var(--radius)] border;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
   }
-  .pl-check input {
-    @apply h-4 w-4 cursor-pointer;
+  .dev-media-head {
+    @apply flex items-center gap-2 border-b px-3 py-2;
+    border-color: var(--color-border);
+  }
+  .dev-row {
+    @apply flex cursor-pointer items-center gap-3 border-t px-3 py-2 text-[12px];
+    border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+  .dev-row:first-of-type {
+    @apply border-t-0;
+  }
+  .dev-row:hover {
+    background: var(--color-surface-3);
+  }
+  .dev-row input {
+    @apply h-4 w-4 shrink-0 cursor-pointer;
     accent-color: var(--color-accent);
+  }
+  .dev-file {
+    @apply min-w-0 flex-1 truncate;
+    font-family: var(--font-mono);
+  }
+  .dev-sig {
+    @apply flex shrink-0 flex-wrap items-center gap-1.5;
+  }
+  .dev-score {
+    @apply w-8 shrink-0 text-right;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dev-score.is-confident {
+    color: var(--color-pick);
+    font-weight: 600;
   }
   .pl-more {
     @apply flex justify-center py-3;
