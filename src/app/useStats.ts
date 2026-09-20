@@ -42,6 +42,9 @@ export type Stats = {
     // snaps coordinates into a shared `places` cell.
     geocodePerHour: number;
     geocodePrecisionM: number;
+    // GPS write-back (lib/exifWrite.ts): max EXIF writes into original files
+    // per hour (0 = unlimited) — protects the NAS HDD from a bulk-geotag burst.
+    gpsWritePerHour: number;
   };
   // Whether the ML analysis feature is configured on the server (ML_ENABLED):
   // gates the ML slider/counters so a stage that can't progress isn't shown.
@@ -61,6 +64,8 @@ export type Stats = {
     duplicates?: number;
     // Originals gone from disk, awaiting restore/purge triage (lib/integrity.ts).
     missing?: number;
+    // GPS write-backs into the original file's EXIF that failed (lib/exifWrite.ts).
+    gpsWrite?: number;
   };
 };
 

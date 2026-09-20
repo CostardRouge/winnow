@@ -4,6 +4,7 @@
 //   - scan       : scan_failures table (per-file indexing failures)        [from now on]
 //   - import     : import_batches.result.errors of failed batches          [retroactive]
 //   - missing    : assets.missing_at (originals gone from disk)            [lib/integrity.ts]
+//   - gpswrite   : assets.gps_write_status='error' (EXIF write-back)       [lib/exifWrite.ts]
 // Deduplication is NOT here: its listing is thousands of rows and needs its own
 // grouping/paging, so it lives at GET /api/failures/duplicates and is fetched
 // only by the page that draws it (this payload is polled by every family tab).
@@ -26,7 +27,7 @@ export async function GET() {
       () => [],
     );
 
-    const [counts, derivItems, scanItems, mlItems, batches] =
+    const [counts, derivItems, scanItems, mlItems, gpsWriteItems, batches] =
       await Promise.all([
         failureCounts(),
         many(
@@ -53,6 +54,16 @@ export async function GET() {
                   ml_error AS error, updated_at
              FROM assets
             WHERE ml_status = 'error' AND deleted_at IS NULL
+            ORDER BY updated_at DESC
+            LIMIT ${LIMIT}`,
+        ),
+        // GPS write-back errors (lib/exifWrite.ts): the message is stored in
+        // gps_write_error.
+        many(
+          `SELECT id AS asset_id, filename, abs_path, media_type,
+                  gps_write_error AS error, updated_at
+             FROM assets
+            WHERE gps_write_status = 'error' AND deleted_at IS NULL
             ORDER BY updated_at DESC
             LIMIT ${LIMIT}`,
         ),
@@ -99,6 +110,7 @@ export async function GET() {
       import: { count: counts.import, items: importItems },
       ml: { count: counts.ml, items: mlItems },
       missing: { count: counts.missing, items: missingItems },
+      gpsWrite: { count: counts.gpsWrite, items: gpsWriteItems },
     });
   } catch (err) {
     return serverError(err);

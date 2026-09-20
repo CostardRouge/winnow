@@ -71,6 +71,7 @@ export default function ControlPanel() {
   const { stats, reload } = useStats();
   const [scanRate, setScanRate] = useState(0);
   const [analyzeRate, setAnalyzeRate] = useState(0);
+  const [gpsWriteRate, setGpsWriteRate] = useState(0);
   const [mlRate, setMlRate] = useState(0);
   const [rescan, setRescan] = useState(0);
   const [geocodeRate, setGeocodeRate] = useState(0);
@@ -86,6 +87,7 @@ export default function ControlPanel() {
   const dragging = useRef({
     scan: false,
     analyze: false,
+    gpsWrite: false,
     ml: false,
     rescan: false,
     geocode: false,
@@ -103,6 +105,8 @@ export default function ControlPanel() {
     if (!stats) return;
     if (!dragging.current.scan) setScanRate(stats.settings.scanPerHour);
     if (!dragging.current.analyze) setAnalyzeRate(stats.settings.analyzePerHour);
+    if (!dragging.current.gpsWrite)
+      setGpsWriteRate(stats.settings.gpsWritePerHour ?? 0);
     if (!dragging.current.ml) setMlRate(stats.settings.mlPerHour ?? 0);
     if (!dragging.current.rescan) setRescan(stats.settings.rescanMinutes ?? 0);
     if (!dragging.current.geocode)
@@ -204,6 +208,7 @@ export default function ControlPanel() {
   function commit(patch: {
     scanPerHour?: number;
     analyzePerHour?: number;
+    gpsWritePerHour?: number;
     mlPerHour?: number;
     rescanMinutes?: number;
     geocodePerHour?: number;
@@ -353,6 +358,26 @@ export default function ControlPanel() {
               const v = Number(e.target.value);
               setAnalyzeRate(v);
               commit({ analyzePerHour: v });
+            }}
+          />
+        </div>
+
+        <div className="slider">
+          <label>
+            GPS write rate <span className="hint">{rateLabel(gpsWriteRate)}</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={RATE_MAX}
+            step={RATE_STEP}
+            value={gpsWriteRate}
+            onPointerDown={() => (dragging.current.gpsWrite = true)}
+            onPointerUp={() => (dragging.current.gpsWrite = false)}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setGpsWriteRate(v);
+              commit({ gpsWritePerHour: v });
             }}
           />
         </div>

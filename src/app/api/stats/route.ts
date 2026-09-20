@@ -100,6 +100,7 @@ export async function GET() {
         rescanMinutes: settings.rescanMinutes,
         geocodePerHour: settings.geocodePerHour,
         geocodePrecisionM: settings.geocodePrecisionM,
+        gpsWritePerHour: settings.gpsWritePerHour,
       },
       // ML is only surfaced when the feature is on: the sliders/counters would
       // otherwise show a pipeline stage that can never progress.
@@ -121,6 +122,7 @@ export async function GET() {
         ml: fails.ml,
         duplicates: fails.duplicates,
         missing: fails.missing,
+        gpsWrite: fails.gpsWrite,
       },
     });
   } catch (err) {

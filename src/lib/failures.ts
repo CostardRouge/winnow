@@ -8,7 +8,7 @@
 import { q, one } from "./db";
 import { config } from "./config";
 
-// The five failure families surfaced as tabs on /pipeline/failures.
+// The six failure families surfaced as tabs on /pipeline/failures.
 export type FailureCounts = {
   derivative: number;
   scan: number;
@@ -22,6 +22,10 @@ export type FailureCounts = {
   // Counted while awaiting triage (not yet purged) — the auto-trashed ones
   // included, since restoring or purging them is still a pending decision.
   missing: number;
+  // Live assets whose GPS write-back into the original file's EXIF failed
+  // (gps_write_status='error', cf. lib/exifWrite.ts) — a read-only mount, an
+  // unwritable format, a corrupted original, etc.
+  gpsWrite: number;
 };
 
 // Single source of truth for the failure-family counters, so the aggregate
@@ -33,7 +37,9 @@ export type FailureCounts = {
 //   - scan       : open per-file scan failures,
 //   - import     : files that failed import, summed across every batch,
 //   - duplicates : recorded duplicate hits still awaiting triage,
-//   - missing    : originals gone from disk, awaiting restore/purge triage.
+//   - missing    : originals gone from disk, awaiting restore/purge triage,
+//   - gpsWrite   : manual/bulk geotags whose write-back into the original
+//                  file's EXIF failed, awaiting retry.
 // Each family is guarded on its own so a table missing before migration yields
 // 0 for that family rather than zeroing (or 500-ing) the others.
 export async function failureCounts(): Promise<FailureCounts> {
@@ -44,6 +50,7 @@ export async function failureCounts(): Promise<FailureCounts> {
     ml: 0,
     duplicates: 0,
     missing: 0,
+    gpsWrite: 0,
   };
   try {
     const r = await one<{ n: number }>(
@@ -95,6 +102,14 @@ export async function failureCounts(): Promise<FailureCounts> {
       "SELECT count(*) AS n FROM assets WHERE missing_at IS NOT NULL AND purged_at IS NULL",
     );
     counts.missing = Number(r?.n ?? 0);
+  } catch {
+    /* column absent before migration */
+  }
+  try {
+    const r = await one<{ n: number }>(
+      "SELECT count(*) AS n FROM assets WHERE gps_write_status = 'error' AND deleted_at IS NULL",
+    );
+    counts.gpsWrite = Number(r?.n ?? 0);
   } catch {
     /* column absent before migration */
   }
