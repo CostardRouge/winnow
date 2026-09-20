@@ -338,6 +338,20 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: a screen that proposes an automatic answer prints the thresholds that produced it and says per item where the answer came from; a bulk accept never defaults to `'manual'`; a donor search reads trustworthy positions only (`gps_source IS NULL OR 'manual'`) so an inference never seeds the next. A card that represents a session-shaped thing wears the session card's markup rather than a new family (UI review C-series drift). An unpaged endpoint caps and says `truncated`, and the client refuses to act on a truncated answer rather than acting on part of it.
 
+**A dense table inside such a card must never become a scroll container**
+(2026-09-20, the trap cost an hour): `useAnchoredPanel` closes any open panel on
+a scroll **anywhere**, capture-phase, because a `position: fixed` panel cannot
+follow a scrolling ancestor. Focusing a control inside an `overflow-x: auto` box
+makes the browser fire a scroll event even when it moves nothing — so a row's
+`ActionMenu` dismisses itself the instant it is clicked. Making the column
+sticky does not help; only removing the scroll container does. The fix is
+`table-layout: fixed`, a width per column, the identifying column truncating and
+the informing columns dropping out under a media query — with every cell able to
+shrink, since one `nowrap` cell that refuses is what pushes the table past its
+container. The same rule explains a menu that "randomly" fails at the bottom of
+the viewport: the trigger was not fully visible, so focusing it scrolled the
+page. Put the trigger in view, or accept the dismissal.
+
 **This shape is now the house pattern for "N thousand things a human approves in batches"** (2026-09-20): Pipeline › Devices was rebuilt on it when a flat, date-ranked list of media proved unusable past a few hundred rows — the drone clips sat between a January screenshot and a June Sony clip, so "keep attributing the drone" meant hunting. Same `.session-card.is-stacked`, same one-verb-plus-`ActionMenu`, same printed rules, plus a facet row above the list (there: the proposed body) that turns "only these" into one click. `.unplaced-suggest` and `.unplaced-rules` were RENAMED to `.card-suggest` / `.card-rules` when the second screen arrived rather than copied — a class named after the page it first appeared on is the drift, one turn later. Per-row selection inside a card stays the exception path.
 
 ## `MediaViewer`'s keyboard shortcuts are hand-duplicated per caller, on purpose (2026-09-20)
