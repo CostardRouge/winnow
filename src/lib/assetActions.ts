@@ -291,11 +291,21 @@ export type GeotagAsset = {
 // Throws when the answer is truncated rather than returning a subset: a recap
 // that silently lists 20 000 of 25 000 media would write 20 000 and look like
 // it was done.
+//
+// `window` narrows the folders to the media captured inside it, inclusive —
+// how one PART of a container folder (a month, a year; docs/UNPLACED.md §9) is
+// placed without fetching the whole folder. Sent as canonical ISO instants
+// whatever the caller holds (pg's own text form is not ISO).
 export async function geotagTargets(
   sessionIds: number[],
+  window?: { from: string; to: string },
 ): Promise<GeotagAsset[]> {
   if (!sessionIds.length) return [];
   const sp = new URLSearchParams({ session_ids: sessionIds.join(",") });
+  if (window) {
+    sp.set("captured_from", new Date(window.from).toISOString());
+    sp.set("captured_to", new Date(window.to).toISOString());
+  }
   const res = await fetch(`/api/assets/geotag/targets?${sp}`);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

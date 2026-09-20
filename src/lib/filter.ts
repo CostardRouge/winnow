@@ -173,6 +173,12 @@ export const FilterSchema = z
     day: intList, // 1-31
     date_from: z.string().optional(), // YYYY-MM-DD
     date_to: z.string().optional(),
+    // Exact instants on captured_at (ISO 8601), inclusive — what a slice of a
+    // container folder is (docs/UNPLACED.md §9): a date range on capture_date
+    // is a calendar day in the file's own zone, too coarse to cut a folder at
+    // a two-hour silence. Not exposed in the filter panel.
+    captured_from: z.string().datetime({ offset: true }).optional(),
+    captured_to: z.string().datetime({ offset: true }).optional(),
 
     // Numeric ranges
     iso_min: z.coerce.number().optional(),
@@ -451,6 +457,8 @@ export function buildFilter(
   if (filter.day) inAny("a.capture_day", filter.day);
   if (filter.date_from) gte("a.capture_date", filter.date_from);
   if (filter.date_to) lte("a.capture_date", filter.date_to);
+  if (filter.captured_from) gte("a.captured_at", filter.captured_from);
+  if (filter.captured_to) lte("a.captured_at", filter.captured_to);
 
   if (filter.iso_min != null) gte("a.iso", filter.iso_min);
   if (filter.iso_max != null) lte("a.iso", filter.iso_max);
@@ -604,6 +612,8 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "day",
     "date_from",
     "date_to",
+    "captured_from",
+    "captured_to",
     "iso_min",
     "iso_max",
     "aperture_min",

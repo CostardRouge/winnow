@@ -304,14 +304,16 @@ ones, is the better order anyway. One card per folder group, drawn with the
 session card's own markup (`.session-card`, the meta line, `ThumbStrip`) — a
 folder group is a session-shaped thing and a second card family for the same
 object would be drift. The primary verb is **Place N**; the `⋯` menu holds
-*Pick a different place…*, *Exempt N without camera EXIF* and *Open in grid*.
-The suggestion, its confidence and its provenance are printed on the card;
-the rules that produced them are printed above the list (§8). Every session
-card in the Sessions view now carries an **N unplaced** pill linking here —
-the invite this brief started from. `GET /api/assets/unplaced`
-(`src/lib/unplaced.ts`) is two scans under `jit = off`: the folders with
-something left to place, then the donors for every group at once, the group
-windows passed as `unnest` arrays.
+*Pick a different place…*, *Exempt N without camera EXIF* and *Open in grid*
+(§9 adds two more card kinds and the verbs they take). The suggestion, its
+confidence and its provenance are printed on the card, with a one-tile map
+preview beside it; the rules that produced them are printed above the list
+(§8, §9), behind a disclosure. Every session card in the Sessions view now
+carries an **N unplaced** pill linking here — the invite this brief started
+from. `GET /api/assets/unplaced` (`src/lib/unplaced.ts`) is four scans under
+`jit = off`: the library-wide tallies, the folders with something left to
+place, the cuts of the container folders, then the donors for every card at
+once, the card windows passed as `unnest` arrays.
 
 ---
 
@@ -355,3 +357,60 @@ windows passed as `unnest` arrays.
    session card, the session header, Place — share it.
 
 **Still open**: the 36 donor-less folders stay a hand job, by design.
+
+---
+
+## 9. What the first real run proved wrong
+
+*2026-09-20, the evening of the day it shipped, on the Optiplex.*
+
+1. **The chain had no ceiling, and a container folder is a bridge.** §4.4
+   merged folders whose windows came within 2 h of each other, and stopped
+   there. The iPhone library is filed by month (`photos/2026/april 2026`): a
+   month-long folder holding a handful of screenshots *is in the backlog* (it
+   has unplaced media), and its window touches every folder shot that month.
+   Twelve of them, and the yearly ones above, chained **360 folders and two
+   years into one card** — 79 115 files, 68 567 unplaced, and a *medium*
+   suggestion at −28.0, 145.0: the outback, the median of two years of iPhone
+   frames, which the page would have pre-filled. Two rules fix it, both
+   printed on screen (`span_max_h`, `parts_max` in `UNPLACED_RULES`): a
+   folder whose own window exceeds **72 h** is a *container* and never
+   merges — and a merged chain never exceeds 72 h either; a container is
+   then **cut into parts at the same 2 h silence** that separates two shoots
+   (gaps-and-islands over its unplaced camera media: a `LAG`, a running `SUM`
+   of the cuts, `src/lib/unplaced.ts` scan 3), each part a card with its own
+   window and suggestion, up to **40 parts** — past that the folder stays one
+   card that opens in the grid. Media with no camera EXIF never take part in
+   the cut: screenshots are spread over the month by nature, and a card per
+   screenshot is the noise this view exists to remove — they stay behind in
+   one card whose verb is *Exempt*. Each unplaced media is on exactly one
+   card (`kind: 'shoot' | 'part' | 'span'`).
+2. **A wrong suggestion needed a wrong-looking picture.** "−28.0002,
+   145.0127 · medium" reads as plausible; the same point on a map reads as
+   the outback in a quarter of a second. Every suggestion now carries a 72 px
+   preview: one tile of the shared source (`TILE_URL`) at z = 9, cropped and
+   shifted so the point sits under a pin — no map library, one lazy `<img>`
+   per card, nothing loads below the fold. The check it enables is coarse by
+   design: coast, city or empty continent.
+3. **Sorted by date, the list was a diary; the work is a queue.** Cards now
+   sort confident-first (high, medium, low, no donor, spans), biggest pile
+   first within a tier, and a triage picker — *All · Ready · By hand*, with
+   counts — cuts the list to the cards that need one click versus the ones
+   that need a look. A progress bar over the whole Incoming library (placed /
+   to place / exempt) sits above it: the number that goes down.
+4. **A screenshot pile must not offer Place.** A card whose every unplaced
+   media has no camera EXIF gets *Exempt N without camera EXIF* as its
+   primary verb and *Place anyway…* in the menu (`isAllNoExif`) — the card
+   says what it is instead of offering the wrong gesture. A span's primary
+   verb is *Open N in grid*; placing a month's stragglers at one point is the
+   wrong gesture too, and it stays in the menu, named as such.
+5. **A part is a time window, so the media list takes one.** The shared
+   filter (`src/lib/filter.ts`) and therefore `GET /api/assets/geotag/targets`
+   grew `captured_from` / `captured_to`, exact inclusive instants on
+   `captured_at`. A date range on `capture_date` is a calendar day in the
+   file's own zone, too coarse to cut at a two-hour silence — and without a
+   window, placing twelve frames of a 15 000-frame year folder would have
+   fetched the year (and tripped the 20 000 cap).
+
+§8's six donor rules are unchanged; the two new numbers joined the printed
+sentence, which now has eight.
