@@ -2,8 +2,10 @@
 
 import {
   forwardRef,
+  memo,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   useCallback,
@@ -46,6 +48,18 @@ export type GalleryAsset = {
 const TARGET = 175; // target cell width (px)
 const GAP = 6;
 
+// Overscan is budgeted in TILES, not in rows. react-window counts rows, but the
+// cost of a mounted row is its column count: at the Small density a desktop
+// viewport is ~16 columns wide, so a flat "4 rows" meant 64 speculative tiles
+// (with their images) either side of the viewport, against 24 at Large. Divide
+// a fixed tile budget by the live column count instead and the DOM the grid
+// carries stays roughly the same whatever the density — which is the number
+// that decides how much work a scroll frame does. The floor keeps one prepared
+// row in each direction so a slow scroll never lands on an empty band.
+const OVERSCAN_TILES = 32;
+const OVERSCAN_MIN = 1;
+const OVERSCAN_MAX = 4;
+
 // Long-press (touch) opens the same context menu right-click does. 450ms is
 // under the ~500ms at which Android fires its native contextmenu event, so on
 // Android both paths land on the same open menu instead of racing; the slop
@@ -83,9 +97,129 @@ type RowData = {
   onPressMove?: (e: React.TouchEvent) => void;
   onPressEnd?: (e: React.TouchEvent) => void;
   consumePress?: () => boolean;
-  liveHoverId: number | null;
-  setLiveHoverId: React.Dispatch<React.SetStateAction<number | null>>;
 };
+
+type TileProps = {
+  asset: GalleryAsset;
+  index: number;
+  cell: number;
+  selected: boolean;
+  selectMode: boolean;
+  onOpen: (index: number) => void;
+  onToggleSelect?: (id: number) => void;
+  onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
+  onPressStart?: (e: React.TouchEvent, asset: GalleryAsset) => void;
+  onPressMove?: (e: React.TouchEvent) => void;
+  onPressEnd?: (e: React.TouchEvent) => void;
+  consumePress?: () => boolean;
+};
+
+// One tile, memoized. This is the unit that repeats by the hundred, so it is
+// also the unit React must be able to skip: react-window hands a row the whole
+// `items` array, and appending a page (or toggling one selection) gives that
+// array a new identity — without the memo every mounted tile re-rendered its
+// image and its five badges for a change that touched none of them. The asset
+// objects themselves are stable across an append, so the default shallow
+// compare is exactly the right test.
+const Tile = memo(function Tile({
+  asset: a,
+  index,
+  cell,
+  selected,
+  selectMode,
+  onOpen,
+  onToggleSelect,
+  onContextMenu,
+  onPressStart,
+  onPressMove,
+  onPressEnd,
+  consumePress,
+}: TileProps) {
+  const live = isLivePhoto(a);
+  // Live Photo: the motion (.mov companion) plays in place over the still while
+  // the tile is hovered. The state is the TILE's, not the grid's — held one
+  // level up it was a prop of every row, so moving the mouse across one live
+  // tile re-rendered every tile on screen; here it re-renders the one being
+  // pointed at, and "one at a time" holds by construction. No-op on touch (no
+  // hover) — there the viewer's LIVE toggle plays it.
+  const [motion, setMotion] = useState(false);
+
+  return (
+    <div
+      className={`cell ${a.verdict}${selected ? " selected" : ""}`}
+      style={{ width: cell, height: cell, aspectRatio: "auto" }}
+      onClick={() => {
+        // A long-press that opened the menu also releases into a click
+        // (iOS synthesizes one) — that click must not open the viewer.
+        if (consumePress?.()) return;
+        if (selectMode) onToggleSelect?.(a.id);
+        else onOpen(index);
+      }}
+      onMouseEnter={live ? () => setMotion(true) : undefined}
+      onMouseLeave={live ? () => setMotion(false) : undefined}
+      onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
+      onTouchStart={onPressStart ? (e) => onPressStart(e, a) : undefined}
+      onTouchMove={onPressMove}
+      onTouchEnd={onPressEnd}
+      onTouchCancel={onPressEnd}
+    >
+      {a.derivative_status === "ready" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/assets/${a.id}/thumb`}
+          alt={a.filename}
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div className="placeholder">
+          {a.derivative_status === "error"
+            ? "⚠ error"
+            : a.media_type === "video"
+              ? "🎬 video"
+              : "⏳"}
+        </div>
+      )}
+      {live && a.derivative_status === "ready" && motion && (
+        <LiveMotionVideo
+          companionId={a.companion_id!}
+          poster={`/api/assets/${a.id}/thumb`}
+          fit="cover"
+        />
+      )}
+      {a.media_type === "video" && a.derivative_status === "ready" && (
+        <span className="play-badge">▶</span>
+      )}
+      {a.has_telemetry && (
+        <span className="telemetry-badge" title="Flight telemetry (SRT)">
+          🛰
+        </span>
+      )}
+      {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
+        <span
+          className={`stack-badge${a.burst_kind === "bracket" ? " bracket" : ""}`}
+          title={
+            a.burst_kind === "bracket"
+              ? `Exposure-bracketed (AEB) pile of ${a.burst_count} frames — open the session grid to expand it`
+              : `Burst pile of ${a.burst_count} frames — open the session grid to expand it`
+          }
+        >
+          {a.burst_kind === "bracket" ? "±" : "⧉"} {a.burst_count}
+        </span>
+      )}
+      {a.verdict !== "unrated" && (
+        <span className="badge">
+          {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
+        </span>
+      )}
+      {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
+      <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
+        {formatBadge(a.ext, a.companion_ext, a.group_kind)}
+      </span>
+      {selected && <span className="select-check">✓</span>}
+    </div>
+  );
+});
 
 function Row({
   index,
@@ -102,98 +236,33 @@ function Row({
   onPressMove,
   onPressEnd,
   consumePress,
-  liveHoverId,
-  setLiveHoverId,
 }: RowComponentProps<RowData>) {
   const start = index * cols;
-  const cells = items.slice(start, start + cols);
-  return (
-    <div style={{ ...style, display: "flex", gap: GAP }}>
-      {cells.map((a, j) => {
-        const idx = start + j;
-        const sel = selectMode && selectedIds?.has(a.id);
-        const live = isLivePhoto(a);
-        return (
-          <div
-            key={a.id}
-            className={`cell ${a.verdict}${sel ? " selected" : ""}`}
-            style={{ width: cell, height: cell, aspectRatio: "auto" }}
-            onClick={() => {
-              // A long-press that opened the menu also releases into a click
-              // (iOS synthesizes one) — that click must not open the viewer.
-              if (consumePress?.()) return;
-              if (selectMode) onToggleSelect?.(a.id);
-              else onOpen(idx);
-            }}
-            onMouseEnter={live ? () => setLiveHoverId(a.id) : undefined}
-            onMouseLeave={
-              live ? () => setLiveHoverId((p) => (p === a.id ? null : p)) : undefined
-            }
-            onContextMenu={onContextMenu ? (e) => onContextMenu(e, a) : undefined}
-            onTouchStart={onPressStart ? (e) => onPressStart(e, a) : undefined}
-            onTouchMove={onPressMove}
-            onTouchEnd={onPressEnd}
-            onTouchCancel={onPressEnd}
-          >
-            {a.derivative_status === "ready" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`/api/assets/${a.id}/thumb`}
-                alt={a.filename}
-                loading="lazy"
-                decoding="async"
-              />
-            ) : (
-              <div className="placeholder">
-                {a.derivative_status === "error"
-                  ? "⚠ error"
-                  : a.media_type === "video"
-                    ? "🎬 video"
-                    : "⏳"}
-              </div>
-            )}
-            {live && a.derivative_status === "ready" && liveHoverId === a.id && (
-              <LiveMotionVideo
-                companionId={a.companion_id!}
-                poster={`/api/assets/${a.id}/thumb`}
-                fit="cover"
-              />
-            )}
-            {a.media_type === "video" && a.derivative_status === "ready" && (
-              <span className="play-badge">▶</span>
-            )}
-            {a.has_telemetry && (
-              <span className="telemetry-badge" title="Flight telemetry (SRT)">
-                🛰
-              </span>
-            )}
-            {!a.has_telemetry && (a.burst_count ?? 0) > 1 && (
-              <span
-                className={`stack-badge${a.burst_kind === "bracket" ? " bracket" : ""}`}
-                title={
-                  a.burst_kind === "bracket"
-                    ? `Exposure-bracketed (AEB) pile of ${a.burst_count} frames — open the session grid to expand it`
-                    : `Burst pile of ${a.burst_count} frames — open the session grid to expand it`
-                }
-              >
-                {a.burst_kind === "bracket" ? "±" : "⧉"} {a.burst_count}
-              </span>
-            )}
-            {a.verdict !== "unrated" && (
-              <span className="badge">
-                {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
-              </span>
-            )}
-            {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
-            <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
-              {formatBadge(a.ext, a.companion_ext, a.group_kind)}
-            </span>
-            {sel && <span className="select-check">✓</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
+  const stop = Math.min(start + cols, items.length);
+  // Built by index rather than items.slice(): a slice allocates a throwaway
+  // array per row on every render, and the rows re-render on every scroll tick.
+  const cells = [];
+  for (let i = start; i < stop; i++) {
+    const a = items[i];
+    cells.push(
+      <Tile
+        key={a.id}
+        asset={a}
+        index={i}
+        cell={cell}
+        selected={selectMode && (selectedIds?.has(a.id) ?? false)}
+        selectMode={selectMode}
+        onOpen={onOpen}
+        onToggleSelect={onToggleSelect}
+        onContextMenu={onContextMenu}
+        onPressStart={onPressStart}
+        onPressMove={onPressMove}
+        onPressEnd={onPressEnd}
+        consumePress={consumePress}
+      />,
+    );
+  }
+  return <div style={{ ...style, display: "flex", gap: GAP }}>{cells}</div>;
 }
 
 // Imperative handle: lets the host scroll a given item into view — used to land
@@ -236,10 +305,6 @@ const VirtualGrid = forwardRef<
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<ListImperativeAPI>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  // Live Photo: which tile is hovered, so its motion (.mov companion) plays in
-  // place over the still. One at a time; cleared on leave. No-op on touch (no
-  // hover) — there the viewer's LIVE toggle plays it.
-  const [liveHoverId, setLiveHoverId] = useState<number | null>(null);
 
   // Long-press → context menu. One finger, held LONG_PRESS_MS without drifting
   // past LONG_PRESS_SLOP, fires onContextMenu at the touch point. A single
@@ -336,6 +401,10 @@ const VirtualGrid = forwardRef<
   const cell = size.w > 0 ? Math.floor((size.w - GAP * (cols - 1)) / cols) : targetWidth;
   const rowHeight = cell + GAP;
   const rowCount = Math.ceil(items.length / cols);
+  const overscanCount = Math.min(
+    OVERSCAN_MAX,
+    Math.max(OVERSCAN_MIN, Math.round(OVERSCAN_TILES / cols)),
+  );
 
   // Scroll the row holding `index` into view ("smart": no-op if already visible,
   // so closing the viewer without having navigated far leaves the grid put).
@@ -358,6 +427,41 @@ const VirtualGrid = forwardRef<
     [loading, hasMore, rowCount, loadMore],
   );
 
+  // react-window keeps rowProps stable by shallow-comparing its VALUES, and
+  // re-renders every mounted row the moment one of them differs. Memoizing here
+  // is belt and braces on that: the row array it feeds `Row` is the one thing
+  // that must not churn, and the host's callbacks are what used to make it.
+  const rowProps: RowData = useMemo(
+    () => ({
+      items,
+      cols,
+      cell,
+      selectMode,
+      selectedIds,
+      onOpen,
+      onToggleSelect,
+      onContextMenu,
+      onPressStart: onContextMenu ? onPressStart : undefined,
+      onPressMove: onContextMenu ? onPressMove : undefined,
+      onPressEnd: onContextMenu ? onPressEnd : undefined,
+      consumePress: onContextMenu ? consumePress : undefined,
+    }),
+    [
+      items,
+      cols,
+      cell,
+      selectMode,
+      selectedIds,
+      onOpen,
+      onToggleSelect,
+      onContextMenu,
+      onPressStart,
+      onPressMove,
+      onPressEnd,
+      consumePress,
+    ],
+  );
+
   return (
     <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }}>
       {size.h > 0 && size.w > 0 && (
@@ -367,24 +471,9 @@ const VirtualGrid = forwardRef<
           rowCount={rowCount}
           rowHeight={rowHeight}
           rowComponent={Row}
-          rowProps={{
-            items,
-            cols,
-            cell,
-            selectMode,
-            selectedIds,
-            onOpen,
-            onToggleSelect,
-            onContextMenu,
-            onPressStart: onContextMenu ? onPressStart : undefined,
-            onPressMove: onContextMenu ? onPressMove : undefined,
-            onPressEnd: onContextMenu ? onPressEnd : undefined,
-            consumePress: onContextMenu ? consumePress : undefined,
-            liveHoverId,
-            setLiveHoverId,
-          }}
+          rowProps={rowProps}
           onRowsRendered={onRowsRendered}
-          overscanCount={4}
+          overscanCount={overscanCount}
         />
       )}
     </div>

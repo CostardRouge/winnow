@@ -70,6 +70,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - 99 knobs across FOUR tiers (68 env · 9 `app_settings` · 6 flags · 16 `localStorage`), 13 managed from a Settings page; a key with a default and a reader but no writer is not shipped → `docs/memory/configuration.md`
 - `docs/UI-REVIEW.md` (2026-09-13) is the design backlog: two header bands per section, one primary action per card, a count drawn once, vermillion for brand/rail/focus only, three control heights, six type steps → `docs/memory/frontend.md`
 - The environment tier is readable at `/settings/instance`, each row saying `env` or `default`; a page whose content IS `process.env` must be `force-dynamic` or CI's environment gets baked into the image → `docs/memory/frontend.md`
+- `backdrop-filter` never rides on a tile the viewport multiplies: measured, the grid badges' blur cost 73 % of scroll frames, and the 400 px thumb in a 110 px cell costs almost nothing → `docs/memory/frontend.md`
 
 - A session that changes code reports this project's state to `PROJETS.md`, at the root of the private `second-brain` repo: the register is that file, never Claude's memory and never `git log` → CLAUDE.md rule 3
 

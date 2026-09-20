@@ -1622,6 +1622,16 @@ html[data-theme="dark"] .btn-primary:hover {
        keep iOS from popping its save-image callout over it. */
     -webkit-touch-callout: none;
     user-select: none;
+    /* The grid mounts and discards whole rows of these while scrolling, so each
+       tile is told it owns its layout: a badge appearing, a verdict border
+       changing or an image finishing its decode invalidates that one tile
+       instead of walking the row it sits in. LAYOUT containment only — it is
+       not `size`, so the tile is still sized by whatever holds it (inline px in
+       VirtualGrid, the track + aspect-ratio in `.grid`, `--tl-cell` on the
+       timeline), and it is not `paint`, because `overflow: hidden` above
+       already clips the contents and the hover box-shadow has to keep escaping
+       the box. */
+    contain: layout;
   }
   .cell:hover {
     box-shadow: var(--shadow-card);
@@ -1656,11 +1666,19 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex h-full items-center justify-center p-1.5 text-center text-[11px];
     color: var(--color-faint);
   }
-  /* Glass badges stay dark so they read on any image, in any theme */
+  /* Glass badges stay dark so they read on any image, in any theme.
+     NO backdrop-filter on any of them — this is the tile that repeats by the
+     hundred. Each backdrop-filtered element is a compositing layer whose
+     backdrop the compositor re-reads every frame; at the Small density a
+     desktop viewport carries ~200 tiles and every one of them has at least the
+     ext badge, so the blur alone was hundreds of layers fighting for each
+     scroll frame (and far worse on a phone's GPU). The blur bought nothing
+     visible anyway: the backdrop IS the photo, under an opaque-enough pill.
+     The alphas below are raised (0.62 → 0.72, 0.5 → 0.58) so legibility over a
+     blown-out sky is at least what the blur gave. */
   .cell .badge {
     @apply absolute left-1 top-1 rounded-[6px] px-1.5 py-px text-[11px] font-semibold;
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     color: #f4f0e7;
   }
   .cell .stars {
@@ -1671,8 +1689,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .cell .ext-badge {
     @apply absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] uppercase;
     font-family: var(--font-mono);
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     color: rgba(244, 240, 231, 0.85);
   }
   /* RAW+JPEG pair: the ext badge reads "RAW+JPG" and gains a faint accent ring */
@@ -1683,9 +1700,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .cell .play-badge {
     @apply absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2
       items-center justify-center rounded-full text-sm text-white;
-    background: rgba(16, 15, 13, 0.5);
+    background: rgba(16, 15, 13, 0.58);
     border: 1px solid rgba(255, 255, 255, 0.45);
-    backdrop-filter: blur(2px);
     pointer-events: none;
   }
   .cell .select-check {
@@ -1699,8 +1715,7 @@ html[data-theme="dark"] .btn-primary:hover {
      the corner is otherwise free outside select mode. */
   .cell .telemetry-badge {
     @apply absolute right-1 top-1 rounded-[6px] px-1 py-px text-[11px] leading-none;
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.25);
     pointer-events: none;
   }
@@ -1711,8 +1726,7 @@ html[data-theme="dark"] .btn-primary:hover {
      reads as one group, plus its live "x/n" position in the pile. */
   .cell .stack-badge {
     @apply absolute right-1 top-1 rounded-[6px] px-1.5 py-px text-[11px] font-semibold;
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     color: #f4f0e7;
     box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.35);
     cursor: pointer;
@@ -1731,8 +1745,7 @@ html[data-theme="dark"] .btn-primary:hover {
   .cell .sharpest-badge {
     @apply absolute left-1/2 top-1 -translate-x-1/2 rounded-[6px] px-1 py-px
       text-[11px] leading-none;
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     color: var(--color-star);
     box-shadow: inset 0 0 0 1px rgba(244, 240, 231, 0.25);
     pointer-events: none;
@@ -1745,8 +1758,7 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply absolute bottom-1 left-1/2 -translate-x-1/2 rounded-[6px] px-1.5 py-px
       text-[11px] font-semibold leading-none;
     font-family: var(--font-mono);
-    background: rgba(16, 15, 13, 0.62);
-    backdrop-filter: blur(4px);
+    background: rgba(16, 15, 13, 0.72);
     color: rgba(244, 240, 231, 0.85);
     pointer-events: none;
   }

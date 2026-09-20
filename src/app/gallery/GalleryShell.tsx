@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import dynamic from "next/dynamic";
 import VirtualGrid, {
   type GalleryAsset,
+  type TileMenuEvent,
   type VirtualGridHandle,
 } from "./VirtualGrid";
 import type { SidecarBrief } from "@/lib/types";
@@ -477,6 +478,18 @@ export default function GalleryShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, scope, galleryActive, sortDir]);
 
+  // The grid's two host callbacks are memoized on purpose: react-window keeps
+  // its rowProps object stable by comparing the VALUES, so an inline arrow here
+  // meant a new identity — and a re-render of every mounted row — on each of
+  // this shell's renders, of which there are many (notice timers, facets,
+  // panel state). loadMore still turns over once per page, which is one
+  // re-render per fetch rather than one per render.
+  const loadMore = useCallback(() => fetchPage(cursor), [fetchPage, cursor]);
+  const openTileMenu = useCallback((e: TileMenuEvent, asset: GalleryAsset) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
+  }, []);
+
   // Map points: the full geotagged distribution for the current filters
   // (the zone/bbox is chosen ON the map, so it's excluded from this query).
   const geoQuery = toQuery(filters, scope, null, { skipBbox: true });
@@ -911,20 +924,13 @@ export default function GalleryShell({
                   items={items}
                   hasMore={hasMore}
                   loading={loading}
-                  loadMore={() => fetchPage(cursor)}
+                  loadMore={loadMore}
                   targetWidth={GRID_SIZES[gridSize].w}
                   onOpen={setViewer}
                   selectMode={!readOnly && selectMode}
                   selectedIds={selected}
                   onToggleSelect={toggleSelect}
-                  onContextMenu={
-                    readOnly
-                      ? undefined
-                      : (e, asset) => {
-                          e.preventDefault();
-                          setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
-                        }
-                  }
+                  onContextMenu={readOnly ? undefined : openTileMenu}
                 />
                 {/* Paging in the next page while the grid stays on screen. */}
                 {loading && items.length > 0 && (
@@ -1195,7 +1201,7 @@ export default function GalleryShell({
           onIndexChange={mapAsset ? () => {} : setViewer}
           hasMore={mapAsset ? false : hasMore}
           loading={mapAsset ? false : loading}
-          loadMore={mapAsset ? undefined : () => fetchPage(cursor)}
+          loadMore={mapAsset ? undefined : loadMore}
           onClose={() => {
             if (mapAsset) {
               setMapAsset(null);

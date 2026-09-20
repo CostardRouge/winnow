@@ -62,6 +62,22 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: a new long list gets virtualized, and its container needs an explicit height or it collapses. A `ResizeObserver` feeding react-window is the existing pattern for width-aware rows.
 
+## A tile that repeats by the hundred carries no `backdrop-filter` (2026-09-20)
+
+**Measured**, on the report that the Grid stutters at the Small density with a few hundred media on screen — 200 `.cell` tiles at 18 columns, scrolled one step per frame in headless Chromium: with the glass badges' `backdrop-filter: blur(4px)` the median frame is **33.3 ms and 73 % of frames miss 32 ms** (p95 66.7, worst 283); with the blur removed and the pill's alpha raised instead (0.62 → 0.72, 0.5 → 0.58) **every frame lands on the 16.7 ms vsync**. Reproduced twice, interleaved. The container rasterizes in software, so read the absolute numbers as a weak phone rather than a desktop — but the ratio is the mechanism, not the environment: each backdrop-filtered element is a compositing layer whose backdrop the compositor re-reads every frame, and every tile carries at least the ext badge, some four. The blur bought nothing visible either: the backdrop IS the photo, under a pill opaque enough to read on a blown-out sky (checked at 110 px and 175 px, light and night, against white and against a dark frame).
+
+**The same run says what is NOT the problem**, so nobody spends an afternoon on it: serving the 400 px thumb into a 110 px cell costs **2–4 long frames out of 178** against a 200 px source — real, an order of magnitude smaller than the blur, and not worth a second derivative size, a migration or a backfill over 99 k assets. Halving the bytes is the only clear gain there; revisit it as a memory question on a 4 GB phone, not as a scroll-smoothness one.
+
+**How to apply**: `backdrop-filter` is for chrome that exists once or twice on screen — a topbar, a modal scrim, a HUD. Never on a photo tile, a grid badge or anything else the viewport multiplies. The same rule is still unapplied on `.thumb-tile`'s badges and `.thumb-dl` (the viewer's filmstrip, ~20 tiles over a playing video) and on `.cal-day-count` for empty days — smaller multiples, same mechanism, fix them when you touch those surfaces. To re-measure, a standalone page with the real markup and a `requestAnimationFrame` step-scroll is enough; no database, no stack.
+
+## The grid's cost per scroll frame is a tile count, not a row count (2026-09-20)
+
+**Decision** (`gallery/VirtualGrid.tsx`): the tile is a `memo`'d `Tile` component, the Live Photo hover state lives **inside** it, `overscanCount` is derived from a fixed tile budget (`OVERSCAN_TILES / cols`, clamped 1–4) instead of being a flat 4 rows, and `rowProps` plus the host's `loadMore`/`onContextMenu` are memoized.
+
+**Why each one, from how react-window v2 actually works** (read in `node_modules/react-window/dist/`, not guessed): `List` stabilises `rowProps` with `useMemo(() => props, Object.values(props))` and wraps the row component in `memo(row, shallowCompare)` — so a single changed **value** re-renders every mounted row. An inline `onContextMenu={(e, a) => …}` in `GalleryShell` was one, on every one of that shell's renders; `liveHoverId` held at grid level was another, on every mouse move across a Live Photo tile. And because a row receives the whole `items` array, appending a page re-rendered every tile on screen — the `memo` on `Tile` is what makes that free, since the asset objects survive the append even though the array does not. The overscan matters because react-window counts rows while the cost of a row is its column count: at Small on a wide desktop, 4 rows × ~16 columns is 64 speculative tiles either side against 24 at Large, so the budget keeps the mounted DOM roughly constant across the three densities.
+
+**How to apply**: never hand a virtualized list an inline arrow or a fresh object — it is not a style point here, it is a full re-render of everything on screen. A per-tile interaction (hover, a local toggle) belongs to the tile, never to the grid. And when tuning overscan, reason in tiles: the row is the wrong unit whenever the column count moves.
+
 ## The service worker caches almost nothing, on purpose (2026-08-20)
 
 **Decision**: `public/sw.js` precaches only the offline page, icons and the manifest, serves the Next build shell stale-while-revalidate, and **never** caches `/api` responses or media bytes (thumb/proxy/download). It is registered in production only (`ServiceWorkerRegister.tsx`).
