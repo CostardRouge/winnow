@@ -341,7 +341,7 @@ export async function indexRoot(
            gimbal_pitch, gimbal_yaw, gimbal_roll,
            relative_altitude, absolute_altitude, shutter_count,
            exposure_compensation, bracket_shot_number,
-           -- Provenance of the device column (cf. migration 0042). Derived from the
+           -- Provenance of the device column (cf. migration 0043). Derived from the
            -- value itself rather than passed in: a fresh row can only ever be
            -- 'exif' (the file named a body) or nothing at all (it did not,
            -- and the attribution pass may later give it one).

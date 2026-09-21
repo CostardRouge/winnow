@@ -62,7 +62,7 @@ export type Asset = {
   media_type: "photo" | "video";
   device: string | null;
   // Where `device`/`camera_model` came from (cf. lib/deviceAttribution.ts,
-  // migration 0042). 'exif' (or NULL on rows indexed before 0042) = read off
+  // migration 0043). 'exif' (or NULL on rows indexed before 0043) = read off
   // the file; 'derived' = attributed by the confidence vote; 'manual' = a human
   // picked the body; 'embedded' = read from a container's timed-metadata track.
   // Anything but 'exif' is protected from being overwritten by a re-index.

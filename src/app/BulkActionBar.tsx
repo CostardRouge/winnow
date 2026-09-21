@@ -29,6 +29,7 @@ export default function BulkActionBar({
   onRegenerate,
   onGeocode,
   onGeotag,
+  onSetDevice,
   onExempt,
   onMl,
   onDelete,
@@ -59,6 +60,9 @@ export default function BulkActionBar({
   /** Manually set the GPS position of the selection (picker + recap flow).
    * Omitted when the host surface doesn't offer it. */
   onGeotag?: () => void;
+  /** Give the selection a camera body (cf. DevicePickerModal) — for the media
+   * whose file named none. Omitted when the host surface doesn't offer it. */
+  onSetDevice?: () => void;
   /** Mark the selection as never needing a position (`true` — screenshots,
    * scans) or put it back into the geotag backlog (`false`). Cf.
    * api/assets/geo-exempt. Omitted when the host surface doesn't offer it. */
@@ -73,6 +77,21 @@ export default function BulkActionBar({
   const tagRef = useRef<HTMLSpanElement>(null);
   const none = count === 0;
   const noTag = none || !tagInput.trim();
+
+  // Delete key mirrors the ⋯ menu's Delete entry — same confirm-gated
+  // soft-delete the host's onDelete already runs. Bound here (not per-host)
+  // so it comes for free wherever this bar mounts, same as the click path.
+  useEffect(() => {
+    if (none) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't hijack while typing (e.g. the tag popover's input).
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (e.key === "Delete") onDelete();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [none, onDelete]);
 
   // The tag popover dismisses like every other transient surface here:
   // click-away or Escape. The input's value survives so re-opening to tag the
@@ -128,6 +147,18 @@ export default function BulkActionBar({
             icon: "📌",
             disabled: none,
             onSelect: onGeotag,
+          } as MenuItem,
+        ]
+      : []),
+    ...(onSetDevice
+      ? [
+          {
+            key: "device",
+            label: "Set camera body…",
+            hint: "For media whose file names none",
+            icon: "📷",
+            disabled: none,
+            onSelect: onSetDevice,
           } as MenuItem,
         ]
       : []),

@@ -413,7 +413,7 @@ export default function UnplacedPane() {
   function suggestLine(g: UnplacedGroup) {
     if (isAllNoExif(g)) {
       return (
-        <div className="unplaced-suggest is-none">
+        <div className="card-suggest is-none">
           Nothing here carries camera EXIF — screenshots or scans. Exempt them
           and this card is done.
         </div>
@@ -421,7 +421,7 @@ export default function UnplacedPane() {
     }
     if (g.kind === "span") {
       return (
-        <div className="unplaced-suggest is-none">
+        <div className="card-suggest is-none">
           {g.moments != null
             ? `Its unplaced camera media fall into ${fmt(g.moments)} separate moments over ${fmt(groupDays(g))} days — more than the ${rules?.parts_max ?? 40} parts a card list carries. Work it from the grid, where each day’s neighbours are visible.`
             : `What lies outside this folder’s parts: media with no camera EXIF or no capture time. Place them from the grid.`}
@@ -431,13 +431,13 @@ export default function UnplacedPane() {
     const s = g.suggestion;
     if (!s) {
       return (
-        <div className="unplaced-suggest is-none">
+        <div className="card-suggest is-none">
           No located frame within a day of these — place by hand.
         </div>
       );
     }
     return (
-      <div className="unplaced-suggest">
+      <div className="card-suggest">
         Suggested: <strong>{suggestionLabel(g)}</strong>
         <span className={`conf is-${s.confidence}`}>{s.confidence}</span>
         <span className="hint"> — {suggestionNote(g)}</span>
@@ -532,7 +532,7 @@ export default function UnplacedPane() {
                 onChange={setTriage}
               />
               {rules && (
-                <details className="unplaced-rules">
+                <details className="card-rules">
                   <summary>How the cards and their suggestions are made</summary>
                   <p className="hint">
                     Folders shot within {rules.gap_h} h of each other share a

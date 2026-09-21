@@ -238,9 +238,14 @@ function ThumbStack({ samples }: { samples: SampleAsset[] }) {
             alt=""
             style={{
               // Every card is the front card's size; the deeper ones are slid
-              // down-right until the last one touches the box's corner.
-              right: reserved,
-              bottom: reserved,
+              // down-right until the last one touches the box's corner. The
+              // size is given as a width/height pair and not as a right/bottom
+              // inset: an <img> is a replaced element, and one whose width and
+              // height are auto is laid out at its intrinsic size with the
+              // insets ignored — a portrait thumbnail then painted over the
+              // card's text (cf. .thumb-stack-item in globals.css).
+              width: `calc(100% - ${reserved}px)`,
+              height: `calc(100% - ${reserved}px)`,
               zIndex: shown.length - depth,
               transform: `translate(${depth * STACK_PEEK}px, ${depth * STACK_PEEK}px)`,
               opacity: 1 - depth * 0.12,

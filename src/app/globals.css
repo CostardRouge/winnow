@@ -1157,13 +1157,53 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply py-0;
     height: 2.25rem;
   }
+  /* The line under a card's meta that states what is PROPOSED and how sure the
+     proposal is, plus the rules block above such a list. Shared by the two
+     screens built on that shape — Unplaced (docs/UNPLACED.md, a position) and
+     Pipeline › Devices (a camera body) — because it is one thing, and a second
+     name for it would be exactly the component drift docs/UI-REVIEW.md §2.4
+     counts. The thresholds are printed above the list, never hidden: a
+     decision nobody can see is one nobody trusts. */
+  .card-suggest {
+    @apply mt-1 text-[13px];
+    color: var(--color-text);
+  }
+  .card-suggest.is-none {
+    color: var(--color-muted);
+  }
+  .card-suggest .conf {
+    @apply ml-1.5 text-[11px] uppercase tracking-wide;
+    color: var(--color-muted);
+  }
+  /* The confidence tiers differ in weight, not in hue: high reads as ink,
+     medium as the default muted, low fades. */
+  .card-suggest .conf.is-high {
+    color: var(--color-text);
+  }
+  .card-suggest .conf.is-low {
+    color: var(--color-faint);
+  }
+  .card-rules {
+    @apply mt-1 min-w-0 max-w-[72ch];
+  }
+  /* Unplaced folds its rules behind a disclosure so a phone gets the bar and
+     the cards first; Devices prints them flat. Same block either way. */
+  .card-rules summary {
+    @apply cursor-pointer select-none text-[12px];
+    color: var(--color-muted);
+  }
+  .card-rules summary:hover {
+    color: var(--color-text);
+  }
+  .card-rules p {
+    @apply mt-1.5;
+  }
   /* ---- Unplaced (docs/UNPLACED.md) ------------------------------------ */
-  /* The cards reuse .session-card; what is the view's own is the head (a
-     progress bar over the whole Incoming library, its legend, the triage
-     picker and the rules behind a disclosure), the suggestion line under a
-     card's meta, and the one-tile map preview beside it. Thresholds are
-     printed, never hidden: a decision nobody can see is one nobody trusts.
-     Ink and paper tones only — a count is never a colour (UI review H4). */
+  /* The cards reuse .session-card and the shared .card-suggest/.card-rules;
+     what is the view's own is the head (a progress bar over the whole
+     Incoming library, its legend, the triage picker) and the one-tile map
+     preview beside a card. Ink and paper tones only — a count is never a
+     colour (UI review H4). */
   .unplaced-head {
     @apply mb-4 grid gap-2 text-[13px];
     color: var(--color-muted);
@@ -1194,40 +1234,6 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .unplaced-tools {
     @apply flex flex-wrap items-start justify-between gap-x-4 gap-y-2;
-  }
-  .unplaced-rules {
-    @apply min-w-0 max-w-[72ch];
-  }
-  .unplaced-rules summary {
-    @apply cursor-pointer select-none text-[12px];
-    color: var(--color-muted);
-  }
-  .unplaced-rules summary:hover {
-    color: var(--color-text);
-  }
-  .unplaced-rules p {
-    @apply mt-1.5;
-  }
-  .unplaced-suggest {
-    @apply mt-1 text-[13px];
-    color: var(--color-text);
-  }
-  .unplaced-suggest.is-none {
-    color: var(--color-muted);
-  }
-  .unplaced-suggest .conf {
-    @apply ml-1.5 rounded-full border px-1.5 py-px text-[11px] uppercase tracking-wide;
-    color: var(--color-muted);
-    border-color: var(--color-border);
-  }
-  /* The confidence tiers differ in weight, not in hue: high reads as ink,
-     medium as the default muted, low fades. */
-  .unplaced-suggest .conf.is-high {
-    color: var(--color-text);
-    border-color: var(--color-border-strong);
-  }
-  .unplaced-suggest .conf.is-low {
-    color: var(--color-faint);
   }
   /* One 256px tile, cropped to a square and shifted so the point sits under
      the pin (the inline left/top come from the point's fraction of the
@@ -1795,11 +1801,14 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply relative w-full;
     aspect-ratio: 4 / 3;
   }
-  /* No width/height of its own: the inline right/bottom insets ThumbStack sets
-     are what size a card (a `width: 100%` beside `left: 0` would win over
-     `right`, and every card would spill past the box). */
+  /* Anchored top-left and SIZED BY ThumbStack, in pixels, never by insets: an
+     <img> is a replaced element, so with `width`/`height` on auto the browser
+     takes its INTRINSIC size and drops `right`/`bottom` on the floor — a
+     portrait thumbnail then drew itself 400px tall in a 197px box and over the
+     card's own text. `object-fit` cannot save that: it fits the image to the
+     box the box already has. */
   .thumb-stack-item {
-    @apply absolute inset-0 rounded-[var(--radius)] border object-cover;
+    @apply absolute left-0 top-0 rounded-[var(--radius)] border object-cover;
     border-color: var(--color-border);
     background: var(--color-surface-2);
     box-shadow: var(--shadow-card);
@@ -3981,15 +3990,183 @@ html[data-theme="dark"] .btn-primary:hover {
   .pl-disabled {
     @apply pointer-events-none opacity-45;
   }
-  /* Row checkbox for the triage lists that act on a SELECTION rather than on
-     one row at a time (Devices › attribution). Same accent and hit area as the
-     export options — the only new thing here is that it lives in a .pl-row. */
-  .pl-check {
-    @apply flex shrink-0 cursor-pointer items-center justify-center px-1;
+  /* Pipeline › Devices: the per-file list INSIDE an opened folder card. It is
+     the exception path — a folder that held two cameras — so it is a plain
+     list inside the card rather than a second card family. Everything else on
+     that page is .session-card, shared with Unplaced. */
+  .dev-media {
+    @apply flex flex-col rounded-[var(--radius)] border;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
   }
-  .pl-check input {
+  .dev-media-head {
+    @apply flex items-center gap-2 border-b px-3 py-2;
+    border-color: var(--color-border);
+  }
+  /* The table of one folder's media. A real <table>: the columns are facts to
+     compare down a column (size, duration, bitrate, score), which is what a
+     table is for — and it is the one place on the page dense enough to need
+     one.
+     It must NEVER become a horizontal scroll container, and that is a hard
+     constraint rather than a preference: focusing a control inside a scrolling
+     box makes the browser fire a scroll event — even when it ends up moving
+     nothing — and `useAnchoredPanel` closes any open panel on a scroll
+     anywhere, so a row's ⋯ menu would dismiss itself the instant it was
+     clicked. Hence `table-layout: fixed` with a width per column, the filename
+     truncating, and columns dropping out on narrow screens instead. */
+  .dev-table {
+    @apply w-full border-collapse text-[12px];
+    table-layout: fixed;
+  }
+  .dev-table th {
+    @apply whitespace-nowrap px-2.5 py-1.5 text-left text-[11px] font-medium;
+    color: var(--color-muted);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .dev-table td {
+    @apply whitespace-nowrap px-2.5 py-1.5 align-middle;
+    border-top: 1px solid
+      color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+  .dev-table tbody tr:hover td {
+    background: var(--color-surface-3);
+  }
+  .dev-table input[type="checkbox"] {
     @apply h-4 w-4 cursor-pointer;
     accent-color: var(--color-accent);
+  }
+  /* Fixed widths, so the name column absorbs whatever is left. */
+  .dev-c-check {
+    width: 34px;
+  }
+  .dev-c-thumb {
+    width: 50px;
+  }
+  .dev-c-type {
+    width: 58px;
+  }
+  .dev-c-size {
+    width: 84px;
+  }
+  .dev-c-dur {
+    width: 68px;
+  }
+  .dev-c-px {
+    width: 108px;
+  }
+  .dev-c-rate {
+    width: 86px;
+  }
+  .dev-c-when {
+    width: 150px;
+  }
+  .dev-c-sig {
+    width: 250px;
+  }
+  .dev-c-score {
+    width: 52px;
+  }
+  .dev-c-menu {
+    width: 46px;
+  }
+  .dev-c-num {
+    @apply text-right;
+    font-family: var(--font-mono);
+  }
+  .dev-c-name {
+    @apply overflow-hidden text-ellipsis;
+    font-family: var(--font-mono);
+  }
+  /* Narrow screens drop the columns that inform rather than decide, in that
+     order. What is left always identifies the medium (thumbnail, name) and
+     always carries the verdict (signals, score, menu). */
+  @media (max-width: 1100px) {
+    .dev-c-px,
+    .dev-c-when {
+      @apply hidden;
+    }
+  }
+  @media (max-width: 860px) {
+    .dev-c-rate,
+    .dev-c-dur,
+    .dev-c-sig {
+      @apply hidden;
+    }
+  }
+  .dev-thumb {
+    @apply flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border p-0;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    cursor: pointer;
+  }
+  .dev-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .dev-thumb-empty {
+    color: var(--color-faint);
+  }
+  /* One line, never wrapped: a wrapping pill column makes every row a
+     different height and the eye loses the column it was scanning. It clips at
+     the column's width instead — the score beside it is the summary of exactly
+     these pills, and every one of them is on the card above. Clipping also
+     keeps the fixed layout honest: a cell that refuses to shrink is what would
+     push the table past its container. */
+  .dev-sig {
+    @apply flex flex-nowrap items-center gap-1.5 overflow-hidden;
+  }
+  .dev-score {
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dev-score.is-confident {
+    color: var(--color-pick);
+    font-weight: 600;
+  }
+
+  /* "Set camera body…", the grid-side bulk attribution (DevicePickerModal).
+     One row per body the library already holds — never a free-text field: the
+     value written has to be one the gear dimension is already grouping on. */
+  .dev-pick-list {
+    @apply mt-2 flex max-h-[42vh] flex-col overflow-y-auto rounded-[var(--radius)] border;
+    border-color: var(--color-border);
+  }
+  .dev-pick-row {
+    @apply flex cursor-pointer items-center gap-2.5 border-t px-3 py-2 text-sm;
+    border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+  .dev-pick-row:first-child {
+    @apply border-t-0;
+  }
+  .dev-pick-row:hover {
+    background: var(--color-surface-2);
+  }
+  .dev-pick-row.is-on {
+    background: var(--color-accent-wash);
+  }
+  .dev-pick-row input {
+    @apply h-4 w-4 shrink-0 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+  .dev-pick-name {
+    @apply min-w-0 flex-1 truncate font-medium;
+  }
+  .dev-pick-raw {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dev-pick-count {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .dev-pick-note {
+    @apply mt-2.5 text-[12px];
+    color: var(--color-muted);
+  }
+  .dev-pick-warn {
+    @apply mb-2 text-[13px];
+    color: var(--color-reject);
   }
   .pl-more {
     @apply flex justify-center py-3;
