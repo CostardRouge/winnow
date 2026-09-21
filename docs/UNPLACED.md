@@ -412,5 +412,12 @@ once, the card windows passed as `unnest` arrays.
    window, placing twelve frames of a 15 000-frame year folder would have
    fetched the year (and tripped the 20 000 cap).
 
+6. **A ready card should not open a map.** With the pin already drawn on
+   the card, the picker was a second look at the same point; *Place N* on a
+   high/medium card now opens the recap directly on the suggestion (recorded
+   as `'inferred'`), and the map lives in the menu (*Pick a different
+   place…*, seeded with the suggestion) for the pin that needs a nudge. The
+   recap stays: it is the one dialog that protects the already-placed rows.
+
 §8's six donor rules are unchanged; the two new numbers joined the printed
 sentence, which now has eight.
