@@ -2617,6 +2617,21 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-text);
     box-shadow: inset 0 0 0 1px var(--color-border-strong);
   }
+  /* The population badge OptionPicker emits (`count`) at the .view-toggle
+     scale — the .tab scale has its own rule beside the People tabs. Without
+     this the number sits glued to the label ("All633"). */
+  .view-btn .tab-count,
+  .opt-name .tab-count {
+    @apply ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+  .view-btn.active .tab-count {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
 
   /* ---- OptionPicker, menu form (cf. OptionPicker.tsx) -------------------
      Past four options a segmented row stops fitting a phone, and the control

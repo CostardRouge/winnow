@@ -79,7 +79,9 @@ type Triage = "all" | "ready" | "hand";
 // The in-flight Place flow: the group, the media the recap will list (every
 // live, non-exempt media the card covers — placed ones start unchecked there,
 // as always), the pin the picker opens on (null = start blank), then the
-// picked point once step 1 is done.
+// picked point once step 1 is done. A READY card skips step 1: its suggestion
+// IS the point, and the recap is the confirmation — one glance, one click;
+// the map stays one menu entry away for the cases where the pin needs a nudge.
 type Flow = {
   group: UnplacedGroup;
   assets: GeotagAsset[];
@@ -252,10 +254,14 @@ export default function UnplacedPane() {
     [],
   );
 
-  // Place: open the picker on the suggestion (when it is confident enough to
-  // be seeded) or blank, then the recap.
+  // Place. `how` decides where the flow starts:
+  //   - "suggested": a ready card goes straight to the recap on its suggested
+  //     point (recorded as 'inferred'); a card that is not ready falls back to
+  //     the map, blank;
+  //   - "map": the picker, seeded with the suggestion when there is one so a
+  //     pin that needs a nudge starts where the nudge is, then the recap.
   const openPlace = useCallback(
-    async (g: UnplacedGroup, seeded: boolean) => {
+    async (g: UnplacedGroup, how: "suggested" | "map") => {
       if (busyKey) return;
       setBusyKey(g.key);
       try {
@@ -265,7 +271,16 @@ export default function UnplacedPane() {
           return;
         }
         const s = g.suggestion;
-        const seed = seeded && isReady(g) && s ? { lat: s.lat, lon: s.lon } : null;
+        const seed = s && g.kind !== "span" ? { lat: s.lat, lon: s.lon } : null;
+        if (how === "suggested" && isReady(g) && s) {
+          setFlow({
+            group: g,
+            assets,
+            seed,
+            loc: { lat: s.lat, lon: s.lon, label: s.name },
+          });
+          return;
+        }
         setFlow({ group: g, assets, seed });
       } catch (e) {
         setNotice((e as Error).message);
@@ -342,9 +357,9 @@ export default function UnplacedPane() {
     const place: Verb = {
       label: `Place ${n}`,
       title: isReady(g)
-        ? "Open the map on the suggested position, then confirm per media"
+        ? "Place at the suggested position — confirm per media, no map step"
         : "Pick a position on the map, then confirm per media",
-      run: () => void openPlace(g, true),
+      run: () => void openPlace(g, "suggested"),
     };
     const grid: Verb = {
       label: `Open ${n} in grid`,
@@ -369,7 +384,11 @@ export default function UnplacedPane() {
       return {
         primary: exempt,
         items: [
-          item("place", { ...place, label: `Place ${n} anyway…` }, "📌"),
+          item(
+            "place",
+            { ...place, label: `Place ${n} anyway…`, run: () => void openPlace(g, "map") },
+            "📌",
+          ),
           item("grid", { ...grid, label: "Open in grid" }, "▦"),
         ],
       };
@@ -382,6 +401,7 @@ export default function UnplacedPane() {
             ...place,
             label: `Place all ${n} at one point…`,
             title: "Only if the whole folder really is one place",
+            run: () => void openPlace(g, "map"),
           },
           "📌",
         ),
@@ -396,8 +416,8 @@ export default function UnplacedPane() {
           "pick",
           {
             label: "Pick a different place…",
-            title: "Open the map without the suggestion",
-            run: () => void openPlace(g, false),
+            title: "Open the map on the suggestion and move the pin",
+            run: () => void openPlace(g, "map"),
           },
           "📌",
         ),
@@ -690,7 +710,7 @@ export default function UnplacedPane() {
           source={flowSource(flow)}
           sourceNote={
             flowSource(flow) === "inferred"
-              ? `${suggestionNote(flow.group) ?? ""} Move the pin to record a verified position instead.`
+              ? `${suggestionNote(flow.group) ?? ""} To record a verified position instead, use “Pick a different place…” and move the pin.`
               : null
           }
           onClose={() => setFlow(null)}
