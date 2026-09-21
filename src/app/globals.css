@@ -1175,15 +1175,127 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply ml-1.5 text-[11px] uppercase tracking-wide;
     color: var(--color-muted);
   }
-  .unplaced-head {
-    @apply mb-3 text-[13px];
-    color: var(--color-muted);
-  }
-  .unplaced-head strong {
+  /* The confidence tiers differ in weight, not in hue: high reads as ink,
+     medium as the default muted, low fades. */
+  .card-suggest .conf.is-high {
     color: var(--color-text);
   }
+  .card-suggest .conf.is-low {
+    color: var(--color-faint);
+  }
   .card-rules {
-    @apply mt-1 max-w-[72ch];
+    @apply mt-1 min-w-0 max-w-[72ch];
+  }
+  /* Unplaced folds its rules behind a disclosure so a phone gets the bar and
+     the cards first; Devices prints them flat. Same block either way. */
+  .card-rules summary {
+    @apply cursor-pointer select-none text-[12px];
+    color: var(--color-muted);
+  }
+  .card-rules summary:hover {
+    color: var(--color-text);
+  }
+  .card-rules p {
+    @apply mt-1.5;
+  }
+  /* ---- Unplaced (docs/UNPLACED.md) ------------------------------------ */
+  /* The cards reuse .session-card and the shared .card-suggest/.card-rules;
+     what is the view's own is the head (a progress bar over the whole
+     Incoming library, its legend, the triage picker) and the one-tile map
+     preview beside a card. Ink and paper tones only — a count is never a
+     colour (UI review H4). */
+  .unplaced-head {
+    @apply mb-4 grid gap-2 text-[13px];
+    color: var(--color-muted);
+  }
+  .unplaced-bar {
+    @apply flex h-1.5 w-full overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .unplaced-bar > span {
+    @apply block h-full;
+  }
+  .unplaced-bar .is-placed {
+    background: var(--color-text);
+    opacity: 0.55;
+  }
+  .unplaced-bar .is-todo {
+    background: var(--color-border-strong);
+  }
+  .unplaced-bar .is-exempt {
+    background: var(--color-border);
+  }
+  .unplaced-legend {
+    @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5;
+  }
+  .unplaced-legend strong {
+    @apply text-[15px];
+    color: var(--color-text);
+  }
+  .unplaced-tools {
+    @apply flex flex-wrap items-start justify-between gap-x-4 gap-y-2;
+  }
+  /* One 256px tile, cropped to a square and shifted so the point sits under
+     the pin (the inline left/top come from the point's fraction of the
+     tile). Isolated + clipped so nothing paints outside the box. */
+  .unplaced-map {
+    @apply relative shrink-0 overflow-hidden rounded-[var(--radius-md)] border;
+    width: 72px;
+    height: 72px;
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+    isolation: isolate;
+  }
+  .unplaced-map img {
+    @apply absolute max-w-none;
+    width: 256px;
+    height: 256px;
+  }
+  .unplaced-map-pin {
+    @apply absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full;
+    background: var(--color-text);
+    box-shadow:
+      0 0 0 2px var(--color-bg),
+      0 0 0 3px var(--color-text);
+  }
+  .unplaced-attrib {
+    @apply mt-3 text-[11px];
+  }
+  .unplaced-attrib a {
+    color: inherit;
+    text-decoration: underline;
+  }
+  /* Phones: the head stacks; the map preview keeps the title beside it
+     instead of taking a 72px row of its own, and the actions go full width
+     under both, as the session card's own phone rule does. */
+  @media (max-width: 640px) {
+    .unplaced-tools {
+      @apply flex-col items-stretch;
+    }
+    .unplaced-tools .view-toggle {
+      @apply w-full overflow-x-auto;
+      scrollbar-width: none;
+    }
+    .unplaced-card .card-head {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      column-gap: 0.75rem;
+      row-gap: 0.625rem;
+    }
+    .unplaced-card .card-head > .card-side {
+      grid-column: 1 / -1;
+    }
+    .unplaced-card .card-head > .card-info:first-child {
+      grid-column: 1 / -1;
+    }
+    .unplaced-map {
+      width: 56px;
+      height: 56px;
+    }
+    .unplaced-map img {
+      /* Re-centre for the smaller box: the inline offset assumes 72px. */
+      transform: translate(-8px, -8px);
+    }
   }
   .card-primary {
     @apply whitespace-nowrap;
