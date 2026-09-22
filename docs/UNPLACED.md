@@ -415,9 +415,24 @@ once, the card windows passed as `unnest` arrays.
 6. **A ready card should not open a map.** With the pin already drawn on
    the card, the picker was a second look at the same point; *Place N* on a
    high/medium card now opens the recap directly on the suggestion (recorded
-   as `'inferred'`), and the map lives in the menu (*Pick a different
-   place…*, seeded with the suggestion) for the pin that needs a nudge. The
-   recap stays: it is the one dialog that protects the already-placed rows.
+   as `'inferred'`). The recap stays: it is the one dialog that protects the
+   already-placed rows.
+7. **…but the recap has to BE the map.** Confirming a bulk write against
+   `43.56123, 3.90123` is confirming nothing — a coordinate is not a place,
+   and the dialog that protects the originals was the one screen with no
+   picture of where they were about to be sent. So the picker's control moved
+   into it: `src/app/LocationPicker.tsx` is now the shared map + place search
+   + coordinate fields, `LocationPickerModal` is a shell around it, and the
+   recap embeds it (`onTargetChange`) beside a three-line summary of what will
+   be recorded — the place, `suggested` or `verified` and what that means for
+   the original files, then where the suggestion came from. That is the
+   paragraph it replaces. Consequences: the Unplaced flow is **one dialog**
+   (Place opens the recap, pin dropped or map empty), *Pick a different
+   place…* is gone from the menu (the map is right there), and the pin is
+   live — drag it past `move_m` and the word under the map flips from
+   `suggested` to `verified`, because the source is re-read from the distance
+   on every change. The card's 72 px preview opens the same dialog: looking at
+   the place properly and placing the media there are one gesture.
 
 §8's six donor rules are unchanged; the two new numbers joined the printed
 sentence, which now has eight.
