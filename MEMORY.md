@@ -73,7 +73,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - The environment tier is readable at `/settings/instance`, each row saying `env` or `default`; a page whose content IS `process.env` must be `force-dynamic` or CI's environment gets baked into the image → `docs/memory/frontend.md`
 - `backdrop-filter` never rides on a tile the viewport multiplies: measured, the grid badges' blur cost 73 % of scroll frames, and the 400 px thumb in a 110 px cell costs almost nothing → `docs/memory/frontend.md`
 
-- A session that changes code reports this project's state to `PROJETS.md`, at the root of the private `second-brain` repo: the register is that file, never Claude's memory and never `git log` → CLAUDE.md rule 3
+- A session that changes code reports this project's state to its fiche, `projets/winnow/README.md`, in the private `second-brain` repo: the register is that folder and `PROJETS.md` there is generated from it, never Claude's memory and never `git log` → CLAUDE.md rule 3
 
 ## Open items (dated; remove when done)
 
