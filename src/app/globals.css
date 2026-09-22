@@ -1171,16 +1171,19 @@ html[data-theme="dark"] .btn-primary:hover {
   .card-suggest.is-none {
     color: var(--color-muted);
   }
-  .card-suggest .conf {
+  /* How sure a proposal is, in one word. Not nested under .card-suggest: the
+     geotag recap wears the same pill to say whether the position it is about
+     to write is a suggested or a verified one, and one thing gets one name. */
+  .conf {
     @apply ml-1.5 text-[11px] uppercase tracking-wide;
     color: var(--color-muted);
   }
-  /* The confidence tiers differ in weight, not in hue: high reads as ink,
-     medium as the default muted, low fades. */
-  .card-suggest .conf.is-high {
+  /* The tiers differ in weight, not in hue: high reads as ink, medium as the
+     default muted, low fades. */
+  .conf.is-high {
     color: var(--color-text);
   }
-  .card-suggest .conf.is-low {
+  .conf.is-low {
     color: var(--color-faint);
   }
   .card-rules {
@@ -1237,14 +1240,34 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   /* One 256px tile, cropped to a square and shifted so the point sits under
      the pin (the inline left/top come from the point's fraction of the
-     tile). Isolated + clipped so nothing paints outside the box. */
+     tile). Isolated + clipped so nothing paints outside the box. It is a
+     BUTTON: it opens the card's Place dialog, which is where the same place
+     is shown on a real map — "look at it properly" and "place them here" are
+     the same gesture once that dialog carries the map. */
   .unplaced-map {
-    @apply relative shrink-0 overflow-hidden rounded-[var(--radius-md)] border;
+    @apply relative block shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius-md)] border p-0;
     width: 72px;
     height: 72px;
     border-color: var(--color-border);
     background: var(--color-surface-2);
     isolation: isolate;
+  }
+  .unplaced-map:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+  }
+  .unplaced-map:disabled {
+    @apply cursor-default opacity-60;
+  }
+  /* The expand glyph only on hover/focus: the tile is the signal, the affordance
+     confirms it once the pointer is there. */
+  .unplaced-map-zoom {
+    @apply pointer-events-none absolute right-0.5 top-0.5 rounded-[var(--radius-sm)] px-1 text-[11px] leading-tight opacity-0 transition-opacity duration-150;
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+  .unplaced-map:hover .unplaced-map-zoom,
+  .unplaced-map:focus-visible .unplaced-map-zoom {
+    @apply opacity-90;
   }
   .unplaced-map img {
     @apply absolute max-w-none;
@@ -5217,7 +5240,68 @@ html[data-theme="dark"] .btn-primary:hover {
     box-shadow: var(--shadow-pop);
   }
 
+  /* The picker's `split` arrangement: the map beside its fields, for a dialog
+     where choosing the point is one element among others (the recap). The map
+     takes the wider half — it is what makes a coordinate legible — and grows
+     to whatever the fields column needs. Stacks on a phone, map first. */
+  .picker-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+    margin-top: 0.75rem;
+  }
+  .picker-split .picker-map {
+    @apply mt-0 h-full;
+    min-height: 240px;
+  }
+  .picker-side {
+    @apply min-w-0;
+  }
+  .picker-side .modal-label:first-child {
+    @apply mt-0;
+  }
+  @media (max-width: 640px) {
+    .picker-split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .picker-split .picker-map {
+      min-height: 200px;
+    }
+  }
+
   /* ---- Before/after recap ------------------------------------------------ */
+  /* What is about to be recorded, in three short lines rather than one
+     paragraph: the place, what kind of record it will be (and therefore
+     whether the originals are touched), and — for a suggestion — where it
+     came from. The map beside it says WHERE; this says WHAT. */
+  .recap-record {
+    @apply mt-3 border-t pt-3 text-[13px];
+    border-color: var(--color-border);
+  }
+  .picker-side .recap-record {
+    @apply mt-3;
+  }
+  .recap-place {
+    @apply m-0 flex flex-wrap items-baseline gap-x-2;
+    color: var(--color-text);
+  }
+  .recap-coord {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    @apply text-[12px];
+    color: var(--color-muted);
+  }
+  .recap-kind {
+    @apply mt-1 mb-0;
+    color: var(--color-muted);
+  }
+  .recap-kind .conf {
+    @apply ml-0 mr-1.5;
+  }
+  .recap-record .hint {
+    @apply mt-1 block;
+  }
   .recap-toolbar {
     @apply mt-3 flex items-center gap-2;
   }

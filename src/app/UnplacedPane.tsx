@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import {
@@ -22,7 +21,7 @@ import {
 } from "@/lib/unplacedTypes";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
 import GeotagRecapModal from "./GeotagRecapModal";
-import type { PickedLocation } from "./LocationPickerModal";
+import type { PickedLocation } from "./LocationPicker";
 import { OptionPicker, type PickerOption } from "./OptionPicker";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
 import { TILE_ATTRIBUTION, TILE_URL } from "./mapTiles";
@@ -32,9 +31,15 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // folder group — folders shot within a couple of hours of each other — with the
 // count still to place, a suggested position drawn from the located frames shot
 // in the same hours (the phone in the pocket while the Sony shoots), and one
-// primary verb, Place. Every apply goes through the existing two-step flow
-// (location picker → per-media recap) — this view contributes a pre-filled pin
-// and a sentence saying where it came from, never a fourth path.
+// primary verb, Place. Every apply goes through the existing recap
+// (GeotagRecapModal) — this view contributes a pre-filled pin and a sentence
+// saying where it came from, never a fourth write path.
+//
+// ONE dialog, not two: the recap carries the map itself (the shared
+// LocationPicker), so Place opens straight onto the suggestion, pin dropped,
+// and the map is both the check and the correction — a coordinate says
+// nothing, a coastline says Pérols, and dragging the pin there is what turns
+// an accepted suggestion into a verified position (§9.7).
 //
 // The page is a work queue, and reads like one: a progress bar over the whole
 // Incoming library at the top; a triage picker — Ready (a suggestion confident
@@ -44,8 +49,10 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // every suggestion a one-tile map preview centred on the point, because the
 // fastest check on "Pérols, France" is seeing the coast, and the fastest check
 // on a wrong suggestion is seeing the outback (§9 — the first real run offered
-// one). The rules that produce the suggestions are printed, folded behind a
-// disclosure so a phone gets the bar and the cards first.
+// one). That preview is a button onto the same dialog: "let me look at that
+// place properly" and "place them here" are one gesture. The rules that
+// produce the suggestions are printed, folded behind a disclosure so a phone
+// gets the bar and the cards first.
 //
 // Three kinds of card, one markup (the session card's own — .session-card /
 // .card-head / .meta-line / .card-actions / ThumbStrip; a folder group IS a
@@ -66,22 +73,19 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // What is recorded depends on what the human did with the pin: accepted as
 // offered (within `move_m` of the suggestion) → 'inferred', shown as such in
 // the recap and never written into the originals; moved further, or placed
-// with no suggestion at all → 'manual'.
-
-// Leaflet touches `window` on import, so the geotag location picker (which
-// embeds a map) is client-only — same treatment as the gallery's MapView.
-const LocationPickerModal = dynamic(() => import("./LocationPickerModal"), {
-  ssr: false,
-});
+// with no suggestion at all → 'manual'. The recap re-reads that distance on
+// every change, so the word under the map flips from "suggested" to
+// "verified" as the pin leaves the suggestion — the consequence is visible
+// before the button is pressed, not explained after it.
 
 type Triage = "all" | "ready" | "hand";
 
 // The in-flight Place flow: the group, the media the recap will list (every
 // live, non-exempt media the card covers — placed ones start unchecked there,
-// as always), the pin the picker opens on (null = start blank), then the
-// picked point once step 1 is done. A READY card skips step 1: its suggestion
-// IS the point, and the recap is the confirmation — one glance, one click;
-// the map stays one menu entry away for the cases where the pin needs a nudge.
+// as always), the suggestion the card offered (`seed`, kept to measure how far
+// the pin has moved from it) and the point currently chosen in the dialog
+// (`loc`, undefined until one is — a card with no suggestion opens on an empty
+// map and Apply waits).
 type Flow = {
   group: UnplacedGroup;
   assets: GeotagAsset[];
@@ -142,10 +146,33 @@ function tileSrc(lat: number, lon: number): { src: string; fx: number; fy: numbe
   return { src, fx: t.fx, fy: t.fy };
 }
 
-function MapThumb({ lat, lon, label }: { lat: number; lon: number; label: string }) {
+// The preview is the card's second door to the same dialog: the gesture
+// "let me look at that place properly" and the gesture "place these here" are
+// the same one now that the dialog opens on a real map, so the thumb runs the
+// card's own verb rather than growing a lightbox of its own.
+function MapThumb({
+  lat,
+  lon,
+  label,
+  onOpen,
+  disabled,
+}: {
+  lat: number;
+  lon: number;
+  label: string;
+  onOpen: () => void;
+  disabled: boolean;
+}) {
   const { src, fx, fy } = tileSrc(lat, lon);
   return (
-    <div className="unplaced-map" title={label} aria-hidden="true">
+    <button
+      type="button"
+      className="unplaced-map"
+      onClick={onOpen}
+      disabled={disabled}
+      title={`${label} — open the map to confirm or move the pin`}
+      aria-label={`Open the map on ${label}`}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
@@ -160,7 +187,10 @@ function MapThumb({ lat, lon, label }: { lat: number; lon: number; label: string
         }}
       />
       <span className="unplaced-map-pin" />
-    </div>
+      <span className="unplaced-map-zoom" aria-hidden>
+        ⤢
+      </span>
+    </button>
   );
 }
 
@@ -254,14 +284,12 @@ export default function UnplacedPane() {
     [],
   );
 
-  // Place. `how` decides where the flow starts:
-  //   - "suggested": a ready card goes straight to the recap on its suggested
-  //     point (recorded as 'inferred'); a card that is not ready falls back to
-  //     the map, blank;
-  //   - "map": the picker, seeded with the suggestion when there is one so a
-  //     pin that needs a nudge starts where the nudge is, then the recap.
+  // Place: ONE dialog. The recap carries the map now, so a card with a
+  // suggestion opens on it (pin dropped, ready to confirm) and a card without
+  // one opens on an empty map — the same dialog either way, and moving the pin
+  // in it is what turns an accepted suggestion into a verified position.
   const openPlace = useCallback(
-    async (g: UnplacedGroup, how: "suggested" | "map") => {
+    async (g: UnplacedGroup) => {
       if (busyKey) return;
       setBusyKey(g.key);
       try {
@@ -270,18 +298,15 @@ export default function UnplacedPane() {
           setNotice("Nothing left to place here.");
           return;
         }
-        const s = g.suggestion;
-        const seed = s && g.kind !== "span" ? { lat: s.lat, lon: s.lon } : null;
-        if (how === "suggested" && isReady(g) && s) {
-          setFlow({
-            group: g,
-            assets,
-            seed,
-            loc: { lat: s.lat, lon: s.lon, label: s.name },
-          });
-          return;
-        }
-        setFlow({ group: g, assets, seed });
+        // A span's suggestion is never offered as a pin (a month of located
+        // frames points at a month of places), so it opens blank.
+        const s = g.kind === "span" ? null : g.suggestion;
+        setFlow({
+          group: g,
+          assets,
+          seed: s ? { lat: s.lat, lon: s.lon } : null,
+          loc: s ? { lat: s.lat, lon: s.lon, label: s.name } : undefined,
+        });
       } catch (e) {
         setNotice((e as Error).message);
       } finally {
@@ -357,9 +382,9 @@ export default function UnplacedPane() {
     const place: Verb = {
       label: `Place ${n}`,
       title: isReady(g)
-        ? "Place at the suggested position — confirm per media, no map step"
-        : "Pick a position on the map, then confirm per media",
-      run: () => void openPlace(g, "suggested"),
+        ? "Confirm the suggested position on the map, then apply per media"
+        : "Pick a position on the map, then apply per media",
+      run: () => void openPlace(g),
     };
     const grid: Verb = {
       label: `Open ${n} in grid`,
@@ -384,11 +409,7 @@ export default function UnplacedPane() {
       return {
         primary: exempt,
         items: [
-          item(
-            "place",
-            { ...place, label: `Place ${n} anyway…`, run: () => void openPlace(g, "map") },
-            "📌",
-          ),
+          item("place", { ...place, label: `Place ${n} anyway…` }, "📌"),
           item("grid", { ...grid, label: "Open in grid" }, "▦"),
         ],
       };
@@ -401,7 +422,6 @@ export default function UnplacedPane() {
             ...place,
             label: `Place all ${n} at one point…`,
             title: "Only if the whole folder really is one place",
-            run: () => void openPlace(g, "map"),
           },
           "📌",
         ),
@@ -410,19 +430,6 @@ export default function UnplacedPane() {
       return { primary: grid, items };
     }
     const items: MenuItem[] = [];
-    if (isReady(g)) {
-      items.push(
-        item(
-          "pick",
-          {
-            label: "Pick a different place…",
-            title: "Open the map on the suggestion and move the pin",
-            run: () => void openPlace(g, "map"),
-          },
-          "📌",
-        ),
-      );
-    }
     if (g.no_exif > 0) items.push(item("exempt", exempt, "⊘"));
     items.push(item("grid", { ...grid, label: "Open in grid" }, "▦"));
     return { primary: place, items };
@@ -602,7 +609,13 @@ export default function UnplacedPane() {
                   >
                     <div className="card-head">
                       {s && g.kind !== "span" && (
-                        <MapThumb lat={s.lat} lon={s.lon} label={suggestionLabel(g)} />
+                        <MapThumb
+                          lat={s.lat}
+                          lon={s.lon}
+                          label={suggestionLabel(g)}
+                          onOpen={() => void openPlace(g)}
+                          disabled={busyKey != null}
+                        />
                       )}
                       <div className="card-info">
                         <h3>
@@ -695,24 +708,15 @@ export default function UnplacedPane() {
         </>
       )}
 
-      {flow && !flow.loc && (
-        <LocationPickerModal
-          count={flow.assets.length}
-          initial={flow.seed}
-          onClose={() => setFlow(null)}
-          onPicked={(loc) => setFlow({ ...flow, loc })}
-        />
-      )}
-      {flow?.loc && (
+      {flow && (
         <GeotagRecapModal
           assets={flow.assets}
-          target={flow.loc}
+          target={flow.loc ?? null}
           source={flowSource(flow)}
           sourceNote={
-            flowSource(flow) === "inferred"
-              ? `${suggestionNote(flow.group) ?? ""} To record a verified position instead, use “Pick a different place…” and move the pin.`
-              : null
+            flowSource(flow) === "inferred" ? suggestionNote(flow.group) : null
           }
+          onTargetChange={(loc) => setFlow({ ...flow, loc })}
           onClose={() => setFlow(null)}
           onApplied={(message) => {
             setFlow(null);
