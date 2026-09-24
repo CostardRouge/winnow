@@ -17,17 +17,21 @@
 //      before sending anything.
 //   3. Two caps, both stated in /api/capabilities: one file, and one user's
 //      total for this app. A client checks them before sending; the route
-//      enforces them because a client may be wrong or hostile.
+//      enforces them because a client may be wrong or hostile. Both are null
+//      (none) since 2026-09-24 — see MAX_FILE_BYTES.
 import { createHash } from "node:crypto";
 import { many, one } from "./db";
 import { getStorage } from "./storage";
 
-// A lattice is 1.57 MB at 65³; 16 MiB leaves room for whatever a client keeps
-// next without letting one request become an upload service. Advertised.
-export const MAX_FILE_BYTES = 16 * 1024 * 1024;
-// A whole LUT pack is ~40 MB and a person keeps a handful; 512 MiB is generous
-// and still bounded. Enforced per (user, app) — one app cannot eat another's.
-export const MAX_USER_BYTES = 512 * 1024 * 1024;
+// No cap and no quota FOR NOW — the maintainer's call (2026-09-24): this is his
+// own NAS and Atelier's LUT packs are the only caller. Null means "none", is
+// advertised as such in /api/capabilities and /api/apps/:app/files, and the
+// checks below stand down. Putting a number back is the whole of re-enabling
+// either: the too-large (413) and quota (507) paths are kept for it. What a
+// missing per-file cap costs: `PUT` reads the whole body into memory, so one
+// enormous upload is held by the server while it is hashed.
+export const MAX_FILE_BYTES: number | null = null;
+export const MAX_USER_BYTES: number | null = null;
 
 // Lowercase hex SHA-256, exactly 64 characters: the only id shape this bucket
 // takes, so the id can never be a path trick.
@@ -129,7 +133,7 @@ export async function putFile(
   body: Buffer,
   mediaType: string,
 ): Promise<PutFileOutcome> {
-  if (body.byteLength > MAX_FILE_BYTES) {
+  if (MAX_FILE_BYTES !== null && body.byteLength > MAX_FILE_BYTES) {
     return { status: "too-large", limit: MAX_FILE_BYTES };
   }
   const actual = sha256Hex(body);
@@ -141,9 +145,11 @@ export async function putFile(
     return { status: "ok", bytes: Number(existing.bytes), created: false };
   }
 
-  const used = await usedBytes(userId, app);
-  if (used + body.byteLength > MAX_USER_BYTES) {
-    return { status: "quota", used, limit: MAX_USER_BYTES };
+  if (MAX_USER_BYTES !== null) {
+    const used = await usedBytes(userId, app);
+    if (used + body.byteLength > MAX_USER_BYTES) {
+      return { status: "quota", used, limit: MAX_USER_BYTES };
+    }
   }
 
   const key = storageKey(userId, app, id);
