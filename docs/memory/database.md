@@ -72,7 +72,7 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Order of writes**: bytes first, row second. A crash between them leaves an orphan blob a janitor can find by listing the prefix against this table; the other order would leave a row promising bytes that are not there — which the GET also guards, answering 404 rather than an empty body a client would decode as a broken file.
 
-**Caps**: 16 MiB a file, 512 MiB per (user, app), both advertised in `/api/capabilities` (`files.maxBytes`, `files.quotaBytes`) and enforced by the route — a full account answers **507**, which is not the same thing as a too-big file (413). `Cache-Control` is `private`: an asset's derivative may be public on this instance, an app's file never is.
+**Caps**: NONE since 2026-09-24 (the maintainer: *"quota illimité, pas de limites for now"* — his own NAS, Atelier's LUT packs the only caller). `MAX_FILE_BYTES` and `MAX_USER_BYTES` are `null`, advertised as null in `/api/capabilities` (`files.maxBytes`, `files.quotaBytes`) and the listing, and the checks stand down; setting a number re-enables either (it was 16 MiB a file, 512 MiB per (user, app)), and the paths are kept — a full account answers **507**, which is not the same thing as a too-big file (413). The cost of no per-file cap: `PUT` buffers the whole body to hash it. `Cache-Control` is `private`: an asset's derivative may be public on this instance, an app's file never is.
 
 **How to apply**: keep Winnow ignorant of what a blob means, exactly as with `doc`; a new client app is a new `app` value; do not add a mutable "latest" pointer here — a mutable name would give back the revision problem the hash removes, and a client that needs one puts it in its document.
 
