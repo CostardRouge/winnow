@@ -302,8 +302,8 @@ export default function UsersPanel() {
         message={
           <>
             <strong>@{deleting?.username}</strong> will no longer be able to sign
-            in and every one of their sessions is revoked. Their past ratings and
-            exports stay in the library (unattributed).
+            in, and every one of their sessions and app tokens is revoked. Their
+            past ratings and exports stay in the library (unattributed).
           </>
         }
         confirmLabel="Delete user"

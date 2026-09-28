@@ -8019,6 +8019,12 @@ html[data-theme="dark"] .btn-primary:hover {
     font-family: var(--font-jetbrains-mono), monospace;
     font-size: 0.75rem;
   }
+
+  /* Users › App tokens: a token's last four characters, the only part of it
+     ever shown again — mono, so an O/0 or an l/1 cannot be misread. */
+  .token-hint {
+    font-family: var(--font-mono);
+  }
 }
 
 /* Phones: the rail foot is a fixed top-right chip row — lay the account chip

@@ -1,4 +1,6 @@
-// GET   /api/auth/me → the signed-in account (identity + role, for the UI).
+// GET   /api/auth/me → the signed-in account (identity + role, for the UI;
+//   through an app token the role is the token's capped one). The only
+//   /api/auth route a token reaches.
 // PATCH /api/auth/me { displayName? } | { password, currentPassword } →
 //   self-service profile edit. A password change revokes every other session
 //   of the account and re-issues the current browser a fresh one.
@@ -7,6 +9,7 @@ import { z } from "zod";
 import { one, q } from "@/lib/db";
 import {
   SESSION_COOKIE,
+  authViaFromHeaders,
   createSession,
   destroyUserSessions,
   hashPassword,
@@ -28,12 +31,17 @@ export async function GET(req: NextRequest) {
       role: string;
     }>("SELECT id, username, display_name, role FROM users WHERE id = $1", [who.id]);
     if (!row) return json({ error: "authentication required" }, 401);
+    const via = authViaFromHeaders(req.headers);
     return json({
       user: {
         id: row.id,
         username: row.username,
         displayName: row.display_name,
-        role: row.role,
+        // Through an app token, what THIS request may do (capped below the
+        // account's own role, cf. lib/authz.ts) — an app that read "admin"
+        // here would offer verbs its token is refused.
+        role: via === "token" ? who.role : row.role,
+        via,
       },
     });
   } catch (err) {

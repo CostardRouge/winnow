@@ -76,6 +76,13 @@ export function formatCaptureSpan(min: string | null, max: string | null): strin
   return `${fmtDay(a, !sameYear)} → ${fmtDay(b, true)}`;
 }
 
+// One calendar day in the same hand: "5 Sep 2026" (an expiry date, say).
+export function formatDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : fmtDay(d, true);
+}
+
 // Seconds -> "0:42" / "1:23" / "1:02:05".
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
