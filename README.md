@@ -65,13 +65,25 @@ How it works:
   password from the account chip (current password re-proved; other sessions
   revoked).
 * **Enforcement** is central (`src/proxy.ts` + `src/lib/authz.ts`): every page
-  and API request is validated against the session; viewers are read-only,
+  and API request is validated against the session (or, on the API only, an
+  app token — below); viewers are read-only,
   mutations need `editor`, infrastructure verbs (`/api/roots`, `/api/settings`,
   `/api/scan`, `/api/pipeline`, `/api/purge`, …) need `admin`. Only `/login`,
   `/invite/<token>` (the token *is* the credential), the auth handshake and
   `/api/health` (Docker healthcheck) stay public.
 * **Attribution**: ratings and export jobs record which account made them
   (`ratings.rated_by`, `export_jobs.created_by`).
+* **App tokens**, for a client app that cannot hold the session cookie —
+  Atelier launched from a phone's home screen runs in a cookie jar of its own.
+  An admin mints one on **Users › App tokens**: it acts as one chosen account
+  (same trips, same ratings byline), capped to *Read only* or *Read & write*,
+  never admin, the API only, with an optional expiry. The app sends
+  `Authorization: Bearer wnw_…`; on the few media URLs an `<img>`/`<video>`
+  loads (thumb, proxy, download, sidecar) it may ride as `?access_token=`
+  instead — which puts it in the reverse proxy's access log, the price of an
+  element not being able to send a header. Shown once, stored as a SHA-256,
+  revocable one by one; disabling the account kills its tokens, a password
+  change does not. `GET /api/capabilities` (`auth.token`) states the contract.
 
 The network posture is unchanged: **Traefik** + **Cloudflare Tunnel** expose
 the app behind a domain; do not publish ports `3000`/`5432`/`6379` directly on

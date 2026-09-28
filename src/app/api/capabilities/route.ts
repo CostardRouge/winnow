@@ -14,7 +14,8 @@
 // is how the client knows whether write-back is even possible for THIS account.
 import type { NextRequest } from "next/server";
 import { config } from "@/lib/config";
-import { identityFromHeaders } from "@/lib/auth";
+import { TOKEN_PREFIX, authViaFromHeaders, identityFromHeaders } from "@/lib/auth";
+import { QUERY_TOKEN_ROUTES, TOKEN_QUERY_PARAM } from "@/lib/authz";
 import { json, serverError } from "@/lib/api";
 import { DOC_KINDS, MAX_DOC_BYTES } from "@/lib/appDocuments";
 import { MAX_FILE_BYTES, MAX_USER_BYTES } from "@/lib/appFiles";
@@ -32,11 +33,25 @@ export async function GET(req: NextRequest) {
     return json({
       api: { version: API_VERSION },
       auth: {
-        // The session cookie is the only credential. A same-site client app
-        // gets it for free through CORS (lib/cors.ts); a foreign origin has
-        // nothing yet — `token`/`oauth2` would be added here when built.
-        methods: ["cookie"],
+        // The session cookie, which a same-site client app gets for free
+        // through CORS (lib/cors.ts), and an app token (migration 0045) for a
+        // client that cannot hold the cookie — a home-screen web app in its
+        // own cookie jar. `oauth2` would be added here when built.
+        methods: ["cookie", "token"],
         corsEnabled: config.cors.allowedOrigins.length > 0,
+        // How a token travels. The header works on every API route; the query
+        // parameter only on the media an element loads by URL (lib/authz.ts,
+        // QUERY_TOKEN_ROUTES), because an <img> or a <video> cannot send a
+        // header — anywhere else it is ignored.
+        token: {
+          header: "Authorization: Bearer",
+          prefix: TOKEN_PREFIX,
+          queryParam: TOKEN_QUERY_PARAM,
+          queryRoutes: [...QUERY_TOKEN_ROUTES],
+          // Minted by an admin on Users › App tokens; a token never reaches a
+          // page, nor /api/auth/* beyond GET /api/auth/me.
+          roles: ["viewer", "editor"],
+        },
       },
       media: {
         // asset_sidecars: Sony XML/THM and the DJI .SRT flight log, served by
@@ -98,8 +113,15 @@ export async function GET(req: NextRequest) {
         // but one that inspects the first response does.
         signedRedirects: config.storage.driver === "s3",
       },
+      // `role` is what THIS request may do — for a token, already capped
+      // below the account's own; `via` says which credential answered.
       viewer: me
-        ? { id: me.id, username: me.username, role: me.role }
+        ? {
+            id: me.id,
+            username: me.username,
+            role: me.role,
+            via: authViaFromHeaders(req.headers),
+          }
         : null,
     });
   } catch (err) {

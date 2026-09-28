@@ -11,6 +11,8 @@
 //     thumbnail, so a tiny in-process cache (TTL a few seconds, same pattern
 //     as lib/settings.ts) keeps the hot path off Postgres. Revocations
 //     (logout, disable, password change) clear it explicitly.
+//   * App tokens: a Bearer credential for a client app that cannot hold the
+//     cookie, keyed to one account and capped below it (section below).
 import {
   randomBytes,
   scrypt as scryptCb,
@@ -19,7 +21,7 @@ import {
   type ScryptOptions,
 } from "node:crypto";
 import { one, q } from "./db";
-import type { UserRole } from "./authz";
+import { cappedRole, type TokenRole, type UserRole } from "./authz";
 
 // promisify() would lose the options-bearing overload, so wrap by hand.
 function scrypt(
@@ -68,6 +70,17 @@ export const SESSION_COOKIE = "winnow_session";
 export const HDR_USER_ID = "x-winnow-user-id";
 export const HDR_USER_NAME = "x-winnow-user-name";
 export const HDR_USER_ROLE = "x-winnow-user-role";
+// "session" or "token": which credential proved the identity above. The role
+// header is already the capped one for a token; this says why it may be lower
+// than the account's own.
+export const HDR_AUTH_VIA = "x-winnow-auth-via";
+
+export type AuthVia = "session" | "token";
+
+export function authViaFromHeaders(headers: Headers): AuthVia | null {
+  const v = headers.get(HDR_AUTH_VIA);
+  return v === "session" || v === "token" ? v : null;
+}
 
 // Reads the proxy-injected identity from a request/headers object. Returns
 // null when unauthenticated (only possible on the few public routes).
@@ -241,6 +254,139 @@ export async function validateSession(
           WHERE token_hash = $1`,
         [key, String(SESSION_TTL_MS)],
       ).catch(() => {});
+    }
+  }
+
+  return user;
+}
+
+// --- App tokens (Bearer credential for a client app; migration 0045) --------
+//
+// For a client that cannot hold the session cookie — Atelier launched from a
+// phone's home screen runs in a cookie jar of its own. The token is a key to
+// its owner's account, capped (lib/authz.ts: a role ceiling, the API only,
+// nothing under /api/auth but reading who it is). Same storage rule as every
+// other credential here: only the SHA-256 is kept, the clear token is shown
+// once by the route that mints it.
+//
+// What does NOT revoke a token, on purpose: the owner's password change or
+// reset. A token is its own credential with its own revoke; tying it to the
+// password would silently break the phone every time the desktop password
+// changes. Disabling or deleting the owner does kill it (the lookup joins
+// NOT u.disabled; the rows CASCADE).
+
+// Recognisable at a glance and by a secret scanner; also what lets the guard
+// tell a Winnow token from some other Bearer a proxy in front might add.
+export const TOKEN_PREFIX = "wnw_";
+
+export function isAppToken(s: string): boolean {
+  return s.startsWith(TOKEN_PREFIX) && s.length > TOKEN_PREFIX.length && s.length <= 128;
+}
+
+// `Authorization: Bearer wnw_…` → the token. Any other scheme (a Traefik
+// basic-auth header still riding along) or a foreign Bearer → null, and the
+// request falls back to the cookie as before this existed.
+export function bearerToken(header: string | null): string | null {
+  const m = header ? /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header) : null;
+  return m && isAppToken(m[1]) ? m[1] : null;
+}
+
+export type AccessTokenRow = {
+  id: number;
+  name: string;
+  hint: string;
+  role: TokenRole;
+  user_id: number;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+};
+
+export async function createAccessToken(opts: {
+  userId: number;
+  name: string;
+  role: TokenRole;
+  expiresAt: Date | null;
+  createdBy: number | null;
+}): Promise<{ token: string; row: AccessTokenRow }> {
+  const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
+  const row = await one<AccessTokenRow>(
+    `INSERT INTO access_tokens (token_hash, hint, user_id, name, role, created_by, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, name, hint, role, user_id, created_at, expires_at, last_used_at`,
+    [
+      sha256hex(token),
+      token.slice(-4),
+      opts.userId,
+      opts.name,
+      opts.role,
+      opts.createdBy,
+      opts.expiresAt?.toISOString() ?? null,
+    ],
+  );
+  if (!row) throw new Error("token creation failed");
+  return { token, row };
+}
+
+// Deletes the row and drops its cache entry, so the very next request with it
+// is refused (the proxy and the route share the cache through globalThis).
+export async function revokeAccessToken(id: number): Promise<boolean> {
+  const gone = await one<{ token_hash: string }>(
+    "DELETE FROM access_tokens WHERE id = $1 RETURNING token_hash",
+    [id],
+  );
+  if (gone) cache.delete(gone.token_hash);
+  return gone != null;
+}
+
+// The token twin of validateSession: same cache (a token's hash can never be
+// a session's — different random strings), same throttled touch, no sliding
+// expiry (a token's expiry is the date its minter chose). The role returned is
+// already capped: min(the owner's role NOW, the token's ceiling).
+export async function validateAccessToken(
+  token: string,
+): Promise<SessionUser | null> {
+  const key = sha256hex(token);
+
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.user;
+
+  const row = await one<{
+    id: number;
+    username: string;
+    display_name: string | null;
+    owner_role: UserRole;
+    token_role: TokenRole;
+  }>(
+    `SELECT u.id, u.username, u.display_name,
+            u.role AS owner_role, t.role AS token_role
+       FROM access_tokens t
+       JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = $1
+        AND (t.expires_at IS NULL OR t.expires_at > now())
+        AND NOT u.disabled`,
+    [key],
+  );
+
+  const user: SessionUser | null = row
+    ? {
+        id: row.id,
+        username: row.username,
+        displayName: row.display_name,
+        role: cappedRole(row.owner_role, row.token_role),
+      }
+    : null;
+
+  if (cache.size >= CACHE_MAX) cache.clear();
+  cache.set(key, { user, at: Date.now() });
+
+  if (user) {
+    const t = lastTouch.get(key) ?? 0;
+    if (Date.now() - t > TOUCH_EVERY_MS) {
+      lastTouch.set(key, Date.now());
+      q("UPDATE access_tokens SET last_used_at = now() WHERE token_hash = $1", [
+        key,
+      ]).catch(() => {});
     }
   }
 

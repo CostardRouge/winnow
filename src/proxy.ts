@@ -17,15 +17,34 @@
 //      cookie, so it would 401), and every API response it may read carries
 //      the allow-origin/credentials/expose headers (lib/cors.ts). CORS never
 //      grants anything: steps 2–3 still decide who the request is.
+//   6. An API call may prove itself with an app token instead of the cookie
+//      (`Authorization: Bearer wnw_…`, minted on Users › App tokens) — for a
+//      client with no access to the cookie, e.g. a home-screen web app in its
+//      own cookie jar. The token is tried INSTEAD of the cookie, never after
+//      it: a bad token is a 401, not a silent fallback to whoever else is
+//      signed in in that browser. lib/authz.ts caps what it reaches.
 import { NextResponse, type NextRequest } from "next/server";
 import {
   SESSION_COOKIE,
+  HDR_AUTH_VIA,
   HDR_USER_ID,
   HDR_USER_NAME,
   HDR_USER_ROLE,
+  bearerToken,
+  isAppToken,
+  validateAccessToken,
   validateSession,
+  type AuthVia,
+  type SessionUser,
 } from "@/lib/auth";
-import { isPublicPath, requiredRole, roleAtLeast } from "@/lib/authz";
+import {
+  TOKEN_QUERY_PARAM,
+  isPublicPath,
+  queryTokenAllowed,
+  requiredRole,
+  roleAtLeast,
+  tokenMayReach,
+} from "@/lib/authz";
 import {
   corsPreflightHeaders,
   corsResponseHeaders,
@@ -73,8 +92,27 @@ export default async function proxy(req: NextRequest) {
     return res;
   };
 
-  const token = req.cookies.get(SESSION_COOKIE)?.value ?? null;
-  const user = token ? await validateSession(token) : null;
+  // An app token, when the request carries one: the header anywhere on the
+  // API, the query string only on the media GETs an <img>/<video> issues
+  // (authz.ts says why the list is that short). A page never reads either.
+  const queryToken =
+    isApi && queryTokenAllowed(req.method, pathname)
+      ? req.nextUrl.searchParams.get(TOKEN_QUERY_PARAM)
+      : null;
+  const appToken = isApi
+    ? (bearerToken(req.headers.get("authorization")) ??
+      (queryToken && isAppToken(queryToken) ? queryToken : null))
+    : null;
+
+  let via: AuthVia = "session";
+  let user: SessionUser | null;
+  if (appToken) {
+    via = "token";
+    user = await validateAccessToken(appToken);
+  } else {
+    const token = req.cookies.get(SESSION_COOKIE)?.value ?? null;
+    user = token ? await validateSession(token) : null;
+  }
 
   if (isPublicPath(pathname)) {
     // A signed-in user has no business on the login screen.
@@ -85,8 +123,18 @@ export default async function proxy(req: NextRequest) {
 
   if (!user) {
     // The 401 is readable cross-origin on purpose: a client app must be able
-    // to tell "not signed in" from "blocked", and show a sign-in link.
-    if (isApi) return withCors(unauthorized("authentication required", 401));
+    // to tell "not signed in" from "blocked", and show a sign-in link. A
+    // token says which of its states failed, so the app can ask for a new one
+    // rather than send the person to a login page that cannot help it.
+    if (isApi)
+      return withCors(
+        unauthorized(
+          via === "token"
+            ? "app token invalid, expired or revoked"
+            : "authentication required",
+          401,
+        ),
+      );
     // Bounce to login, remembering where the visit was headed. Path-only
     // (never a full URL) so it cannot be turned into an open redirect.
     const login = new URL("/login", req.url);
@@ -94,6 +142,9 @@ export default async function proxy(req: NextRequest) {
       login.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(login);
   }
+
+  if (via === "token" && !tokenMayReach(req.method, pathname))
+    return withCors(unauthorized("an app token cannot reach this endpoint", 403));
 
   const needed = requiredRole(req.method, pathname);
   if (!roleAtLeast(user.role, needed)) {
@@ -110,8 +161,10 @@ export default async function proxy(req: NextRequest) {
   headers.delete(HDR_USER_ID);
   headers.delete(HDR_USER_NAME);
   headers.delete(HDR_USER_ROLE);
+  headers.delete(HDR_AUTH_VIA);
   headers.set(HDR_USER_ID, String(user.id));
   headers.set(HDR_USER_NAME, user.username);
   headers.set(HDR_USER_ROLE, user.role);
+  headers.set(HDR_AUTH_VIA, via);
   return withCors(NextResponse.next({ request: { headers } }));
 }
