@@ -28,6 +28,22 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this) — and that backfill has to be reachable from the UI, not only from a shell (see MEMORY.md, working preferences).
 
+## Incoming is walked with no write-finish guard (2026-09-29)
+
+**Fact**: only the *inbox* waits for a write to finish (`lib/watcher.ts`,
+chokidar `awaitWriteFinish`). The indexer walks Incoming as it finds it, and
+Finder / SMB writers use the final name, so a scan during a copy indexes a
+truncated file. It heals on the next scan (size/mtime changed) except when the
+finished file is a duplicate: the UPDATE then hits the `content_hash` unique
+index and lands in scan failures.
+
+**How to apply**: anything that writes into Incoming stages in a dot-folder
+(`isIgnoredEntry` skips it — a contract now, `docs/OFFLOAD.md` §6.1) and
+`rename`s into place, the way `lib/import.ts` uses `.part`. The fix for foreign
+writers is an mtime quiet period in the indexer (proposed, §6 of the brief),
+which must not defer the import worker's own files — `copyFile` on Linux does
+not keep the source mtime.
+
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
 **Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder
