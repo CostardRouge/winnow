@@ -269,6 +269,9 @@ export async function exemptAssets(
 // of a bulk apply and to spot the no-camera-EXIF ones (likely screenshots).
 export type GeotagAsset = {
   id: number;
+  /** The folder the media lives in — how the recap groups a multi-folder
+   *  apply into per-folder rows. */
+  session_id?: number;
   filename: string;
   media_type: "photo" | "video";
   gps: { lat: number; lon: number } | null;
@@ -284,7 +287,7 @@ export type GeotagAsset = {
 // entry points that have no asset grid loaded start here: the Geotag action on
 // a session card and on the session page's header (one session), and the
 // Unplaced view's Place (a folder group, several). ONE unpaged request to
-// api/assets/geotag/targets, which returns exactly these nine columns; it used
+// api/assets/geotag/targets, which returns exactly these ten columns; it used
 // to page through the session assets route for the full grid projection, eight
 // requests for a large folder.
 //

@@ -1,6 +1,7 @@
 // The Unplaced view's shared vocabulary (docs/UNPLACED.md): the response shape
 // of GET /api/assets/unplaced, the rules that produce it, and the pure folder
-// grouping. Client-safe on purpose — the page prints UNPLACED_RULES and the
+// sorting (shoot or container, and which folders were shot alongside which).
+// Client-safe on purpose — the page prints UNPLACED_RULES and the
 // server (src/lib/unplaced.ts) applies them, and neither may drift from the
 // other. `pg` never enters this file; same split as features.ts / featureGate.ts.
 
@@ -11,18 +12,22 @@
 // justified them, not tuned constants — change them here and the sentence on
 // screen changes with them.
 export const UNPLACED_RULES = {
-  /** Folders whose capture windows come within this many hours share a card:
-   * one folder = one memory card, so a two-body outing is two folders and one
-   * trip, and the human should make one gesture. The SAME silence cuts a
-   * container folder into parts (see span_max_h). */
+  /** Folders whose capture windows come within this many hours of a card's
+   * window were shot ALONGSIDE it: one folder = one memory card, so a
+   * two-body outing is two folders and one trip. They are NOT merged into
+   * the card — every card is one folder, the same folder its title opens —
+   * but offered in its Place dialog as unticked rows, so the two-body day
+   * stays one gesture and nothing joins the write unseen (docs/UNPLACED.md
+   * §9.8: merging hid a 1 360-file folder behind "+ 1 more folder"). The
+   * SAME silence cuts a container folder into parts (see span_max_h). */
   gap_h: 2,
   /** A folder whose OWN window is longer than this is not a shoot but a
    * container — a month, a year (the iPhone's `photos/2026/april 2026`). It
    * never merges with anything: the first real run had a 360-folder, two-year
    * card before this rule existed (docs/UNPLACED.md §9). Instead its unplaced
    * camera media are cut into PARTS at every gap_h silence, each a card with
-   * its own suggestion. Also the ceiling on a merged group's total span, so a
-   * chain of short folders cannot creep into one either. */
+   * its own suggestion. A container is never offered alongside another card
+   * either: a month folder is "near" every shoot of its month. */
   span_max_h: 72,
   /** A container is cut into at most this many parts. Past it the folder's
    * stragglers are too scattered for a card list and it stays one card that
@@ -49,8 +54,8 @@ export const UNPLACED_RULES = {
 export type UnplacedConfidence = "high" | "medium" | "low";
 
 /** What a card stands for, and therefore what Place applies to:
- *  - `shoot`: one or more short folders merged by time — every live media of
- *    those folders;
+ *  - `shoot`: one short folder — every live media of it (plus, only if ticked
+ *    in the dialog, the folders shot alongside it: `siblings`);
  *  - `part`: one time-slice of a container folder — the folder's media
  *    captured inside [t0, t1];
  *  - `span`: a container folder as a whole, or what is left of one once its
@@ -85,6 +90,19 @@ export type UnplacedSession = {
   sample: UnplacedSample[];
 };
 
+// A short folder shot within gap_h of a card's window — offered, unticked, in
+// that card's Place dialog. Its own card still exists; placing it from here
+// only saves the second gesture.
+export type UnplacedSibling = {
+  id: number;
+  name: string;
+  device_hint: string | null;
+  captured_at_min: string;
+  captured_at_max: string | null;
+  total: number;
+  unplaced: number;
+};
+
 export type UnplacedSuggestion = {
   lat: number;
   lon: number;
@@ -103,11 +121,16 @@ export type UnplacedSuggestion = {
 };
 
 export type UnplacedGroup = {
-  /** Stable id for React keys: the member session ids joined with "-", plus
-   * ":n" for the n-th part of a container. */
+  /** Stable id for React keys: the folder's session id, plus ":n" for the
+   * n-th part of a container. */
   key: string;
   kind: UnplacedKind;
+  /** The card's folder — always exactly one. An array because every consumer
+   *  (the targets request, the grid link, the device line) reads it as one. */
   sessions: UnplacedSession[];
+  /** Short folders shot alongside (within gap_h of the card's window), for
+   *  the dialog's unticked rows. Empty on a span. */
+  siblings: UnplacedSibling[];
   /** The card's capture window — the folders' for a shoot, the slice's for a
    * part, the folder's for a span. */
   t0: string;
@@ -147,52 +170,40 @@ export type UnplacedResponse = {
   rules: typeof UNPLACED_RULES;
 };
 
-// Merge sessions (sorted by captured_at_min ASC) whose capture windows overlap
-// or come within `gapMs` of each other, into groups no longer than `maxSpanMs`.
-// A session whose OWN window exceeds `maxSpanMs` is a container, not a shoot:
-// it is emitted alone, as a `span`, and does not touch the chain around it —
-// a year-long folder that happens to sort between two same-morning card dumps
-// must neither join them nor split them. (The server then cuts each span into
-// parts; this function only sorts the folders into the two families.) A linear
-// sweep; pure, so the server groups with it and a test could too.
-export function groupSessions<
+// Sort folders into the two families: a SHOOT (its own window at most
+// `maxSpanMs`) or a SPAN (a container — a month, a year). No merging: every
+// folder is its own card, the folder its title opens and its count describes.
+// Pure, so the server sorts with it and a test could too.
+export function splitSessions<
   T extends { captured_at_min: string; captured_at_max: string | null },
+>(rows: readonly T[], maxSpanMs: number): { row: T; kind: "shoot" | "span" }[] {
+  return rows.map((row) => {
+    const start = Date.parse(row.captured_at_min);
+    const end = Date.parse(row.captured_at_max ?? row.captured_at_min);
+    return { row, kind: end - start > maxSpanMs ? "span" : "shoot" };
+  });
+}
+
+// The shoots whose windows come within `gapMs` of [t0, t1] — the folders shot
+// alongside a card. DIRECT neighbours only, never the chain of their
+// neighbours: a chain is exactly how a monthly folder once bridged 360
+// folders into one card (§9.1). `exceptId` is the card's own folder.
+export function siblingsWithin<
+  T extends { id: number; captured_at_min: string; captured_at_max: string | null },
 >(
-  rows: readonly T[],
+  window: { t0: string; t1: string },
+  shoots: readonly T[],
   gapMs: number,
-  maxSpanMs: number,
-): { members: T[]; kind: "shoot" | "span" }[] {
-  const out: { members: T[]; kind: "shoot" | "span" }[] = [];
-  let cur: T[] = [];
-  let curStart = 0;
-  let curEnd = -Infinity;
-  const flush = () => {
-    if (cur.length) out.push({ members: cur, kind: "shoot" });
-    cur = [];
-  };
-  for (const r of rows) {
-    const start = Date.parse(r.captured_at_min);
-    const end = Date.parse(r.captured_at_max ?? r.captured_at_min);
-    if (end - start > maxSpanMs) {
-      out.push({ members: [r], kind: "span" });
-      continue;
-    }
-    const joins =
-      cur.length > 0 &&
-      start <= curEnd + gapMs &&
-      Math.max(curEnd, end) - curStart <= maxSpanMs;
-    if (joins) {
-      cur.push(r);
-      curEnd = Math.max(curEnd, end);
-    } else {
-      flush();
-      cur = [r];
-      curStart = start;
-      curEnd = end;
-    }
-  }
-  flush();
-  return out;
+  exceptId: number,
+): T[] {
+  const a0 = Date.parse(window.t0) - gapMs;
+  const a1 = Date.parse(window.t1) + gapMs;
+  return shoots.filter((s) => {
+    if (s.id === exceptId) return false;
+    const b0 = Date.parse(s.captured_at_min);
+    const b1 = Date.parse(s.captured_at_max ?? s.captured_at_min);
+    return b0 <= a1 && b1 >= a0;
+  });
 }
 
 // Confidence from the donor count and the dominant cell's share, per the

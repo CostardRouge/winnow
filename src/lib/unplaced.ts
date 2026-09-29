@@ -1,6 +1,7 @@
 // The Unplaced view's read (docs/UNPLACED.md): the Incoming folders that still
-// hold media with no position, merged into folder groups, each with a
-// suggested position drawn from the located frames shot in the same hours.
+// hold media with no position, one card per folder (or per part of a
+// container folder), each with a suggested position drawn from the located
+// frames shot in the same hours, and the folders shot alongside it.
 // Server half — the vocabulary and the rules live in unplacedTypes.ts.
 //
 // Four scans, all under `SET LOCAL jit = off` (docs/memory/database.md):
@@ -8,9 +9,9 @@
 //      progress bar, one pass over the live rows;
 //   2. one row per Incoming folder with something left to place — its capture
 //      window and four tallies, each a LATERAL over that folder's index slice
-//      (the sessions route's own pattern). groupSessions() then sorts them
-//      into SHOOTS (short folders, merged by time) and SPANS (containers: a
-//      month, a year);
+//      (the sessions route's own pattern). splitSessions() then sorts them
+//      into SHOOTS (short folders, one card each — never merged, §9.8) and
+//      SPANS (containers: a month, a year);
 //   3. the parts of every span at once: its unplaced camera media, in capture
 //      order, cut at every gap_h silence (gaps-and-islands: a LAG, a running
 //      SUM of the cuts). A container under parts_max parts becomes one card
@@ -33,9 +34,10 @@
 import { tx } from "./db";
 import {
   UNPLACED_RULES,
-  groupSessions,
   groupTier,
   isReady,
+  siblingsWithin,
+  splitSessions,
   suggestionConfidence,
   type UnplacedGroup,
   type UnplacedResponse,
@@ -166,20 +168,26 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
       sample: s.sample ?? [],
     }));
 
-    const families = groupSessions(
-      sessions,
-      UNPLACED_RULES.gap_h * H,
-      UNPLACED_RULES.span_max_h * H,
-    );
+    const families = splitSessions(sessions, UNPLACED_RULES.span_max_h * H);
+    const shootRows = families.flatMap((f) => (f.kind === "shoot" ? [f.row] : []));
+    // The folders shot alongside a window, in the shape the dialog lists.
+    const siblingsOf = (w: { t0: string; t1: string }, exceptId: number) =>
+      siblingsWithin(w, shootRows, UNPLACED_RULES.gap_h * H, exceptId).map((x) => ({
+        id: x.id,
+        name: x.name,
+        device_hint: x.device_hint,
+        captured_at_min: x.captured_at_min,
+        captured_at_max: x.captured_at_max,
+        total: x.total,
+        unplaced: x.unplaced,
+      }));
 
     // 3. Cut every container at once. Only its unplaced media WITH camera
     //    EXIF take part in the cut: screenshots and scans are spread over the
     //    month by nature, and a card per screenshot is the noise this view
     //    exists to remove — they stay behind in the folder's span card, whose
     //    one verb is Exempt.
-    const spanIds = families.flatMap((f) =>
-      f.kind === "span" ? [f.members[0].id] : [],
-    );
+    const spanIds = families.flatMap((f) => (f.kind === "span" ? [f.row.id] : []));
     const cutsBySession = new Map<number, CutRow[]>();
     if (spanIds.length) {
       const { rows: cuts } = await client.query<CutRow>(
@@ -265,27 +273,27 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
 
     const groups: UnplacedGroup[] = [];
     for (const f of families) {
-      const ss = f.members;
       if (f.kind === "shoot") {
-        const sample: UnplacedSample[] = [];
-        for (const s of ss) for (const x of s.sample) if (sample.length < 6) sample.push(x);
+        const s = f.row;
+        const w = windowOf([s]);
         groups.push({
-          key: ss.map((s) => s.id).join("-"),
+          key: String(s.id),
           kind: "shoot",
-          sessions: ss,
-          ...windowOf(ss),
-          total: ss.reduce((n, s) => n + s.total, 0),
-          unplaced: ss.reduce((n, s) => n + s.unplaced, 0),
-          exempt: ss.reduce((n, s) => n + s.exempt, 0),
-          no_exif: ss.reduce((n, s) => n + s.no_exif, 0),
-          sample,
+          sessions: [s],
+          siblings: siblingsOf(w, s.id),
+          ...w,
+          total: s.total,
+          unplaced: s.unplaced,
+          exempt: s.exempt,
+          no_exif: s.no_exif,
+          sample: s.sample,
           suggestion: null,
           part: null,
           moments: null,
         });
         continue;
       }
-      const s = ss[0];
+      const s = f.row;
       const cuts = cutsBySession.get(s.id) ?? [];
       const parts = partsBySession.get(s.id) ?? [];
       const flatOf = flat.filter((p) => p.sid === s.id);
@@ -295,6 +303,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           key: `${s.id}:${p.idx}`,
           kind: "part",
           sessions: [s],
+          siblings: siblingsOf(w, s.id),
           t0: w.t0,
           t1: w.t1,
           total: p.total,
@@ -316,6 +325,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           key: String(s.id),
           kind: "span",
           sessions: [s],
+          siblings: [],
           ...windowOf([s]),
           total: s.total,
           unplaced: rest,

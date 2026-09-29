@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { geotagAssets, type GeotagSource } from "@/lib/assetActions";
 import type { PickedLocation } from "@/app/LocationPicker";
@@ -36,6 +36,13 @@ import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 //     is, and moving the pin here is how a suggestion gets corrected (§9.7).
 //     Without it the position is fixed and stated in words — the flows that
 //     came through the picker already chose it.
+//   - `folders`: a multi-folder apply is listed folder by folder, one row and
+//     one checkbox each, ABOVE the per-media table. The card's own folder
+//     starts ticked; the folders shot alongside it start unticked and have to
+//     be opted in, the same rule as an overwrite. Past FULL_LIST_MAX the
+//     per-media table folds away, and without these rows a 1 732-media write
+//     read as one number with no folder in it — the maintainer could not tell
+//     that 1 360 of those media lived in a folder he had not opened (§9.8).
 
 // Leaflet touches `window` on import, and this dialog is imported statically
 // by its hosts: the map control has to come in client-side only.
@@ -47,6 +54,8 @@ const LocationPicker = dynamic(() => import("@/app/LocationPicker"), {
 // any host with grid rows can map straight into it.
 export type GeotagRecapAsset = {
   id: number;
+  /** Required for the per-folder rows to find a media's folder. */
+  session_id?: number;
   filename: string;
   media_type: "photo" | "video";
   gps: { lat: number; lon: number } | null;
@@ -54,6 +63,45 @@ export type GeotagRecapAsset = {
   place_city?: string | null;
   place_country?: string | null;
 };
+
+// One folder of a multi-folder apply: what its row says, and whether it starts
+// ticked (the card's own folder) or not (a folder shot alongside).
+export type RecapFolder = {
+  id: number;
+  name: string;
+  /** One line under the name: the body and the capture window. */
+  detail: string;
+  primary: boolean;
+};
+
+// A checkbox with the third state the DOM has and React does not expose as a
+// prop: a folder whose media are only partly ticked is neither on nor off.
+function TriCheck({
+  state,
+  onChange,
+  disabled,
+  label,
+}: {
+  state: "on" | "off" | "some";
+  onChange: () => void;
+  disabled: boolean;
+  label: string;
+}) {
+  const ref = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === "some";
+  }, [state]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={state === "on"}
+      disabled={disabled}
+      onChange={onChange}
+      aria-label={label}
+    />
+  );
+}
 
 // Past this many media the position-less rows are summarised rather than
 // listed (see the header). 200 keeps a whole ordinary session readable and
@@ -77,6 +125,7 @@ export default function GeotagRecapModal({
   source = "manual",
   sourceNote,
   onTargetChange,
+  folders,
   onClose,
   onApplied,
 }: {
@@ -96,6 +145,9 @@ export default function GeotagRecapModal({
    *  The host owns the point, so it can re-decide `source` from how far the
    *  pin moved — which is exactly what the Unplaced view does. */
   onTargetChange?: (loc: PickedLocation) => void;
+  /** The folders this apply spans, when more than one is on offer — each gets
+   *  a row and a checkbox. Media are matched to their folder by session_id. */
+  folders?: RecapFolder[];
   onClose: () => void;
   /** Called once the update is applied, with ready-to-toast summary + the ids
    * actually written (for the host's optimistic state) + the source recorded. */
@@ -108,10 +160,37 @@ export default function GeotagRecapModal({
   // something to lose.
   const listed = folded ? withGps : assets;
 
-  const [checked, setChecked] = useState<Set<number>>(
-    // Fill-the-holes by default; overwrites are an explicit opt-in per row.
-    () => new Set(withoutGps.map((a) => a.id)),
-  );
+  // Folder rows only when there is a choice to make between folders.
+  const folderRows = folders && folders.length > 1 ? folders : null;
+
+  const [checked, setChecked] = useState<Set<number>>(() => {
+    // Fill-the-holes by default; overwrites are an explicit opt-in per row,
+    // and so is every folder that is not the card's own.
+    const primary = new Set(
+      (folderRows ?? []).filter((f) => f.primary).map((f) => f.id),
+    );
+    return new Set(
+      withoutGps
+        .filter(
+          (a) => !folderRows || a.session_id == null || primary.has(a.session_id),
+        )
+        .map((a) => a.id),
+    );
+  });
+
+  // Each folder's media, and among them the ones with no position — what a
+  // folder checkbox ticks.
+  const byFolder = useMemo(() => {
+    const m = new Map<number, { all: number[]; holes: number[] }>();
+    for (const a of assets) {
+      if (a.session_id == null) continue;
+      let e = m.get(a.session_id);
+      if (!e) m.set(a.session_id, (e = { all: [], holes: [] }));
+      e.all.push(a.id);
+      if (!a.gps) e.holes.push(a.id);
+    }
+    return m;
+  }, [assets]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +217,27 @@ export default function GeotagRecapModal({
       }
       return next;
     });
+
+  // A folder is on when every media it has with no position is ticked, off
+  // when none of its media is, and partly on otherwise (an overwrite ticked by
+  // hand, or a row unticked in the table).
+  const folderState = (id: number): "on" | "off" | "some" => {
+    const e = byFolder.get(id);
+    if (!e) return "off";
+    const n = e.all.filter((x) => checked.has(x)).length;
+    if (n === 0) return "off";
+    const holesFilled =
+      e.holes.length > 0 && e.holes.every((x) => checked.has(x));
+    return holesFilled && n === e.holes.length ? "on" : "some";
+  };
+  // Ticking a folder fills its holes (its placed media stay an explicit
+  // per-row opt-in); unticking it releases every media of it.
+  const toggleFolder = (id: number) => {
+    const e = byFolder.get(id);
+    if (!e) return;
+    if (folderState(id) === "off") setAll(e.holes, true);
+    else setAll(e.all, false);
+  };
 
   // Close on Escape (unless a request is in flight). The picker swallows the
   // key itself while its suggestion list is open.
@@ -241,6 +341,55 @@ export default function GeotagRecapModal({
           />
         )}
         {record}
+
+        {folderRows && (
+          <div className="recap-folders" role="group" aria-label="Folders">
+            <p className="recap-folders-head">
+              {folderRows.length} folders — the card&rsquo;s own, and the ones
+              shot within a couple of hours of it. Tick the ones this position
+              is for.
+            </p>
+            {folderRows.map((f) => {
+              const e = byFolder.get(f.id);
+              const holes = e?.holes.length ?? 0;
+              const files = e?.all.length ?? 0;
+              const writing = e ? e.all.filter((x) => checked.has(x)).length : 0;
+              const st = folderState(f.id);
+              return (
+                <label
+                  key={f.id}
+                  className={`recap-folder${st === "off" ? " is-off" : ""}`}
+                >
+                  <TriCheck
+                    state={st}
+                    onChange={() => toggleFolder(f.id)}
+                    disabled={busy || files === 0}
+                    label={`Place ${f.name}`}
+                  />
+                  <span className="recap-folder-text">
+                    <span className="recap-folder-name" title={f.name}>
+                      {f.name}
+                    </span>
+                    {/* The marker leads the detail line rather than trailing
+                        the name: a long folder path truncates, and it would
+                        take "this card" with it. */}
+                    <span className="recap-folder-detail">
+                      {f.primary ? `This card · ${f.detail}` : f.detail}
+                    </span>
+                  </span>
+                  <span className="recap-folder-count">
+                    <strong>{writing.toLocaleString("en-GB")}</strong> to write
+                    <span className="hint">
+                      {" "}
+                      of {files.toLocaleString("en-GB")} ·{" "}
+                      {holes.toLocaleString("en-GB")} unplaced
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
 
         {withGps.length > 0 && (
           <p className="modal-warn">

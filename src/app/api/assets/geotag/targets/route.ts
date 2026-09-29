@@ -8,7 +8,8 @@
 // /api/sessions/:id/assets, which returns the full GRID_SELECT projection
 // (ratings, tags, companions, bursts, sidecars, the per-pair LATERALs) 500 rows
 // at a time. A 3 886-frame folder was eight requests carrying tens of columns
-// each to populate a table of five. This is one request and nine columns.
+// each to populate a table of five. This is one request and ten columns —
+// session_id among them, so the recap can group a multi-folder apply by folder.
 //
 // Two rules the shape encodes:
 //   - Pairs are NOT collapsed. Both members of a RAW+JPEG / Live Photo pair are
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
 
     const rows = await many<{
       id: number;
+      session_id: number;
       filename: string;
       media_type: "photo" | "video";
       gps: { lat: number; lon: number } | null;
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
       camera_model: string | null;
       lens: string | null;
     }>(
-      `SELECT a.id, a.filename, a.media_type, a.gps, a.gps_source,
+      `SELECT a.id, a.session_id, a.filename, a.media_type, a.gps, a.gps_source,
               a.place_city, a.place_country, a.camera_model, a.lens
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
