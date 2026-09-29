@@ -18,9 +18,10 @@ import {
   tileFor,
   type UnplacedGroup,
   type UnplacedResponse,
+  type UnplacedSibling,
 } from "@/lib/unplacedTypes";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
-import GeotagRecapModal from "./GeotagRecapModal";
+import GeotagRecapModal, { type RecapFolder } from "./GeotagRecapModal";
 import type { PickedLocation } from "./LocationPicker";
 import { OptionPicker, type PickerOption } from "./OptionPicker";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
@@ -28,7 +29,7 @@ import { TILE_ATTRIBUTION, TILE_URL } from "./mapTiles";
 import { EmptyState, Icons, SkeletonCards } from "./ui";
 
 // The Incoming view for the geotagging backlog (docs/UNPLACED.md): one card per
-// folder group — folders shot within a couple of hours of each other — with the
+// FOLDER — the folder its title opens and its count describes — with the
 // count still to place, a suggested position drawn from the located frames shot
 // in the same hours (the phone in the pocket while the Sony shoots), and one
 // primary verb, Place. Every apply goes through the existing recap
@@ -55,10 +56,14 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // gets the bar and the cards first.
 //
 // Three kinds of card, one markup (the session card's own — .session-card /
-// .card-head / .meta-line / .card-actions / ThumbStrip; a folder group IS a
-// session-shaped thing, and a second card family for the same object would be
-// drift):
-//   - a SHOOT: short folders merged by time — Place N;
+// .card-head / .meta-line / .card-actions / ThumbStrip; a folder IS a
+// session, and a second card family for the same object would be drift):
+//   - a SHOOT: one short folder — Place N. The folders shot within gap_h of it
+//     (the other body's card, on a two-body day) are NOT merged in: they are
+//     named on the card ("1 folder shot alongside") and offered in the dialog
+//     as unticked rows, so the day stays one gesture and nothing joins the
+//     write unseen. Merging them made the card's number describe folders its
+//     title did not open (§9.8);
 //   - a PART of a container folder (a month, a year), cut at the same two-hour
 //     silence that separates two shoots — "april 2026 · part 3 of 11", its
 //     own window and suggestion, Place N applies inside the window;
@@ -89,6 +94,9 @@ type Triage = "all" | "ready" | "hand";
 type Flow = {
   group: UnplacedGroup;
   assets: GeotagAsset[];
+  /** The card's folder, then the folders shot alongside it — the recap's
+   *  per-folder rows (the card's own ticked, the others not). */
+  folders: RecapFolder[];
   seed: { lat: number; lon: number } | null;
   loc?: PickedLocation;
 };
@@ -207,6 +215,16 @@ function groupDays(g: UnplacedGroup): number {
   return Math.max(1, Math.round((Date.parse(g.t1) - Date.parse(g.t0)) / 86_400_000));
 }
 
+// A folder shot alongside the card, as a row of the Place dialog.
+function siblingFolder(x: UnplacedSibling): RecapFolder {
+  return {
+    id: x.id,
+    name: x.name,
+    detail: `${x.device_hint ?? "unknown device"} · ${formatCaptureSpan(x.captured_at_min, x.captured_at_max)}`,
+    primary: false,
+  };
+}
+
 function stripItems(g: UnplacedGroup): StripItem[] {
   return g.sample.map((a) => ({
     key: a.id,
@@ -293,8 +311,17 @@ export default function UnplacedPane() {
       if (busyKey) return;
       setBusyKey(g.key);
       try {
-        const assets = await loadGroupAssets(g);
-        if (!assets.length) {
+        // The card's own media, and — in the same round trip — every media
+        // of the folders shot alongside it, which the dialog offers unticked.
+        // Two requests only because a part's media are a window into its
+        // folder while a sibling is always the whole folder.
+        const [own, alongside] = await Promise.all([
+          loadGroupAssets(g),
+          g.siblings.length
+            ? geotagTargets(g.siblings.map((x) => x.id))
+            : Promise.resolve([] as GeotagAsset[]),
+        ]);
+        if (!own.length) {
           setNotice("Nothing left to place here.");
           return;
         }
@@ -303,7 +330,18 @@ export default function UnplacedPane() {
         const s = g.kind === "span" ? null : g.suggestion;
         setFlow({
           group: g,
-          assets,
+          assets: [...own, ...alongside],
+          folders: [
+            {
+              id: g.sessions[0].id,
+              name: g.part
+                ? `${groupTitle(g)} · part ${g.part.index} of ${g.part.count}`
+                : groupTitle(g),
+              detail: `${g.sessions[0].device_hint ?? "unknown device"} · ${formatWindow(g)}`,
+              primary: true,
+            },
+            ...g.siblings.map(siblingFolder),
+          ],
           seed: s ? { lat: s.lat, lon: s.lon } : null,
           loc: s ? { lat: s.lat, lon: s.lon, label: s.name } : undefined,
         });
@@ -562,8 +600,10 @@ export default function UnplacedPane() {
                 <details className="card-rules">
                   <summary>How the cards and their suggestions are made</summary>
                   <p className="hint">
-                    Folders shot within {rules.gap_h} h of each other share a
-                    card. A folder spanning more than {rules.span_max_h} h is a
+                    Each folder is its own card. The folders shot within{" "}
+                    {rules.gap_h} h of it are offered in its Place dialog,
+                    unticked — tick them to place a two-body day in one go. A
+                    folder spanning more than {rules.span_max_h} h is a
                     container (a month, a year): its unplaced camera media are
                     cut into parts at every {rules.gap_h} h silence, each part
                     its own card, up to {rules.parts_max} parts — past that the
@@ -626,14 +666,17 @@ export default function UnplacedPane() {
                               · part {g.part.index} of {g.part.count}
                             </span>
                           )}
-                          {g.sessions.length > 1 && (
+                          {g.siblings.length > 0 && (
                             <span
                               className="hint"
-                              title={g.sessions.map((x) => x.name).join("\n")}
+                              title={`Shot within ${rules?.gap_h ?? 2} h of this one — offered, unticked, when you place it:\n${g.siblings
+                                .map((x) => `${x.name} (${fmt(x.unplaced)} unplaced)`)
+                                .join("\n")}`}
                             >
                               {" "}
-                              + {g.sessions.length - 1} more{" "}
-                              {g.sessions.length - 1 === 1 ? "folder" : "folders"}
+                              · {g.siblings.length}{" "}
+                              {g.siblings.length === 1 ? "folder" : "folders"} shot
+                              alongside
                             </span>
                           )}
                         </h3>
@@ -717,6 +760,7 @@ export default function UnplacedPane() {
             flowSource(flow) === "inferred" ? suggestionNote(flow.group) : null
           }
           onTargetChange={(loc) => setFlow({ ...flow, loc })}
+          folders={flow.folders}
           onClose={() => setFlow(null)}
           onApplied={(message) => {
             setFlow(null);

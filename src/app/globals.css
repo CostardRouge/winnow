@@ -5302,8 +5302,67 @@ html[data-theme="dark"] .btn-primary:hover {
   .recap-record .hint {
     @apply mt-1 block;
   }
+  /* A multi-folder apply, one row per folder, above the per-media table: the
+     count that matters on a folder-sized write is per folder, and it is the
+     one the folded table cannot show. A row is a <label> so the whole line
+     toggles; an unticked folder fades like an unticked media row. */
+  .recap-folders {
+    @apply mt-3 overflow-hidden rounded-[var(--radius)] border;
+    border-color: var(--color-border);
+  }
+  .recap-folders-head {
+    @apply m-0 px-3 py-2 text-[12px];
+    color: var(--color-muted);
+    background: var(--color-surface-2);
+  }
+  .recap-folder {
+    @apply flex cursor-pointer items-center gap-3 px-3 py-2 text-[13px];
+    border-top: 1px solid var(--color-border);
+  }
+  .recap-folder:hover {
+    background: color-mix(in srgb, var(--color-surface-2) 60%, transparent);
+  }
+  .recap-folder input[type="checkbox"] {
+    @apply shrink-0;
+    accent-color: var(--color-accent);
+  }
+  .recap-folder.is-off .recap-folder-text,
+  .recap-folder.is-off .recap-folder-count {
+    @apply opacity-60;
+  }
+  .recap-folder-text {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+  .recap-folder-name {
+    @apply truncate;
+    color: var(--color-text);
+  }
+  .recap-folder-detail {
+    @apply truncate text-[12px];
+    color: var(--color-muted);
+  }
+  .recap-folder-count {
+    @apply shrink-0 whitespace-nowrap text-right text-[12px];
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .recap-folder-count strong {
+    color: var(--color-text);
+  }
+  @media (max-width: 640px) {
+    .recap-folder {
+      @apply flex-wrap;
+    }
+    .recap-folder-count {
+      @apply w-full pl-7 text-left;
+    }
+  }
   .recap-toolbar {
-    @apply mt-3 flex items-center gap-2;
+    @apply mt-3 flex flex-wrap items-center gap-2;
+  }
+  /* A phone-width recap broke "Check all" over two lines inside its button. */
+  .recap-toolbar .btn {
+    @apply whitespace-nowrap;
   }
   .recap-toolbar .hint {
     @apply ml-auto;

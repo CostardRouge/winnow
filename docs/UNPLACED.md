@@ -300,10 +300,10 @@ choice, and one CHECK constraint.
 is a fifth view beside Sessions · Grid · Calendar · Map. It sits **right after
 Sessions**: `GalleryShell` places injected views before its built-in ones, and
 the two folder-level views reading side by side, ahead of the asset-level
-ones, is the better order anyway. One card per folder group, drawn with the
-session card's own markup (`.session-card`, the meta line, `ThumbStrip`) — a
-folder group is a session-shaped thing and a second card family for the same
-object would be drift. The primary verb is **Place N**; the `⋯` menu holds
+ones, is the better order anyway. One card per folder (per folder *group*
+until §9.8), drawn with the session card's own markup (`.session-card`, the
+meta line, `ThumbStrip`) — a folder is a session and a second card family for
+the same object would be drift. The primary verb is **Place N**; the `⋯` menu holds
 *Pick a different place…*, *Exempt N without camera EXIF* and *Open in grid*
 (§9 adds two more card kinds and the verbs they take). The suggestion, its
 confidence and its provenance are printed on the card, with a one-tile map
@@ -433,6 +433,26 @@ once, the card windows passed as `unnest` arrays.
    `suggested` to `verified`, because the source is re-read from the distance
    on every change. The card's 72 px preview opens the same dialog: looking at
    the place properly and placing the media there are one gesture.
+8. **One card per folder, and the rest offered, not merged.** A card read
+   *1 732 unplaced* while the folder its title opened held 186 pairs: the
+   other 1 360 files were the second body's folder, merged in by the 2 h rule
+   and named only as "+ 1 more folder" (a hover tooltip, no count). The
+   dialog then asked to confirm 1 732 media as one folded number, with no
+   folder in it — the maintainer had to ask whether the count was wrong
+   before writing anything. Merging made a card's number describe folders its
+   title did not open, so it is gone: **every card is one folder** (or one
+   part of a container), the folder its title opens and its count describes.
+   The two-body day is still one gesture: the folders shot within `gap_h` of
+   the card (`siblingsWithin`, direct neighbours only — never the chain of
+   them, §9.1's lesson) are named on the card ("1 folder shot alongside",
+   names and counts on hover) and **listed in the Place dialog, one row and
+   one checkbox per folder**, the card's own ticked and the others not — the
+   same opt-in rule as an overwrite. The rows carry each folder's body,
+   window, files and unplaced count, which is the breakdown the folded
+   per-media table could never show. `GET /api/assets/geotag/targets` returns
+   `session_id` so the dialog can split a multi-folder apply; the card list
+   gets longer by the number of two-body days, which is the price of every
+   number on screen meaning the folder it sits next to.
 
 §8's six donor rules are unchanged; the two new numbers joined the printed
 sentence, which now has eight.
