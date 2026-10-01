@@ -76,6 +76,10 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **How to apply**: keep Winnow ignorant of what a blob means, exactly as with `doc`; a new client app is a new `app` value; do not add a mutable "latest" pointer here — a mutable name would give back the revision problem the hash removes, and a client that needs one puts it in its document.
 
+## `?collapse=pairs` lists every frame of a pile (2026-10-01)
+
+**Decision**: `/api/assets` takes `collapse=pairs` beside `collapse=1` — pairs folded to their primary, burst piles NOT folded (`buildFilter`'s `collapseBursts: false`). **Why**: Atelier's media picker reads verdicts, and a frame elected inside a pile is by definition not its cover, so through `collapse=1` it was in no list at all (Atelier's `docs/winnow-day-sheet-verdicts.md`). **How to apply**: `collapseBursts` defaults to `true`, so every older caller is unchanged; the values are announced in `/api/capabilities` as `media.listCollapse`, and a client sends `pairs` only when listed there. The cover-pick subquery is what drives the JIT trap below; `pairs` drops it, so it is the cheaper of the two.
+
 ## `collapseGroups` over a large scope triggers Postgres JIT — measure before blaming the SQL (2026-09-07)
 
 **Finding**: `buildFilter(..., { collapseGroups: true })` carries a correlated subquery (the burst-cover pick), which inflates the planner's estimated cost past `jit_above_cost`. Postgres then LLVM-compiles the expression, and the compile dominates: measured on an 87k-row library, `count(*)` over that predicate is **1058 ms with JIT on and 28 ms with it off** — on a plan whose subplan `EXPLAIN` reports as *never executed*. The tell is a Seq Scan whose `actual time` **starts** at ~800 ms with a tiny `Buffers` count.

@@ -75,6 +75,12 @@ export async function GET(req: NextRequest) {
         // 64 KiB windows, cf. lib/hash.ts) — the identity a client can
         // recompute locally from a file.
         contentHash: "partial-sha256",
+        // The values GET /api/assets takes for `collapse`: `1` folds a
+        // RAW+JPEG pair to its primary and a burst pile to its cover,
+        // `pairs` folds the pairs only and lists every frame of a pile — so a
+        // client reading verdicts can see a frame picked inside a pile.
+        // Atelier asks `pairs` only when it is listed here.
+        listCollapse: ["1", "pairs"],
         // Whether GET /api/assets/timeline answers on this instance. Winnow's
         // timeline is behind a feature flag (Settings › Features, default OFF
         // while its chapter derivation is reworked) and the route 404s when it

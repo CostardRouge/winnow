@@ -38,12 +38,18 @@ export async function GET(req: NextRequest) {
     // default shows the live library.
     const deleted = sp.get("deleted") === "trash" ? "trash" : "exclude";
     // `?collapse=1` shows one tile per logical media: RAW+JPEG companions are
-    // hidden so a pair counts once (the displayed `primary` stays). Off by
-    // default — the Pipeline/triage views list every file.
-    const collapseGroups = sp.get("collapse") === "1";
+    // hidden so a pair counts once (the displayed `primary` stays), and a
+    // burst pile shows as its cover. Off by default — the Pipeline/triage
+    // views list every file. `?collapse=pairs` folds the pairs and keeps
+    // every frame of a pile: what a client needs when it reads verdicts, since
+    // a frame picked inside a pile is not the cover. Announced in
+    // /api/capabilities (`media.listCollapse`).
+    const collapse = sp.get("collapse");
+    const collapseGroups = collapse === "1" || collapse === "pairs";
     const { conditions, params } = buildFilter(filter, 1, {
       deleted,
       collapseGroups,
+      collapseBursts: collapse !== "pairs",
     });
     let idx = params.length + 1;
 

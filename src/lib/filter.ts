@@ -248,7 +248,14 @@ export type DeletedScope = "exclude" | "trash";
 export function buildFilter(
   filter: PartialAssetFilter,
   startIdx = 1,
-  opts: { deleted?: DeletedScope; collapseGroups?: boolean } = {},
+  opts: {
+    deleted?: DeletedScope;
+    collapseGroups?: boolean;
+    // Only read under `collapseGroups`: `false` folds the pairs and keeps
+    // every frame of a burst pile. Defaults to folding both, so every caller
+    // written before it gets exactly what it had.
+    collapseBursts?: boolean;
+  } = {},
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -383,7 +390,12 @@ export function buildFilter(
     // pile's first live frame — so trashing the cover surfaces the next frame
     // instead of hiding the whole pile. Bounded per-pile subquery on
     // assets_burst_idx (piles are small).
-    if (filter.burst_id == null) {
+    //
+    // `collapseBursts: false` skips this fold — `?collapse=pairs` on
+    // /api/assets. A frame elected INSIDE a pile is not its cover, so a
+    // client asking which frames were picked (Atelier's media picker) sees
+    // none of them through the fold.
+    if ((opts.collapseBursts ?? true) && filter.burst_id == null) {
       conditions.push(
         `(a.burst_id IS NULL
           OR a.id = (
