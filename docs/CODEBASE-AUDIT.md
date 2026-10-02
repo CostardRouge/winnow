@@ -298,7 +298,7 @@ another subdomain of the site Winnow is served under (the cookie is
 - **Fix:** map dot-only names to a safe folder name in `sanitize`, and refuse to copy into or remove any folder that does not resolve strictly inside `EXPORT_DIR`.
 - **Effort:** S · **Risk of fixing:** low
 - **Verification:** `node -e` over `sanitize` printed `".." -> /data`, `"." -> /data/exports`. Regression test: every dot-only name and traversal attempt resolves strictly inside `EXPORT_DIR`; deleting a job whose folder would escape removes nothing.
-- *Evidence:* read + reproduced · *Status:* **Batch 1**
+- *Evidence:* read + reproduced · *Status:* **Fixed (batch 1)**
 
 **SEC-02** — **Severity:** critical
 - **Location:** `package.json` (`next ^16.2.12` resolved 16.2.12, `sharp 0.35.3` via `overrides`); `src/proxy.ts:59-61` (matcher excludes `/_next/`).
@@ -933,7 +933,7 @@ CI/deploy, data deletion, public contracts) reserves for the maintainer.
 
 | # | ID | Sev. | Effort | Risk | Batch | Depends on / note |
 |---|---|---|---|---|---|---|
-| 1 | SEC-01 | critical | S | low | **1** | — |
+| 1 | SEC-01 | critical | S | low | **1 ✓** | — |
 | 2 | SEC-02 | critical | S | medium | **1 ✓** | — |
 | 3 | DX-01 | high | S | low | **1 ✓** | first, so every later fix has a test |
 | 4 | BE-01 | high | S | low | **1** | DX-01 |
@@ -1055,4 +1055,5 @@ behaviour change.*
 
 - **DX-01 — test runner.** `package.json` gains `"test": "tsx --test \"src/**/*.test.ts\""` — Node's built-in runner through the `tsx` already in `dependencies`, so no package is added (vitest/jest would each be a new dev dependency for what `node:test` does). First suite: `src/lib/authz.test.ts`, nine tests pinning the role policy as it is today (defaults, admin prefixes, self-service, segment-boundary matching, the public surface, token caps), so batch 2's auth changes start from a recorded baseline. `CONTRIBUTING.md`, `CLAUDE.md` and `docs/memory/testing-and-ci.md` stop saying there are no tests and document the opt-in for database-backed tests. *Verification:* `npm test` → 9 pass; `npm run typecheck` green. *Behaviour change:* none. *Not done:* the CI job (D8 — CI changes need approval).
 - **SEC-02 — dependency advisories and the public optimizer.** `next` 16.2.12 → **16.3.8**, `sharp` 0.35.3 → **0.35.5** (dependency and override), `postcss` override floor 8.5.23 → 8.5.28 (pulls `nanoid` 3.3.19). The lockfile diff touches only `next`, `@next/*`, `@swc/helpers`, `sharp`, `@img/*`, `postcss`, `nanoid`. `next.config.mjs` sets `images: { unoptimized: true }`, with the reason in a comment. *Verification:* `npm audit` and `npm audit --omit=dev` → **0 vulnerabilities** (were 1 critical, 2 high); `/_next/image?url=/icons/icon-192.png` without a cookie → **404** (was 200 image/png); typecheck, `npm test`, `npm run build` green (155 dynamic routes, unchanged; the NFT-trace warning is the same one, now reported at two lines of `export.ts`); Playwright on `next start`: sign-in, `/library`, `/library/incoming/grid`, `/library/gallery`, `/sessions/5`, `/settings/pipeline`, `/settings/volumes`, `/users` all render with their headings, a rating PATCH from the page → 200, no page errors, no 5xx. *Behaviour change:* none visible — nothing used `next/image`. *Deploy note:* a framework minor bump; roll back by pinning the previous `sha-` image tag.
+- **SEC-01 — export folders stay inside `EXPORT_DIR`.** `lib/export.ts`: `sanitize` turns a name made only of dots into underscores (every other name keeps its folder, so existing exports are still found); new `exportFolder(name)` is the single place the folder is computed and throws unless the result is a direct child of `EXPORT_DIR`; the copy (`copyToExportFolder`) and the delete (`api/exports/[id]`) both use it. *Verification:* `src/lib/export.test.ts` (14 hostile names incl. `.`, `..`, `../..`, `/etc`, `..\\..`, empty, NUL) — 3/3 pass; with the old `sanitize` body restored, 2/3 fail (`"." -> "."`). *Behaviour change:* an export named only with dots now uses a `__`-style folder; a pre-existing job whose stored name is dot-only no longer deletes `/data` or `EXPORT_DIR` — its folder removal reports an error in `file_errors` instead.
 

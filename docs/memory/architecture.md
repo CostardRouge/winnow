@@ -68,7 +68,7 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **Why**: an unmounted NAS looks exactly like "every file was deleted". The guard is what stops one bad mount from soft-deleting the library.
 
-**How to apply**: any new sweep that deletes or trashes in bulk needs the same "does this look like an unmounted volume?" question answered before it acts.
+**How to apply**: any new sweep that deletes or trashes in bulk needs the same "does this look like an unmounted volume?" question answered before it acts. And a path a recursive delete is aimed at must be **resolved and checked to be strictly inside its root** at the moment of the delete — a character filter on a user-typed name is not enough: `.` and `..` pass any `[a-z0-9._-]` filter, and an export named `..` once mapped its folder to `/data` (2026-10-02, `docs/CODEBASE-AUDIT.md` SEC-01; `exportFolder()` in `lib/export.ts` is the shape to copy).
 
 ## A deduced location never enters an original's EXIF (2026-09-03, revised 2026-09-20)
 
