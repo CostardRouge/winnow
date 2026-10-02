@@ -885,7 +885,7 @@ without a confirm) are not repeated.
 - **Fix:** `node:test` run by the `tsx` already in `dependencies` (`npm test`, co-located `*.test.ts`) — no new package. Unit tests need nothing; DB-backed tests use `DATABASE_URL` and skip, saying so, when Postgres is unreachable. A CI job is a separate, approved step.
 - **Effort:** S · **Risk of fixing:** low
 - **Verification:** `npm test` runs the batch-1 regression tests green, and each test fails against the pre-fix code.
-- *Evidence:* read · *Status:* **Batch 1** (runner + first tests); CI job → Decision D8
+- *Evidence:* read · *Status:* **Fixed (batch 1)** (runner + first tests); CI job → Decision D8
 
 **DX-02** — **Severity:** medium
 - **Location:** no ESLint; 45 `eslint-disable` comments in `src/app`, 16 of them `react-hooks/exhaustive-deps`.
@@ -935,7 +935,7 @@ CI/deploy, data deletion, public contracts) reserves for the maintainer.
 |---|---|---|---|---|---|---|
 | 1 | SEC-01 | critical | S | low | **1** | — |
 | 2 | SEC-02 | critical | S | medium | **1** | — |
-| 3 | DX-01 | high | S | low | **1** | first, so every later fix has a test |
+| 3 | DX-01 | high | S | low | **1 ✓** | first, so every later fix has a test |
 | 4 | BE-01 | high | S | low | **1** | DX-01 |
 | 5 | BE-03 | high | S | low | **1** | DX-01 |
 | 6 | SEC-03 | high | S | medium | 2 | D1 · approval (auth) |
@@ -1052,3 +1052,6 @@ with two moves argued below.
 this document, flipping its status in §2 to **Fixed (batch 1)** and adding
 its line below: what changed, the verification actually run, and any
 behaviour change.*
+
+- **DX-01 — test runner.** `package.json` gains `"test": "tsx --test \"src/**/*.test.ts\""` — Node's built-in runner through the `tsx` already in `dependencies`, so no package is added (vitest/jest would each be a new dev dependency for what `node:test` does). First suite: `src/lib/authz.test.ts`, nine tests pinning the role policy as it is today (defaults, admin prefixes, self-service, segment-boundary matching, the public surface, token caps), so batch 2's auth changes start from a recorded baseline. `CONTRIBUTING.md`, `CLAUDE.md` and `docs/memory/testing-and-ci.md` stop saying there are no tests and document the opt-in for database-backed tests. *Verification:* `npm test` → 9 pass; `npm run typecheck` green. *Behaviour change:* none. *Not done:* the CI job (D8 — CI changes need approval).
+

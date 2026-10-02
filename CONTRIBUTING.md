@@ -59,11 +59,23 @@ static gate:
 
 ```bash
 npm run typecheck       # tsc --noEmit — must pass
+npm test                # node:test suite (not in CI yet — run it yourself)
 npm run migrate         # applies/validates the SQL (the schema is part of the contract)
 npm run build           # production build — must succeed
 ```
 
-A change is ready when all three are green.
+A change is ready when all four are green. `npm test` uses Node's built-in
+runner through `tsx` (no extra dependency); tests live next to the module they
+cover as `*.test.ts`. The database-backed ones run only when you point them at
+a scratch database that `npm run migrate` has been run against — they insert
+and delete rows, so never at a real library:
+
+```bash
+WINNOW_TEST_DATABASE_URL=postgres://winnow:winnow@localhost:5432/winnow_test npm test
+```
+
+Without the variable they are skipped, and the runner says so. A bug fix comes
+with a test that fails without it.
 
 ### Database migrations
 
