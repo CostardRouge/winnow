@@ -140,7 +140,7 @@ isolation the indexer gives each file.
 
 **How to apply**: pin the ML container tag; after upgrading it, smoke-test the `/predict` contract before trusting a backfill. Contrast with the export path, which uses Immich's *public* API deliberately (`docs/memory/architecture.md`).
 
-**Open**: `asset_faces.embedding` is ~6–8 KB of JSONB per face and is currently **write-only** — nothing reads it (review D5). Do not build on it assuming it is a queryable index; the decision to ship person clustering on pgvector or stop storing embeddings is still the maintainer's.
+**Open**: `asset_faces.embedding` is ~6–8 KB of JSONB per face; review D5 called it write-only, but since People shipped `lib/people.ts` reads it (centroids, clustering — checked 2026-10-02). Do not build on it assuming it is a queryable index; the decision to ship person clustering on pgvector or stop storing embeddings is still the maintainer's.
 
 ## Pacing: two philosophies coexist, one is correct (2026-08-20)
 

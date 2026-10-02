@@ -25,3 +25,10 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 **Why**: CI is meant to validate what ships. Drifting the Node major or the Postgres major would make a green build meaningless for the box it deploys to.
 
 **How to apply**: if you bump one, bump the others in the same commit — `Dockerfile` (`node:22-slim`, `postgresql-client-16`), the compose `postgres` image, and both CI jobs. See `docs/memory/deployment.md` for why the Postgres client major must track the server major.
+
+## Measuring without the Optiplex, and a file search skips (2026-10-02)
+
+**How**: a container with Postgres 16 + Redis is enough to run `next start` and measure for real — seed a synthetic library (`generate_series` into `roots`/`sessions`/`assets`/`ratings`; the CHECK lists are in the migrations) and time routes with `curl -w %{time_total}`, `EXPLAIN (ANALYZE, BUFFERS)` the SQL `buildFilter` emits, and drive the UI with Playwright's Chromium. `docs/CODEBASE-AUDIT.md` §1 lists what that setup cannot see (production `pg_stat_*`, NAS latency, Traefik/Watchtower config) — state those limits next to any number.
+
+**Trap**: `src/lib/lensLabels.ts` contains literal NUL bytes (lines 116, 127), so git shows it as binary, `grep` says "binary file matches" and ripgrep **skips it silently**. Search with `grep -a` / `rg -a` until DX-03 escapes them.
+

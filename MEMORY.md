@@ -79,6 +79,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 ## Open items (dated; remove when done)
 
+- 2026-10-02 — **A whole-codebase audit is the new backlog of record: `docs/CODEBASE-AUDIT.md`** (98 findings, nine batches, the `ARCHITECTURE-REVIEW.md` form). Batch 1 shipped with it (critical/high fixes that needed no decision). **Fifteen decisions are the maintainer's (§3.4)** and block batches 2–4: D1 CSRF shape, D2 what removing a volume does to curation, D3 who may hard-delete a session's originals, D4 the login brake's IP source, D6 migrations on a Watchtower deploy. Check its §3 before proposing pipeline, auth, deploy or UI-correctness work; the review's P1 list still stands beside it.
 - 2026-09-20 — **Device attribution shipped; the embedded re-read did not.** Media whose file names no camera (DJI MP4s above all) are now triaged on Settings › Pipeline › Devices, **one card per folder** (the flat list it shipped with lasted one session), and `device_source` + an indexer guard keep the result through re-indexing (`docs/memory/pipeline.md`, migration 0043). What is still open is the one source the vote cannot replace: the `Model`/`SerialNumber` in the MP4's `djmd` track, reachable only under exiftool's `-ee`, which alone could tell two identical bodies apart. It wants an enqueue-only pass over the index queue and a measurement on a real clip first — a 469 MB file on a spinning HDD is not free. Nothing else should be built on `device` being EXIF-only: it now has four provenances.
 - 2026-09-14 — **The Settings review is written and nothing in it is fixed**: `docs/SETTINGS-UI.md`, 26 findings, all *open*. Its §5 orders the work (presentation pass first, routes last) but **step 0 is a decision, not a commit**: D15 asks whether a settings pane should follow the runtime (live vs restart, today's rule) or the decider (operator / photographer / moment), and the answer is the shape of the rail every other finding assumes. Maintainer's call. **D16/E22/E26 and D18 are Fixed** — the geocoding rate + cell size have a control group on Settings › Pipeline, the Live Photo companion a toggle in the Exports toolbar, and `/settings/instance` now prints the environment tier read-only with each row's source (`env` / `default`), which is what makes the compose drift below findable. B6's `.pane-head`/`.section-head` exist too, written by that page. Four gaps are features rather than settings work and each wants its own brief: quiet hours (E19, the one missing *concept* — pacing is a flat per-hour cap with no notion of a time window), a trash retention policy (E20), a configurable import filing template (E21 — hardcoded at `src/lib/import.ts:76`, and the one place Winnow creates structure in the originals' world), and any notification at all (E23 — there is none, of any kind).
 - 2026-09-15 — **The UI review's P0 tier shipped and P1 is under way (PR #248).** `PageHeader`, the `.page-tools` band, the session card and the session page landed 2026-09-15 (S1, S3, S4, H1–H3, H5, M3); what remains of P1: the Timeline's chapter dates (H1), colour semantics (H4), control heights (A3/T2), the phone bar (M5), the viewer's info sheet (M4). P2 (five tab families, four chip families, 35 font sizes) is untouched. `docs/UI-REVIEW.md` is the register; the rules in `docs/memory/frontend.md` apply to any new UI meanwhile.
@@ -106,6 +107,13 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 Not a memory file, but read it before proposing work on the Calendar, the Map
 or a new way of reading the library at large:
+
+- **`docs/CODEBASE-AUDIT.md`** — the audit of 2026-10-02: §1 inventory (data
+  model from the live catalog, commands with timings, what could not be
+  seen), §2 ninety-eight findings across nine domains each tagged
+  `reproduced`/`read`/`sweep`, §3 the impact÷effort table, the batches, what
+  NOT to do and the decisions, §4 what batch 1 changed. Read §2 before
+  touching a destructive path, the proxy, the deploy or a cull write.
 
 - **`docs/HEATMAP.md`** — the brief for `/heatmap`, now a **record**: the four
   readings shipped 2026-09-07. §1–§5 carry the reasoning (why the crossing, why
