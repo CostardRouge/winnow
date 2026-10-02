@@ -1407,8 +1407,16 @@ html[data-theme="dark"] .btn-primary:hover {
   /* Shared by the exports cards and the incoming sessions list (the ThumbStrip
      component). A ResizeObserver fits as many fixed-size tiles as the row's
      width allows; the remainder collapse behind a trailing "+N" tile. */
+  /* `contain: inline-size` is load-bearing: the strip MEASURES its own width
+     to decide how many tiles to draw, so that width must never depend on the
+     tiles. Without it the drawn tiles count toward the row's min-content, any
+     shrink-to-fit ancestor (a wrapping flex line, a fit-content box) widens to
+     hold them, the observer reads the wider row and draws more: a ratchet that
+     only grows. Narrowing the window after load left export cards 1388px wide
+     inside 984px, their Download clipped off the right edge (2026-10-02). */
   .thumb-row {
-    @apply flex w-full flex-nowrap overflow-hidden;
+    @apply flex w-full min-w-0 flex-nowrap overflow-hidden;
+    contain: inline-size;
   }
   .thumb-row.is-clickable {
     cursor: pointer;
@@ -5493,9 +5501,11 @@ html[data-theme="dark"] .btn-primary:hover {
 
 /* ---- Exports: downloadable, expandable cards --------------------------- */
 @layer components {
-  .export-card {
-    @apply flex-col items-stretch gap-3;
-  }
+  /* The card's layout is `.session-card.is-stacked`, never re-declared here: a
+     modifier that turns `.session-card` into a column but forgets its
+     `flex-wrap: wrap` makes a multi-line column flexbox, whose line is as wide
+     as its widest child rather than the card — that is how the head and its
+     Download slid out of the card on exports with many files. */
   .export-body {
     @apply flex flex-col items-start gap-2;
   }
