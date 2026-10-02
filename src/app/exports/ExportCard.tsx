@@ -304,7 +304,7 @@ export default function ExportCard({
   };
 
   return (
-    <div ref={cardRef} className="session-card export-card">
+    <div ref={cardRef} className="session-card is-stacked export-card">
       <div className="card-head">
         <div className="card-info">
           <h3>{job.name}</h3>
