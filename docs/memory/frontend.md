@@ -54,6 +54,12 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: if a build suddenly fails on the compiler API, check this flag before suspecting your change. Adding another native/binary dependency means adding it to `serverExternalPackages`.
 
+## The image optimizer is switched off, on purpose (2026-10-02)
+
+**Decision**: `next.config.mjs` sets `images: { unoptimized: true }`. Nothing renders through `next/image` — thumbs and proxies are our own `/api/assets/:id/{thumb,proxy}` routes behind the session guard — while `/_next/image` sat **outside** that guard (the proxy matcher skips `/_next/`) and carried an unauthenticated-RCE advisory (`docs/CODEBASE-AUDIT.md` SEC-02).
+
+**How to apply**: do not reach for `next/image` for library media — it would fetch our own authenticated routes server-side without the user's cookie anyway. If a static asset ever wants it, re-enable deliberately and put `/_next/image` behind the guard first.
+
 ## The big lists are virtualized; the first page is deliberately small (2026-08-20)
 
 **Decision**: `react-window` backs the gallery grid (`gallery/VirtualGrid.tsx`), the sift deck's recent strip (`sift/SwipeDeck.tsx`) and the pipeline asset list (`settings/pipeline/PipelineAssetList.tsx`). Feed page sizes are tuned with a deliberately small first page.

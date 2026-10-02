@@ -307,7 +307,7 @@ another subdomain of the site Winnow is served under (the cookie is
 - **Fix:** upgrade `next` to 16.3.8 and the `sharp` override to 0.35.5 (`npm audit fix` for nanoid), and set `images.unoptimized: true` so the unused optimizer stops serving at all.
 - **Effort:** S · **Risk of fixing:** medium (framework minor bump — gated by typecheck, build and a browser smoke test)
 - **Verification:** before: `curl /_next/image?url=%2Ficons%2Ficon-192.png&w=64&q=75` without a cookie → **HTTP 200 image/png**. After: `npm audit --omit=dev` → 0 critical/high; the same curl no longer optimises; pages and media still load.
-- *Evidence:* reproduced · *Status:* **Batch 1**
+- *Evidence:* reproduced · *Status:* **Fixed (batch 1)**
 
 **SEC-03** — **Severity:** high
 - **Location:** `src/proxy.ts` (no Origin / Sec-Fetch-Site check); every one of the 45 POST handlers parses with `req.json()`, which ignores `Content-Type`; only `apps/[app]/docs/[id]` checks it.
@@ -934,7 +934,7 @@ CI/deploy, data deletion, public contracts) reserves for the maintainer.
 | # | ID | Sev. | Effort | Risk | Batch | Depends on / note |
 |---|---|---|---|---|---|---|
 | 1 | SEC-01 | critical | S | low | **1** | — |
-| 2 | SEC-02 | critical | S | medium | **1** | — |
+| 2 | SEC-02 | critical | S | medium | **1 ✓** | — |
 | 3 | DX-01 | high | S | low | **1 ✓** | first, so every later fix has a test |
 | 4 | BE-01 | high | S | low | **1** | DX-01 |
 | 5 | BE-03 | high | S | low | **1** | DX-01 |
@@ -1054,4 +1054,5 @@ its line below: what changed, the verification actually run, and any
 behaviour change.*
 
 - **DX-01 — test runner.** `package.json` gains `"test": "tsx --test \"src/**/*.test.ts\""` — Node's built-in runner through the `tsx` already in `dependencies`, so no package is added (vitest/jest would each be a new dev dependency for what `node:test` does). First suite: `src/lib/authz.test.ts`, nine tests pinning the role policy as it is today (defaults, admin prefixes, self-service, segment-boundary matching, the public surface, token caps), so batch 2's auth changes start from a recorded baseline. `CONTRIBUTING.md`, `CLAUDE.md` and `docs/memory/testing-and-ci.md` stop saying there are no tests and document the opt-in for database-backed tests. *Verification:* `npm test` → 9 pass; `npm run typecheck` green. *Behaviour change:* none. *Not done:* the CI job (D8 — CI changes need approval).
+- **SEC-02 — dependency advisories and the public optimizer.** `next` 16.2.12 → **16.3.8**, `sharp` 0.35.3 → **0.35.5** (dependency and override), `postcss` override floor 8.5.23 → 8.5.28 (pulls `nanoid` 3.3.19). The lockfile diff touches only `next`, `@next/*`, `@swc/helpers`, `sharp`, `@img/*`, `postcss`, `nanoid`. `next.config.mjs` sets `images: { unoptimized: true }`, with the reason in a comment. *Verification:* `npm audit` and `npm audit --omit=dev` → **0 vulnerabilities** (were 1 critical, 2 high); `/_next/image?url=/icons/icon-192.png` without a cookie → **404** (was 200 image/png); typecheck, `npm test`, `npm run build` green (155 dynamic routes, unchanged; the NFT-trace warning is the same one, now reported at two lines of `export.ts`); Playwright on `next start`: sign-in, `/library`, `/library/incoming/grid`, `/library/gallery`, `/sessions/5`, `/settings/pipeline`, `/settings/volumes`, `/users` all render with their headings, a rating PATCH from the page → 200, no page errors, no 5xx. *Behaviour change:* none visible — nothing used `next/image`. *Deploy note:* a framework minor bump; roll back by pinning the previous `sha-` image tag.
 
