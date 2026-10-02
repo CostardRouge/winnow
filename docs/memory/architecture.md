@@ -28,7 +28,7 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **Why**: a partial hash is what makes an 80k-file scan cheap, but a false collision would silently lose a photo. The full compare makes a collision cost time, not data; the audit table means a dedup decision can always be explained afterwards.
 
-**How to apply**: keep the invariant "a suspected duplicate is never dropped without a full compare, and never dropped silently" — and `sameContent()`'s `null` (the other side could not be read) is **not** a compare: treat it as "keep", never as "same". The importer once deleted sources on `null`, which lost the only copy whenever the library twin had been purged or moved (2026-10-02, `docs/CODEBASE-AUDIT.md` BE-01). A trashed duplicate is deliberately *not* treated as present (`src/lib/duplicates.ts`), so restoring one behaves sensibly.
+**How to apply**: keep the invariant "a suspected duplicate is never dropped without a full compare, and never dropped silently" — and `sameContent()`'s `null` (the other side could not be read) is **not** a compare: treat it as "keep", never as "same". The importer once deleted sources on `null`, which lost the only copy whenever the library twin had been purged or moved (2026-10-02, `docs/CODEBASE-AUDIT.md` BE-01). Likewise a `duplicate_hits` row is a memory, not proof: nothing removes a copy unless another copy of the same content is on disk **now** — `confirmSameBytes()` in `lib/duplicates.ts` is that rule, and any new removal path in dedup goes through it (BE-02). A trashed duplicate is deliberately *not* treated as present (`src/lib/duplicates.ts`), so restoring one behaves sensibly.
 
 ## A `duplicate_hits` row must be able to STOP being true (2026-09-02)
 
