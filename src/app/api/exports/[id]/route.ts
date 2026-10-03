@@ -9,10 +9,8 @@
 // fails.
 import { NextRequest } from "next/server";
 import { rm } from "node:fs/promises";
-import path from "node:path";
 import { many, one, pool } from "@/lib/db";
-import { config } from "@/lib/config";
-import { sanitize } from "@/lib/export";
+import { exportFolder } from "@/lib/export";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
 
 export async function DELETE(
@@ -76,8 +74,11 @@ export async function DELETE(
       }
     }
     // Export folder (deterministic from the job name): removed if it exists.
+    // exportFolder() throws rather than return a folder that is not strictly
+    // inside EXPORT_DIR, so this recursive delete can never reach EXPORT_DIR
+    // itself or /data (docs/CODEBASE-AUDIT.md SEC-01).
     try {
-      await rm(path.join(config.exportDir, sanitize(job.name)), {
+      await rm(exportFolder(job.name), {
         recursive: true,
         force: true,
       });

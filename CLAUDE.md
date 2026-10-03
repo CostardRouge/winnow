@@ -6,7 +6,7 @@ Agents read this file at the start of every session. These rules override the ag
 
 - Winnow indexes, culls and exports the RAW photos/videos on a home NAS without touching the originals more than once. Next.js 16 (App Router) + React 19 + TypeScript 7 on Node ≥ 22, backed by Postgres and a Redis/BullMQ queue set; `sharp` + `exiftool-vendored` build the derivatives, Tailwind 4 styles the UI. Package manager: **npm** — the lockfile is `package-lock.json` (the only lockfile in the tree).
 - It ships as a Docker image: a push to `main` builds and publishes `ghcr.io/costardrouge/winnow` (`.github/workflows/docker-build.yml`), and Watchtower re-pulls it on the Optiplex that runs the whole stack behind Traefik + a Cloudflare Tunnel.
-- Commands that actually exist here: `npm run dev` (UI + API on :3000), `npm run worker` (the BullMQ workers), `npm run typecheck` (`tsc --noEmit`), `npm run migrate` (applies `db/migrations/`), `npm run build`. **There is no linter and no test suite** — no ESLint config, zero automated tests (`docs/ARCHITECTURE-REVIEW.md` §3.5). The gate is `typecheck` + `migrate` + `build`, exactly what CI runs. `make help` lists the docker-compose wrappers.
+- Commands that actually exist here: `npm run dev` (UI + API on :3000), `npm run worker` (the BullMQ workers), `npm run typecheck` (`tsc --noEmit`), `npm run migrate` (applies `db/migrations/`), `npm run build`, `npm test` (node:test through the `tsx` already in dependencies; DB-backed tests run only when `WINNOW_TEST_DATABASE_URL` is set). **There is no linter**, and the test suite is young and **not yet in CI** — CI runs `typecheck` + `migrate` + `build`. `make help` lists the docker-compose wrappers.
 - Several agent sessions may run **in parallel** on this repo. Git history must stay readable: **one commit = one task**.
 - **Local sessions: never `git push`** — the developer tests locally and pushes himself. **Cloud / web sessions (ephemeral container): push the working branch and open a pull request**, it is the only way the code gets out. Never push to `main` either way.
 
@@ -49,7 +49,7 @@ As soon as a task requested by the user is finished (feature, fix, refactor, con
 
 ### When is a task "finished"?
 
-- The requested code is written **and** verified: `npm run typecheck` green, plus `npm run migrate` when the change touches `db/migrations/` and `npm run build` when it touches anything the production build compiles — these three are the whole CI gate, so a red one is a broken PR. For a rendering change, also look at it in the browser.
+- The requested code is written **and** verified: `npm run typecheck` and `npm test` green, plus `npm run migrate` when the change touches `db/migrations/` and `npm run build` when it touches anything the production build compiles — the first, third and fourth are the CI gate, so a red one is a broken PR. A bug fix comes with a test that fails without it. For a rendering change, also look at it in the browser.
 - A plain question, an exploration or an explanation produces **no** commit (nothing to commit).
 
 ## Rule 2 — Project memory in `MEMORY.md` + `docs/memory/` (MANDATORY)

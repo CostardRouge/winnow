@@ -5,19 +5,36 @@
 // written by hand. We store (method 0, no deflate) because RAW/HEIF/video files
 // are already incompressible — deflating them only burns CPU for ~0 gain.
 //
-// Each file is read once, fully, so the CRC-32 and exact size are known before
-// the local header is emitted (no data descriptor needed → maximal reader
-// compatibility). Peak memory is therefore one file at a time. ZIP64 fields are
+// The CRC-32 and exact size of each file are known before its local header is
+// emitted (no data descriptor needed → maximal reader compatibility). A file up
+// to BUFFER_MAX_BYTES is read once, whole; a bigger one is STREAMED twice — once
+// for its CRC, once into the archive — because `fs.readFile` refuses anything
+// over 2 GiB (ERR_FS_FILE_TOO_LARGE: a long Sony/DJI clip would end the download
+// mid-stream with a truncated archive) and because a multi-GB buffer has no
+// business in the app process. The second read costs disk time on big videos,
+// never memory, and the archive bytes are the same either way. ZIP64 fields are
 // emitted only when a value overflows 32 bits (large file, or a central-dir
 // offset past 4 GiB once the archive grows big enough), so small archives stay
 // plain ZIP.
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
+import zlib from "node:zlib";
 
 const U32 = 0xffffffff;
 
-// CRC-32 (IEEE 802.3), table-driven. Self-contained so we don't depend on a
-// particular Node version exposing zlib.crc32.
+// Above this size an entry is streamed instead of read whole (see header).
+const BUFFER_MAX_BYTES = 64 * 1024 * 1024;
+
+// CRC-32 (IEEE 802.3), incremental: pass the previous value to continue a
+// running checksum across chunks. Native zlib.crc32 (Node >= 22.2) when the
+// runtime has it — measured ~10x the table loop, which otherwise holds the event
+// loop ~200 ms per 64 MiB — and the self-contained table as the fallback, so no
+// particular Node 22 minor is required.
+const nativeCrc32 = (
+  zlib as { crc32?: (data: Uint8Array, value?: number) => number }
+).crc32;
+
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -28,12 +45,24 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
-function crc32(buf: Buffer): number {
-  let c = 0xffffffff;
+function crc32(buf: Uint8Array, prev = 0): number {
+  if (nativeCrc32) return nativeCrc32(buf, prev);
+  let c = (prev ^ 0xffffffff) >>> 0;
   for (let i = 0; i < buf.length; i++) {
     c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   }
   return (c ^ 0xffffffff) >>> 0;
+}
+
+// One streamed pass over a file: its CRC and the number of bytes actually read.
+async function streamCrc32(absPath: string): Promise<{ crc: number; size: number }> {
+  let crc = 0;
+  let size = 0;
+  for await (const chunk of createReadStream(absPath)) {
+    crc = crc32(chunk as Buffer, crc);
+    size += (chunk as Buffer).length;
+  }
+  return { crc, size };
 }
 
 function u64(n: number): Buffer {
@@ -192,18 +221,28 @@ function endOfCentralDir(
 /**
  * Builds a store-only ZIP archive from `entries` as a web ReadableStream. Files
  * are read on demand (one at a time) while the stream is consumed, so the
- * archive starts flowing immediately and never holds more than a single file in
- * memory. Throws (mid-stream) if a listed file disappears before it is read.
+ * archive starts flowing immediately and never holds more than one small file
+ * (≤ `bufferMaxBytes`) in memory. Throws (mid-stream) if a listed file
+ * disappears before it is read, or changes between the CRC pass and the copy —
+ * a visible failure rather than an entry whose bytes contradict its checksum.
+ * `bufferMaxBytes` exists for the tests; callers keep the default.
  */
-export function createZipStream(entries: ZipEntry[]): ReadableStream<Uint8Array> {
+export function createZipStream(
+  entries: ZipEntry[],
+  { bufferMaxBytes = BUFFER_MAX_BYTES }: { bufferMaxBytes?: number } = {},
+): ReadableStream<Uint8Array> {
   async function* gen(): AsyncGenerator<Buffer> {
     const central: Buffer[] = [];
     let offset = 0;
 
     for (const entry of entries) {
-      const data = await readFile(entry.absPath);
-      const size = data.length;
-      const crc = crc32(data);
+      const { size: statSize } = await stat(entry.absPath);
+      // Small file: one read, the bytes are kept for the copy below. Big file:
+      // a CRC pass now, the bytes are streamed again after the header.
+      const data = statSize <= bufferMaxBytes ? await readFile(entry.absPath) : null;
+      const { crc, size } = data
+        ? { crc: crc32(data), size: data.length }
+        : await streamCrc32(entry.absPath);
       const nameBuf = Buffer.from(entry.name, "utf8");
       const { time, date } = dosDateTime(entry.mtime ?? new Date());
       const zip64 = size >= U32;
@@ -215,7 +254,19 @@ export function createZipStream(entries: ZipEntry[]): ReadableStream<Uint8Array>
       const localOffset = offset;
       offset += header.length + nameBuf.length + (zip64 ? 20 : 0);
 
-      yield data;
+      if (data) {
+        yield data;
+      } else {
+        let copied = 0;
+        let copyCrc = 0;
+        for await (const chunk of createReadStream(entry.absPath)) {
+          copied += (chunk as Buffer).length;
+          copyCrc = crc32(chunk as Buffer, copyCrc);
+          yield chunk as Buffer;
+        }
+        if (copied !== size || copyCrc !== crc)
+          throw new Error(`${entry.absPath} changed while it was being archived`);
+      }
       offset += size;
 
       central.push(centralHeader(crc, size, nameBuf, time, date, localOffset));

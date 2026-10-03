@@ -51,8 +51,26 @@ async function copyVerified(src: string, dest: string): Promise<void> {
 
 // Deterministic export folder name derived from the job name. Exported so that
 // deleting an export finds the same folder again (cf. api/exports/[id]).
+// A name made only of dots survives the character filter as `.` or `..`, which
+// path.join reads as "this folder" / "the parent" — an export named `..` would
+// have used /data as its folder, and deleting it runs `rm -r` on that folder
+// (docs/CODEBASE-AUDIT.md SEC-01). Such a name becomes underscores instead;
+// every other name keeps the folder it always had.
 export function sanitize(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "export";
+  const safe = name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "export";
+  return /^\.+$/.test(safe) ? safe.replace(/\./g, "_") : safe;
+}
+
+// The one place an export's folder is computed, for the copy and for the
+// delete alike. `sanitize` already rules out escaping; this re-checks the
+// resolved result so that no future change to it can turn a recursive delete
+// onto EXPORT_DIR itself or anything above it.
+export function exportFolder(jobName: string): string {
+  const root = path.resolve(config.exportDir);
+  const dir = path.resolve(root, sanitize(jobName));
+  if (path.dirname(dir) !== root)
+    throw new Error(`export folder ${dir} is not directly inside ${root}`);
+  return dir;
 }
 
 // One candidate file of an export: a media original/companion (sidecar_id null)
@@ -311,7 +329,7 @@ async function copyToExportFolder(
   files: ExportFileRow[],
 ): Promise<Record<string, unknown>> {
   const exportJobId = job.id;
-  const destDir = path.join(config.exportDir, sanitize(job.name));
+  const destDir = exportFolder(job.name);
   await mkdir(destDir, { recursive: true });
 
   let copied = 0;

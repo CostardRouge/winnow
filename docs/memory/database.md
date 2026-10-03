@@ -32,7 +32,7 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Decision**: every dynamic SQL site builds `$n` placeholders, filters are validated by Zod, LIKE is escaped and facet column names are hardcoded. `src/lib/db.ts` exposes a `tx()` helper; `DB_POOL_MAX` sizes the pool per process and `application_name` is set for `pg_stat` attribution.
 
-**Why**: string-built SQL is how injection gets in, and the pool is per-process — app and worker each open their own, so the server sees up to 2×. Keep the sum of worker concurrencies ≤ `DB_POOL_MAX`: each active job may hold a connection.
+**Why**: string-built SQL is how injection gets in, and the pool is per **bundle**, not per process, in production: `db.ts` anchors it on `globalThis` only outside production, so the app's proxy and route bundles each build one (measured 2026-10-02: 13 `winnow-app` connections with `DB_POOL_MAX=10`; `docs/CODEBASE-AUDIT.md` ARC-04) — the server sees more than 2×. Keep the sum of worker concurrencies ≤ `DB_POOL_MAX`: each active job may hold a connection.
 
 **How to apply**: never interpolate a value into SQL. Use `tx()` for any multi-statement write that must not half-apply — review R7 lists the ones that still do not (`pairing.ts` group creation, `bursts.ts restackSession`, session hard-delete). A page-load query must be scoped: `/api/sessions` used to aggregate the whole live library on every load and was rewritten to `LEFT JOIN LATERAL` per session (D1) — that class of unscoped `GROUP BY` is the identified scaling cliff.
 

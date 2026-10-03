@@ -41,3 +41,6 @@ Seeded 2026-08-20 from `Dockerfile`, `docker-compose*.yml`, `Makefile`, `.github
 **How to apply**: only the first dev run needs `--build` (system deps + `npm ci`); afterwards code hot-reloads and only a `package.json` change requires another build. `restart: "no"` on dev app/worker is deliberate — a crash while editing should not restart-loop.
 
 **Trap**: multi-hour ffmpeg jobs run against BullMQ's default 30 s lock, and compose sets no `stop_grace_period`, so Docker's 10 s default SIGKILLs a long transcode on deploy (review R8, P1).
+
+**Trap (2026-10-02, unconfirmed on the box)**: the `migrate` service is an exited one-shot with no Watchtower label, and nothing migrates at boot, so a Watchtower redeploy probably runs new code against the **old schema** until the stack is redeployed by hand — unless Watchtower runs with `--include-stopped --revive-stopped`. `docker-build.yml` also publishes whether or not CI passed. Check the Optiplex's Watchtower flags before shipping a migration; the fix of record is the worker migrating at boot under an advisory lock (`docs/CODEBASE-AUDIT.md` SCL-01, SCL-02, decisions D6/D7).
+

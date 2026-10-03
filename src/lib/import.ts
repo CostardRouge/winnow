@@ -148,6 +148,15 @@ async function carrySidecars(
   }
 }
 
+// The error for a suspected duplicate whose other copy could not be read: the
+// file is failed and quarantined rather than dropped — never delete what was
+// not confirmed identical.
+function unverifiable(otherPath: string): Error {
+  return new Error(
+    `possible duplicate of ${otherPath}, which could not be read to confirm it (moved, purged or offline) — kept, not deleted`,
+  );
+}
+
 // Avoids overwriting a different file with the same name: we add a suffix.
 async function uniqueDest(dest: string): Promise<string> {
   if (!(await exists(dest))) return dest;
@@ -200,12 +209,18 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
           verified: same,
           fileSize: st.size,
         });
-        if (same !== false) {
-          // Confirmed (or unverifiable) duplicate: copy nothing.
+        if (same === true) {
+          // Confirmed duplicate: copy nothing.
           res.duplicates++;
           if (args.removeAfter) await rm(src, { force: true });
           continue;
         }
+        // Unverifiable (null): the other copy could not be read — typically a
+        // row that still holds this hash while its bytes are gone (purged,
+        // moved, removed by hand). That is not a duplicate: deleting the source
+        // here once lost the only copy (docs/CODEBASE-AUDIT.md BE-01). Fail the
+        // file instead, which quarantines it below with the reason.
+        if (same === null) throw unverifiable(dup.abs_path);
         // FALSE collision: fall through and import it normally. The indexer
         // will later store it with a NULL content_hash.
       }
@@ -234,6 +249,8 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
               verified: same,
               fileSize: st.size,
             });
+            // Recorded either way; only a confirmed match is dropped (BE-01).
+            if (same === null) throw unverifiable(planned);
             res.duplicates++;
             if (args.removeAfter) await rm(src, { force: true });
             continue;

@@ -10,6 +10,7 @@ import { rm, stat } from "node:fs/promises";
 import { q, one, many } from "./db";
 import { config } from "./config";
 import { isWithinBrowseRoots } from "./fsbrowse";
+import { sameContent } from "./hash";
 import { getStorage } from "./storage/index";
 import { normalizeRootPath } from "./volumes";
 import type { DuplicateZone, SweepResolvedResult } from "./duplicateTypes";
@@ -96,6 +97,39 @@ function isUnder(target: string, roots: string[]): boolean {
   const t = normalizeRootPath(target);
   return roots.some((r) => t === r || t.startsWith(r + "/"));
 }
+
+// --- The rule every removal below obeys (docs/CODEBASE-AUDIT.md BE-02) ------
+//
+// A duplicate_hits row remembers what WAS on disk when a scan saw it. By the
+// time someone acts on it the other side may have moved, been purged or been
+// removed by hand — and a row recorded "unverifiable" was recorded precisely
+// because the other side could not be read. So no copy is removed unless
+// another copy of the same content is on disk NOW: it exists, has the same
+// size, and either both sides were already confirmed identical to the library
+// content by a full compare (the library copy itself, or a verified hit) or a
+// full compare says so now. The verified common case costs two stats; only an
+// unverified pair pays a full read of both files.
+type CopyStatus = "library" | "verified" | "unverified";
+type Copy = { path: string; status: CopyStatus };
+
+const GONE = "the other copy is no longer on disk";
+
+// null when `stays` is confirmed to hold `goes`' bytes; otherwise why not.
+async function confirmSameBytes(goes: Copy, stays: Copy): Promise<string | null> {
+  const [a, b] = await Promise.all([
+    stat(goes.path).catch(() => null),
+    stat(stays.path).catch(() => null),
+  ]);
+  if (!b?.isFile()) return GONE;
+  if (!a?.isFile()) return "this copy could not be read";
+  if (a.size !== b.size) return "its size differs from the copy that stays";
+  if (goes.status !== "unverified" && stays.status !== "unverified") return null;
+  return (await sameContent(goes.path, stays.path)) === true
+    ? null
+    : "it could not be confirmed identical to the copy that stays";
+}
+
+const onDisk = (p: string) => stat(p).then(() => true, () => false);
 
 // One roots lookup, then a synchronous predicate — for listing a whole page of
 // duplicates (cf. /api/failures) so the UI can mark the protected copies and
@@ -221,14 +255,51 @@ export type DeleteDuplicatesResult = {
   skipped: { path: string; reason: string }[];
 };
 
+// Another on-disk copy holding `p`'s content right now — the library copy
+// first, then the other recorded copies — or the reason there is none.
+async function survivorFor(
+  p: string,
+  hit: { content_hash: string; verified: boolean | null },
+): Promise<string | null> {
+  if (hit.verified === false) return "a false collision (distinct content), not a duplicate";
+  const me: Copy = { path: p, status: hit.verified ? "verified" : "unverified" };
+  const library = await one<{ abs_path: string }>(
+    "SELECT abs_path FROM assets WHERE content_hash = $1 AND purged_at IS NULL",
+    [hit.content_hash],
+  );
+  const others = await many<{ abs_path: string; verified: boolean | null }>(
+    `SELECT abs_path, verified FROM duplicate_hits
+      WHERE content_hash = $1 AND verified IS NOT FALSE AND abs_path <> $2`,
+    [hit.content_hash, p],
+  );
+  const candidates: Copy[] = [
+    ...(library && library.abs_path !== p
+      ? [{ path: library.abs_path, status: "library" as const }]
+      : []),
+    ...others.map((o) => ({
+      path: o.abs_path,
+      status: (o.verified ? "verified" : "unverified") as CopyStatus,
+    })),
+  ];
+  let why = "no other copy of this content is on disk";
+  for (const c of candidates) {
+    const r = await confirmSameBytes(me, c);
+    if (r === null) return null;
+    if (r !== GONE) why = r;
+  }
+  return why;
+}
+
 // Hard-deletes the extra copies recorded in `duplicate_hits` (NOT a soft delete:
 // these files were never indexed, so there is no asset row to hide — the file on
-// disk is the only thing to remove). Four layers of safety, in order:
+// disk is the only thing to remove). Five layers of safety, in order:
 //   1. whitelist  — a path must be a recorded duplicate hit (no arbitrary path),
 //   2. asset guard — never touch a path that is a live indexed asset (a kept
 //      original or a recovered false collision: distinct content, must survive),
 //   3. view-only  — never touch a Final/Export volume (cf. VIEW_ONLY_REASON),
-//   4. containment — the path must sit inside the browsable area (incoming/NAS).
+//   4. containment — the path must sit inside the browsable area (incoming/NAS),
+//   5. a survivor  — another copy of the same content is on disk now
+//      (confirmSameBytes; the row alone is not proof — BE-02).
 // `rm(..., force)` treats an already-gone file as success so a stale row still
 // gets cleaned. Resolved rows are dropped (the duplicate no longer exists).
 export async function deleteDuplicateFiles(
@@ -237,13 +308,13 @@ export async function deleteDuplicateFiles(
   const result: DeleteDuplicatesResult = { deleted: [], skipped: [] };
   if (paths.length === 0) return result;
 
-  const recorded = new Set(
+  const recorded = new Map(
     (
-      await many<{ abs_path: string }>(
-        "SELECT abs_path FROM duplicate_hits WHERE abs_path = ANY($1::text[])",
+      await many<{ abs_path: string; content_hash: string; verified: boolean | null }>(
+        "SELECT abs_path, content_hash, verified FROM duplicate_hits WHERE abs_path = ANY($1::text[])",
         [paths],
       )
-    ).map((r) => r.abs_path),
+    ).map((r) => [r.abs_path, r] as const),
   );
   const indexed = new Set(
     (
@@ -284,7 +355,18 @@ export async function deleteDuplicateFiles(
     else toDelete.push(p);
   }
 
+  // One at a time, re-checking the disk each time: two copies that are each
+  // other's only survivor must not both go in the same call.
   for (const p of toDelete) {
+    // A path already gone is "deleted" without a check, as before: there is
+    // nothing to lose, and its stale row must still be cleared.
+    if (await onDisk(p)) {
+      const why = await survivorFor(p, recorded.get(p)!);
+      if (why) {
+        result.skipped.push({ path: p, reason: `${why} — not deleted` });
+        continue;
+      }
+    }
     try {
       await rm(p, { force: true });
       result.deleted.push(p);
@@ -349,6 +431,9 @@ export type KeepOneResult = {
 // Only verified-identical / unverifiable copies are eligible — a FALSE collision
 // (distinct content sharing a partial hash) is stored with a NULL content_hash
 // and is never pulled in here, so genuinely different shots can't be collapsed.
+// Eligible is not deletable: the survivor must exist, and every member removed
+// must be confirmed to hold its bytes (confirmSameBytes) — an unverifiable
+// member is fully compared first (BE-02).
 // Relink happens before any unlink, so a mid-way failure can never leave the
 // asset pointing at a file we already removed.
 export async function keepOneCopy(args: {
@@ -382,19 +467,28 @@ export async function keepOneCopy(args: {
     [contentHash],
   );
   // Every recorded on-disk copy of this content (never a false collision).
-  const copies = (
-    await many<{ abs_path: string }>(
-      "SELECT abs_path FROM duplicate_hits WHERE content_hash = $1 AND verified IS NOT FALSE",
-      [contentHash],
-    )
-  ).map((r) => r.abs_path);
+  const copies = await many<{ abs_path: string; verified: boolean | null }>(
+    "SELECT abs_path, verified FROM duplicate_hits WHERE content_hash = $1 AND verified IS NOT FALSE",
+    [contentHash],
+  );
 
-  const members = new Set<string>(copies);
+  // Each member with how much is known about its bytes (cf. confirmSameBytes).
+  const status = new Map<string, CopyStatus>(
+    copies.map((c) => [c.abs_path, c.verified ? "verified" : "unverified"] as const),
+  );
   // A purged row has no bytes left, so it isn't a copy the user can keep — it
   // only still holds the hash, which the reclaim below releases.
-  if (asset && !asset.purged) members.add(asset.abs_path);
+  if (asset && !asset.purged) status.set(asset.abs_path, "library");
+  const members = new Set<string>(status.keys());
   if (!members.has(keepPath))
     throw new DuplicateError("The copy to keep is not part of this duplicate group.");
+  // Nothing is relinked onto, or deleted because of, a survivor that is not
+  // there any more (BE-02).
+  if (!(await stat(keepPath).then((st) => st.isFile(), () => false)))
+    throw new DuplicateError(
+      "The copy to keep is no longer on disk (moved or removed since it was recorded) — nothing was changed. Rescan, then pick a copy that exists.",
+    );
+  const keep: Copy = { path: keepPath, status: status.get(keepPath)! };
 
   // The library copy, when it is one of the losers.
   const libraryLoser = asset && asset.abs_path !== keepPath ? asset : null;
@@ -419,6 +513,22 @@ export async function keepOneCopy(args: {
     );
     if (occupied)
       throw new DuplicateError("The copy to keep is already indexed as another asset.");
+    // A library file that is still there must be confirmed identical before
+    // the row moves off it. One that is GONE — a moved original, the repair
+    // this action exists for — cannot be compared, and the hash match is all
+    // there is, exactly as in relink-moved. An ambiguous stat error counts as
+    // "still there", so it is refused rather than guessed.
+    const libraryGone = await stat(libraryLoser.abs_path).then(
+      () => false,
+      (err: NodeJS.ErrnoException) => err.code === "ENOENT",
+    );
+    if (!libraryGone) {
+      const why = await confirmSameBytes(
+        { path: libraryLoser.abs_path, status: "library" },
+        keep,
+      );
+      if (why) throw new DuplicateError(`Nothing was changed: the library copy — ${why}.`);
+    }
     await q("UPDATE assets SET abs_path = $1, updated_at = now() WHERE id = $2", [
       keepPath,
       libraryLoser.id,
@@ -437,6 +547,15 @@ export async function keepOneCopy(args: {
     if (!isWithinBrowseRoots(p)) {
       result.skipped.push({ path: p, reason: "outside the allowed area" });
       continue;
+    }
+    // A member already gone is "deleted" as before (nothing to lose, its row
+    // must clear); one still there goes only if the survivor holds its bytes.
+    if (await onDisk(p)) {
+      const why = await confirmSameBytes({ path: p, status: status.get(p)! }, keep);
+      if (why) {
+        result.skipped.push({ path: p, reason: `${why} — not deleted` });
+        continue;
+      }
     }
     try {
       await rm(p, { force: true });

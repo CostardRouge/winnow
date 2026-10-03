@@ -28,7 +28,7 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **Why**: a partial hash is what makes an 80k-file scan cheap, but a false collision would silently lose a photo. The full compare makes a collision cost time, not data; the audit table means a dedup decision can always be explained afterwards.
 
-**How to apply**: keep the invariant "a suspected duplicate is never dropped without a full compare, and never dropped silently". A trashed duplicate is deliberately *not* treated as present (`src/lib/duplicates.ts`), so restoring one behaves sensibly.
+**How to apply**: keep the invariant "a suspected duplicate is never dropped without a full compare, and never dropped silently" — and `sameContent()`'s `null` (the other side could not be read) is **not** a compare: treat it as "keep", never as "same". The importer once deleted sources on `null`, which lost the only copy whenever the library twin had been purged or moved (2026-10-02, `docs/CODEBASE-AUDIT.md` BE-01). Likewise a `duplicate_hits` row is a memory, not proof: nothing removes a copy unless another copy of the same content is on disk **now** — `confirmSameBytes()` in `lib/duplicates.ts` is that rule, and any new removal path in dedup goes through it (BE-02). A trashed duplicate is deliberately *not* treated as present (`src/lib/duplicates.ts`), so restoring one behaves sensibly.
 
 ## A `duplicate_hits` row must be able to STOP being true (2026-09-02)
 
@@ -68,7 +68,7 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **Why**: an unmounted NAS looks exactly like "every file was deleted". The guard is what stops one bad mount from soft-deleting the library.
 
-**How to apply**: any new sweep that deletes or trashes in bulk needs the same "does this look like an unmounted volume?" question answered before it acts.
+**How to apply**: any new sweep that deletes or trashes in bulk needs the same "does this look like an unmounted volume?" question answered before it acts. And a path a recursive delete is aimed at must be **resolved and checked to be strictly inside its root** at the moment of the delete — a character filter on a user-typed name is not enough: `.` and `..` pass any `[a-z0-9._-]` filter, and an export named `..` once mapped its folder to `/data` (2026-10-02, `docs/CODEBASE-AUDIT.md` SEC-01; `exportFolder()` in `lib/export.ts` is the shape to copy).
 
 ## A deduced location never enters an original's EXIF (2026-09-03, revised 2026-09-20)
 
@@ -77,3 +77,10 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 **Why**: a write-back launders a guess into a fact — a re-index reads the file's EXIF back as truth and resets `gps_source` to NULL, so an `'inferred'` position written into the file would look like a camera fix within one scan, and the Capture One export would copy it into the finals. Keeping it out of the bytes is what lets Atelier treat an `"inferred"` day from `/api/assets/geo?by=day` as a bridge that never votes on a trip leg's centroid (`docs/UNPLACED.md` §6). The accepted cost: Immich receives a byte copy of the original (`pushToImmich`), so inferred media arrive there unlocated. **The 2026-09-03 rejection of a persisted `inferred` source is superseded** — the census showed ~400 folder gestures close 99 % of an 84 452-media backlog, and a state that must survive the session cannot live in an API response.
 
 **How to apply**: the only path from a suggestion to a coordinate is still the recap on an explicit selection — `GeotagRecapModal` → `POST /api/assets/geotag` — with `source` decided by the entry point: a pin placed or moved by hand is `'manual'`, a folder suggestion accepted as offered is `'inferred'`; a new code path that defaults to `'manual'` for a bulk accept is a bug. **The indexer guard is load-bearing** (`src/lib/indexer.ts`, `WHEN gps_source IN ('manual','inferred') THEN gps`): the file never carries an inferred position, so without it every re-index wipes the whole backlog's work. Any consumer that distinguishes trustworthy from suggested positions filters on `gps_source IS NULL OR gps_source = 'manual'`, the way `/api/assets/geo?by=day` does. The GPS-less pile is `geo_state=todo` in the shared filter (no position AND not exempted — the predicate of `assets_geo_todo_idx`); `has_gps=0` still works for the callers that use it (the Timeline). Never add a fourth path that skips the recap.
+
+## An original is streamed, never read into memory whole (2026-10-02)
+
+**Decision**: code that hands an original's bytes on — a ZIP download, an export copy, a hash — streams them. `fs.readFile` refuses anything over 2 GiB (`ERR_FS_FILE_TOO_LARGE`), and a long Sony/DJI clip is past that: the ZIP writer used to read every entry whole, so a session holding one such clip ended its download mid-stream (`docs/CODEBASE-AUDIT.md` BE-03). `lib/zip.ts` now reads small files once and streams anything over 64 MiB twice (CRC pass, then copy), keeping the archive byte-identical and the format free of data descriptors (macOS Archive Utility).
+
+**How to apply**: no new `readFile` on an original or a proxy of unbounded size; `lib/video.ts` (review R5) is the one known exception left. Prefer native `zlib.crc32` (10× the table loop) and keep the fallback.
+
