@@ -26,7 +26,7 @@ jobs:
   # (winnow has no ESLint config; `tsc --noEmit` is its static gate.)
   typecheck:
     name: Typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -48,7 +48,7 @@ jobs:
   # Build + migrations against a real Postgres (the SQL is part of the contract).
   build:
     name: Build & migrations
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
