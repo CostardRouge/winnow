@@ -19,6 +19,8 @@ import { reconcileBurstsForSession } from "./bursts";
 import { reconcileEdits } from "./reconcile";
 import { recordSidecars } from "./sidecars";
 import { reconcileMissingForRoot } from "./integrity";
+import { decideOwnZone, type OffsetSource } from "./captureZone";
+import { applyOwnZones, inheritNeighbourZones } from "./captureDays";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -153,6 +155,9 @@ export async function indexRoot(
     stopped: false,
   };
   const touchedSessions = new Set<number>();
+  // Rows written this scan: the end-of-scan neighbour pass gives a capture-day
+  // offset to those whose own file could not place them (lib/captureDays.ts).
+  const touchedAssets: number[] = [];
   // Memoize per-directory file listings so a clip-heavy session reads each
   // folder at most once while detecting video sidecars.
   const dirCache = new Map<string, string[]>();
@@ -192,9 +197,17 @@ export async function indexRoot(
       id: number;
       file_size: string | number | null;
       file_mtime: string | null;
-    }>("SELECT id, file_size, file_mtime FROM assets WHERE abs_path = $1", [
-      absPath,
-    ]);
+      gps_lat: number | null;
+      gps_lon: number | null;
+      gps_source: string | null;
+      capture_offset_min: number | null;
+      capture_offset_source: OffsetSource | null;
+    }>(
+      `SELECT id, file_size, file_mtime, gps_lat, gps_lon, gps_source,
+              capture_offset_min, capture_offset_source
+         FROM assets WHERE abs_path = $1`,
+      [absPath],
+    );
 
     // Incremental scan: unchanged (size + mtime) → we skip.
     if (
@@ -214,6 +227,30 @@ export async function indexRoot(
     const hash = await partialHash(absPath, size);
     const meta = await readMetadata(absPath);
     const capturedAt = meta.captured_at ?? mtime; // always populated → useful index
+    const capturedAtSource = meta.captured_at ? meta.captured_at_source : "file";
+    // The capture DAY's offset (migration 0046, lib/captureZone.ts): the
+    // place's, from the file's own GPS — or from a human-set / track position
+    // the re-index keeps below — else what the row already holds from a
+    // stronger source (a track, a neighbour), else the camera's own word.
+    const keptPosition =
+      existing &&
+      !meta.gps &&
+      existing.gps_lat != null &&
+      existing.gps_source != null &&
+      ["manual", "inferred", "track"].includes(existing.gps_source);
+    const zone = decideOwnZone({
+      capturedAt: new Date(capturedAt),
+      capturedAtSource,
+      lat: meta.gps?.lat ?? (keptPosition ? existing!.gps_lat : null),
+      lon: meta.gps?.lon ?? (keptPosition ? existing!.gps_lon : null),
+      offsetMin: existing?.capture_offset_min ?? null,
+      // The camera's previous word is re-read from the file, never kept.
+      offsetSource:
+        existing?.capture_offset_source === "exif"
+          ? null
+          : (existing?.capture_offset_source ?? null),
+      exifOffsetMin: meta.exif_offset_min,
+    });
     const ignored = session.ignored;
 
     if (existing) {
@@ -256,6 +293,8 @@ export async function indexRoot(
            relative_altitude=$27, absolute_altitude=$28,
            shutter_count=$29,
            exposure_compensation=$30, bracket_shot_number=$31,
+           captured_at_source=$32, capture_offset_min=$33,
+           capture_offset_source=$34,
            derivative_status=$21,
            processing_state=CASE WHEN $22 THEN 'ignored' ELSE processing_state END,
            updated_at=now()
@@ -292,9 +331,13 @@ export async function indexRoot(
           meta.shutter_count,
           meta.exposure_compensation,
           meta.bracket_shot_number,
+          capturedAtSource,
+          zone.offsetMin,
+          zone.offsetSource,
         ],
       );
       res.updated++;
+      touchedAssets.push(existing.id);
       if (willDerive) {
         await enqueueDerivative(existing.id, { priority: derivePriority });
         res.enqueued++;
@@ -321,6 +364,8 @@ export async function indexRoot(
             existing.id,
           ]);
           if (config.geocode.enabled) await enqueueGeocode(existing.id);
+          // The flight log's fix is the place: it decides the capture day too.
+          await applyOwnZones([existing.id]);
         }
       }
       continue;
@@ -341,6 +386,7 @@ export async function indexRoot(
            gimbal_pitch, gimbal_yaw, gimbal_roll,
            relative_altitude, absolute_altitude, shutter_count,
            exposure_compensation, bracket_shot_number,
+           captured_at_source, capture_offset_min, capture_offset_source,
            -- Provenance of the device column (cf. migration 0043). Derived from the
            -- value itself rather than passed in: a fresh row can only ever be
            -- 'exif' (the file named a body) or nothing at all (it did not,
@@ -348,7 +394,7 @@ export async function indexRoot(
            device_source
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,
+           $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,
            CASE WHEN $7::text IS NOT NULL THEN 'exif' END
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
@@ -386,6 +432,9 @@ export async function indexRoot(
           meta.shutter_count,
           meta.exposure_compensation,
           meta.bracket_shot_number,
+          capturedAtSource,
+          zone.offsetMin,
+          zone.offsetSource,
         ],
       );
 
@@ -438,6 +487,7 @@ export async function indexRoot(
       [inserted.id],
     );
     res.inserted++;
+    touchedAssets.push(inserted.id);
     if (willDerive) {
       await enqueueDerivative(inserted.id, { priority: derivePriority });
       res.enqueued++;
@@ -463,6 +513,7 @@ export async function indexRoot(
           inserted.id,
         ]);
         if (config.geocode.enabled) await enqueueGeocode(inserted.id);
+        await applyOwnZones([inserted.id]);
       }
     }
     } catch (err) {
@@ -533,6 +584,22 @@ export async function indexRoot(
     } catch (err) {
       console.warn(
         `Edit reconciliation failed for root ${root.id}:`,
+        (err as Error).message,
+      );
+    }
+  }
+
+  // Capture days: a frame its own file could not place (a Sony with the phone
+  // link off, a drone still indoors) takes the place offset of the nearest
+  // frame shot within hours, from any device — the iPhone in the same pocket.
+  // Runs on a stopped scan too (it only reads rows already written) and is
+  // never fatal (cf. lib/captureDays.ts).
+  if (touchedAssets.length) {
+    try {
+      await inheritNeighbourZones({ ids: touchedAssets });
+    } catch (err) {
+      console.warn(
+        `Capture-day neighbour pass failed for root ${root.id}:`,
         (err as Error).message,
       );
     }

@@ -71,6 +71,9 @@ export default function PipelineNav() {
           },
         ]
       : []),
+    // When and where each frame was taken, past what its file says: the local
+    // capture day (migration 0046) and imported GPS tracks.
+    { href: "/settings/pipeline/capture", label: "Dates & places" },
     {
       href: "/settings/pipeline/failures",
       label: "Failures",

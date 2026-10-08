@@ -125,9 +125,14 @@ export default function ChapterCard({
 
   const a = localDay(ch.started_at, ch.tz_offset_hours);
   const b = localDay(ch.ended_at, ch.tz_offset_hours);
-  // The grid filters on capture_date, which is UTC: hand it the UTC dates, not
-  // the local ones, or a sunrise chapter would drill into the wrong day.
-  const seeAll = `${gridHref}?date_from=${ch.started_at.slice(0, 10)}&date_to=${ch.ended_at.slice(0, 10)}`;
+  // The grid filters on capture_date, which is the LOCAL day for a frame whose
+  // place is known (migration 0046) and still the UTC day for one that is not:
+  // cover both, so neither a sunrise nor an unplaced frame drills elsewhere.
+  const utcFrom = ch.started_at.slice(0, 10);
+  const utcTo = ch.ended_at.slice(0, 10);
+  const from = isoDate(a) < utcFrom ? isoDate(a) : utcFrom;
+  const to = isoDate(b) > utcTo ? isoDate(b) : utcTo;
+  const seeAll = `${gridHref}?date_from=${from}&date_to=${to}`;
   const shown = rows?.length ?? ch.sample_ids.length;
 
   return (

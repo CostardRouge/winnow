@@ -106,6 +106,12 @@ export type IntegrityJob = { rootId?: number | null };
 // enqueueIntegrity's coalescing.
 export const RELINK_JOB = "relink";
 export type RelinkJob = { rootId?: number | null; apply: boolean };
+// Capture-day repair (cf. lib/captureDays.ts, migration 0046). Same queue as
+// relink and for the same reason: with `reread` it reads the originals'
+// headers one by one, the scan's I/O profile, and concurrency 1 keeps it from
+// ganging up with a sweep. Told apart by name, its report is the return value.
+export const CAPTURE_DAYS_JOB = "capture-days";
+export type CaptureDaysJob = { apply: boolean; reread: boolean };
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -549,6 +555,51 @@ export async function getRelinkJob(jobId: string): Promise<{
     id: String(job.id),
     state: await job.getState(),
     data: (job.data ?? null) as RelinkJob | null,
+    result: job.returnvalue ?? null,
+    failedReason: job.failedReason ?? null,
+  };
+}
+
+// Enqueue a capture-day repair. Coalesced on an exact match only, like relink:
+// a dry run and an apply are different intents.
+export async function enqueueCaptureDays(opts: {
+  apply?: boolean;
+  reread?: boolean;
+}): Promise<Job> {
+  const queue = getQueues().integrity;
+  const apply = opts.apply === true;
+  const reread = apply && opts.reread === true;
+  const jobs = await queue.getJobs([...PENDING_INDEX_STATES, "active"], 0, 99);
+  for (const job of jobs) {
+    if (job?.name !== CAPTURE_DAYS_JOB) continue;
+    const d = job.data as CaptureDaysJob;
+    if (d?.apply === apply && d?.reread === reread) return job;
+  }
+  return queue.add(
+    CAPTURE_DAYS_JOB,
+    { apply, reread } satisfies CaptureDaysJob,
+    // Resumable (it only ever works on rows still unclassified), so a failure
+    // needs no retry storm: the next click picks up the rest.
+    { ...defaultJobOpts, attempts: 1 },
+  );
+}
+
+/** One capture-day job's state and, once finished, its report. */
+export async function getCaptureDaysJob(jobId: string): Promise<{
+  id: string;
+  state: string;
+  data: CaptureDaysJob | null;
+  progress: unknown;
+  result: unknown;
+  failedReason: string | null;
+} | null> {
+  const job = await getQueues().integrity.getJob(jobId);
+  if (!job || job.name !== CAPTURE_DAYS_JOB) return null;
+  return {
+    id: String(job.id),
+    state: await job.getState(),
+    data: (job.data ?? null) as CaptureDaysJob | null,
+    progress: job.progress ?? null,
     result: job.returnvalue ?? null,
     failedReason: job.failedReason ?? null,
   };

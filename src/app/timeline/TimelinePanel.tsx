@@ -51,8 +51,12 @@ async function fetchUngeotagged(
   let cursor: string | null = null;
   do {
     const sp = new URLSearchParams();
-    sp.set("date_from", ch.started_at.slice(0, 10));
-    sp.set("date_to", ch.ended_at.slice(0, 10));
+    // capture_date is the local day once a frame's place is known (migration
+    // 0046), the UTC day otherwise: a day of slack each side covers both, and
+    // the instant filter below keeps only the chapter's own frames.
+    const DAY = 86_400_000;
+    sp.set("date_from", new Date(Date.parse(ch.started_at) - DAY).toISOString().slice(0, 10));
+    sp.set("date_to", new Date(Date.parse(ch.ended_at) + DAY).toISOString().slice(0, 10));
     sp.set("has_gps", "0");
     sp.set("collapse", "1");
     sp.set("limit", "500");
@@ -60,8 +64,8 @@ async function fetchUngeotagged(
     if (cursor) sp.set("cursor", cursor);
     const page: { assets: (GeotagRecapAsset & { captured_at: string | null })[]; next_cursor: string | null } =
       await fetchJson(`/api/assets?${sp.toString()}`);
-    // capture_date is a UTC day; the chapter's bounds are instants. Keep only
-    // what actually falls inside the chapter, not the whole edge days.
+    // The chapter's bounds are instants. Keep only what actually falls inside
+    // the chapter, not the whole edge days.
     for (const a of page.assets) {
       if (a.captured_at && a.captured_at >= ch.started_at && a.captured_at <= ch.ended_at) out.push(a);
     }

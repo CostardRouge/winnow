@@ -41,7 +41,10 @@
 // **`capture_date` verbatim.** Days are grouped on the stored `a.capture_date`
 // column, never derived from `captured_at` and never passed through timezone
 // math: a frame shot at 07:00 local can be a different UTC day, and recomputing
-// would quietly file it under the wrong one. Project-wide rule.
+// would quietly file it under the wrong one. Project-wide rule. Since migration
+// 0046 that column IS the local day wherever the frame's place is known (its
+// own GPS, an imported track, a neighbour's — lib/captureDays.ts); before it,
+// it was the UTC day and Atelier's sunrises landed on the day before.
 import { NextRequest } from "next/server";
 import { many, tx } from "@/lib/db";
 import {

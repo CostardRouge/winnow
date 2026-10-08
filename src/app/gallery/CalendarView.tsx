@@ -26,7 +26,8 @@ const MONTHS = [
 
 const DAY_MS = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, "0");
-// YYYY-MM-DD from a Date read in UTC (capture_date is materialized at UTC).
+// YYYY-MM-DD from a Date read in UTC — the calendar's own date arithmetic;
+// capture_date itself is the frame's local day (migration 0046).
 const isoDate = (d: Date) =>
   `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 // A month, identified by year + 0-based month, collapsed to a single ordinal so

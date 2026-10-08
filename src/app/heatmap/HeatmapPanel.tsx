@@ -340,8 +340,8 @@ export default function HeatmapPanel() {
                   </span>
                   <span className="spacer" />
                   <span className="hint heat-note">
-                    UTC days — <code>capture_date</code> is a UTC column and Winnow
-                    keeps no per-asset timezone
+                    Local days where the place is known, UTC days otherwise
+                    (Pipeline › Dates &amp; places)
                   </span>
                 </header>
                 <HeatGrid
