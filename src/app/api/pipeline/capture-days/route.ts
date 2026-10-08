@@ -8,7 +8,8 @@
 // the database-only steps in a rolled-back transaction and reports what would
 // change. `reread` (apply only) also re-reads the date tags of the rows the
 // database cannot classify — the originals' headers, never their bytes beyond
-// that, and never a write — at the scan's pace and under its pause.
+// that, and never a write — at the scan's pace and under its pause; `from`
+// and `to` limit that re-read to a window of capture times (a track's span).
 //
 // Admin-only by policy (lib/authz.ts: /api/pipeline mutations are admin).
 import { NextRequest } from "next/server";
@@ -36,10 +37,15 @@ export async function GET(req: NextRequest) {
   }
 }
 
-const Body = z.object({
-  apply: z.boolean().optional(),
-  reread: z.boolean().optional(),
-});
+const Body = z
+  .object({
+    apply: z.boolean().optional(),
+    reread: z.boolean().optional(),
+    // Limit the re-read to a window of capture times (a track's span).
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+  })
+  .refine((b) => (b.from == null) === (b.to == null), "from and to go together");
 
 export async function POST(req: NextRequest) {
   try {

@@ -511,6 +511,22 @@ originals' headers, at the scan's pace, paused by its pause). Originals are
 never written, and clearing the offsets restores the old days exactly.
 `npm run capture-days [-- --apply [--reread]]` is the same job from a shell.
 
+**GPS track import** (same page). A track recorded beside the cameras — a
+Polarsteps export (`locations.json` + `trip.json`), a GPX, or a JSON list of
+`{lat, lon, time}` — places every frame of its span that has no position, by its
+capture instant: between two fixes on the move (≤ 60 min apart, never across a
+flight), between two fixes at the same spot (≤ 2 km apart, up to 12 h — the
+traveller stayed), or on the nearest fix within 15 min; a frame in a gap of the
+track gets only the zone it was in, for its capture day. These positions are
+`gps_source='track'`: trusted like a camera fix for a day's position, never
+written into an original, kept through re-indexing. A frame placed by its own
+file is never moved — when the track puts it more than 25 km away at that
+instant it is listed as a **conflict**, the signature of a camera clock set
+wrong — and positions set by hand or accepted from a folder suggestion are kept.
+*Preview* writes nothing; *Apply* records the import; *Undo* takes back exactly
+what it wrote. Frames indexed before the local-day repair are skipped until
+their date tags are re-read — the report offers to re-read just its span.
+
 ### Timeline: the library read as a story (page `/timeline`)
 
 > **Off by default.** The Timeline is behind a feature flag and ships disabled:

@@ -4,6 +4,9 @@
 // WINNOW_TEST_DATABASE_URL (a migrated scratch database).
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { skipWithoutDb, useTestDatabase } from "../test/db";
 
 useTestDatabase();
@@ -155,4 +158,53 @@ test("a preview reports the repair and writes nothing", { skip: skipWithoutDb },
   assert.deepEqual(await day(sony), { d: "2025-07-08", o: 600, s: "neighbour" });
   const cls2 = await db.one<{ s: string | null }>("SELECT captured_at_source AS s FROM assets WHERE id = $1", [copy]);
   assert.equal(cls2!.s, "file");
+});
+
+test("the re-read classifies only the frames of its window, from the file's own tags", { skip: skipWithoutDb }, async () => {
+  const { default: sharp } = await import("sharp");
+  const { exiftool } = await import("exiftool-vendored");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "winnow-capture-"));
+  try {
+    const file = async (name: string, tags: Record<string, string>) => {
+      const p = path.join(dir, name);
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: "#888" } }).jpeg().toFile(p);
+      await exiftool.write(p, tags, { writeArgs: ["-overwrite_original"] });
+      return p;
+    };
+    const zoned = await file("zoned.jpg", { DateTimeOriginal: "2025:07:08 07:30:18", OffsetTimeOriginal: "+10:00" });
+    const wall = await file("wall.jpg", { DateTimeOriginal: "2025:07:08 07:40:00" });
+    const outside = await file("outside.jpg", { DateTimeOriginal: "2025:09:01 12:00:00", OffsetTimeOriginal: "+09:30" });
+    const row = async (p: string, at: string) =>
+      (await db.one<{ id: number }>(
+        `INSERT INTO assets (session_id, abs_path, rel_path, filename, ext, media_type, captured_at)
+         VALUES ($1, $2, $3, $3, 'jpg', 'photo', $4) RETURNING id`,
+        [sessionId, p, path.basename(p), at],
+      ))!.id;
+    const a = await row(zoned, "2025-07-07T21:30:18Z");
+    const b = await row(wall, "2025-07-08T07:40:00Z");
+    const c = await row(outside, "2025-09-01T02:30:00Z");
+    const r = await cd.runCaptureDayBackfill({
+      apply: true,
+      reread: true,
+      from: "2025-07-07T00:00:00Z",
+      to: "2025-07-09T00:00:00Z",
+    });
+    assert.equal(r.reread_files, 2);
+    const cls = async (id: number) =>
+      (await db.one<{ s: string | null; o: number | null; os: string | null }>(
+        `SELECT captured_at_source AS s, capture_offset_min AS o, capture_offset_source AS os
+           FROM assets WHERE id = $1`,
+        [id],
+      ))!;
+    // The Sony-style file is zoned, its camera's +10:00 kept as weak evidence
+    // (no place nearby to outrank it); the drone-style one is a wall clock.
+    assert.deepEqual(await cls(a), { s: "exif", o: 600, os: "exif" });
+    assert.deepEqual(await cls(b), { s: "exif-wall", o: null, os: null });
+    assert.deepEqual(await cls(c), { s: null, o: null, os: null });
+    assert.equal((await day(a)).d, "2025-07-08");
+    assert.equal((await day(b)).d, "2025-07-08");
+  } finally {
+    await (await import("./extract")).closeExiftool();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

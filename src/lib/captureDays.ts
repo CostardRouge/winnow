@@ -80,6 +80,9 @@ async function writeZones(db: Exec, updates: ZoneUpdate[]): Promise<number> {
 
 /** Decide one row's own zone; null when nothing changes. */
 function ownZoneUpdate(r: ZoneRow): ZoneUpdate | null {
+  // A track import placed this frame AND zoned it: the provenance stays
+  // 'track' (Undo takes back exactly that), not relabelled as its own GPS.
+  if (r.gps_source === "track" && r.capture_offset_source === "track") return null;
   // A position read from the file itself (gps_source NULL) was there when
   // exiftool zoned the time from it: an unclassified row holding one is an
   // instant — 'file' when the time is the mtime fallback, 'exif' otherwise.
@@ -149,6 +152,10 @@ export async function applyOwnZones(
         WHERE id > $1 AND deleted_at IS NULL AND captured_at IS NOT NULL
           AND gps_lat IS NOT NULL
           AND capture_offset_source IS DISTINCT FROM 'gps'
+          -- IS NOT DISTINCT FROM, not '=': with a NULL gps_source a plain
+          -- NOT (… = 'track' AND …) is NULL and drops every file-placed row.
+          AND NOT (gps_source IS NOT DISTINCT FROM 'track'
+                   AND capture_offset_source IS NOT DISTINCT FROM 'track')
         ORDER BY id LIMIT ${BATCH}`,
       [after],
     );
@@ -296,6 +303,8 @@ export async function captureDayStats(): Promise<CaptureDayStats> {
 export type CaptureBackfillReport = {
   apply: boolean;
   reread: boolean;
+  /** The re-read's window (captured_at), when it was limited to one. */
+  range: { from: string; to: string } | null;
   before: CaptureDayStats;
   after: CaptureDayStats;
   /** Rows classified from what the database already knew. */
@@ -324,13 +333,15 @@ async function readDateTags(absPath: string): Promise<Tags> {
 }
 
 /**
- * The repair of a library indexed before 0046. With `apply: false` (the
+ * The repair of a library indexed before 0046. `from`/`to` limit the RE-READ
+ * to a window of capture times — a track import asks for its own span rather
+ * than the whole library's headers. With `apply: false` (the
  * default the UI starts with) the database-only steps run inside a
  * transaction that is rolled back, so the report says what WOULD change; the
  * re-read, which touches the originals' headers, only ever runs on apply.
  */
 export async function runCaptureDayBackfill(
-  opts: { apply?: boolean; reread?: boolean } = {},
+  opts: { apply?: boolean; reread?: boolean; from?: string; to?: string } = {},
   hooks: BackfillHooks = {},
 ): Promise<CaptureBackfillReport> {
   const apply = opts.apply === true;
@@ -339,6 +350,7 @@ export async function runCaptureDayBackfill(
   const report: CaptureBackfillReport = {
     apply,
     reread,
+    range: opts.from && opts.to ? { from: opts.from, to: opts.to } : null,
     before,
     after: before,
     classifiedFromDb: 0,
@@ -399,8 +411,10 @@ export async function runCaptureDayBackfill(
                 capture_offset_source FROM assets
           WHERE id > $1 AND captured_at_source IS NULL AND deleted_at IS NULL
             AND captured_at IS NOT NULL
+            AND ($2::timestamptz IS NULL OR captured_at >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR captured_at <= $3::timestamptz)
           ORDER BY id LIMIT 100`,
-        [after],
+        [after, report.range?.from ?? null, report.range?.to ?? null],
       );
       if (!rows.length) break;
       for (const r of rows) {

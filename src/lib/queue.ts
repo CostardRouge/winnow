@@ -111,7 +111,13 @@ export type RelinkJob = { rootId?: number | null; apply: boolean };
 // headers one by one, the scan's I/O profile, and concurrency 1 keeps it from
 // ganging up with a sweep. Told apart by name, its report is the return value.
 export const CAPTURE_DAYS_JOB = "capture-days";
-export type CaptureDaysJob = { apply: boolean; reread: boolean };
+export type CaptureDaysJob = {
+  apply: boolean;
+  reread: boolean;
+  /** Limit the re-read to this window of capture times (ISO). */
+  from?: string | null;
+  to?: string | null;
+};
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -565,19 +571,29 @@ export async function getRelinkJob(jobId: string): Promise<{
 export async function enqueueCaptureDays(opts: {
   apply?: boolean;
   reread?: boolean;
+  from?: string | null;
+  to?: string | null;
 }): Promise<Job> {
   const queue = getQueues().integrity;
   const apply = opts.apply === true;
   const reread = apply && opts.reread === true;
+  const from = reread ? (opts.from ?? null) : null;
+  const to = reread ? (opts.to ?? null) : null;
   const jobs = await queue.getJobs([...PENDING_INDEX_STATES, "active"], 0, 99);
   for (const job of jobs) {
     if (job?.name !== CAPTURE_DAYS_JOB) continue;
     const d = job.data as CaptureDaysJob;
-    if (d?.apply === apply && d?.reread === reread) return job;
+    if (
+      d?.apply === apply &&
+      d?.reread === reread &&
+      (d?.from ?? null) === from &&
+      (d?.to ?? null) === to
+    )
+      return job;
   }
   return queue.add(
     CAPTURE_DAYS_JOB,
-    { apply, reread } satisfies CaptureDaysJob,
+    { apply, reread, from, to } satisfies CaptureDaysJob,
     // Resumable (it only ever works on rows still unclassified), so a failure
     // needs no retry storm: the next click picks up the rest.
     { ...defaultJobOpts, attempts: 1 },

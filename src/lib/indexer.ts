@@ -284,9 +284,10 @@ export async function indexRoot(
            -- 'inferred' it is the RULE: a bulk-accepted suggestion is never
            -- written into the original (docs/UNPLACED.md §4.3), so the file
            -- never carries it and, without this guard, every re-index would
-           -- wipe it. A file WITH coordinates always wins over both.
+           -- wipe it. Same for 'track' (an imported GPS track, migration 0047,
+           -- lib/trackImport.ts). A file WITH coordinates always wins.
            gps=CASE WHEN $17::jsonb IS NOT NULL THEN $17::jsonb
-                    WHEN gps_source IN ('manual','inferred') THEN gps END,
+                    WHEN gps_source IN ('manual','inferred','track') THEN gps END,
            width=$18, height=$19, duration_s=$20,
            content_id=$23,
            gimbal_pitch=$24, gimbal_yaw=$25, gimbal_roll=$26,

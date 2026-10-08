@@ -20,6 +20,8 @@ import type { CaptureBackfillReport, CaptureDayStats } from "@/lib/captureDays";
 
 const POLL_MS = 2000;
 const STORAGE_KEY = "winnow.capture-days.job";
+/** Fired by another section (the track import) that queued a job of ours. */
+export const CAPTURE_DAYS_EVENT = "winnow:capture-days-job";
 
 type JobInfo = {
   id: string;
@@ -75,6 +77,19 @@ export default function CaptureDaysSection() {
     } catch {
       /* storage disabled: start fresh */
     }
+    const adopt = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (!id) return;
+      setJob(null);
+      setJobId(id);
+      try {
+        localStorage.setItem(STORAGE_KEY, id);
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener(CAPTURE_DAYS_EVENT, adopt);
+    return () => window.removeEventListener(CAPTURE_DAYS_EVENT, adopt);
   }, [loadStats]);
 
   useEffect(() => {

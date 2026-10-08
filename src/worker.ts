@@ -268,14 +268,14 @@ const integrityWorker = new Worker(
       return out;
     }
     if (job.name === CAPTURE_DAYS_JOB) {
-      const { apply, reread } = job.data as CaptureDaysJob;
+      const { apply, reread, from, to } = job.data as CaptureDaysJob;
       console.log(
         `[capture-days] ${apply ? (reread ? "repair + re-read" : "repair") : "dry run"}…`,
       );
       // The re-read reads originals' headers: it honours the scan's pause and
       // shares the scan's hourly budget, exactly as a scan's heavy reads do.
       const out = await runCaptureDayBackfill(
-        { apply, reread },
+        { apply, reread, from: from ?? undefined, to: to ?? undefined },
         {
           shouldStop: async () => (await getSettings()).scanPaused,
           throttle: async () => {
