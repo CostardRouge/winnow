@@ -76,6 +76,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - The environment tier is readable at `/settings/instance`, each row saying `env` or `default`; a page whose content IS `process.env` must be `force-dynamic` or CI's environment gets baked into the image → `docs/memory/frontend.md`
 - Data never sizes the box that holds the actions: a card's layout is declared once in its shared shell, a self-measuring strip carries `contain: inline-size`, and every list is checked at 500 items and after narrowing the window → `docs/memory/frontend.md`
 - The gallery map plots one marker per ~1 m SPOT with its count (`?by=place`), never media under a newest-first cap — the 10 000-media cap had become a window that hid 87 % of the library → `docs/memory/frontend.md`
+- A fold (pair, pile) picks a member that MATCHES the filter, never a fixed one; a bulk write is announced after the server answers; a paged list drops answers for a list it no longer shows; a cap is in a unit the work cannot grow, or said in words → `docs/SILENT-LIMITS-AUDIT.md`, `docs/memory/database.md`, `docs/memory/frontend.md`
 - `backdrop-filter` never rides on a tile the viewport multiplies: measured, the grid badges' blur cost 73 % of scroll frames, and the 400 px thumb in a 110 px cell costs almost nothing → `docs/memory/frontend.md`
 
 - A session that changes code reports this project's state to its fiche, project `winnow` in the private `second-brain` repo — the register is that repo, never Claude's memory nor `git log`. No session touches `second-brain` (since 2026-10-02): the session writes a Registry block — hidden in an HTML comment in its PR description (cloud), after a `Registry:` line in its commit body (local), and in a public repo nothing but the `Project:` line, ticked boxes and a `Log:` line, checked on the PR by `registry.yml`'s `check` job —, and `.github/workflows/registry.yml` sends it on every push to `main` to `second-brain`, which applies it mechanically and regenerates `PROJECTS.md`. **2026-10-04: everything a machine parses is English** (the block's `Project:` / `Last point:` / `Log:` labels, the workflow and its jobs, the register's paths), what a person reads stays French; a fiche is found by its slug because the register files it by group and domain (`create/apps/…`), which may move. The write token for `second-brain` lives in an environment still named `registre` that only `main` can read — renaming it needs `bin/registry-setup.sh` on the maintainer's machine. The workflow file is identical across the portfolio; C10 in `second-brain`'s `COMMON-PROJECT-SPEC.md` is the source. → CLAUDE.md rule 3
@@ -96,6 +97,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - 2026-08-20 — `docker-compose-optiplex.yml`'s `x-winnow-env` anchor is missing a documented set of variables (`ML_CLIP_*`, `IMMICH_*`, `BURST_*`, `SHARP_CONCURRENCY`, `PURGE_*`, `HEIC_DECODE_TIMEOUT_MS`, `BROWSE_ROOTS`, `FINALS_DIRS`). Defaults keep production running, so it fails silently: those knobs simply cannot be tuned on the Optiplex. **`/settings/instance` on the Optiplex now names them** — each shows `default` — so confirming the list is a page visit rather than a compose diff; fixing the anchor is still open. See `docs/memory/configuration.md`.
 
 - 2026-10-08 — **The local capture day and the GPS track import are built, not yet run on the Optiplex.** On his library the order is: Dates & places → *Apply* (database-only, instant) → import the Polarsteps export → *Re-read the dates of this span* from the report (the Sony frames indexed before 0046 are unclassified and skipped until then) → preview the import again → *Apply*. Unmeasured there: how long the span re-read takes at the scan's hourly budget on the NAS HDD, and how many conflicts the friends' cameras (Canon EOS R, Fujifilm GFX100RF, OnePlus) raise. Verifying from a cloud session needs `WINNOW_HOST` / `WINNOW_TOKEN` in the environment (a new session picks them up).
+
+- 2026-10-09 — **`docs/SILENT-LIMITS-AUDIT.md` is the record of the silent-limits sweep** (A–F, measured on the instance). Shipped: the filter-aware fold, JIT off on grid pages, honest bulk writes, the paging race, position writes, Sift/piles/Trash/People caps. **Open there**: the geocoding backlog is invisible (~13 600 located media unnamed, no counts in `/api/stats`, D5); Missing files has no purge-by-filter (E4); the grid has no filtered folded total (E6); the Heatmap's 14-place map and `place_id`-based "no position" must be fixed before it is turned on (E7); geotag of a 20 000-media card enqueues per row inside the request (F1).
 
 ## Topic files — read before touching the area
 
@@ -120,6 +123,10 @@ or a new way of reading the library at large:
   NOT to do and the decisions, §4 what batch 1 changed. Read §2 before
   touching a destructive path, the proxy, the deploy or a cull write.
 
+- **`docs/SILENT-LIMITS-AUDIT.md`** — the sweep of 2026-10-09 for screens that
+  present part of the data as all of it: a cap, a page, a fixed fold, an
+  unchecked answer. Read it before adding a LIMIT, a `.slice`, a "select all",
+  a fold or an optimistic write.
 - **`docs/HEATMAP.md`** — the brief for `/heatmap`, now a **record**: the four
   readings shipped 2026-09-07. §1–§5 carry the reasoning (why the crossing, why
   the measure list, why the bins were free), §6 the placement argument that
