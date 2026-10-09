@@ -16,6 +16,7 @@ export default function DownloadMenu({
   triggerClassName = "seg-btn",
   disabled = false,
   onMessage,
+  zipUnavailable,
 }: DownloadSource & {
   label?: string;
   /** Trigger button class (defaults to a segmented-control segment). */
@@ -27,6 +28,7 @@ export default function DownloadMenu({
     zipName,
     listFiles,
     onMessage,
+    zipUnavailable,
   });
 
   return (

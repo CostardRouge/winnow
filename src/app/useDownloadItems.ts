@@ -27,6 +27,10 @@ export type DownloadSource = {
   listFiles: () => Promise<DownloadFile[]>;
   /** Surface transient status ("Started 8 downloads", "Save failed: …"). */
   onMessage?: (msg: string | null) => void;
+  /** Why the ZIP cannot serve this set, when it cannot (too many files for
+   *  one link): the entry stays listed, disabled, and says so — rather than
+   *  navigating to a JSON 400 the download tray shows as a failed file. */
+  zipUnavailable?: string | null;
 };
 
 // Minimal typing for the File System Access API (Chromium). Lets us save files
@@ -159,9 +163,9 @@ export function useDownloadItems(source: DownloadSource | undefined): {
     {
       key: "zip",
       label: "Download as ZIP",
-      hint: "One .zip archive",
+      hint: source.zipUnavailable ?? "One .zip archive",
       icon: Icons.archive,
-      disabled: busy,
+      disabled: busy || !!source.zipUnavailable,
       onSelect: downloadZip,
     },
     {

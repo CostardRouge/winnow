@@ -385,16 +385,36 @@ export default function DeviceAttribution() {
             className="btn btn-sm"
             disabled={busy != null}
             onClick={async () => {
+              // Report what the server wrote, folder by folder: it skips
+              // media (a folder with no sibling body answers updated: 0), and
+              // a folder that fails is named as failed, never counted.
+              setBusy("all");
+              let updated = 0;
+              let applied = 0;
+              const failed: string[] = [];
               for (const f of bulkTargets) {
-                await fetchJson("/api/pipeline/device-attribution", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ session_id: f.session_id }),
-                }).catch(() => null);
+                try {
+                  const r = await fetchJson<{ updated?: number }>(
+                    "/api/pipeline/device-attribution",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ session_id: f.session_id }),
+                    },
+                  );
+                  updated += r.updated ?? 0;
+                  applied++;
+                } catch {
+                  failed.push(f.name);
+                }
               }
               setMsg(
-                `Applied every proposal shown — ${bulkMedia.toLocaleString()} media across ${bulkTargets.length} folders.`,
+                `Attributed ${updated.toLocaleString()} media across ${applied} of ${bulkTargets.length} folders.` +
+                  (failed.length
+                    ? ` ${failed.length} failed: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""}.`
+                    : ""),
               );
+              setBusy(null);
               await load(sort);
               await reload();
             }}

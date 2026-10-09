@@ -53,6 +53,7 @@ export default function BulkActionBar({
     zipName: string;
     listFiles: () => Promise<DownloadFile[]>;
     onMessage?: (msg: string | null) => void;
+    zipUnavailable?: string | null;
   };
   onRegenerate: () => void;
   /** Resolve the GPS coordinates of the selection to place names. */
@@ -285,6 +286,7 @@ export default function BulkActionBar({
           zipName={download.zipName}
           listFiles={download.listFiles}
           onMessage={download.onMessage}
+          zipUnavailable={download.zipUnavailable}
           triggerClassName="btn"
           disabled={none}
         />

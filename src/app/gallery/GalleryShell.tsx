@@ -34,9 +34,11 @@ import {
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
+  tagAssets,
   regenerateAssets,
   selectionDownloadFiles,
   selectionZipHref,
+  selectionZipUnavailable,
   type GeotagSource,
 } from "@/lib/assetActions";
 import ExportSelectionModal from "../exports/ExportSelectionModal";
@@ -568,11 +570,12 @@ export default function GalleryShell({
     async (ids: number[], name: string, add: boolean) => {
       if (readOnly || !ids.length || !name.trim()) return;
       const tag = name.trim();
-      await fetch("/api/tags/assign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
-      });
+      try {
+        await tagAssets(ids, tag, add);
+      } catch (e) {
+        setNotice((e as Error).message);
+        return;
+      }
       const idset = new Set(ids);
       const withTag = (it: Row): Row => ({
         ...it,
@@ -597,13 +600,42 @@ export default function GalleryShell({
 
   // --- Rate / delete / export (one or many) --------------------------------
   // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
+  // Resolves whether the server took it: on a failure the optimistic verdicts
+  // are put back (from what each loaded row held before) and the error shown,
+  // so the grid never keeps a rating the database did not get.
   const rateMany = useCallback(
-    async (ids: number[], patch: { verdict?: Row["verdict"]; star?: number }) => {
-      if (readOnly || !ids.length) return;
+    async (
+      ids: number[],
+      patch: { verdict?: Row["verdict"]; star?: number },
+    ): Promise<boolean> => {
+      if (readOnly || !ids.length) return false;
       const idset = new Set(ids);
-      setItems((prev) => prev.map((a) => (idset.has(a.id) ? { ...a, ...patch } : a)));
+      const before = new Map<number, Pick<Row, "verdict" | "star">>();
+      setItems((prev) =>
+        prev.map((a) => {
+          if (!idset.has(a.id)) return a;
+          before.set(a.id, { verdict: a.verdict, star: a.star });
+          return { ...a, ...patch };
+        }),
+      );
       setMapAsset((cur) => (cur && idset.has(cur.id) ? { ...cur, ...patch } : cur));
-      await rateAssets(ids, patch);
+      try {
+        await rateAssets(ids, patch);
+        return true;
+      } catch (e) {
+        setItems((prev) =>
+          prev.map((a) => {
+            const was = before.get(a.id);
+            return was ? { ...a, ...was } : a;
+          }),
+        );
+        setMapAsset((cur) => {
+          const was = cur && before.get(cur.id);
+          return was ? { ...cur, ...was } : cur;
+        });
+        setNotice((e as Error).message);
+        return false;
+      }
     },
     [readOnly],
   );
@@ -619,7 +651,13 @@ export default function GalleryShell({
           : "Delete this asset? It’ll be hidden from the library — the original is untouched.";
       if (!window.confirm(msg)) return false;
       const idset = new Set(ids);
-      setItems((prev) => prev.filter((a) => !idset.has(a.id)));
+      // The list as it was, to put the rows back where they stood if the
+      // server refuses: a removal it never made must not stay on screen.
+      let before: Row[] = [];
+      setItems((prev) => {
+        before = prev;
+        return prev.filter((a) => !idset.has(a.id));
+      });
       // Deleting the map-opened media has nothing left to show: close its viewer.
       setMapAsset((cur) => (cur && idset.has(cur.id) ? null : cur));
       setSelected((prev) => {
@@ -627,7 +665,16 @@ export default function GalleryShell({
         ids.forEach((i) => next.delete(i));
         return next;
       });
-      await deleteAssets(ids);
+      try {
+        await deleteAssets(ids);
+      } catch (e) {
+        setItems((cur) => {
+          const live = new Set(cur.map((a) => a.id));
+          return before.filter((a) => idset.has(a.id) || live.has(a.id));
+        });
+        setNotice((e as Error).message);
+        return false;
+      }
       setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
       loadFacets();
       return true;
@@ -814,8 +861,7 @@ export default function GalleryShell({
     async (bbox: Bbox) => {
       const ids = await idsInZone(bbox);
       if (!ids?.length) return;
-      void rateMany(ids, { verdict: "pick" });
-      setNotice(`${ids.length} picked`);
+      if (await rateMany(ids, { verdict: "pick" })) setNotice(`${ids.length} picked`);
     },
     [rateMany, idsInZone],
   );
@@ -823,8 +869,7 @@ export default function GalleryShell({
     async (bbox: Bbox) => {
       const ids = await idsInZone(bbox);
       if (!ids?.length) return;
-      void rateMany(ids, { verdict: "reject" });
-      setNotice(`${ids.length} rejected`);
+      if (await rateMany(ids, { verdict: "reject" })) setNotice(`${ids.length} rejected`);
     },
     [rateMany, idsInZone],
   );
@@ -1199,6 +1244,7 @@ export default function GalleryShell({
           onExport={() => exportSelection([...selected])}
           download={{
             zipHref: selectionZipHref([...selected]),
+            zipUnavailable: selectionZipUnavailable(selected.size),
             zipName: "winnow-selection.zip",
             listFiles: () =>
               Promise.resolve(
