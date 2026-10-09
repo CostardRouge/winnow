@@ -1,7 +1,7 @@
 // GET /api/sessions/:id/assets ?cursor&limit&filter... → paginated grid (cursor-based).
 // Never OFFSET: keyset on (captured_at, id). The front-end grid is virtualized.
 import { NextRequest } from "next/server";
-import { many } from "@/lib/db";
+import { manyWithoutJit } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import {
@@ -45,7 +45,7 @@ export async function GET(
 
     const limit = pageSize(sp);
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-    const rows = await many<AssetGridRow>(
+    const rows = await manyWithoutJit<AssetGridRow>(
       `SELECT ${GRID_SELECT}
        ${GRID_FROM}
        ${where}
