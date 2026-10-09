@@ -2,7 +2,13 @@
 # The worker runs the TypeScript via tsx (runtime dependency), the app serves the
 # Next build. We stay as root: named volumes and NAS mounts (NFS/SMB, with their
 # own uid mapping) are thus writable without friction.
-FROM node:24-slim
+# The base image comes through Google's public mirror of Docker Hub's official
+# images (same image, same digest, no account): GitHub runners share their IPs,
+# Docker Hub limits anonymous pulls per IP, and on 2026-10-09 the build of #289
+# failed on its `429 Too Many Requests` — no image was published, and the
+# redeploy silently pulled the old one (docs/SILENT-LIMITS-AUDIT.md G0). The
+# alternative is a Docker Hub login in docker-build.yml, which needs a secret.
+FROM mirror.gcr.io/library/node:24-slim
 
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
