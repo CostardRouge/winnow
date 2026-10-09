@@ -182,6 +182,17 @@ export function readCaptureTime(t: Tags): {
   return { captured_at: null, captured_at_source: null, exif_offset_min: null };
 }
 
+/**
+ * Re-read only a file's capture time (the Dates & places backfill). `-fast`
+ * skips the trailers exiftool would scan for, nothing else. Never `-fast2`:
+ * it also stops at a QuickTime file's `mdat` atom, and a camera writes its
+ * MP4/MOV with the `moov` — where CreateDate lives — AFTER the media data,
+ * so every Sony, DJI and iPhone clip read as "no date in the file".
+ */
+export async function readCaptureTimeFromFile(absPath: string) {
+  return readCaptureTime(await exiftool.read(absPath, { readArgs: ["-fast"] }));
+}
+
 export async function readMetadata(absPath: string): Promise<Metadata> {
   const t: Tags = await exiftool.read(absPath);
   const make = str(t.Make) ?? "";

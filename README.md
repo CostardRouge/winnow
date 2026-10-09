@@ -504,16 +504,19 @@ device** shot within 12 h (the phone in the pocket knows the zone the camera
 forgot), and last the **zone the camera wrote** — the weakest, since a camera
 left on its home zone abroad states a wrong one. A wall clock with no zone
 keeps its own date. The indexer decides this for every new or modified file;
-**Settings › Pipeline › Dates & places** repairs a library indexed before it:
-*Preview* (nothing written), *Apply* (database only), *Apply + re-read dates*
-(also reads the date tags of the frames the database cannot classify — the
-originals' headers, at the scan's pace, paused by its pause). Originals are
-never written, and clearing the offsets restores the old days exactly.
+**Settings › Pipeline › Dates & places** repairs a library indexed before it,
+as two numbered steps. Step 1, *Read the capture times*, is one verb while
+frames remain whose time cannot be classified from the database (indexed before
+the repair, or a clip an earlier read mislabelled): *Read their dates* opens
+only each original's header, at the scan's pace, paused by its pause, and a
+second click resumes — then the step says *Done*. *Recompute the days* (the
+database-only passes) and a *Dry run* sit under *more*. Originals are never
+written, and clearing the offsets restores the old days exactly.
 `npm run capture-days [-- --apply [--reread]]` is the same job from a shell.
 
-**GPS track import** (same page). A track recorded beside the cameras — a
-Polarsteps export (`locations.json` + `trip.json`), a GPX, or a JSON list of
-`{lat, lon, time}` — places every frame of its span that has no position, by its
+**GPS track import** (step 2 of the same page). A track recorded beside the
+cameras — a Polarsteps export, a GPX, or a JSON list of `{lat, lon, time}` —
+places every frame of its span that has no position, by its
 capture instant: between two fixes on the move (≤ 60 min apart, never across a
 flight), between two fixes at the same spot (≤ 2 km apart, up to 12 h — the
 traveller stayed), or on the nearest fix within 15 min; a frame in a gap of the
@@ -523,8 +526,12 @@ written into an original, kept through re-indexing. A frame placed by its own
 file is never moved — when the track puts it more than 25 km away at that
 instant it is listed as a **conflict**, the signature of a camera clock set
 wrong — and positions set by hand or accepted from a folder suggestion are kept.
-*Preview* writes nothing; *Apply* records the import; *Undo* takes back exactly
-what it wrote. Frames indexed before the local-day repair are skipped until
+A Polarsteps export is two files and the step shows one slot for each —
+*Positions* (`locations.json`, required) and *Steps* (`trip.json`, which carries
+each day's time zone and the trip's name) — saying what every file is as soon
+as it is chosen, whichever slot took it, and refusing a file that is neither.
+The import is recorded under the trip's or the GPX's own name. *Preview* writes
+nothing; *Apply* records the import; *Undo* takes back exactly what it wrote. Frames indexed before the local-day repair are skipped until
 their date tags are re-read — the report offers to re-read just its span.
 
 ### Timeline: the library read as a story (page `/timeline`)

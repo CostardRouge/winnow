@@ -1,32 +1,59 @@
 "use client";
 
-// Settings › Pipeline › Dates & places › "GPS track" — the UI half of
+// Step 2 of Settings › Pipeline › Dates & places — the UI half of
 // lib/trackImport.ts (migration 0047).
 //
-// Drop a Polarsteps export (locations.json + trip.json), a GPX, or a JSON list
-// of {lat, lon, time}: every live frame of the track's span that has no
-// position takes the track's at its instant, and the zone it was in for its
-// capture day. PREVIEW reads only and shows the report; APPLY records the
-// import, which Undo takes back exactly. A frame whose own file placed it is
-// never moved — when the track disagrees by more than 25 km at that instant it
-// is listed as a conflict, the signature of a camera clock set wrong.
-import { useCallback, useEffect, useRef, useState } from "react";
+// A Polarsteps export is TWO files, and a reader must not have to know it: the
+// step shows one slot per file — the positions (locations.json, required) and
+// the steps (trip.json, which carry each day's time zone and the trip's name) —
+// and says what each chosen file is the moment it is chosen
+// (lib/trackFiles.ts), routing a file to its slot whichever picker took it. A
+// GPX is the other source, one slot of its own. The import is recorded under
+// the trip's or the GPX's own title (else its first day): a label for the
+// history, nothing else, so there is no field to fill in.
+//
+// PREVIEW reads only and shows the report; APPLY records the import, which
+// Undo takes back exactly. A frame whose own file placed it is never moved —
+// when the track disagrees by more than 25 km at that instant it is listed as
+// a conflict, the signature of a camera clock set wrong.
+import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "../../../ui";
 import { CAPTURE_DAYS_EVENT } from "./CaptureDaysSection";
 import { fetchJson } from "@/lib/fetchJson";
+import { identifyTrackFile, type TrackFileInfo, type TrackFileSlot } from "@/lib/trackFiles";
 import type { TrackImportReport, TrackImportRow } from "@/lib/trackImport";
 
 const n = (v: number | undefined) => (v ?? 0).toLocaleString();
 const date = (iso: string) => iso.slice(0, 10);
+const day = (ms: number | null) =>
+  ms == null ? "?" : new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-export default function TrackImportSection() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [name, setName] = useState("");
+type Chosen = { file: File; info: TrackFileInfo };
+type Source = "polarsteps" | "gpx";
+
+const SLOTS: Record<Source, { slot: TrackFileSlot; label: string; expects: string; optional?: string }[]> = {
+  polarsteps: [
+    { slot: "positions", label: "Positions", expects: "locations.json" },
+    { slot: "steps", label: "Steps", expects: "trip.json", optional: "each day’s time zone and the trip’s name" },
+  ],
+  gpx: [{ slot: "gpx", label: "Track", expects: "a .gpx file" }],
+};
+
+export default function TrackImportSection({
+  toRead,
+  onChanged,
+}: {
+  /** Times step 1 has not read yet — the frames a preview would skip. */
+  toRead: number;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [source, setSource] = useState<Source>("polarsteps");
+  const [chosen, setChosen] = useState<Partial<Record<TrackFileSlot, Chosen>>>({});
+  const [refused, setRefused] = useState<TrackFileInfo[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [report, setReport] = useState<TrackImportReport | null>(null);
   const [imports, setImports] = useState<TrackImportRow[] | null>(null);
-  const input = useRef<HTMLInputElement>(null);
 
   const loadImports = useCallback(async () => {
     try {
@@ -40,14 +67,37 @@ export default function TrackImportSection() {
     void loadImports();
   }, [loadImports]);
 
+  // Whatever picker took them, each file goes to the slot it IS.
+  async function take(files: FileList | null) {
+    if (!files?.length) return;
+    const next = { ...chosen };
+    const bad: TrackFileInfo[] = [];
+    for (const file of Array.from(files)) {
+      const info = identifyTrackFile(file.name, await file.text());
+      if (!info.ok) bad.push(info);
+      else {
+        next[info.slot] = { file, info };
+        if (info.slot === "gpx") setSource("gpx");
+        else setSource("polarsteps");
+      }
+    }
+    setChosen(next);
+    setRefused(bad);
+    setReport(null);
+    setMsg(null);
+  }
+
+  const slots = SLOTS[source];
+  const files = slots.map((s) => chosen[s.slot]).filter((c): c is Chosen => c != null);
+  const ready = source === "gpx" ? !!chosen.gpx : !!chosen.positions;
+
   async function send(apply: boolean) {
-    if (!files.length) return;
+    if (!ready) return;
     setBusy(true);
     setMsg(null);
     try {
       const fd = new FormData();
-      for (const f of files) fd.append("files", f);
-      if (name.trim()) fd.set("name", name.trim());
+      for (const c of files) fd.append("files", c.file);
       if (apply) fd.set("apply", "true");
       const r = await fetchJson<{ report: TrackImportReport }>("/api/pipeline/track-import", {
         method: "POST",
@@ -55,9 +105,9 @@ export default function TrackImportSection() {
       });
       setReport(r.report);
       if (apply) {
-        setFiles([]);
-        if (input.current) input.current.value = "";
+        setChosen({});
         await loadImports();
+        void onChanged();
       }
     } catch (e) {
       setMsg((e as Error).message);
@@ -78,6 +128,7 @@ export default function TrackImportSection() {
       setMsg(`Undone: ${n(r.unplaced)} position(s) and ${n(r.unzoned)} zone(s) taken back.`);
       setReport(null);
       await loadImports();
+      void onChanged();
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -85,58 +136,124 @@ export default function TrackImportSection() {
     }
   }
 
+  const applied = (imports?.length ?? 0) > 0;
+
   return (
-    <section className="pl-section" aria-labelledby="track-import-title">
-      <h2 id="track-import-title" className="section-head">
-        GPS track
-      </h2>
-      <p className="hint card-rules">
-        A track recorded beside the cameras — a Polarsteps export
-        (<code>locations.json</code> + <code>trip.json</code>), a GPX — places
-        every frame of its span that has no position, by its capture instant,
-        and gives its capture day the zone it was in. Frames placed by their own
-        file are never moved; human-set positions are kept. Nothing is written
-        into an original, and an applied import can be undone.
+    <section className="flow-step" data-state={applied ? "done" : "todo"} aria-labelledby="track-import-title">
+      <header className="flow-step-head">
+        <span className="flow-num" aria-hidden>
+          {applied ? "✓" : "2"}
+        </span>
+        <h2 id="track-import-title">Place frames from a GPS track</h2>
+        <span className="flow-state">{applied ? `${imports!.length} applied` : "Optional"}</span>
+      </header>
+      <p className="hint">
+        For frames with no position of their own — a camera without GPS. A track recorded beside
+        it places each one by its capture instant and gives its day the zone it was in. Frames
+        placed by their own file are never moved, hand-set positions are kept, nothing is written
+        into an original, and an import can be undone.
       </p>
 
-      <div className="filterbar">
-        <input
-          ref={input}
-          type="file"
-          multiple
-          accept=".json,.gpx,application/json,application/gpx+xml"
-          onChange={(e) => {
-            setFiles(Array.from(e.target.files ?? []));
-            setReport(null);
-          }}
-        />
-        <input
-          type="text"
-          className="input"
-          placeholder="Name (optional)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          aria-label="Import name"
-        />
-        <button type="button" className="btn" disabled={busy || !files.length} onClick={() => send(false)}>
+      {toRead > 0 && (
+        <p className="flow-warn">
+          Step 1 first: {n(toRead)} capture time(s) are not read yet, and the frames among them
+          would be skipped.
+        </p>
+      )}
+
+      <div className="flow-actions" role="group" aria-label="Source">
+        {(["polarsteps", "gpx"] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            className={`btn btn-sm${source === s ? " btn-primary" : ""}`}
+            aria-pressed={source === s}
+            onClick={() => {
+              setSource(s);
+              setReport(null);
+            }}
+          >
+            {s === "polarsteps" ? "Polarsteps export" : "GPX file"}
+          </button>
+        ))}
+      </div>
+
+      <div className="flow-slots">
+        {slots.map((s) => {
+          const c = chosen[s.slot];
+          const info = c?.info.ok ? c.info : null;
+          return (
+            <label key={s.slot} className="flow-slot" data-filled={info ? "" : undefined}>
+              <span className="flow-slot-label">
+                {s.label}
+                <span className="hint">{s.optional ? "recommended" : "required"}</span>
+              </span>
+              <span className="flow-slot-body">
+                {info ? (
+                  <>
+                    <strong>✓ {c!.file.name}</strong>{" "}
+                    <span className="hint">
+                      {info.slot === "steps"
+                        ? `${info.title ? `“${info.title}” · ` : ""}${n(info.count)} steps`
+                        : `${n(info.count)} positions`}{" "}
+                      · {day(info.from)} → {day(info.to)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="hint">
+                    {s.expects}
+                    {s.optional ? ` — ${s.optional}` : ""}
+                  </span>
+                )}
+              </span>
+              <span className="btn btn-sm">{info ? "Replace" : "Choose…"}</span>
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                accept=".json,.gpx,application/json,application/gpx+xml"
+                onChange={(e) => {
+                  void take(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          );
+        })}
+      </div>
+      {source === "polarsteps" && chosen.positions && !chosen.steps && (
+        <p className="hint">
+          Without trip.json each day’s zone is read from its positions alone, and the import is
+          named after its first day.
+        </p>
+      )}
+      {refused.map((r) => (
+        <p key={r.name} className="flow-warn">
+          {r.name}: {!r.ok && r.error}.
+        </p>
+      ))}
+
+      <div className="flow-actions">
+        <button type="button" className="btn" disabled={busy || !ready} onClick={() => send(false)}>
           Preview
         </button>
         <button
           type="button"
           className="btn btn-primary"
-          disabled={busy || !files.length || !report || report.apply}
+          disabled={busy || !ready || !report || report.apply}
           title={!report ? "Preview first" : undefined}
           onClick={() => send(true)}
         >
           Apply
         </button>
         {busy && <Spinner sm />}
+        {!report && ready && <span className="hint">Preview writes nothing.</span>}
       </div>
 
       {msg && <p className="hint">{msg}</p>}
       {report && <TrackReport report={report} />}
 
-      {imports && imports.length > 0 && (
+      {applied && (
         <div className="vol-table-wrap">
           <table className="vol-table">
             <thead>
@@ -151,7 +268,7 @@ export default function TrackImportSection() {
               </tr>
             </thead>
             <tbody>
-              {imports.map((t) => (
+              {imports!.map((t) => (
                 <tr key={t.id}>
                   <td>
                     {t.name} <span className="hint">· {t.kind}</span>
@@ -176,8 +293,8 @@ export default function TrackImportSection() {
   );
 }
 
-// The frames a track skips are the ones indexed before the local-day repair:
-// re-reading THEIR date tags (the span ± a day, not the whole library) is what
+// The frames a track skips are the ones whose time step 1 has not read:
+// reading THEIR date tags (the span ± a day, not the whole library) is what
 // lets the next preview place them.
 function RereadSpan({ report: r }: { report: TrackImportReport }) {
   const [state, setState] = useState<"idle" | "busy" | "queued" | "error">("idle");
@@ -195,7 +312,7 @@ function RereadSpan({ report: r }: { report: TrackImportReport }) {
           to: new Date(Date.parse(r.span.end) + DAY).toISOString(),
         }),
       });
-      // The day section above polls it and shows its progress and report.
+      // Step 1 polls it and shows its progress and report.
       window.dispatchEvent(new CustomEvent(CAPTURE_DAYS_EVENT, { detail: queued.job_id }));
       setState("queued");
     } catch {
@@ -203,18 +320,16 @@ function RereadSpan({ report: r }: { report: TrackImportReport }) {
     }
   }
   return (
-    <p>
-      {n(r.unclassified)} frame(s) in the span were indexed before the local-day repair: until
-      their date tags are read again, a wall clock and a zoned time cannot be told apart, so they
-      are skipped.{" "}
+    <p className="flow-warn">
+      {n(r.unclassified)} frame(s) of this span were skipped: their time is not read yet (step 1).{" "}
       {state === "queued" ? (
-        <strong>Re-read queued — follow it in Local capture day above, then preview again.</strong>
+        <strong>Reading queued — follow it in step 1, then preview again.</strong>
       ) : (
         <button type="button" className="btn btn-sm" disabled={state === "busy"} onClick={go}>
-          Re-read the dates of this span
+          Read the dates of this span only
         </button>
       )}
-      {state === "error" && " The re-read could not be queued."}
+      {state === "error" && " The read could not be queued."}
     </p>
   );
 }
@@ -225,14 +340,14 @@ function TrackReport({ report: r }: { report: TrackImportReport }) {
     <div className="hint card-rules">
       <p>
         <strong>{r.apply ? `Applied “${r.name}”.` : `Preview of “${r.name}” — nothing was written.`}</strong>{" "}
-        {n(r.points)} fixes{r.steps ? ` and ${n(r.steps)} steps` : ""}, {date(r.span.start)} →{" "}
+        {n(r.points)} positions{r.steps ? ` and ${n(r.steps)} steps` : ""}, {date(r.span.start)} →{" "}
         {date(r.span.end)}. Of {n(r.inSpan)} frames in that span: <strong>{n(located)}</strong>{" "}
-        placed by the track ({n(r.located.interpolated)} between two fixes on the move,{" "}
-        {n(r.located.still)} between two fixes at the same spot (within {r.match.maxStillKm} km,{" "}
-        {r.match.maxStillHours} h), {n(r.located.nearest)} on the nearest fix within{" "}
-        {r.match.maxNearestMin} min), {n(r.zonedOnly)} in a gap given only its
-        zone, {n(r.unmatched)} left as they were; {n(r.ownPosition)} already placed by their own
-        file, {n(r.manualKept)} by hand and {n(r.inferredKept)} by a folder suggestion — kept.{" "}
+        placed by the track ({n(r.located.interpolated)} between two positions on the move,{" "}
+        {n(r.located.still)} between two at the same spot (within {r.match.maxStillKm} km,{" "}
+        {r.match.maxStillHours} h), {n(r.located.nearest)} on the nearest within{" "}
+        {r.match.maxNearestMin} min), {n(r.zonedOnly)} in a gap given only its zone,{" "}
+        {n(r.unmatched)} left as they were; {n(r.ownPosition)} already placed by their own file,{" "}
+        {n(r.manualKept)} by hand and {n(r.inferredKept)} by a folder suggestion — kept.{" "}
         <strong>{n(r.daysChanged)}</strong> frame(s) change capture day.
       </p>
       {r.unclassified > 0 && <RereadSpan report={r} />}

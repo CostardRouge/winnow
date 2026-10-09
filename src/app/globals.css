@@ -3987,6 +3987,122 @@ html[data-theme="dark"] .btn-primary:hover {
   .pl-stack {
     @apply flex flex-col gap-10;
   }
+
+  /* ---- A guided page of numbered steps (Dates & places) ----
+     One card per step, its number turning to a tick when the step is done, a
+     state word at the right; a step that holds files shows one SLOT per file
+     it expects, so "this import is two files" is a layout, not a sentence. */
+  .flow {
+    @apply flex flex-col gap-5 max-w-3xl;
+  }
+  .flow-intro {
+    @apply m-0;
+  }
+  .flow-step {
+    @apply flex flex-col gap-3 rounded-[var(--radius-lg)] border p-5;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .flow-step > p {
+    @apply m-0;
+  }
+  .flow-step-head {
+    @apply flex items-center gap-3;
+  }
+  .flow-step-head h2 {
+    @apply m-0 flex-1 min-w-0 text-xl font-normal;
+    font-family: var(--font-serif);
+  }
+  .flow-num {
+    @apply flex-none grid place-items-center w-7 h-7 rounded-full border text-sm;
+    font-family: var(--font-mono);
+    border-color: var(--color-border-strong);
+    color: var(--color-muted);
+  }
+  .flow-step[data-state="todo"] .flow-num,
+  .flow-step[data-state="running"] .flow-num {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
+  }
+  .flow-step[data-state="done"] .flow-num {
+    background: var(--color-pick);
+    border-color: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .flow-state {
+    @apply flex-none text-xs uppercase tracking-wider;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .flow-step[data-state="done"] .flow-state {
+    color: var(--color-pick);
+  }
+  .flow-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .flow-warn {
+    @apply m-0 rounded-[var(--radius)] px-3 py-2 text-sm;
+    background: var(--color-accent-wash);
+  }
+  .flow-run {
+    @apply flex flex-col gap-1.5;
+  }
+  .flow-progress {
+    @apply h-1.5 overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .flow-progress > span {
+    @apply block h-full rounded-full;
+    background: var(--color-accent);
+    transition: width 0.6s var(--ease-out);
+  }
+  .flow-progress > span[data-indeterminate] {
+    width: 30%;
+    animation: flow-sweep 1.4s var(--ease-out) infinite;
+  }
+  @keyframes flow-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flow-progress > span[data-indeterminate] {
+      animation: none;
+      width: 100%;
+      opacity: 0.4;
+    }
+  }
+  .flow-slots {
+    @apply grid gap-2;
+  }
+  .flow-slot {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-dashed px-3 py-2.5 cursor-pointer;
+    border-color: var(--color-border-strong);
+  }
+  .flow-slot:hover {
+    background: var(--color-surface-2);
+  }
+  .flow-slot:focus-within {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .flow-slot[data-filled] {
+    border-style: solid;
+    border-color: var(--color-border);
+  }
+  .flow-slot-label {
+    @apply flex flex-col w-28 flex-none font-medium;
+  }
+  .flow-slot-label .hint {
+    @apply text-xs font-normal;
+  }
+  .flow-slot-body {
+    @apply flex-1 min-w-[12rem];
+  }
   .pl-list {
     @apply grid gap-2;
   }
