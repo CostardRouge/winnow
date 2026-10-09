@@ -24,6 +24,7 @@ type TokenItem = {
   name: string;
   hint: string;
   role: TokenRole;
+  agent: boolean;
   effectiveRole: UserRole;
   owner: {
     id: number;
@@ -56,6 +57,24 @@ const ACCESS: PickerOption<TokenRole>[] = [
     key: "editor",
     label: "Read & write",
     hint: "Also rate, tag, trash, upload, import and export",
+  },
+];
+
+// Who holds it. An agent's token is capped exactly like an app's; the only
+// difference is that what it writes is stamped as an agent's (migration 0048),
+// so a pick Claude made can be told from one made by hand.
+type Holder = "app" | "agent";
+
+const HOLDERS: PickerOption<Holder>[] = [
+  {
+    key: "app",
+    label: "An app",
+    hint: "A client such as Atelier, acting as the account",
+  },
+  {
+    key: "agent",
+    label: "An agent",
+    hint: "An MCP client such as Claude — its ratings are marked as an agent’s",
   },
 ];
 
@@ -162,8 +181,8 @@ export default function TokensPanel() {
                     <td>
                       <div className="vol-path">{t.name}</div>
                       <div className="hint">
-                        as @{t.owner.username} · ends in{" "}
-                        <span className="token-hint">{t.hint}</span>
+                        {t.agent ? "agent " : ""}as @{t.owner.username} · ends
+                        in <span className="token-hint">{t.hint}</span>
                       </div>
                     </td>
                     <td data-th="Access">
@@ -274,6 +293,7 @@ function CreateTokenModal({
       ? defaultOwner
       : (accounts[0]?.id ?? null),
   );
+  const [holder, setHolder] = useState<Holder>("app");
   const [access, setAccess] = useState<TokenRole>("viewer");
   const [lifetime, setLifetime] = useState<Lifetime>("365");
   const [busy, setBusy] = useState(false);
@@ -302,6 +322,7 @@ function CreateTokenModal({
             userId: ownerId,
             name: name.trim(),
             role: access,
+            agent: holder === "agent",
             expiresInDays: lifetime === "never" ? null : Number(lifetime),
           }),
         },
@@ -356,6 +377,15 @@ function CreateTokenModal({
             </option>
           ))}
         </select>
+
+        <span className="modal-label">Used by</span>
+        <OptionPicker
+          options={HOLDERS}
+          value={holder}
+          onChange={setHolder}
+          ariaLabel="Used by"
+        />
+        <p className="hint">{HOLDERS.find((o) => o.key === holder)?.hint}</p>
 
         <span className="modal-label">Access</span>
         <OptionPicker
