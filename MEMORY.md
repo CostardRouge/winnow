@@ -113,6 +113,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 | `docs/memory/frontend.md` | `src/app/**`, pages, styling, the viewer/grid interactions, the PWA |
 | `docs/memory/auth.md` | login, invites, sessions, roles, `src/proxy.ts`, `src/lib/{auth,authz}.ts` |
 | `docs/memory/testing-and-ci.md` | deciding a change is done, `.github/workflows/`, adding tests |
+| `docs/memory/agent-commands.md` | `src/lib/commands/`, `src/scripts/mcp.ts`, anything that lets an agent or a script drive the library |
 
 Not a memory file, but read it before proposing work on the Calendar, the Map
 or a new way of reading the library at large:
