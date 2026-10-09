@@ -165,6 +165,47 @@ should say so in words.
   for Atelier. Any Atelier view that plots it unfiltered has the bug #289
   fixed here; to check on Atelier's side.
 
+### G. Found after the first deploy: the map's "missing" media were elsewhere
+
+The maintainer redeployed #289 and still could not find his media. Two causes
+were found, and neither was the map.
+
+**G0 — The #289 image was never built. Fixed by a re-run.** The Docker build
+failed in 25 s: Docker Hub answered `429 Too Many Requests` for the base image
+`node:24-slim`, because GitHub runners share their IPs and anonymous pulls are
+rate-limited. No image was published, so the redeploy pulled the old one again.
+**Open:** pull the base image from a mirror that is not rate-limited (for
+example `mirror.gcr.io/library/node:24-slim`), or log the build in to Docker
+Hub. The second option needs a secret, so it is the maintainer's call.
+
+**G1 — Every manual pin West or South was written into its original mirrored.
+Fixed** (`41bcec2` stops it; the repair is on Settings › Pipeline › Dates &
+places, step 3).
+- `writeGps` passed unsigned values. exiftool-vendored derives the hemisphere
+  from the sign, so every such pin went into the file as N/E.
+- The next re-index read the file back into the database, since the file
+  wins.
+- Measured on the instance: about **2 300** media of Australian folders at
+  33° N (in China, Japan and the Pacific), including Bremer Bay, Esperance,
+  Streaky Bay (1 732) and Mount Archer. Saint-Quay-Portrieux sat in
+  Seine-et-Marne.
+- Clips were spared, because `GPSCoordinates` is one signed string.
+
+The repair (`lib/mirrorRepair.ts`) judges each placed group against the
+cameras' own fixes from the same days:
+- It uses the median distance, so one stray fix cannot decide.
+- It applies a ratio rule. A longitude flip near Greenwich is only 415 km,
+  while a latitude flip in Australia is 7 000 km.
+- It corrects each row's own coordinate.
+- It nulls the place names, recomputes the local day and re-geocodes.
+- It queues a signed rewrite for every manual photo whose file holds the
+  mirror.
+- A group the evidence cannot settle is listed and left as it is.
+
+Tests: `exifWrite.test.ts` covers all four hemispheres; the three non-NE cases
+fail on the old code. `mirrorRepair.test.ts` has 5 cases. On 400 synthetic
+groups each spanning six years, the preview takes 2.4 s.
+
 ## 2. What to keep from this
 
 - A cap on a view that claims "everything" has to be expressed in a unit the
@@ -176,3 +217,6 @@ should say so in words.
 - Every paged list keys its answers on the list they were asked for.
 - A position write updates everything derived from the position in the same
   statement, or marks it stale.
+- A write into a file is verified by reading the file back, never by trusting
+  a library's argument names.
+- "I can't see it" is first checked against what is actually deployed.
