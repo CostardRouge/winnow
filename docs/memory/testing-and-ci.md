@@ -22,11 +22,11 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 
 ## The CI environment is a deliberate mirror of production (2026-08-20)
 
-**Decision**: Node 22 in CI matches the `node:22-slim` runtime image; the Postgres service is pgvector-on-16 to match both the compose image major and the extension the CLIP migration needs.
+**Decision**: Node 24 in CI matches the `node:24-slim` runtime image (both moved from 22 on 2026-10-09; `engines` keeps the floor at 22, and `@types/node` is `^24` to match); the Postgres service is pgvector-on-16 to match both the compose image major and the extension the CLIP migration needs.
 
 **Why**: CI is meant to validate what ships. Drifting the Node major or the Postgres major would make a green build meaningless for the box it deploys to.
 
-**How to apply**: if you bump one, bump the others in the same commit — `Dockerfile` (`node:22-slim`, `postgresql-client-16`), the compose `postgres` image, and both CI jobs. See `docs/memory/deployment.md` for why the Postgres client major must track the server major.
+**How to apply**: if you bump one, bump the others in the same commit — `Dockerfile` (`node:24-slim`, `postgresql-client-16`), the compose `postgres` image, and both CI jobs. See `docs/memory/deployment.md` for why the Postgres client major must track the server major.
 
 ## Measuring without the Optiplex, and a file search skips (2026-10-02)
 

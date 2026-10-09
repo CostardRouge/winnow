@@ -13,8 +13,8 @@ project's [MIT License](LICENSE).
 ## Getting set up
 
 Winnow is a [Next.js](https://nextjs.org) (App Router) + TypeScript app backed by
-**Postgres** and a **Redis/BullMQ** queue. You need Node 22 (matches CI and the
-runtime image) plus a reachable Postgres and Redis.
+**Postgres** and a **Redis/BullMQ** queue. You need Node 24 (matches CI and the
+runtime image; 22 is the floor and still works) plus a reachable Postgres and Redis.
 
 The quickest path is the fully-local Docker stack — it brings up Postgres, Redis
 and the workers and hot-reloads your source edits:

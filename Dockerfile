@@ -2,7 +2,7 @@
 # The worker runs the TypeScript via tsx (runtime dependency), the app serves the
 # Next build. We stay as root: named volumes and NAS mounts (NFS/SMB, with their
 # own uid mapping) are thus writable without friction.
-FROM node:22-slim
+FROM node:24-slim
 
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
@@ -56,7 +56,7 @@ ENV NODE_ENV=production \
     MALLOC_ARENA_MAX=2
 EXPOSE 3000
 
-# Liveness probe (native Node 22 fetch, no external binary required).
+# Liveness probe (native Node fetch, no external binary required).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
