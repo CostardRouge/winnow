@@ -84,6 +84,9 @@ How it works:
   element not being able to send a header. Shown once, stored as a SHA-256,
   revocable one by one; disabling the account kills its tokens, a password
   change does not. `GET /api/capabilities` (`auth.token`) states the contract.
+  A token may be minted **for an agent** (*Used by › An agent*): same caps,
+  and every rating it writes is stamped `ratings.rated_via = 'agent'` — see
+  [Driving Winnow from Claude](#driving-winnow-from-claude-mcp).
 
 The network posture is unchanged: **Traefik** + **Cloudflare Tunnel** expose
 the app behind a domain; do not publish ports `3000`/`5432`/`6379` directly on
@@ -283,6 +286,53 @@ offending variable — instead of silently degrading in production.
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
 front-end grid infinite-scroll-loads the thumbnails as they come.
+
+### Driving Winnow from Claude (MCP)
+
+Claude Code — or any MCP client — can read the library, look at the pictures
+and cull, through `src/scripts/mcp.ts`. It is a **client of this API**, run on
+the agent's machine from a checkout: every command is an ordinary request with
+an app token, so the token's ceiling, the role policy, the feature flags and
+the routes' validation apply exactly as for Atelier or a browser. It adds no
+endpoint to the instance.
+
+1. **Mint a token for the agent** — Users › App tokens › *New token*, *Used
+   by: An agent*. *Read only* lets it browse and look; *Read & write* also lets
+   it cull. Its ratings are marked as an agent's (`rated_via = 'agent'`, `by:
+   agent` in its listings), so a pick it made can be told from yours.
+2. **Register the server with Claude Code**, from a checkout with
+   `npm install` done (the modal prints this line with the token filled in):
+
+   ```bash
+   claude mcp add winnow --scope user \
+     -e WINNOW_HOST=https://winnow.steeve.website -e WINNOW_TOKEN=wnw_… \
+     -- ~/winnow/node_modules/.bin/tsx ~/winnow/src/scripts/mcp.ts
+   ```
+
+   `--scope user` keeps the token in your own Claude Code settings
+   (`~/.claude.json`), never in a project's committed `.mcp.json`.
+   `WINNOW_HOST` must be `https://` (plain http only to localhost). Run the
+   script with `tsx` directly: `npm run` would print its banner on stdout,
+   which is the protocol channel.
+
+The server offers three tools — the same three Atelier's does:
+`winnow_status` (who it acts as, its role, whether it may write),
+`winnow_commands` (every command with its JSON Schema and, when it cannot run,
+why) and `winnow_run` (`{ command, params }`). Commands today:
+
+| Command | What it does (route behind it) |
+|---|---|
+| `app.status` | Account, role (capped), `via`, whether writes are allowed, whether the Timeline is on |
+| `library.days` `{ from, to, kind? }` | Capture days with counts and a cover, ≤ 366 days a call (`/api/assets/calendar`) |
+| `library.chapters` `{ from?, to?, mode? }` | The Timeline's chapters — only while that section is on (`/api/assets/timeline`) |
+| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, fold?, order?, limit?, cursor? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
+| `assets.get` `{ id }` | The full row (`/api/assets/:id`) |
+| `assets.look` `{ id, detail? }` | The thumbnail (~400 px) or, with `detail`, the 2048 px proxy, as an image the agent sees (`/thumb`, `/proxy`) |
+| `cull.set` `{ id, verdict?, star?, color? }` | Verdict, stars, colour label — the grid's own write, pair companion included (`PATCH /api/assets/:id/rating`) |
+
+Parameters are checked before anything is sent: an out-of-range value or a
+misspelt key is refused with the field named, never clamped or ignored.
+Trash, tags, geotag and export are deliberately not commands yet.
 
 ### Culling shortcuts (viewer)
 

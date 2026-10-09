@@ -102,7 +102,7 @@ export default function TokensPanel() {
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<TokenItem | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [minted, setMinted] = useState<{ name: string; secret: string } | null>(
+  const [minted, setMinted] = useState<Minted | null>(
     null,
   );
 
@@ -285,7 +285,7 @@ function CreateTokenModal({
   accounts: Account[];
   defaultOwner: number | null;
   onClose: () => void;
-  onCreated: (m: { name: string; secret: string }) => Promise<void>;
+  onCreated: (m: Minted) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [ownerId, setOwnerId] = useState<number | null>(
@@ -327,7 +327,7 @@ function CreateTokenModal({
           }),
         },
       );
-      await onCreated({ name: r.token.name, secret: r.secret });
+      await onCreated({ name: r.token.name, secret: r.secret, agent: holder === "agent" });
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -345,8 +345,8 @@ function CreateTokenModal({
       >
         <h2 className="modal-title">New app token</h2>
         <p className="hint">
-          For an app that cannot use this browser’s sign-in. It acts as the
-          account you pick, within the access you give it.
+          For an app that cannot use this browser’s sign-in, or an agent. It
+          acts as the account you pick, within the access you give it.
         </p>
 
         <label className="modal-label" htmlFor="tk-name">
@@ -427,13 +427,22 @@ function CreateTokenModal({
   );
 }
 
+type Minted = { name: string; secret: string; agent: boolean };
+
+// The line that registers the MCP server (src/scripts/mcp.ts) with Claude
+// Code, user scope so it is not committed with a project's .mcp.json. The
+// server is a client of this API run from a checkout, hence the path.
+function claudeMcpAdd(origin: string, secret: string): string {
+  return `claude mcp add winnow --scope user -e WINNOW_HOST=${origin} -e WINNOW_TOKEN=${secret} -- ~/winnow/node_modules/.bin/tsx ~/winnow/src/scripts/mcp.ts`;
+}
+
 // The ONE time the clear token is visible. The instance address rides along
 // because the app's connect screen asks for both.
 function SecretModal({
   minted,
   onClose,
 }: {
-  minted: { name: string; secret: string };
+  minted: Minted;
   onClose: () => void;
 }) {
   const backdrop = useOverlayDismiss<HTMLDivElement>(onClose);
@@ -449,13 +458,29 @@ function SecretModal({
       >
         <h2 className="modal-title">{minted.name}</h2>
         <p className="hint">
-          Paste it into the app’s token field now: it is shown only once, and
-          Winnow keeps no copy it could show you again. Lost it? Revoke it and
-          create another.
+          {minted.agent
+            ? "Give it to the agent now"
+            : "Paste it into the app’s token field now"}
+          : it is shown only once, and Winnow keeps no copy it could show you
+          again. Lost it? Revoke it and create another.
         </p>
 
         <CopyRow label="Token" value={minted.secret} />
         <CopyRow label="Winnow address" value={origin} />
+        {minted.agent && (
+          <>
+            <CopyRow
+              label="Claude Code"
+              value={claudeMcpAdd(origin, minted.secret)}
+            />
+            <p className="hint">
+              Run it where your Winnow checkout is (after{" "}
+              <code>npm install</code>), with <code>~/winnow</code> replaced by
+              its path. The token is then kept in your Claude Code settings on
+              that machine — README › “Driving Winnow from Claude”.
+            </p>
+          </>
+        )}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-primary" onClick={onClose}>
