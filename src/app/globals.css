@@ -5390,9 +5390,33 @@ html[data-theme="dark"] .btn-primary:hover {
   .picker-side .modal-label:first-child {
     @apply mt-0;
   }
+  /* With the host's `aside` (the recap's record + media list) the picker is a
+     three-region grid: under 1024 px the aside runs full width below the map
+     and its fields; from 1024 px (the wide recap, below) the map spans both
+     rows of the left column and the aside fills what the fields leave of the
+     right one. */
+  .picker-split.has-aside {
+    grid-template-areas: "map side" "aside aside";
+  }
+  .picker-split.has-aside > .picker-map {
+    grid-area: map;
+  }
+  .picker-split.has-aside > .picker-side {
+    grid-area: side;
+  }
+  .picker-aside {
+    grid-area: aside;
+    @apply min-w-0;
+  }
+  .picker-aside > .recap-record:first-child {
+    @apply mt-0;
+  }
   @media (max-width: 640px) {
     .picker-split {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .picker-split.has-aside {
+      grid-template-areas: "map" "side" "aside";
     }
     .picker-split .picker-map {
       min-height: 200px;
@@ -5400,6 +5424,71 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   /* ---- Before/after recap ------------------------------------------------ */
+  /* The recap is a column — title, a body that scrolls, the actions — so Apply
+     is on screen at every height: the shared .modal scrolls as one block,
+     which put the buttons under the fold as soon as the map came in. The
+     padding moves to the three parts so the body's scrollbar runs to the
+     dialog's edge. */
+  .recap-modal {
+    @apply flex flex-col overflow-hidden p-0;
+  }
+  .recap-modal > .modal-title {
+    @apply shrink-0 px-5 pt-5;
+  }
+  .recap-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-5;
+    overscroll-behavior: contain;
+  }
+  .recap-foot {
+    @apply mt-3 shrink-0 border-t px-5 pb-4;
+    border-color: var(--color-border);
+  }
+  .recap-foot .modal-actions {
+    @apply mt-3 flex-wrap items-center;
+  }
+  .recap-foot-note {
+    @apply mr-auto;
+  }
+  /* A phone puts the note on its own line, so the two buttons stay a pair. */
+  @media (max-width: 640px) {
+    .recap-foot-note {
+      flex-basis: 100%;
+    }
+  }
+  /* With the map, a wide screen gets a wide sheet: the map takes the left
+     half at the dialog's full height, the fields and the record sit at the
+     top of the right half, and the media list takes the height left there
+     and scrolls in place. Nothing scrolls the dialog itself — the bigger map
+     costs the buttons nothing. */
+  @media (min-width: 1024px) {
+    .recap-modal.has-map {
+      max-width: 1200px;
+      height: calc(100dvh - 2rem);
+      max-height: 900px;
+    }
+    .recap-modal.has-map .recap-body {
+      @apply flex flex-col overflow-hidden;
+    }
+    .recap-modal.has-map .picker-split.has-aside {
+      @apply min-h-0 flex-1;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "map side" "map aside";
+      align-items: stretch;
+    }
+    .recap-modal.has-map .picker-aside {
+      @apply flex min-h-0 flex-col overflow-y-auto;
+    }
+    .recap-modal.has-map .picker-aside > * {
+      @apply shrink-0;
+    }
+    .recap-modal.has-map .recap-table-wrap {
+      @apply max-h-none shrink;
+      flex: 1 1 auto;
+      min-height: 9rem;
+    }
+  }
+
   /* What is about to be recorded, in three short lines rather than one
      paragraph: the place, what kind of record it will be (and therefore
      whether the originals are touched), and — for a suggestion — where it
@@ -5496,6 +5585,9 @@ html[data-theme="dark"] .btn-primary:hover {
   .recap-toolbar .hint {
     @apply ml-auto;
   }
+  .recap-fold {
+    @apply mt-2;
+  }
   .recap-table-wrap {
     @apply mt-2 max-h-[45vh] overflow-y-auto rounded-[var(--radius)] border;
     border-color: var(--color-border);
@@ -5528,19 +5620,66 @@ html[data-theme="dark"] .btn-primary:hover {
   .recap-table input[type="checkbox"] {
     accent-color: var(--color-accent);
   }
+  /* The thumbnail at the file's own ratio — the derivative is fit "inside",
+     so a fixed height and an auto width ARE the ratio. The cell carries the
+     width: the global img { max-width: 100% } resolved against an auto table
+     cell let the column collapse, and the old object-cover cropped what was
+     left of a 36 px square into a sliver. A panorama caps at 72 px wide and is
+     letterboxed rather than cropped. */
+  .recap-table td.recap-thumb-cell {
+    width: calc(72px + 1.25rem);
+  }
+  .recap-thumb-btn {
+    @apply block cursor-zoom-in rounded-[calc(var(--radius)-4px)] border-0 bg-transparent p-0;
+    line-height: 0;
+  }
+  .recap-thumb-btn:hover .recap-thumb,
+  .recap-thumb-btn:focus-visible .recap-thumb {
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+  .recap-thumb-btn:focus-visible {
+    outline: none;
+  }
   .recap-thumb {
-    @apply block h-9 w-9 rounded-[calc(var(--radius)-4px)] object-cover;
+    @apply block rounded-[calc(var(--radius)-4px)] object-contain;
+    height: 44px;
+    width: auto;
+    min-width: 24px;
+    max-width: 72px;
     background: var(--color-surface-2);
+  }
+  /* The row's checkbox, carried into the viewer stacked over the recap. */
+  .recap-viewer-check {
+    @apply inline-flex cursor-pointer items-center gap-2;
+  }
+  .recap-viewer-box {
+    @apply inline-flex h-4 w-4 items-center justify-center rounded-[4px] border text-[11px] font-bold leading-none;
+    border-color: currentColor;
+  }
+  .recap-viewer-check[aria-pressed="true"] .recap-viewer-box {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-fg);
   }
   .recap-name {
     @apply max-w-[10rem] truncate;
     font-family: var(--font-mono);
     font-size: 0.8rem;
   }
-  .recap-before,
-  .recap-after {
+  /* Before over after, one column: the target is the same on every ticked
+     row, so it is the second line rather than a column of its own. */
+  .recap-pos {
     font-variant-numeric: tabular-nums;
+  }
+  .recap-nowrap,
+  .recap-pos .recap-after {
     white-space: nowrap;
+  }
+  .recap-pos > span {
+    @apply block;
+  }
+  .recap-pos .recap-after {
+    @apply text-[12px];
   }
   .recap-none {
     color: var(--color-muted);

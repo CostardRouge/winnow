@@ -5,6 +5,9 @@ import dynamic from "next/dynamic";
 import { geotagAssets, type GeotagSource } from "@/lib/assetActions";
 import type { PickedLocation } from "@/app/LocationPicker";
 import { useOverlayDismiss } from "@/app/useOverlayDismiss";
+import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
+import { fetchJson } from "@/lib/fetchJson";
+import type { AssetGridRow } from "@/lib/types";
 
 // Step 2 of the manual geotag flow: the per-media before/after recap. On a bulk
 // apply this is the safety net against silently clobbering coordinates a camera
@@ -43,6 +46,21 @@ import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 //     per-media table folds away, and without these rows a 1 732-media write
 //     read as one number with no folder in it — the maintainer could not tell
 //     that 1 360 of those media lived in a folder he had not opened (§9.8).
+//
+// Its shape, for every host: a column of title, a body that scrolls, and the
+// actions pinned under it — Apply is never below the fold, however long the
+// folder list or the warning. With the map, a wide screen gets a 1200 px sheet
+// whose left half is the map at full height and whose right half holds the
+// fields, the record and the media list; the list takes the height left and
+// scrolls in place, so a bigger map costs the buttons nothing. A thumbnail
+// opens the shared MediaViewer STACKED over the dialog (it portals to <body>),
+// on the listed rows, with the row's checkbox in its bar: closing it — Escape
+// included, which this dialog ignores while the viewer is up — lands back on
+// the recap as it was, ticks and scroll intact. The recap's rows carry ten
+// columns, so each media OPENED in the viewer fetches its full row
+// (GET /api/assets/:id, the grid projection) for the info panel — one request
+// per media looked at, never one per media listed; the panel shows the light
+// row until it lands.
 
 // Leaflet touches `window` on import, and this dialog is imported statically
 // by its hosts: the map control has to come in client-side only.
@@ -111,12 +129,13 @@ const FULL_LIST_MAX = 200;
 const fmtCoord = (gps: { lat: number; lon: number }) =>
   `${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
 
-// "Paris, France · 48.85341, 2.34880" when the place is resolved, bare
-// coordinates otherwise.
-function before(a: GeotagRecapAsset): string | null {
+// "Paris, France" + "48.85341, 2.34880" when the place is resolved, bare
+// coordinates otherwise — two parts so a narrow column breaks between them
+// rather than through the coordinate.
+function before(a: GeotagRecapAsset): { place: string; coord: string } | null {
   if (!a.gps) return null;
   const place = [a.place_city, a.place_country].filter(Boolean).join(", ");
-  return place ? `${place} · ${fmtCoord(a.gps)}` : fmtCoord(a.gps);
+  return { place, coord: fmtCoord(a.gps) };
 }
 
 export default function GeotagRecapModal({
@@ -193,6 +212,14 @@ export default function GeotagRecapModal({
   }, [assets]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The listed row open in the viewer stacked over this dialog, if any.
+  const [viewing, setViewing] = useState<number | null>(null);
+  // Full rows fetched for the media opened in the viewer, by id, and the ids
+  // already asked for (so stepping back and forth asks once).
+  const [details, setDetails] = useState<Map<number, AssetGridRow>>(
+    () => new Map(),
+  );
+  const asked = useRef(new Set<number>());
 
   // Same guard as the picker: only a press that started on the backdrop
   // dismisses, so a drag released outside the dialog does not lose the recap.
@@ -240,14 +267,17 @@ export default function GeotagRecapModal({
   };
 
   // Close on Escape (unless a request is in flight). The picker swallows the
-  // key itself while its suggestion list is open.
+  // key itself while its suggestion list is open. While the viewer is stacked
+  // on top, Escape is ITS key: both listen on window, and this handler still
+  // sees `viewing` set in the event that closes the viewer, so one press
+  // closes one layer.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
+      if (e.key === "Escape" && !busy && viewing == null) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
+  }, [busy, onClose, viewing]);
 
   async function submit() {
     if (!target) return;
@@ -320,149 +350,149 @@ export default function GeotagRecapModal({
     </div>
   );
 
-  return (
-    <div className="modal-overlay" role="presentation" {...backdrop}>
-      <div
-        className="modal modal-wide"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm geotag"
-      >
-        <h2 className="modal-title">
-          {target ? "Confirm the new position" : "Pick the position"}
-        </h2>
+  // Everything under the position: the folders, the overwrite warning and the
+  // per-media table. Beside the map's fields on a wide screen, under them
+  // otherwise — the picker's grid decides (see LocationPicker's `aside`).
+  const recap = (
+    <>
+      {record}
 
-        {onTargetChange && (
-          <LocationPicker
-            layout="split"
-            value={target}
-            onChange={onTargetChange}
-            inputId="recap-place"
-          />
-        )}
-        {record}
-
-        {folderRows && (
-          <div className="recap-folders" role="group" aria-label="Folders">
-            <p className="recap-folders-head">
-              {folderRows.length} folders — the card&rsquo;s own, and the ones
-              shot within a couple of hours of it. Tick the ones this position
-              is for.
-            </p>
-            {folderRows.map((f) => {
-              const e = byFolder.get(f.id);
-              const holes = e?.holes.length ?? 0;
-              const files = e?.all.length ?? 0;
-              const writing = e ? e.all.filter((x) => checked.has(x)).length : 0;
-              const st = folderState(f.id);
-              return (
-                <label
-                  key={f.id}
-                  className={`recap-folder${st === "off" ? " is-off" : ""}`}
-                >
-                  <TriCheck
-                    state={st}
-                    onChange={() => toggleFolder(f.id)}
-                    disabled={busy || files === 0}
-                    label={`Place ${f.name}`}
-                  />
-                  <span className="recap-folder-text">
-                    <span className="recap-folder-name" title={f.name}>
-                      {f.name}
-                    </span>
-                    {/* The marker leads the detail line rather than trailing
-                        the name: a long folder path truncates, and it would
-                        take "this card" with it. */}
-                    <span className="recap-folder-detail">
-                      {f.primary ? `This card · ${f.detail}` : f.detail}
-                    </span>
-                  </span>
-                  <span className="recap-folder-count">
-                    <strong>{writing.toLocaleString("en-GB")}</strong> to write
-                    <span className="hint">
-                      {" "}
-                      of {files.toLocaleString("en-GB")} ·{" "}
-                      {holes.toLocaleString("en-GB")} unplaced
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-
-        {withGps.length > 0 && (
-          <p className="modal-warn">
-            {withGps.length} media already carry a position. They are unchecked
-            by default — tick a row to overwrite it.
+      {folderRows && (
+        <div className="recap-folders" role="group" aria-label="Folders">
+          <p className="recap-folders-head">
+            {folderRows.length} folders — the card&rsquo;s own, and the ones
+            shot within a couple of hours of it. Tick the ones this position is
+            for.
           </p>
-        )}
-
-        <div className="recap-toolbar">
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => setAll(assets.map((a) => a.id), true)}
-          >
-            Check all
-          </button>
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => setAll(assets.map((a) => a.id), false)}
-          >
-            Uncheck all
-          </button>
-          <span className="hint">
-            {count}/{assets.length} to write
-          </span>
+          {folderRows.map((f) => {
+            const e = byFolder.get(f.id);
+            const holes = e?.holes.length ?? 0;
+            const files = e?.all.length ?? 0;
+            const writing = e ? e.all.filter((x) => checked.has(x)).length : 0;
+            const st = folderState(f.id);
+            return (
+              <label
+                key={f.id}
+                className={`recap-folder${st === "off" ? " is-off" : ""}`}
+              >
+                <TriCheck
+                  state={st}
+                  onChange={() => toggleFolder(f.id)}
+                  disabled={busy || files === 0}
+                  label={`Place ${f.name}`}
+                />
+                <span className="recap-folder-text">
+                  <span className="recap-folder-name" title={f.name}>
+                    {f.name}
+                  </span>
+                  {/* The marker leads the detail line rather than trailing
+                      the name: a long folder path truncates, and it would
+                      take "this card" with it. */}
+                  <span className="recap-folder-detail">
+                    {f.primary ? `This card · ${f.detail}` : f.detail}
+                  </span>
+                </span>
+                <span className="recap-folder-count">
+                  <strong>{writing.toLocaleString("en-GB")}</strong> to write
+                  <span className="hint">
+                    {" "}
+                    of {files.toLocaleString("en-GB")} ·{" "}
+                    {holes.toLocaleString("en-GB")} unplaced
+                  </span>
+                </span>
+              </label>
+            );
+          })}
         </div>
+      )}
 
-        {folded && (
-          <p className="hint" style={{ marginTop: 8 }}>
-            {withoutGps.length} media have no position yet and are not listed
-            one by one — {foldedChecked} of them{" "}
-            {foldedChecked === withoutGps.length ? "(all) " : ""}
-            will be written.
-            {withGps.length > 0
-              ? " The rows below are the ones that already carry a position."
-              : ""}
-          </p>
-        )}
+      {withGps.length > 0 && (
+        <p className="modal-warn">
+          {withGps.length} media already carry a position. They are unchecked
+          by default — tick a row to overwrite it.
+        </p>
+      )}
 
-        {listed.length > 0 && (
-          <div className="recap-table-wrap">
-            <table className="recap-table">
-              <thead>
-                <tr>
-                  <th aria-label="Apply" />
-                  <th aria-label="Preview" />
-                  <th>Media</th>
-                  <th>Before</th>
-                  <th>After</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listed.map((a) => {
-                  const cur = before(a);
-                  const on = checked.has(a.id);
-                  return (
-                    <tr
-                      key={a.id}
-                      className={on ? undefined : "is-skipped"}
-                      onClick={() => !busy && toggle(a.id)}
-                    >
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          disabled={busy}
-                          onChange={() => toggle(a.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Geotag ${a.filename}`}
-                        />
-                      </td>
-                      <td>
+      <div className="recap-toolbar">
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => setAll(assets.map((a) => a.id), true)}
+        >
+          Check all
+        </button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => setAll(assets.map((a) => a.id), false)}
+        >
+          Uncheck all
+        </button>
+        <span className="hint">
+          {count}/{assets.length} to write
+        </span>
+      </div>
+
+      {folded && (
+        <p className="hint recap-fold">
+          {withoutGps.length} media have no position yet and are not listed one
+          by one — {foldedChecked} of them{" "}
+          {foldedChecked === withoutGps.length ? "(all) " : ""}
+          will be written.
+          {withGps.length > 0
+            ? " The rows below are the ones that already carry a position."
+            : ""}
+        </p>
+      )}
+
+      {listed.length > 0 && (
+        <div className="recap-table-wrap">
+          <table className="recap-table">
+            <thead>
+              <tr>
+                <th aria-label="Apply" />
+                <th aria-label="Preview" />
+                <th>Media</th>
+                {/* Before and after share a column: every ticked row would
+                    print the same target under a separate "After", and the
+                    width it took is what the thumbnail needs beside the map. */}
+                <th>Position</th>
+              </tr>
+            </thead>
+            <tbody>
+              {listed.map((a, i) => {
+                const cur = before(a);
+                const on = checked.has(a.id);
+                return (
+                  <tr
+                    key={a.id}
+                    className={on ? undefined : "is-skipped"}
+                    onClick={() => !busy && toggle(a.id)}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        disabled={busy}
+                        onChange={() => toggle(a.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Geotag ${a.filename}`}
+                      />
+                    </td>
+                    <td className="recap-thumb-cell">
+                      {/* The thumbnail at the file's own ratio (the derivative
+                          is fit "inside"), and a way to look at it properly:
+                          the row toggles, the picture opens the viewer. */}
+                      <button
+                        type="button"
+                        className="recap-thumb-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewing(i);
+                        }}
+                        aria-label={`View ${a.filename}`}
+                        title="View"
+                      >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           className="recap-thumb"
@@ -470,48 +500,144 @@ export default function GeotagRecapModal({
                           alt=""
                           loading="lazy"
                         />
-                      </td>
-                      <td className="recap-name" title={a.filename}>
-                        {a.filename}
-                      </td>
-                      <td className={cur ? "recap-before" : "recap-none"}>
-                        {cur ?? "— none —"}
-                        {cur && a.gps_source && (
-                          <span className="hint"> ({a.gps_source})</span>
-                        )}
-                      </td>
-                      <td className="recap-after">
-                        {on && target ? fmtCoord(target) : "unchanged"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </button>
+                    </td>
+                    <td className="recap-name" title={a.filename}>
+                      {a.filename}
+                    </td>
+                    <td className="recap-pos">
+                      {cur ? (
+                        <span className="recap-before">
+                          {cur.place && `${cur.place} · `}
+                          <span className="recap-nowrap">
+                            {cur.coord}
+                            {a.gps_source && (
+                              <span className="hint"> ({a.gps_source})</span>
+                            )}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="recap-none">— none —</span>
+                      )}
+                      <span className="recap-after">
+                        {on && target ? `→ ${fmtCoord(target)}` : "unchanged"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+
+  const viewed = viewing != null ? listed[viewing] : undefined;
+  const viewedId = viewed?.id;
+  useEffect(() => {
+    if (viewedId == null || asked.current.has(viewedId)) return;
+    asked.current.add(viewedId);
+    fetchJson<{ asset: AssetGridRow }>(`/api/assets/${viewedId}`)
+      .then(({ asset }) =>
+        setDetails((prev) => new Map(prev).set(viewedId, asset)),
+      )
+      // The light row stays on screen; a later open may try again.
+      .catch(() => asked.current.delete(viewedId));
+  }, [viewedId]);
+  // What the viewer shows: each listed row, replaced by its full row once
+  // fetched. Same ids, same order, so the index stays the table's.
+  const viewerItems = useMemo<ViewerItem[]>(
+    () =>
+      listed.map((a) => {
+        const d = details.get(a.id);
+        return d ? { ...a, ...d } : a;
+      }),
+    [listed, details],
+  );
+
+  return (
+    <>
+      <div className="modal-overlay" role="presentation" {...backdrop}>
+        <div
+          className={`modal modal-wide recap-modal${onTargetChange ? " has-map" : ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm geotag"
+        >
+          <h2 className="modal-title">
+            {target ? "Confirm the new position" : "Pick the position"}
+          </h2>
+
+          <div className="recap-body">
+            {onTargetChange ? (
+              <LocationPicker
+                layout="split"
+                value={target}
+                onChange={onTargetChange}
+                inputId="recap-place"
+                aside={recap}
+              />
+            ) : (
+              recap
+            )}
           </div>
-        )}
 
-        {skippedExisting > 0 && (
-          <p className="hint" style={{ marginTop: 8 }}>
-            {skippedExisting} media keep their current position.
-          </p>
-        )}
-        {error && <p className="modal-warn">{error}</p>}
-
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={submit}
-            disabled={busy || count === 0 || !target}
-            title={target ? undefined : "Choose a position on the map first"}
-          >
-            {busy ? "Applying…" : `Apply to ${count} media`}
-          </button>
+          <div className="recap-foot">
+            {error && <p className="modal-warn">{error}</p>}
+            <div className="modal-actions">
+              {skippedExisting > 0 && (
+                <span className="hint recap-foot-note">
+                  {skippedExisting} media keep their current position.
+                </span>
+              )}
+              <button className="btn" onClick={onClose} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={submit}
+                disabled={busy || count === 0 || !target}
+                title={target ? undefined : "Choose a position on the map first"}
+              >
+                {busy ? "Applying…" : `Apply to ${count} media`}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* A sibling of the overlay, not a child: the viewer portals to <body>,
+          but React still bubbles its events up the component tree, and the
+          dialog's backdrop and row handlers have no business seeing them. */}
+      {viewed && viewing != null && (
+        <MediaViewer
+          items={viewerItems}
+          index={viewing}
+          onIndexChange={setViewing}
+          onClose={() => setViewing(null)}
+          renderActions={(a) => {
+            // A pressed button rather than a checkbox: the viewer leaves the
+            // keyboard alone while an <input> has focus, so a ticked checkbox
+            // would swallow the next Escape and arrow keys.
+            const on = checked.has(a.id);
+            return (
+              <button
+                type="button"
+                className="btn recap-viewer-check"
+                aria-pressed={on}
+                disabled={busy}
+                onClick={() => toggle(a.id)}
+              >
+                <span className="recap-viewer-box" aria-hidden="true">
+                  {on ? "✓" : ""}
+                </span>
+                Write this position
+              </button>
+            );
+          }}
+        />
+      )}
+    </>
   );
 }
