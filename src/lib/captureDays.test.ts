@@ -160,6 +160,21 @@ test("a preview reports the repair and writes nothing", { skip: skipWithoutDb },
   assert.equal(cls2!.s, "file");
 });
 
+test("a 'file' whose time is not its mtime goes back to the re-read; a true one stays", { skip: skipWithoutDb }, async () => {
+  // What the first, -fast2 re-read left on every camera clip: 'file' over a
+  // time the indexer had read from the file.
+  const clip = await seed({ at: "2025-07-07T21:30:18Z", source: "file", mtime: "2026-03-04T19:16:16Z" });
+  const copy = await seed({ at: "2026-03-04T19:16:16Z", source: "file", mtime: "2026-03-04T19:16:16Z" });
+  const before = await day(clip);
+  const r = await cd.runCaptureDayBackfill({ apply: true });
+  assert.ok(r.relabelled >= 1);
+  const src = async (id: number) =>
+    (await db.one<{ s: string | null }>("SELECT captured_at_source AS s FROM assets WHERE id = $1", [id]))!.s;
+  assert.equal(await src(clip), null);
+  assert.equal(await src(copy), "file");
+  assert.deepEqual(await day(clip), before); // no day moves
+});
+
 test("the re-read classifies only the frames of its window, from the file's own tags", { skip: skipWithoutDb }, async () => {
   const { default: sharp } = await import("sharp");
   const { exiftool } = await import("exiftool-vendored");

@@ -269,6 +269,12 @@ function ReportView({ report }: { report: CaptureBackfillReport }) {
           </>
         )}
       </p>
+      {report.relabelled > 0 && (
+        <p>
+          {n(report.relabelled)} clip(s) an earlier re-read had marked as having no date were
+          handed back to the re-read — their time and day are unchanged.
+        </p>
+      )}
       {report.reread && (
         <p>
           {n(report.reread_files)} file(s) re-read, {n(report.reread_failed)} unreadable,{" "}

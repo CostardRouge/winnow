@@ -15,14 +15,13 @@
 // guess — only the offset beside it — so clearing capture_offset_min restores
 // the pre-0046 day exactly.
 import type pg from "pg";
-import { exiftool, type Tags } from "exiftool-vendored";
 import { pool } from "./db";
 import {
   decideOwnZone,
   type CapturedAtSource,
   type OffsetSource,
 } from "./captureZone";
-import { readCaptureTime } from "./extract";
+import { readCaptureTimeFromFile } from "./extract";
 
 type Exec = Pick<pg.Pool, "query"> | Pick<pg.PoolClient, "query">;
 
@@ -309,6 +308,8 @@ export type CaptureBackfillReport = {
   after: CaptureDayStats;
   /** Rows classified from what the database already knew. */
   classifiedFromDb: number;
+  /** 'file' rows whose time is not their mtime, handed back to the re-read. */
+  relabelled: number;
   /** Files whose date tags were re-read, and those that could not be. */
   reread_files: number;
   reread_failed: number;
@@ -327,10 +328,6 @@ export type BackfillHooks = {
   onProgress?: (p: { reread: number; failed: number }) => Promise<void> | void;
 };
 
-/** Re-read one file's date tags only (fast: no maker notes, no previews). */
-async function readDateTags(absPath: string): Promise<Tags> {
-  return exiftool.read(absPath, { readArgs: ["-fast2"] });
-}
 
 /**
  * The repair of a library indexed before 0046. `from`/`to` limit the RE-READ
@@ -354,6 +351,7 @@ export async function runCaptureDayBackfill(
     before,
     after: before,
     classifiedFromDb: 0,
+    relabelled: 0,
     reread_files: 0,
     reread_failed: 0,
     captured_at_changed: 0,
@@ -365,6 +363,16 @@ export async function runCaptureDayBackfill(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 0. A 'file' whose time is NOT the mtime contradicts itself: the indexer
+    //    had read a date there. The first re-read (exiftool -fast2) missed the
+    //    date of every camera clip and wrote 'file' over it; hand those back
+    //    to the re-read. The stored time was never touched, so no day moves.
+    const mislabelled = await client.query(
+      `UPDATE assets SET captured_at_source = NULL
+        WHERE captured_at_source = 'file' AND deleted_at IS NULL
+          AND captured_at IS DISTINCT FROM file_mtime`,
+    );
+    report.relabelled = mislabelled.rowCount ?? 0;
     // 1. What the database already knows: the mtime fallback is exact, and a
     //    position read from the file means exiftool zoned the time from it.
     const cls = await client.query(
@@ -381,7 +389,7 @@ export async function runCaptureDayBackfill(
           AND captured_at_source IS NULL`,
     );
     report.classifiedFromDb =
-      before.unclassified - Number(classifiedByPosition.rows[0].n);
+      before.unclassified + report.relabelled - Number(classifiedByPosition.rows[0].n);
     if (!apply) {
       // 3 (dry). Neighbours over what steps 1–2 made known, then undo it all.
       report.fromNeighbour += await inheritNeighbourZones({}, client);
@@ -424,14 +432,13 @@ export async function runCaptureDayBackfill(
           break outer;
         }
         if (hooks.throttle) await hooks.throttle();
-        let t: Tags;
+        let c: Awaited<ReturnType<typeof readCaptureTimeFromFile>>;
         try {
-          t = await readDateTags(r.abs_path);
+          c = await readCaptureTimeFromFile(r.abs_path);
         } catch {
           report.reread_failed++;
           continue;
         }
-        const c = readCaptureTime(t);
         report.reread_files++;
         // No date in the file: the stored value is the mtime fallback.
         const source: CapturedAtSource = c.captured_at ? (c.captured_at_source ?? "exif") : "file";
