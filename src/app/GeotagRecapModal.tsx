@@ -5,7 +5,9 @@ import dynamic from "next/dynamic";
 import { geotagAssets, type GeotagSource } from "@/lib/assetActions";
 import type { PickedLocation } from "@/app/LocationPicker";
 import { useOverlayDismiss } from "@/app/useOverlayDismiss";
-import MediaViewer from "@/app/MediaViewer";
+import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
+import { fetchJson } from "@/lib/fetchJson";
+import type { AssetGridRow } from "@/lib/types";
 
 // Step 2 of the manual geotag flow: the per-media before/after recap. On a bulk
 // apply this is the safety net against silently clobbering coordinates a camera
@@ -54,7 +56,11 @@ import MediaViewer from "@/app/MediaViewer";
 // opens the shared MediaViewer STACKED over the dialog (it portals to <body>),
 // on the listed rows, with the row's checkbox in its bar: closing it — Escape
 // included, which this dialog ignores while the viewer is up — lands back on
-// the recap as it was, ticks and scroll intact.
+// the recap as it was, ticks and scroll intact. The recap's rows carry ten
+// columns, so each media OPENED in the viewer fetches its full row
+// (GET /api/assets/:id, the grid projection) for the info panel — one request
+// per media looked at, never one per media listed; the panel shows the light
+// row until it lands.
 
 // Leaflet touches `window` on import, and this dialog is imported statically
 // by its hosts: the map control has to come in client-side only.
@@ -208,6 +214,12 @@ export default function GeotagRecapModal({
   const [error, setError] = useState<string | null>(null);
   // The listed row open in the viewer stacked over this dialog, if any.
   const [viewing, setViewing] = useState<number | null>(null);
+  // Full rows fetched for the media opened in the viewer, by id, and the ids
+  // already asked for (so stepping back and forth asks once).
+  const [details, setDetails] = useState<Map<number, AssetGridRow>>(
+    () => new Map(),
+  );
+  const asked = useRef(new Set<number>());
 
   // Same guard as the picker: only a press that started on the backdrop
   // dismisses, so a drag released outside the dialog does not lose the recap.
@@ -522,6 +534,27 @@ export default function GeotagRecapModal({
   );
 
   const viewed = viewing != null ? listed[viewing] : undefined;
+  const viewedId = viewed?.id;
+  useEffect(() => {
+    if (viewedId == null || asked.current.has(viewedId)) return;
+    asked.current.add(viewedId);
+    fetchJson<{ asset: AssetGridRow }>(`/api/assets/${viewedId}`)
+      .then(({ asset }) =>
+        setDetails((prev) => new Map(prev).set(viewedId, asset)),
+      )
+      // The light row stays on screen; a later open may try again.
+      .catch(() => asked.current.delete(viewedId));
+  }, [viewedId]);
+  // What the viewer shows: each listed row, replaced by its full row once
+  // fetched. Same ids, same order, so the index stays the table's.
+  const viewerItems = useMemo<ViewerItem[]>(
+    () =>
+      listed.map((a) => {
+        const d = details.get(a.id);
+        return d ? { ...a, ...d } : a;
+      }),
+    [listed, details],
+  );
 
   return (
     <>
@@ -579,7 +612,7 @@ export default function GeotagRecapModal({
           dialog's backdrop and row handlers have no business seeing them. */}
       {viewed && viewing != null && (
         <MediaViewer
-          items={listed}
+          items={viewerItems}
           index={viewing}
           onIndexChange={setViewing}
           onClose={() => setViewing(null)}
