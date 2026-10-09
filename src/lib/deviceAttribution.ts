@@ -551,9 +551,10 @@ export type ApplyResult = {
  *     counted as skipped rather than guessed at.
  *
  * Only ever fills a HOLE: the UPDATE keeps its `device IS NULL` predicate, so
- * this can never overwrite what a file actually declared. Re-running it is
- * therefore free, and a mistake is undone by picking the right body again —
- * not by this function.
+ * this can never overwrite what a file actually declared, and re-running it is
+ * free. Replacing a body — the file's or an earlier attribution — is
+ * `overrideDevice` below, and undoing either is `revertDevice`: separate
+ * functions, so the one call that can overwrite is never reached by accident.
  */
 export async function applyAttribution(opts: {
   ids: number[];
@@ -665,4 +666,80 @@ export async function applyFolder(opts: {
   );
   const updated = res.rowCount ?? 0;
   return { updated, skipped: Math.max(0, pending - updated) };
+}
+
+// ------------------------------------------------------------ correcting ----
+//
+// Everything above fills holes. These two are the only writes that touch a
+// body that is already there, and they exist because a file can be WRONG: a
+// borrowed camera that kept its owner's name, an app that stamps a generic
+// model, a re-encode that rewrote the atoms. Before migration 0048 there was no
+// way to fix that, because the indexer re-read the file and the file won.
+//
+// The correction is a provenance of its own, 'override', and it is the one the
+// indexer lets beat the file. What the file said is kept beside it
+// (`device_exif`), so the change is visible and reversible rather than a
+// silent rewrite of history. Nothing is written into the original: Make and
+// Model are the camera's identity inside a RAW's maker notes and an MP4's
+// atoms, and rewriting them is exactly the change to an original the README
+// forbids.
+
+export type CorrectResult = {
+  /** Rows whose body actually changed. */
+  updated: number;
+  /** Ids that were not live, or already carried exactly that body. */
+  skipped: number;
+};
+
+/**
+ * Give these media this body, REPLACING whatever they carry — the file's own
+ * value or an earlier attribution. `device_source = 'override'`, which survives
+ * every re-index until reverted. Rows already carrying exactly this body under
+ * an override are left alone and counted as skipped, so re-running is free.
+ */
+export async function overrideDevice(opts: {
+  ids: number[];
+  device: string;
+  cameraModel?: string | null;
+}): Promise<CorrectResult> {
+  const ids = [...new Set(opts.ids)];
+  if (!ids.length) return { updated: 0, skipped: 0 };
+  const rows = await many<{ id: number }>(
+    `UPDATE assets
+        SET device = $2, camera_model = $3,
+            device_source = 'override', updated_at = now()
+      WHERE id = ANY($1)
+        AND deleted_at IS NULL AND purged_at IS NULL
+        AND NOT (device_source = 'override'
+                 AND device IS NOT DISTINCT FROM $2
+                 AND camera_model IS NOT DISTINCT FROM $3)
+      RETURNING id`,
+    [ids, opts.device, opts.cameraModel ?? null],
+  );
+  return { updated: rows.length, skipped: ids.length - rows.length };
+}
+
+/**
+ * Put these media back to what their own files say — the undo for an
+ * override, and for any attribution. A file that declares a body gets it back
+ * as 'exif'; a file that declares nothing (a DJI MP4) goes back to having no
+ * body at all, which returns it to the Devices backlog rather than leaving a
+ * guess in place. Rows already matching their file are skipped.
+ */
+export async function revertDevice(ids: number[]): Promise<CorrectResult> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return { updated: 0, skipped: 0 };
+  const rows = await many<{ id: number }>(
+    `UPDATE assets
+        SET device = device_exif,
+            camera_model = camera_model_exif,
+            device_source = CASE WHEN device_exif IS NOT NULL THEN 'exif' END,
+            updated_at = now()
+      WHERE id = ANY($1)
+        AND deleted_at IS NULL AND purged_at IS NULL
+        AND device_source IN ('derived', 'manual', 'embedded', 'override')
+      RETURNING id`,
+    [unique],
+  );
+  return { updated: rows.length, skipped: unique.length - rows.length };
 }

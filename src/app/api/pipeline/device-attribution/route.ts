@@ -12,7 +12,14 @@
 //   POST                -> writes a body. By folder (`session_id`, optionally
 //                          `min_score`) or by explicit `ids`; with `device` for
 //                          a picked body, without for each target's own
-//                          proposal.
+//                          proposal. `mode` decides how far it may go:
+//                            fill     (default) only media with no body;
+//                            override replace whatever the ids carry, the
+//                                     file's own value included (ids + device);
+//                            revert   put the ids back to what their files say.
+//                          The two that can change an existing body are
+//                          separate modes on purpose: nothing reaches them by
+//                          leaving a field out.
 //
 // Runs INLINE, like the .SRT backfill and unlike the ML one: every signal it
 // weighs is already in Postgres, so the whole pass is a couple of queries and
@@ -22,6 +29,8 @@ import { z } from "zod";
 import {
   applyAttribution,
   applyFolder,
+  overrideDevice,
+  revertDevice,
   CONFIDENT_SCORE,
   listCandidates,
   listFolders,
@@ -88,17 +97,41 @@ const Body = z
     // target's own proposal instead.
     device: z.string().trim().min(1).max(200).optional(),
     camera_model: z.string().trim().min(1).max(200).nullish(),
+    // How far the write may go (see the header). Only `fill` works by folder:
+    // replacing or reverting a body is a decision about media you have looked
+    // at, never a predicate over a folder.
+    mode: z.enum(["fill", "override", "revert"]).default("fill"),
   })
   .refine((b) => b.session_id != null || b.ids != null, {
     message: "session_id or ids required",
+  })
+  .refine((b) => b.mode === "fill" || (b.ids != null && b.session_id == null), {
+    message: "override and revert take explicit ids, never a folder",
+  })
+  .refine((b) => b.mode !== "override" || b.device != null, {
+    message: "override needs the body to write",
   });
 
 export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success)
-      return badRequest("session_id or ids required", parsed.error.issues);
-    const { session_id, min_score, ids, device, camera_model } = parsed.data;
+      return badRequest(
+        parsed.error.issues[0]?.message ?? "invalid body",
+        parsed.error.issues,
+      );
+    const { session_id, min_score, ids, device, camera_model, mode } =
+      parsed.data;
+
+    if (mode === "override")
+      return json(
+        await overrideDevice({
+          ids: ids ?? [],
+          device: device!,
+          cameraModel: camera_model ?? null,
+        }),
+      );
+    if (mode === "revert") return json(await revertDevice(ids ?? []));
 
     const result =
       session_id != null

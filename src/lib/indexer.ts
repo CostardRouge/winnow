@@ -260,19 +260,30 @@ export async function indexRoot(
       await q(
         `UPDATE assets SET
            rel_path=$2, filename=$3, ext=$4, media_type=$5,
-           -- Keep an attributed body (cf. lib/deviceAttribution.ts) when the
-           -- file itself still names none — a DJI MP4 carries no Make/Model at
-           -- all, so without this guard every re-index of the clip would wipe
-           -- the body a human (or the confidence vote) gave it. Same contract
-           -- as the manual geotag below: the FILE always wins when it has
-           -- something to say.
-           device=CASE WHEN $6::text IS NOT NULL THEN $6
+           -- The camera body (cf. lib/deviceAttribution.ts). Three rules, in
+           -- this order:
+           --   1. 'override' — a human REPLACED what the file declares
+           --      (migration 0048). It is the only provenance that beats the
+           --      file, and only a human sets it; without this branch the
+           --      correction would revert the next time the file's mtime moved.
+           --   2. otherwise the FILE wins when it has something to say;
+           --   3. and when it names nothing (a DJI MP4 carries no Make/Model at
+           --      all), an attributed body is kept rather than wiped — the same
+           --      contract as the manual geotag below.
+           -- Every branch reads the row's OLD values: one UPDATE, one snapshot.
+           device=CASE WHEN device_source = 'override' THEN device
+                       WHEN $6::text IS NOT NULL THEN $6
                        WHEN device_source IN ('derived','manual','embedded')
                          THEN device END,
-           device_source=CASE WHEN $6::text IS NOT NULL THEN 'exif'
+           device_source=CASE WHEN device_source = 'override' THEN 'override'
+                              WHEN $6::text IS NOT NULL THEN 'exif'
                               ELSE device_source END,
+           -- What the file itself says, whatever won above: the viewer prints
+           -- it beside an override, and "Revert to the file" restores it.
+           device_exif=$6, camera_model_exif=$11,
            file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
-           camera_model=CASE WHEN $11::text IS NOT NULL THEN $11
+           camera_model=CASE WHEN device_source = 'override' THEN camera_model
+                             WHEN $11::text IS NOT NULL THEN $11
                              WHEN device_source IN ('derived','manual','embedded')
                                THEN camera_model END,
            lens=$12, iso=$13, shutter=$14, aperture=$15,
@@ -392,11 +403,15 @@ export async function indexRoot(
            -- value itself rather than passed in: a fresh row can only ever be
            -- 'exif' (the file named a body) or nothing at all (it did not,
            -- and the attribution pass may later give it one).
-           device_source
+           device_source,
+           -- What the file itself declares (migration 0048), recorded from the
+           -- first index on so an override always has something to revert to.
+           device_exif, camera_model_exif
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
            $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,
-           CASE WHEN $7::text IS NOT NULL THEN 'exif' END
+           CASE WHEN $7::text IS NOT NULL THEN 'exif' END,
+           $7, $12
          )
          ON CONFLICT (content_hash) WHERE content_hash IS NOT NULL DO NOTHING
          RETURNING id`,

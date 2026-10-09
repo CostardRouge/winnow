@@ -4335,6 +4335,29 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mb-2 text-[13px];
     color: var(--color-reject);
   }
+  /* The opt-in that lets the dialog overwrite a body a file declared. A whole
+     row, not a bare checkbox: the only write here that can replace a camera's
+     own value must be read before it is ticked. */
+  .dev-pick-replace {
+    @apply mt-3 flex cursor-pointer items-start gap-2.5 rounded-[var(--radius)] border p-3 text-[13px];
+    border-color: var(--color-border);
+  }
+  .dev-pick-replace.is-on {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-2);
+  }
+  .dev-pick-replace input {
+    @apply mt-0.5 h-4 w-4 shrink-0 cursor-pointer;
+    accent-color: var(--color-accent);
+  }
+  .dev-pick-replace .dev-pick-note {
+    @apply mt-1 block;
+  }
+  /* Revert sits apart from Cancel / confirm: it is a different verb, not a
+     softer version of the primary one. */
+  .modal-actions .dev-pick-revert {
+    @apply mr-auto;
+  }
   .pl-more {
     @apply flex justify-center py-3;
   }

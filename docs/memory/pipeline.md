@@ -286,23 +286,34 @@ listed with its score and no proposal, and the picker (populated from the bodies
 the library actually holds) is the answer. Keep it that way — the value written
 must be one the gear dimension is already grouping on.
 
-**An attribution fills a HOLE and never overwrites what a file declared**, from
-every surface — the folder cards, the per-row menus, and the grids' bulk *Set
-camera body…* (`DevicePickerModal`, in the gallery and a session, on the same
-endpoint). The reason is the guard below, read backwards: EXIF wins on every
-re-index, so a hand-made override of a real EXIF value would silently revert
-the next time the file's mtime changed. The dialog therefore counts what it
-will skip and says why, rather than offering something that would not hold.
-Correcting a body a camera actually wrote is a different feature and needs a
-different mechanism.
+**Three writes, deliberately separate** (2026-10-09, migration 0048): *fill*
+gives a body to media that have none and never touches one that does — the
+default everywhere (folder cards, per-row menus, the grids' bulk *Set camera
+body…* in `DevicePickerModal`); *override* REPLACES a body, the file's own
+included, for a file that names the wrong camera (a borrowed body, an app's
+generic model, a re-encode); *revert* puts media back to what their files
+say — or to no body, where the file names none, which returns them to the
+Devices backlog. One endpoint, `mode: fill | override | revert`; the two that
+can change an existing body take explicit ids only (never a folder predicate)
+and are never reached by leaving a field out. In the dialog, replacing is a
+ticked box that names how many media it touches. The maintainer asked for
+correction explicitly after the first cut refused it; do not quietly fold it
+back into fill.
 
-**The write is guarded, and that guard is the load-bearing part**:
-`assets.device_source` ('exif' | 'derived' | 'manual' | 'embedded') plus the
-indexer's `CASE WHEN $6 IS NOT NULL THEN $6 WHEN device_source IN (…) THEN
-device END`, the exact contract `gps_source='manual'` has carried since 0031.
-The file always wins when it has something to say; when it says nothing, the
-attribution survives. Without it an attributed body lives only until the clip's
-mtime changes. Both directions are worth re-checking if you touch that UPDATE.
+**The indexer guard is the load-bearing part**, three rules in order:
+`device_source = 'override'` keeps the human's body whatever the file says;
+otherwise a file that names a body wins (`'exif'`); otherwise an attribution
+(`'derived' | 'manual' | 'embedded'`) survives a file that names nothing — the
+`gps_source='manual'` contract since 0031. Beside it, `device_exif` /
+`camera_model_exif` record what the file declares on EVERY index, whatever won:
+that is what lets the viewer print "corrected — file says X" and what *revert*
+restores, so an override is never a silent rewrite. It also means revert
+restores the file's CURRENT value, not the one it had when the correction was
+made. Verified through the real `indexRoot` over a real EXIF-tagged JPEG: an
+override survives an mtime bump AND a genuine change of the file's Model, while
+`device_exif` follows the file. Re-run that lifecycle if you touch the UPDATE.
+Not written into originals: Make/Model are a camera's identity inside RAW maker
+notes and MP4 atoms — unlike a GPS pin, nothing outside Winnow needs them fixed.
 
 **Still open**: the `-ee` read above is not wired. It is the only source of the
 aircraft's `SerialNumber`, which is what would tell two identical bodies apart —
