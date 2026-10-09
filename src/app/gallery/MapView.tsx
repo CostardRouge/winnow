@@ -8,9 +8,13 @@ import { Icons } from "@/app/ui";
 import { TILE_URL, TILE_ATTRIBUTION } from "@/app/mapTiles";
 import MapPopover from "./MapPopover";
 
-// Map view for the gallery: plots every geotagged asset (a point per asset),
-// and lets the user carve out a zone — either the current viewport or a
-// hand-drawn box — to pick / reject / export the media inside it. The zone is
+// Map view for the gallery: plots every geotagged asset, one marker per SPOT —
+// media sharing a coordinate to ~1 m are one marker carrying their count
+// (api/assets/geo?by=place). That is what lets the whole library fit: a 10 000
+// newest-first cap on single points hid everything older, and each folder
+// placed through Unplaced pushed more off the map. It lets the user carve out
+// a zone — either the current viewport or a hand-drawn box — to pick / reject
+// / export the media inside it. The zone is
 // expressed as a bounding box that the rest of the app treats as just another
 // cumulative filter (see lib/filter.ts `bbox`).
 //
@@ -22,9 +26,12 @@ import MapPopover from "./MapPopover";
 // whenever the filters change the point set.
 
 export type GeoPoint = {
+  /** The newest media at this spot — the one the popover shows. */
   id: number;
   lat: number;
   lon: number;
+  /** How many media share the spot; absent means one. */
+  n?: number;
   /** Clip rather than still (cf. api/assets/geo) — drives the popover's play
    *  affordance before its detail fetch resolves. Absent on photos. */
   video?: boolean;
@@ -35,8 +42,15 @@ export type Bbox = { w: number; s: number; e: number; n: number };
 // the world map is panned across copies).
 const normLon = (lon: number) => (((lon + 180) % 360) + 360) % 360 - 180;
 
+// A spot holding many media reads bigger, on a log scale so a 2 000-frame
+// folder does not swallow the map: 1 → 5 px, 10 → 7, 100 → 9, 1 000+ → 11.
+const radiusFor = (n = 1) => 5 + Math.min(6, 2 * Math.log10(n));
+
+const fmtN = (n: number) => n.toLocaleString("en-GB");
+
 export default function MapView({
   points,
+  media,
   truncated = false,
   loading = false,
   readOnly = false,
@@ -47,13 +61,17 @@ export default function MapView({
   onOpenAsset,
 }: {
   points: GeoPoint[];
+  /** Media behind every plotted spot (the sum of their `n`). */
+  media?: number;
   truncated?: boolean;
   loading?: boolean;
   readOnly?: boolean;
-  onPickArea: (ids: number[]) => void;
-  onRejectArea: (ids: number[]) => void;
-  onExportArea: (ids: number[]) => void;
-  onShowInGrid: (bbox: Bbox, ids: number[]) => void;
+  /** The zone actions hand back the BOX, not ids: a spot stands for many
+   *  media, so the host resolves the ids inside it server-side. */
+  onPickArea: (bbox: Bbox) => void;
+  onRejectArea: (bbox: Bbox) => void;
+  onExportArea: (bbox: Bbox) => void;
+  onShowInGrid: (bbox: Bbox) => void;
   /** Show one media full size (from the marker popover). */
   onOpenAsset: (id: number) => void;
 }) {
@@ -67,7 +85,7 @@ export default function MapView({
   pointsRef.current = points;
 
   const [drawing, setDrawing] = useState(false);
-  const [area, setArea] = useState<{ bbox: Bbox; ids: number[] } | null>(null);
+  const [area, setArea] = useState<{ bbox: Bbox; count: number } | null>(null);
   // The point whose popover is open, and the popup's own DOM node (the React
   // portal target). Both null when no marker is open.
   const [active, setActive] = useState<GeoPoint | null>(null);
@@ -77,17 +95,21 @@ export default function MapView({
   const drawingRef = useRef(drawing);
   drawingRef.current = drawing;
 
-  // Which point ids fall inside a bounds (longitude wrap aware).
-  const idsInBounds = useCallback((b: L.LatLngBounds): { bbox: Bbox; ids: number[] } => {
+  // How many media the spots inside a bounds hold (longitude wrap aware) —
+  // the zone's count; the ids themselves are resolved by the host.
+  const zoneOf = useCallback((b: L.LatLngBounds): { bbox: Bbox; count: number } => {
     const s = b.getSouth();
     const n = b.getNorth();
-    const w = normLon(b.getWest());
-    const e = normLon(b.getEast());
+    // A view wider than the world (zoomed out on a wide screen) is every
+    // longitude: normalized, its ends would cross and leave a sliver.
+    const whole = b.getEast() - b.getWest() >= 360;
+    const w = whole ? -180 : normLon(b.getWest());
+    const e = whole ? 180 : normLon(b.getEast());
     const inLon = (lon: number) => (w <= e ? lon >= w && lon <= e : lon >= w || lon <= e);
-    const ids = pointsRef.current
-      .filter((p) => p.lat >= s && p.lat <= n && inLon(p.lon))
-      .map((p) => p.id);
-    return { bbox: { w, s, e, n }, ids };
+    let count = 0;
+    for (const p of pointsRef.current)
+      if (p.lat >= s && p.lat <= n && inLon(p.lon)) count += p.n ?? 1;
+    return { bbox: { w, s, e, n }, count };
   }, []);
 
   const clearArea = useCallback(() => {
@@ -115,14 +137,16 @@ export default function MapView({
     if (!map) return;
     const b = map.getBounds();
     setRect(b);
-    setArea(idsInBounds(b));
-  }, [idsInBounds, setRect]);
+    setArea(zoneOf(b));
+  }, [zoneOf, setRect]);
 
   // --- Init the map once ---------------------------------------------------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
       worldCopyJump: true,
+      // Tens of thousands of circle markers: one canvas, not one SVG node each.
+      preferCanvas: true,
       // Default zoom control is replaced by our own overlay (see `.map-zoom`),
       // styled like the toolbar buttons and parked in the clear top-right corner.
       zoomControl: false,
@@ -187,7 +211,7 @@ export default function MapView({
     const latlngs: L.LatLngExpression[] = [];
     for (const p of points) {
       const m = L.circleMarker([p.lat, p.lon], {
-        radius: 5,
+        radius: radiusFor(p.n),
         weight: 1,
         color: "#04140f",
         fillColor: "#3aa99a",
@@ -282,7 +306,7 @@ export default function MapView({
       start = null;
       activeId = null;
       el.releasePointerCapture?.(ev.pointerId);
-      setArea(idsInBounds(b));
+      setArea(zoneOf(b));
       setDrawing(false);
       ev.preventDefault();
     };
@@ -296,9 +320,9 @@ export default function MapView({
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [drawing, clearArea, idsInBounds, setRect]);
+  }, [drawing, clearArea, zoneOf, setRect]);
 
-  const count = area?.ids.length ?? 0;
+  const count = area?.count ?? 0;
 
   return (
     <div className={`map-wrap${drawing ? " is-drawing" : ""}`}>
@@ -313,6 +337,19 @@ export default function MapView({
             key={active.id}
             id={active.id}
             video={active.video}
+            n={active.n}
+            onShowHere={() => {
+              // The spot's own cell (coordinates are grouped at 5 decimals),
+              // handed to the grid like a drawn zone.
+              const d = 0.000006;
+              setActive(null);
+              onShowInGrid({
+                w: active.lon - d,
+                s: active.lat - d,
+                e: active.lon + d,
+                n: active.lat + d,
+              });
+            }}
             // The popup is opened empty (React fills it a tick later), so
             // Leaflet's own sizing/auto-pan would measure nothing. Re-run it
             // whenever the card's shape changes — on mount, when the facts land,
@@ -346,7 +383,7 @@ export default function MapView({
         <span className="map-count">
           {loading
             ? "Loading…"
-            : `${points.length}${truncated ? "+" : ""} geotagged`}
+            : `${fmtN(media ?? points.length)}${truncated ? "+" : ""} geotagged · ${fmtN(points.length)} ${points.length === 1 ? "spot" : "spots"}`}
         </span>
       </div>
 
@@ -373,7 +410,7 @@ export default function MapView({
       {area && (
         <div className="map-area-bar">
           <span className="map-area-count">
-            <strong>{count}</strong> in zone
+            <strong>{fmtN(count)}</strong> in zone
           </span>
           {/* Same segmented-control language as the session action bar — icons
               carry the meaning and the labels collapse to icon-only on phones,
@@ -384,7 +421,7 @@ export default function MapView({
                 <button
                   className="seg-btn is-pick"
                   disabled={!count}
-                  onClick={() => onPickArea(area.ids)}
+                  onClick={() => onPickArea(area.bbox)}
                   aria-label="Pick media in zone"
                   title="Pick every media inside the zone"
                 >
@@ -394,7 +431,7 @@ export default function MapView({
                 <button
                   className="seg-btn is-reject"
                   disabled={!count}
-                  onClick={() => onRejectArea(area.ids)}
+                  onClick={() => onRejectArea(area.bbox)}
                   aria-label="Reject media in zone"
                   title="Reject every media inside the zone"
                 >
@@ -404,7 +441,7 @@ export default function MapView({
                 <button
                   className="seg-btn"
                   disabled={!count}
-                  onClick={() => onExportArea(area.ids)}
+                  onClick={() => onExportArea(area.bbox)}
                   aria-label="Export media in zone"
                   title="Export the media inside the zone"
                 >
@@ -416,7 +453,7 @@ export default function MapView({
             <button
               className="seg-btn"
               disabled={!count}
-              onClick={() => onShowInGrid(area.bbox, area.ids)}
+              onClick={() => onShowInGrid(area.bbox)}
               aria-label="Show zone in grid"
               title="Show the zone's media in the grid"
             >

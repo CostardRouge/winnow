@@ -1,7 +1,7 @@
 "use client";
 
 // Content of the popover that opens when a map marker is clicked (cf. MapView).
-// The map itself only knows { id, lat, lon } per point — everything readable
+// The map itself only knows { id, lat, lon, n } per spot — everything readable
 // about the media (when, where, with what) is fetched here, on open, for that
 // one asset: the geo payload plots the whole filtered library at once, so it
 // deliberately carries no metadata beyond the coordinates.
@@ -30,6 +30,8 @@ export type MapPopAsset = AssetMetaInput & {
 export default function MapPopover({
   id,
   video: videoHint,
+  n = 1,
+  onShowHere,
   onLayout,
   onOpen,
 }: {
@@ -37,6 +39,10 @@ export default function MapPopover({
   /** Marker-level hint from the geo payload, so a clip shows its play
    *  affordance immediately rather than after the detail fetch lands. */
   video?: boolean;
+  /** Media sharing this spot (a bulk placement writes one coordinate for a
+   *  whole folder). Above one, the card says so and offers the grid. */
+  n?: number;
+  onShowHere?: () => void;
   /** Called whenever the rendered card changes shape, so the host can let the
    *  map re-measure it (it is mounted into a popup that opened empty). */
   onLayout?: () => void;
@@ -162,6 +168,12 @@ export default function MapPopover({
           {Icons.view}
           Open in viewer
         </button>
+        {n > 1 && onShowHere && (
+          <button type="button" className="btn map-pop-open" onClick={onShowHere}>
+            {Icons.viewCard}
+            All {n.toLocaleString("en-GB")} here in the grid
+          </button>
+        )}
       </div>
     </div>
   );

@@ -331,6 +331,7 @@ export default function GalleryShell({
   const [gridSize, setGridSize] = useState(GRID_SIZE_DEFAULT);
   const [geoPoints, setGeoPoints] = useState<GeoPoint[]>([]);
   const [geoTruncated, setGeoTruncated] = useState(false);
+  const [geoMedia, setGeoMedia] = useState(0);
   const [geoLoading, setGeoLoading] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [aside, setAside] = useState<"filters" | "browse">("filters");
@@ -496,24 +497,28 @@ export default function GalleryShell({
     setMenu({ x: e.clientX, y: e.clientY, id: asset.id });
   }, []);
 
-  // Map points: the full geotagged distribution for the current filters
-  // (the zone/bbox is chosen ON the map, so it's excluded from this query).
+  // Map spots: the full geotagged distribution for the current filters, one
+  // marker per ~1 m spot with its count (`by=place` — the per-media points
+  // stop at 10 000, newest first, which hid most of the library). The zone/bbox
+  // is chosen ON the map, so it's excluded from this query.
   const geoQuery = toQuery(filters, scope, null, { skipBbox: true });
   useEffect(() => {
     if (view !== "map") return;
     let cancelled = false;
     setGeoLoading(true);
-    fetchJson<{ points?: GeoPoint[]; truncated?: boolean }>(
-      `/api/assets/geo?${geoQuery}`,
+    fetchJson<{ places?: GeoPoint[]; media?: number; truncated?: boolean }>(
+      `/api/assets/geo?${geoQuery ? `${geoQuery}&` : ""}by=place`,
     )
       .then((d) => {
         if (cancelled) return;
-        setGeoPoints(d.points ?? []);
+        setGeoPoints(d.places ?? []);
+        setGeoMedia(d.media ?? 0);
         setGeoTruncated(Boolean(d.truncated));
       })
       .catch(() => {
         if (!cancelled) {
           setGeoPoints([]);
+          setGeoMedia(0);
           setGeoTruncated(false);
         }
       })
@@ -782,23 +787,53 @@ export default function GalleryShell({
   }, []);
 
   // --- Map zone (bbox) actions ---------------------------------------------
-  // The map hands back the ids inside the drawn/visible zone; pick & reject
-  // reuse the bulk rating path, export reuses the selection export.
+  // The map hands back the zone's box — a marker stands for every media at its
+  // spot, so the ids are asked of the server: the per-media points branch with
+  // the same filters plus the box. Its 10 000 cap now bounds one zone, not the
+  // whole map, and a zone past it is refused rather than half-applied. Pick &
+  // reject reuse the bulk rating path, export reuses the selection export.
+  const idsInZone = useCallback(
+    async (bbox: Bbox): Promise<number[] | null> => {
+      try {
+        const d = await fetchJson<{ points?: GeoPoint[]; truncated?: boolean }>(
+          `/api/assets/geo?${geoQuery ? `${geoQuery}&` : ""}bbox=${bbox.w},${bbox.s},${bbox.e},${bbox.n}`,
+        );
+        if (d.truncated) {
+          setNotice("This zone holds more than 10,000 media — draw a smaller one.");
+          return null;
+        }
+        return (d.points ?? []).map((p) => p.id);
+      } catch (e) {
+        setNotice(`Couldn’t list the zone’s media: ${(e as Error).message}`);
+        return null;
+      }
+    },
+    [geoQuery],
+  );
   const pickArea = useCallback(
-    (ids: number[]) => {
-      if (!ids.length) return;
+    async (bbox: Bbox) => {
+      const ids = await idsInZone(bbox);
+      if (!ids?.length) return;
       void rateMany(ids, { verdict: "pick" });
       setNotice(`${ids.length} picked`);
     },
-    [rateMany],
+    [rateMany, idsInZone],
   );
   const rejectArea = useCallback(
-    (ids: number[]) => {
-      if (!ids.length) return;
+    async (bbox: Bbox) => {
+      const ids = await idsInZone(bbox);
+      if (!ids?.length) return;
       void rateMany(ids, { verdict: "reject" });
       setNotice(`${ids.length} rejected`);
     },
-    [rateMany],
+    [rateMany, idsInZone],
+  );
+  const exportArea = useCallback(
+    async (bbox: Bbox) => {
+      const ids = await idsInZone(bbox);
+      if (ids?.length) exportSelection(ids);
+    },
+    [idsInZone, exportSelection],
   );
   // Apply the zone as a bbox filter and drop back to the grid to review it.
   const showAreaInGrid = useCallback(
@@ -948,13 +983,14 @@ export default function GalleryShell({
       {mode === "map" ? (
           <MapView
             points={geoPoints}
+            media={geoMedia}
             truncated={geoTruncated}
             loading={geoLoading}
             readOnly={readOnly}
             onPickArea={pickArea}
             onRejectArea={rejectArea}
-            onExportArea={exportSelection}
-            onShowInGrid={(bbox) => showAreaInGrid(bbox)}
+            onExportArea={exportArea}
+            onShowInGrid={showAreaInGrid}
             onOpenAsset={openMapAsset}
           />
         ) : (
