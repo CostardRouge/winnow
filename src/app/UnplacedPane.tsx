@@ -391,8 +391,13 @@ export default function UnplacedPane() {
         geo_state: "todo",
       });
       if (g.kind === "part") {
-        sp.set("date_from", isoDay(new Date(g.t0)));
-        sp.set("date_to", isoDay(new Date(g.t1)));
+        // A day of slack each side: the grid filters on the stored capture
+        // day (the place's local day, else UTC) and this is the browser's,
+        // so a part starting at 23:30 UTC opened on the next day and its
+        // first frames were missing from a grid the card counted them in.
+        const DAY = 86_400_000;
+        sp.set("date_from", isoDay(new Date(new Date(g.t0).getTime() - DAY)));
+        sp.set("date_to", isoDay(new Date(new Date(g.t1).getTime() + DAY)));
       }
       router.push(`/library/incoming/grid?${sp}`);
     },

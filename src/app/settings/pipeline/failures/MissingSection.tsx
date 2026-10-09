@@ -273,7 +273,15 @@ export default function MissingSection({
           disabled={anyBusy || count === 0}
         >
           {Icons.trash}
-          <span>{sel.size ? `Purge selected (${sel.size})` : "Purge all"}</span>
+          {/* The list carries the newest 200 rows (api/failures LIMIT): past
+              that, "all" would have purged 200 of a count shown beside it. */}
+          <span>
+            {sel.size
+              ? `Purge selected (${sel.size})`
+              : count > items.length
+                ? `Purge the ${items.length} listed`
+                : "Purge all"}
+          </span>
         </button>
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
@@ -285,6 +293,13 @@ export default function MissingSection({
         <strong>Purge</strong> is the irreversible cleanup (removes the leftover
         derivatives, keeps the row for audit).
       </p>
+      {count > items.length && (
+        <p className="hint">
+          Showing the newest {items.length.toLocaleString("en-GB")} of{" "}
+          {count.toLocaleString("en-GB")}. Re-check applies to all of them;
+          purge works on the rows listed, so clear them a page at a time.
+        </p>
+      )}
       {count === 0 ? (
         <div className="empty" style={{ padding: 16 }}>
           Nothing here. 🎉

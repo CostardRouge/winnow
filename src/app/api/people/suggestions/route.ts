@@ -15,7 +15,11 @@ export async function GET() {
   if (off) return off;
 
   try {
-    return json({ suggestions: await suggestMerges() });
+    // One more than shown, so the banner can say "20+" rather than "20"
+    // when the list is a first batch (it refills as pairs are merged).
+    const SHOWN = 20;
+    const pairs = await suggestMerges(SHOWN + 1);
+    return json({ suggestions: pairs.slice(0, SHOWN), more: pairs.length > SHOWN });
   } catch (err) {
     return serverError(err);
   }

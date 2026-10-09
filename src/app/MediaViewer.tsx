@@ -20,7 +20,7 @@ import Link from "next/link";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
 import { Icons } from "./ui";
 import { formatBytes, formatDimensions } from "@/lib/format";
-import { fetchJson } from "@/lib/fetchJson";
+import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
 import { useFeatures } from "./FeaturesProvider";
 
 // One face detected in the current asset (GET /api/assets/:id/faces): who it
@@ -343,12 +343,12 @@ export default function MediaViewer<T extends ViewerItem>({
       return;
     }
     let cancelled = false;
-    fetchJson<{ assets?: BurstFrame[] }>(
-      `/api/assets?burst_id=${burstId}&collapse=1&sort_dir=asc&limit=200`,
+    // Every page: the filmstrip is the whole pile, however long it runs.
+    fetchAllPages<BurstFrame>(
+      `/api/assets?burst_id=${burstId}&collapse=1&sort_dir=asc&limit=500`,
     )
-      .then((data) => {
+      .then((members) => {
         if (cancelled) return;
-        const members = data.assets ?? [];
         burstCache.current.set(burstId, members);
         setBurstMembers(members);
       })

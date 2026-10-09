@@ -4,7 +4,7 @@
 // `bounds` — the full filtered date range (independent of the window) — so the
 // UI can land on the month that actually holds media and clamp navigation.
 import { NextRequest } from "next/server";
-import { many, one } from "@/lib/db";
+import { manyWithoutJit, one } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 import { json, badRequest, serverError } from "@/lib/api";
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     // Per-day counts + a representative cover. The cover prefers an asset whose
     // derivative is ready (so the thumbnail exists), then the newest capture.
     let i = params.length + 1;
-    const days = await many<{ date: string; count: number; cover_id: number }>(
+    const days = await manyWithoutJit<{ date: string; count: number; cover_id: number }>(
       `WITH scoped AS (
          SELECT a.id, a.capture_date, a.captured_at, a.derivative_status
          FROM assets a

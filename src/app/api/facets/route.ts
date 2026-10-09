@@ -151,7 +151,10 @@ export async function GET(req: NextRequest) {
       // that is what picking the chip filters. The cover is the person's
       // chosen face while it is live, else their best live face — resolved by
       // one ordered subquery per row (people are bounded in the hundreds).
-      // Capped: the panel paginates, and the /people page browses the rest.
+      // Capped — but never below the named: every named person, then the 50
+      // busiest stacks nobody named (the panel paginates, /people browses the
+      // rest). A flat LIMIT 50 hid half of 99 named people on a 5 611-stack
+      // library, and naming more pushed others out of the filter.
       many<{
         id: number;
         name: string | null;
@@ -172,7 +175,8 @@ export async function GET(req: NextRequest) {
          GROUP BY p.id, p.name, p.cover_face_id
          ORDER BY (p.name IS NOT NULL) DESC, count DESC,
                   p.name ASC NULLS LAST, p.id ASC
-         LIMIT 50`,
+         LIMIT (SELECT count(*) + 50 FROM people
+                 WHERE name IS NOT NULL AND NOT hidden)`,
         params,
       ).catch(
         () =>

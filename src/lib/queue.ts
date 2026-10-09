@@ -633,6 +633,38 @@ export async function enqueueGpsWrite(assetId: number) {
   );
 }
 
+// Bulk variants, same jobs and options, for a repair that touches thousands of
+// rows from one HTTP request (lib/mirrorRepair.ts): chunked addBulk round
+// trips rather than one awaited add per row, like enqueueMlBulk.
+export async function enqueueGpsWriteBulk(assetIds: number[]): Promise<number> {
+  const queue = getQueues().gpswrite;
+  for (let i = 0; i < assetIds.length; i += 1000) {
+    await queue.addBulk(
+      assetIds.slice(i, i + 1000).map((assetId) => ({
+        name: "gpswrite",
+        data: { assetId } satisfies GpsWriteJob,
+        opts: defaultJobOpts,
+      })),
+    );
+  }
+  return assetIds.length;
+}
+
+export async function enqueueGeocodeBulk(assetIds: number[]): Promise<number> {
+  const queue = getQueues().geocode;
+  const opts = { ...defaultJobOpts, priority: PRIORITY.normal };
+  for (let i = 0; i < assetIds.length; i += 1000) {
+    await queue.addBulk(
+      assetIds.slice(i, i + 1000).map((assetId) => ({
+        name: "geocode",
+        data: { assetId } satisfies GeocodeJob,
+        opts,
+      })),
+    );
+  }
+  return assetIds.length;
+}
+
 // Reverse-geocode one asset. Cheap and idempotent (a cached cell makes no
 // network call), so re-enqueuing a still-pending asset is harmless.
 export async function enqueueGeocode(

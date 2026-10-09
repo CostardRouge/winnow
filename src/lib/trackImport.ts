@@ -353,6 +353,10 @@ export async function revertTrackImport(
     ids = touched.rows.map((r) => Number(r.id));
     const a = await client.query(
       `UPDATE assets SET gps = NULL, gps_source = NULL, place_id = NULL,
+              -- the names go with the position: left behind, an undone frame
+              -- stayed under "Australia" in the facets with no position.
+              place_country = NULL, place_region = NULL, place_county = NULL,
+              place_city = NULL, place_poi = NULL,
               geocode_status = 'skipped', geocode_error = NULL, updated_at = now()
         WHERE track_import_id = $1 AND gps_source = 'track'`,
       [importId],

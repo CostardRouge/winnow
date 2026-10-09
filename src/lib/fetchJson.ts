@@ -25,3 +25,22 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
   }
   return (await r.json()) as T;
 }
+
+// Every row of a keyset-paged list (`{ assets, next_cursor }`), following the
+// cursor to the end. For a set the caller must hold WHOLE — a burst pile to
+// export, expand or choose the sharpest of — where one page silently stopped
+// at 500 (or 200) frames. Nothing caps a pile's length: interval shooting at
+// one frame a second for ten minutes is one pile of 600.
+export async function fetchAllPages<T>(url: string): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const sep = url.includes("?") ? "&" : "?";
+    const page: { assets?: T[]; next_cursor?: string | null } = await fetchJson(
+      cursor ? `${url}${sep}cursor=${encodeURIComponent(cursor)}` : url,
+    );
+    all.push(...(page.assets ?? []));
+    cursor = page.next_cursor ?? null;
+    if (!cursor) return all;
+  }
+}

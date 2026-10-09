@@ -87,14 +87,23 @@ export default function TrashTab() {
   // Index (within `viewable`) of the item open in the full-screen preview, or null.
   const [viewer, setViewer] = useState<number | null>(null);
 
+  // The bin, most recently trashed first (`sort=recent`: trashing stamps
+  // updated_at), paged by its cursor. It used to be one 200-row page in
+  // capture order with an unclickable "+N more" tile, so a photo shot years
+  // ago and trashed a minute ago could not be found to restore it.
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const TRASH_PAGE = "/api/assets?deleted=trash&sort=recent&limit=200";
+
   const load = useCallback(async () => {
     try {
       const [s, a] = await Promise.all([
         fetchJson<Summary>("/api/trash"),
-        fetchJson<{ assets?: TrashAsset[] }>("/api/assets?deleted=trash"),
+        fetchJson<{ assets?: TrashAsset[]; next_cursor?: string | null }>(TRASH_PAGE),
       ]);
       setSummary(s);
       setItems(a.assets ?? []);
+      setCursor(a.next_cursor ?? null);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -106,6 +115,22 @@ export default function TrashTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadMore = useCallback(async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const a = await fetchJson<{ assets?: TrashAsset[]; next_cursor?: string | null }>(
+        `${TRASH_PAGE}&cursor=${encodeURIComponent(cursor)}`,
+      );
+      setItems((prev) => [...prev, ...(a.assets ?? [])]);
+      setCursor(a.next_cursor ?? null);
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [cursor, loadingMore]);
 
   // While a purge is queued/running, follow its progress.
   const jobActive = useMemo(
@@ -293,10 +318,16 @@ export default function TrashTab() {
                   </div>
                 ))}
                 {trashCount > items.length && (
-                  <div className="trash-cell trash-more">
-                    +{trashCount - items.length}
-                    <span>more</span>
-                  </div>
+                  <button
+                    type="button"
+                    className="trash-cell trash-more"
+                    onClick={() => void loadMore()}
+                    disabled={!cursor || loadingMore}
+                    title="Show the next trashed media"
+                  >
+                    {loadingMore ? "…" : `+${trashCount - items.length}`}
+                    <span>{loadingMore ? "loading" : "show more"}</span>
+                  </button>
                 )}
               </div>
             )}

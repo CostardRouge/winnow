@@ -12,7 +12,7 @@ import {
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { fetchJson } from "@/lib/fetchJson";
+import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
@@ -42,6 +42,7 @@ import {
   regenerateAssets,
   selectionDownloadFiles,
   selectionZipHref,
+  selectionZipUnavailable,
   sessionDownloadFiles,
   geotagTargets,
   tagAssets,
@@ -255,6 +256,15 @@ export default function SessionGrid({
   const sentinel = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  // Which list a page request belongs to. A verdict change or a refresh starts a new list
+  // (`cur === null`): it bumps the generation and aborts the request in
+  // flight, and any answer for an older generation is dropped. Before, a
+  // reset fetch was SKIPPED while a page was loading, the old answer then
+  // landed into the emptied list with its cursor, and the next scroll paged
+  // the new filter from the old position — the previous filter's media under
+  // the new one, and the head of the new results never fetched.
+  const pageGen = useRef(0);
+  const pageAbort = useRef<AbortController | null>(null);
 
   // Land the grid back on the media the viewer was showing when it closes. The
   // grid is a plain (non-virtualized) list mounted under the overlay, so every
@@ -298,11 +308,21 @@ export default function SessionGrid({
     setCursor(null);
     setHasMore(true);
     setExpandedBursts(new Map());
+    // A selection belongs to the list it was made in (see GalleryShell).
+    setSelected(new Set());
   }, []);
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
-      if (loadingRef.current) return;
+      // A next page never overlaps another request; a new list always runs.
+      if (cur && loadingRef.current) return;
+      if (!cur) {
+        pageGen.current++;
+        pageAbort.current?.abort();
+      }
+      const gen = pageGen.current;
+      const ctl = new AbortController();
+      pageAbort.current = ctl;
       loadingRef.current = true;
       setLoading(true);
       try {
@@ -319,7 +339,10 @@ export default function SessionGrid({
         const data = await fetchJson<{
           assets?: AssetRow[];
           next_cursor?: string | null;
-        }>(`/api/sessions/${id}/assets?${sp.toString()}&collapse=1`);
+        }>(`/api/sessions/${id}/assets?${sp.toString()}&collapse=1`, {
+          signal: ctl.signal,
+        });
+        if (gen !== pageGen.current) return;
         setError(null);
         setAssets((prev) =>
           cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? [],
@@ -327,11 +350,14 @@ export default function SessionGrid({
         setCursor(data.next_cursor ?? null);
         setHasMore(Boolean(data.next_cursor));
       } catch (e) {
+        if (gen !== pageGen.current) return;
         setError((e as Error).message);
         setHasMore(false);
       } finally {
-        setLoading(false);
-        loadingRef.current = false;
+        if (gen === pageGen.current) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
       }
     },
     [id, verdict],
@@ -411,12 +437,11 @@ export default function SessionGrid({
       }
       try {
         // The pile is fetched WITHOUT the verdict filter: expanding is about
-        // seeing the whole run, whatever each frame is rated. Piles are seconds
-        // long, so one max-size page always covers a real burst.
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
+        // seeing the whole run, whatever each frame is rated — every page of
+        // it (an interval-shot pile can outrun one 500-row page).
+        const members = await fetchAllPages<AssetRow>(
           `/api/sessions/${id}/assets?burst_id=${burstId}&limit=500`,
         );
-        const members = data.assets ?? [];
         if (!members.length) return;
         setAssets((prev) => {
           const at = prev.findIndex((x) => x.id === a.id);
@@ -446,7 +471,14 @@ export default function SessionGrid({
       setAssets((prev) =>
         prev.map((x) => (x.burst_id === bid ? { ...x, verdict } : x)),
       );
-      await rateAssets([a.id], { verdict }, { expandBursts: true });
+      try {
+        await rateAssets([a.id], { verdict }, { expandBursts: true });
+      } catch (e) {
+        setNotice((e as Error).message);
+        reset();
+        await fetchPage(null);
+        return;
+      }
       setNotice(
         verdict === "pick"
           ? "Pile picked"
@@ -456,7 +488,7 @@ export default function SessionGrid({
       );
       void loadSession();
     },
-    [loadSession],
+    [loadSession, reset, fetchPage],
   );
 
   // The flagship gesture: keep THIS frame, reject every other frame of its
@@ -473,12 +505,21 @@ export default function SessionGrid({
             : x,
         ),
       );
-      await rateAssets([a.id], { verdict: "reject" }, { expandBursts: true });
-      await rateAssets([a.id], { verdict: "pick" });
+      try {
+        await rateAssets([a.id], { verdict: "reject" }, { expandBursts: true });
+        await rateAssets([a.id], { verdict: "pick" });
+      } catch (e) {
+        // The pile may be half-written (rejected, keeper not picked yet):
+        // reload what the database holds rather than guess.
+        setNotice((e as Error).message);
+        reset();
+        await fetchPage(null);
+        return;
+      }
       setNotice("Kept 1 — rest of the pile rejected");
       void loadSession();
     },
-    [loadSession],
+    [loadSession, reset, fetchPage],
   );
 
   // Export the whole pile: resolve the live members (drill-in), then open the
@@ -488,10 +529,10 @@ export default function SessionGrid({
       const bid = a.burst_id;
       if (bid == null) return;
       try {
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
+        const members = await fetchAllPages<AssetRow>(
           `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
         );
-        const ids = (data.assets ?? []).map((x) => x.id);
+        const ids = members.map((x) => x.id);
         if (ids.length) setExportIds(ids);
       } catch (e) {
         setNotice((e as Error).message);
@@ -510,10 +551,11 @@ export default function SessionGrid({
       const bid = a.burst_id;
       if (bid == null) return;
       try {
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
-          `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
-        );
-        const members = (data.assets ?? []).filter((x) => x.sharpness != null);
+        const members = (
+          await fetchAllPages<AssetRow>(
+            `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
+          )
+        ).filter((x) => x.sharpness != null);
         if (!members.length) {
           setNotice(
             "No sharpness scores in this pile yet — run “Detect faces & text” first",
@@ -550,14 +592,32 @@ export default function SessionGrid({
   }, [id, reset, fetchPage]);
 
   // Verdict/stars on a set of ids (single = [id]), optimistic + bulk endpoint.
+  // A refused write puts each loaded row's previous verdict/stars back and
+  // shows the error, so the grid never keeps a rating the database lacks.
   const rateMany = useCallback(
     async (ids: number[], patch: { verdict?: Verdict; star?: number }) => {
       if (!ids.length) return;
       const idset = new Set(ids);
+      const before = new Map<number, Pick<AssetRow, "verdict" | "star">>();
       setAssets((prev) =>
-        prev.map((a) => (idset.has(a.id) ? { ...a, ...patch } : a)),
+        prev.map((a) => {
+          if (!idset.has(a.id)) return a;
+          before.set(a.id, { verdict: a.verdict, star: a.star });
+          return { ...a, ...patch };
+        }),
       );
-      await rateAssets(ids, patch);
+      try {
+        await rateAssets(ids, patch);
+      } catch (e) {
+        setAssets((prev) =>
+          prev.map((a) => {
+            const was = before.get(a.id);
+            return was ? { ...a, ...was } : a;
+          }),
+        );
+        setNotice((e as Error).message);
+        return;
+      }
       void loadSession();
     },
     [loadSession],
@@ -568,7 +628,12 @@ export default function SessionGrid({
   const tagSelection = useCallback(
     async (ids: number[], name: string, add: boolean) => {
       if (!ids.length || !name.trim()) return;
-      await tagAssets(ids, name, add);
+      try {
+        await tagAssets(ids, name, add);
+      } catch (e) {
+        setNotice((e as Error).message);
+        return;
+      }
       setNotice(`${add ? "Tagged" : "Untagged"} “${name.trim()}”`);
     },
     [],
@@ -585,13 +650,27 @@ export default function SessionGrid({
           : "Delete this asset? It’ll be hidden from the library — the original is untouched.";
       if (!window.confirm(msg)) return false;
       const idset = new Set(ids);
-      setAssets((prev) => prev.filter((a) => !idset.has(a.id)));
+      // The list as it was, to put the rows back if the server refuses.
+      let before: AssetRow[] = [];
+      setAssets((prev) => {
+        before = prev;
+        return prev.filter((a) => !idset.has(a.id));
+      });
       setSelected((prev) => {
         const next = new Set(prev);
         ids.forEach((i) => next.delete(i));
         return next;
       });
-      await deleteAssets(ids);
+      try {
+        await deleteAssets(ids);
+      } catch (e) {
+        setAssets((cur) => {
+          const live = new Set(cur.map((a) => a.id));
+          return before.filter((a) => idset.has(a.id) || live.has(a.id));
+        });
+        setNotice((e as Error).message);
+        return false;
+      }
       setNotice(ids.length > 1 ? `${ids.length} deleted` : "Deleted");
       void loadSession();
       return true;
@@ -648,7 +727,7 @@ export default function SessionGrid({
     async (ids: number[], exempt: boolean) => {
       if (!ids.length) return;
       try {
-        const n = await exemptAssets(ids, exempt);
+        const n = await exemptAssets(ids, exempt, { companions: true });
         const idset = new Set(ids);
         const stamp = exempt ? new Date().toISOString() : null;
         setAssets((prev) =>
@@ -762,7 +841,12 @@ export default function SessionGrid({
 
   const addTag = useCallback(async (id: number, name: string) => {
     if (!name.trim()) return;
-    await tagAssets([id], name, true);
+    try {
+      await tagAssets([id], name, true);
+    } catch (e) {
+      setNotice((e as Error).message);
+      return;
+    }
     setNotice(`Tagged “${name.trim()}”`);
   }, []);
 
@@ -951,6 +1035,7 @@ export default function SessionGrid({
             onExport={() => exportSelection([...selected])}
             download={{
               zipHref: selectionZipHref([...selected]),
+            zipUnavailable: selectionZipUnavailable(selected.size),
               zipName: "winnow-selection.zip",
               listFiles: () =>
                 Promise.resolve(
@@ -1213,6 +1298,7 @@ export default function SessionGrid({
       )}
       {geotag?.loc && (
         <GeotagRecapModal
+          withCompanions
           assets={
             geotag.recap ??
             geotag.ids.flatMap((id) => {

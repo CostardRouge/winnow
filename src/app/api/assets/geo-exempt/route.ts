@@ -20,6 +20,11 @@ export const dynamic = "force-dynamic";
 const Body = z.object({
   ids: z.array(z.number().int()).min(1),
   exempt: z.boolean(),
+  // From a folded grid (one id per RAW+JPEG pair): the pair's other member
+  // follows, so exempting a screenshot pair does not leave half of it in the
+  // Unplaced backlog. Exempting skips a member that has a position (it is not
+  // in the backlog anyway); un-exempting takes the whole pair back.
+  companions: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -27,7 +32,9 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success)
       return badRequest("ids and exempt required", parsed.error.issues);
-    const { ids, exempt } = parsed.data;
+    const { ids, exempt, companions } = parsed.data;
+    const target = `(id = ANY($1) OR ($2 AND group_id IN (
+         SELECT group_id FROM assets WHERE id = ANY($1) AND group_id IS NOT NULL)))`;
 
     // Live assets only, like the geotag action. Idempotent: re-exempting keeps
     // the original timestamp (the row already says when it was decided).
@@ -35,13 +42,14 @@ export async function POST(req: NextRequest) {
       exempt
         ? `UPDATE assets SET
              geo_exempt_at = COALESCE(geo_exempt_at, now()), updated_at = now()
-           WHERE id = ANY($1) AND deleted_at IS NULL AND purged_at IS NULL
+           WHERE ${target} AND deleted_at IS NULL AND purged_at IS NULL
+             AND (id = ANY($1) OR gps IS NULL)
            RETURNING id`
         : `UPDATE assets SET geo_exempt_at = NULL, updated_at = now()
-           WHERE id = ANY($1) AND deleted_at IS NULL AND purged_at IS NULL
+           WHERE ${target} AND deleted_at IS NULL AND purged_at IS NULL
              AND geo_exempt_at IS NOT NULL
            RETURNING id`,
-      [ids],
+      [ids, companions === true],
     );
     return json({ updated: rows.length, exempt });
   } catch (err) {

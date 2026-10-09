@@ -15,7 +15,8 @@ import { one, q } from "./db";
 export type GpsPoint = { lat: number; lon: number };
 
 // Write the coordinates into `absPath`'s metadata.
-//   - photos: the four standard EXIF GPS tags (signed value + hemisphere ref);
+//   - photos: the four standard EXIF GPS tags (signed value + hemisphere ref
+//     — the sign is what the library reads, see below);
 //   - videos: QuickTime `GPSCoordinates` ("lat lon", the Keys atom Apple and
 //     exiftool's composite GPSLatitude/GPSLongitude read back).
 // Flags: -overwrite_original_in_place edits the file without leaving exiftool's
@@ -38,10 +39,17 @@ export async function writeGps(
   const tags: WriteTags = isVideo
     ? // QuickTime containers keep GPS in one combined Keys tag.
       { GPSCoordinates: `${gps.lat} ${gps.lon}` }
-    : {
-        GPSLatitude: Math.abs(gps.lat),
+    : // SIGNED values, with the matching refs. exiftool-vendored derives the
+      // hemisphere ref from the sign of the value it is given and overrides
+      // an explicit one: the unsigned values written here until 2026-10-09
+      // put every pin West or South into the file as N/E — Brittany filed
+      // in Seine-et-Marne, Streaky Bay at 33° N in the Pacific — and the
+      // next re-index read the mirror back into the database.
+      // exifWrite.test.ts writes and re-reads all four hemispheres.
+      {
+        GPSLatitude: gps.lat,
         GPSLatitudeRef: gps.lat >= 0 ? "N" : "S",
-        GPSLongitude: Math.abs(gps.lon),
+        GPSLongitude: gps.lon,
         GPSLongitudeRef: gps.lon >= 0 ? "E" : "W",
       };
 
@@ -62,18 +70,24 @@ export async function runGpsWriteJob(assetId: number): Promise<void> {
     gps_lon: number | null;
     deleted_at: string | null;
     missing_at: string | null;
+    gps_source: string | null;
   }>(
-    "SELECT abs_path, ext, gps_lat, gps_lon, deleted_at, missing_at FROM assets WHERE id = $1",
+    "SELECT abs_path, ext, gps_lat, gps_lon, deleted_at, missing_at, gps_source FROM assets WHERE id = $1",
     [assetId],
   );
   // Gone, trashed, missing from disk, or coordinates cleared since the enqueue:
-  // nothing to write. Terminal, not an error.
+  // nothing to write. Terminal, not an error. Nor when the position is no
+  // longer a hand-placed pin: the job reads the coordinates at run time, so a
+  // manual pin queued (or retrying) and then overwritten by an accepted
+  // suggestion would have written that bulk guess into the original — the
+  // one thing 'inferred' must never do (docs/UNPLACED.md §4.3).
   if (
     !asset ||
     asset.deleted_at ||
     asset.missing_at ||
     asset.gps_lat == null ||
-    asset.gps_lon == null
+    asset.gps_lon == null ||
+    asset.gps_source !== "manual"
   ) {
     await q(
       "UPDATE assets SET gps_write_status='skipped', gps_write_error=NULL, updated_at=now() WHERE id=$1",

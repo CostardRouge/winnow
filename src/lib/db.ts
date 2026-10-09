@@ -62,6 +62,23 @@ export async function many<T extends pg.QueryResultRow = pg.QueryResultRow>(
   return r.rows;
 }
 
+// `many`, with Postgres JIT off for this one statement. For any read built on
+// buildFilter's `collapseGroups`: its correlated fold lifts the plan's
+// estimated cost past jit_above_cost and LLVM then compiles for longer than
+// the query runs (docs/memory/database.md — a grid page on 77k rows: 2.7 s
+// with JIT, 57 ms without). `SET LOCAL` needs a transaction to be local to,
+// which is the only reason a read goes through `tx` here. Turning JIT off for
+// the whole pool is the maintainer's call; this keeps it per statement.
+export async function manyWithoutJit<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  text: string,
+  params?: unknown[],
+): Promise<T[]> {
+  return tx(async (client) => {
+    await client.query("SET LOCAL jit = off");
+    return (await client.query<T>(text, params as any[])).rows;
+  });
+}
+
 // Runs `fn` inside a single transaction on a dedicated connection. Everything
 // else in this codebase is deliberately autocommit; reach for this only where a
 // multi-statement write must be all-or-nothing (e.g. replacing a face set).

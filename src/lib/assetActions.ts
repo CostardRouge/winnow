@@ -6,6 +6,17 @@ import type { Verdict } from "./types";
 
 const HEADERS = { "Content-Type": "application/json" };
 
+// Every write below throws on a non-2xx answer, with the server's own message
+// when it sent one. They used to resolve whatever came back, and their callers
+// update the grid first and announce "N picked" / "N deleted" after: an expired
+// session, a 5xx or a statement timeout read as success, and the grid kept
+// verdicts or removals the database never got.
+async function ensureOk(res: Response, what: string): Promise<void> {
+  if (res.ok) return;
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  throw new Error(body.error ?? `Couldn’t ${what} (${res.status})`);
+}
+
 // Pick / reject / clear verdict and/or stars. Works for one (ids:[id]) or many.
 // `expandBursts` widens each id to its whole burst pile server-side (every live
 // frame + pair companions) — the explicit "cull the pile in one gesture" action
@@ -16,7 +27,7 @@ export async function rateAssets(
   opts: { expandBursts?: boolean } = {},
 ): Promise<void> {
   if (!ids.length || (patch.verdict == null && patch.star == null)) return;
-  await fetch("/api/ratings/bulk", {
+  const res = await fetch("/api/ratings/bulk", {
     method: "POST",
     headers: HEADERS,
     body: JSON.stringify({
@@ -25,6 +36,7 @@ export async function rateAssets(
       ...(opts.expandBursts ? { expand_bursts: true } : {}),
     }),
   });
+  await ensureOk(res, "save the rating");
 }
 
 // Pull the indexed original (abs_path) for a single asset down to the browser as
@@ -98,6 +110,17 @@ export function selectionDownloadFiles(
 
 // The matching whole-selection ZIP URL (api/assets/download): every id in the
 // query string, streamed back as one archive with the sidecars included.
+/** Most files one selection ZIP takes — mirrors MAX_IDS in
+ *  api/assets/download (the ids ride the URL, so the link has to stay short). */
+export const SELECTION_ZIP_MAX = 1000;
+
+/** Why a selection cannot go out as one ZIP, or null when it can. */
+export function selectionZipUnavailable(count: number): string | null {
+  return count > SELECTION_ZIP_MAX
+    ? `Up to ${SELECTION_ZIP_MAX.toLocaleString("en-GB")} files per ZIP — ${count.toLocaleString("en-GB")} selected. Export them instead.`
+    : null;
+}
+
 export function selectionZipHref(ids: number[]): string {
   return `/api/assets/download?ids=${ids.join(",")}`;
 }
@@ -110,11 +133,12 @@ export async function tagAssets(
 ): Promise<void> {
   const tag = name.trim();
   if (!ids.length || !tag) return;
-  await fetch("/api/tags/assign", {
+  const res = await fetch("/api/tags/assign", {
     method: "POST",
     headers: HEADERS,
     body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
   });
+  await ensureOk(res, "save the tag");
 }
 
 // Soft delete (or restore). Hides from the library; never touches the original.
@@ -123,11 +147,12 @@ export async function deleteAssets(
   restore = false,
 ): Promise<void> {
   if (!ids.length) return;
-  await fetch("/api/assets/delete", {
+  const res = await fetch("/api/assets/delete", {
     method: "POST",
     headers: HEADERS,
     body: JSON.stringify({ ids, restore }),
   });
+  await ensureOk(res, restore ? "restore" : "delete");
 }
 
 // Soft delete (or restore) every asset matching a filter — e.g.
@@ -142,6 +167,8 @@ export async function deleteAssetsByFilter(
     headers: HEADERS,
     body: JSON.stringify({ filter, restore }),
   });
+  // A failure used to come back as 0, which read as "nothing to move".
+  await ensureOk(res, restore ? "restore" : "move to the trash");
   const body = (await res.json().catch(() => ({}))) as { updated?: number };
   return body.updated ?? 0;
 }
@@ -223,12 +250,21 @@ export async function geotagAssets(
   ids: number[],
   gps: { lat: number; lon: number },
   source: GeotagSource = "manual",
+  /** The ids come from a folded grid (one per RAW+JPEG pair): place each
+   *  pair's other member too when it has no position (api/assets/geotag). */
+  opts: { companions?: boolean } = {},
 ): Promise<number> {
   if (!ids.length) return 0;
   const res = await fetch("/api/assets/geotag", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, lat: gps.lat, lon: gps.lon, source }),
+    body: JSON.stringify({
+      ids,
+      lat: gps.lat,
+      lon: gps.lon,
+      source,
+      ...(opts.companions ? { companions: true } : {}),
+    }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -244,12 +280,18 @@ export async function geotagAssets(
 export async function exemptAssets(
   ids: number[],
   exempt: boolean,
+  /** From a folded grid: the pair's other member follows (geo-exempt). */
+  opts: { companions?: boolean } = {},
 ): Promise<number> {
   if (!ids.length) return 0;
   const res = await fetch("/api/assets/geo-exempt", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, exempt }),
+    body: JSON.stringify({
+      ids,
+      exempt,
+      ...(opts.companions ? { companions: true } : {}),
+    }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
