@@ -7,7 +7,7 @@ import { imageSize } from "./imageSize";
 
 type Call = { method: string; path: string; body?: unknown };
 
-function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object; search?: object } = {}) {
+function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object; search?: object; rejected?: number[] } = {}) {
   const calls: Call[] = [];
   const client: WinnowClient = {
     base: "https://winnow.test",
@@ -16,6 +16,8 @@ function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; byt
       if (path === "/api/auth/me")
         return { user: { id: 1, username: "steeve", displayName: null, role: opts.role ?? "editor", via: opts.via ?? "agent" } } as never;
       if (path === "/api/capabilities") return { api: { version: 1 }, media: { timeline: opts.timeline ?? false } } as never;
+      if (path.startsWith("/api/assets?") && path.includes("verdict=reject") && path.includes("ids="))
+        return { assets: (opts.rejected ?? []).map((id) => ({ ...ROW, id })), next_cursor: null } as never;
       if (path.startsWith("/api/assets?")) return { assets: [ROW], next_cursor: "abc" } as never;
       if (/^\/api\/assets\/\d+$/.test(path)) return { asset: opts.asset ?? ROW } as never;
       if (path.endsWith("/rating")) return { rating: { asset_id: 7, ...(body as object) } } as never;
@@ -275,4 +277,18 @@ test("assets.list maps folder, tag, person, camera and city onto the filter", as
     ["session_id", "tags", "person", "camera_model", "place_city"].map((k) => sp.get(k)),
     ["12", "keeper", "515", "ILCE-7CM2", "Ubud"],
   );
+});
+
+test("trash.move trashes only rejected media, refusing the whole call otherwise", async () => {
+  const { reg, calls } = fakeClient({ rejected: [7] });
+  const err = (await failure(reg.execute("trash.move", { ids: [7, 9] })))!;
+  assert.match(err, /^invalid: not rejected .*: 9 — reject them first .*nothing was trashed/);
+  assert.ok(!calls.some((c) => c.path === "/api/assets/delete"), "nothing was sent");
+  const check = new URL(`https://x${calls.at(-1)!.path}`).searchParams;
+  assert.deepEqual([check.get("ids"), check.get("verdict")], ["7,9", "reject"]);
+
+  await reg.execute("trash.move", { ids: [7, 7] });
+  assert.deepEqual(calls.at(-1), { method: "POST", path: "/api/assets/delete", body: { ids: [7] } });
+  await reg.execute("trash.restore", { ids: [7] });
+  assert.deepEqual(calls.at(-1)!.body, { ids: [7], restore: true });
 });

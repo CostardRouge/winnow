@@ -427,6 +427,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         order: { type: "string", enum: ["newest", "oldest"], optional: true, description: "newest (default) or oldest first" },
         limit: { type: "number", integer: true, min: 1, max: 200, optional: true, description: "Page size, 50 by default" },
         cursor: { type: "string", optional: true, description: "next_cursor from the previous page" },
+        trash: { type: "boolean", optional: true, description: "List the trash instead of the live library" },
       },
       async run(p) {
         const day = date(p, "day");
@@ -452,6 +453,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
             sort_dir: p.order === "oldest" ? "asc" : undefined,
             limit: (p.limit as number | undefined) ?? 50,
             cursor: p.cursor as string | undefined,
+            deleted: p.trash === true ? "trash" : undefined,
           })}`,
         );
         return { assets: r.assets.map(summarize), next_cursor: r.next_cursor };
@@ -641,6 +643,46 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         if (p.color !== undefined) body.color = p.color === "none" ? null : p.color;
         const r = await client.json<{ rating: unknown }>("PATCH", `/api/assets/${p.id}/rating`, body);
         return r.rating;
+      },
+    },
+
+    {
+      id: "trash.move",
+      title: "Trash",
+      description:
+        "Send REJECTED media to the trash (POST /api/assets/delete): a soft delete — hidden from every listing and export, the original untouched, undone by trash.restore. Only media whose verdict is already reject are accepted, so what an agent trashes is first a reject it made visibly (and marked); any other id refuses the whole call, naming it. Freeing the space (purge) is an admin's confirmed step, out of a token's reach.",
+      available: canWrite,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `Rejected asset ids (at most ${MAX_BULK} a call)` },
+      },
+      async run(p) {
+        const ids = [...new Set(p.ids as number[])];
+        const r = await client.json<{ assets: { id: number }[] }>(
+          "GET",
+          `/api/assets${query({ ids: ids.join(","), verdict: "reject", limit: MAX_BULK })}`,
+        );
+        const rejected = new Set(r.assets.map((a) => a.id));
+        const refused = ids.filter((id) => !rejected.has(id));
+        if (refused.length)
+          throw new CommandError(
+            "invalid",
+            `not rejected (or not in the live library): ${refused.join(", ")} — reject them first (cull.set / cull.setMany), nothing was trashed`,
+          );
+        return client.json("POST", "/api/assets/delete", { ids });
+      },
+    },
+
+    {
+      id: "trash.restore",
+      title: "Restore",
+      description:
+        "Bring trashed media back to the library (POST /api/assets/delete with restore) — each pair's companion too. A purged medium cannot come back: its file is gone.",
+      available: canWrite,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `Asset ids (at most ${MAX_BULK} a call)` },
+      },
+      async run(p) {
+        return client.json("POST", "/api/assets/delete", { ids: p.ids, restore: true });
       },
     },
 
