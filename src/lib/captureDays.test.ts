@@ -166,6 +166,8 @@ test("a 'file' whose time is not its mtime goes back to the re-read; a true one 
   const clip = await seed({ at: "2025-07-07T21:30:18Z", source: "file", mtime: "2026-03-04T19:16:16Z" });
   const copy = await seed({ at: "2026-03-04T19:16:16Z", source: "file", mtime: "2026-03-04T19:16:16Z" });
   const before = await day(clip);
+  const stats = await cd.captureDayStats();
+  assert.ok(stats.toRead >= 1); // step 1 counts it as still to read
   const r = await cd.runCaptureDayBackfill({ apply: true });
   assert.ok(r.relabelled >= 1);
   const src = async (id: number) =>

@@ -251,6 +251,12 @@ export type CaptureDayStats = {
   byOffset: Record<string, number>;
   /** Live rows whose local day is not their UTC day — the frames 0046 moved. */
   movedFromUtcDay: number;
+  /**
+   * What a re-read still has to open: the unclassified rows plus the 'file'
+   * rows whose time is not their mtime (step 0 of the backfill hands those
+   * back — the clips the first, -fast2 re-read mislabelled).
+   */
+  toRead: number;
 };
 
 /** One scan over the live library, JIT off (docs/memory/database.md). */
@@ -264,12 +270,17 @@ export async function captureDayStats(): Promise<CaptureDayStats> {
       cos: string | null;
       n: string;
       moved: string;
+      to_read: string;
     }>(
       `SELECT captured_at_source AS cas, capture_offset_source AS cos,
               count(*) AS n,
               count(*) FILTER (
                 WHERE capture_date <> (captured_at AT TIME ZONE 'UTC')::date
-              ) AS moved
+              ) AS moved,
+              count(*) FILTER (
+                WHERE captured_at_source IS NULL
+                   OR (captured_at_source = 'file' AND captured_at IS DISTINCT FROM file_mtime)
+              ) AS to_read
          FROM assets
         WHERE deleted_at IS NULL AND captured_at IS NOT NULL
         GROUP BY 1, 2`,
@@ -281,11 +292,13 @@ export async function captureDayStats(): Promise<CaptureDayStats> {
       bySource: {},
       byOffset: {},
       movedFromUtcDay: 0,
+      toRead: 0,
     };
     for (const r of rows) {
       const n = Number(r.n);
       out.live += n;
       out.movedFromUtcDay += Number(r.moved);
+      out.toRead += Number(r.to_read);
       if (r.cas == null) out.unclassified += n;
       out.bySource[r.cas ?? "unclassified"] = (out.bySource[r.cas ?? "unclassified"] ?? 0) + n;
       out.byOffset[r.cos ?? "none"] = (out.byOffset[r.cos ?? "none"] ?? 0) + n;
