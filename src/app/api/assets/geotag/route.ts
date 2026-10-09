@@ -21,11 +21,15 @@
 //      to NULL, laundering a bulk guess into what looks like a camera fix
 //      within one scan (docs/UNPLACED.md §4.3). It stays true in the database
 //      (the indexer keeps it, cf. lib/indexer.ts) and is served live by the API.
+//   4. re-decide each frame's capture DAY from its new place (migration 0046,
+//      lib/captureDays.ts) — for both: a frame placed in Perth is filed on
+//      Perth's calendar day. Never fatal: the position is already written.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { many } from "@/lib/db";
 import { config } from "@/lib/config";
 import { enqueueGeocode, enqueueGpsWrite } from "@/lib/queue";
+import { applyOwnZones } from "@/lib/captureDays";
 import { json, badRequest, serverError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +67,11 @@ export async function POST(req: NextRequest) {
     for (const { id } of rows) {
       if (writeBack) await enqueueGpsWrite(id);
       if (config.geocode.enabled) await enqueueGeocode(id, { precise: true });
+    }
+    try {
+      await applyOwnZones(rows.map((r) => Number(r.id)));
+    } catch (err) {
+      console.warn("[geotag] capture-day update failed:", (err as Error).message);
     }
     return json({ updated: rows.length, skipped: ids.length - rows.length, source });
   } catch (err) {

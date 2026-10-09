@@ -24,8 +24,10 @@
 // when a human placed them deliberately; a migration landing in parallel adds a
 // third value, 'inferred', for a position accepted in bulk from a same-day /
 // nearby-day machine suggestion. The query is already written for it. A day's
-// position is the MEDIAN of its trustworthy rows only — NULL or 'manual', never
-// 'inferred' — and `source` is then "measured". Only a day with no trustworthy
+// position is the MEDIAN of its trustworthy rows only — NULL, 'manual' or
+// 'track' (an imported GPS track at the frame's instant, migration 0047 — a
+// measurement, not a guess), never 'inferred' — and `source` is then
+// "measured". Only a day with no trustworthy
 // row at all falls back to the median of whatever positions it has, reported as
 // "inferred". The rule is not cosmetic: a day with 5 real fixes and 800
 // bulk-accepted suggestions must be placed by the 5, or accuracy would silently
@@ -41,7 +43,10 @@
 // **`capture_date` verbatim.** Days are grouped on the stored `a.capture_date`
 // column, never derived from `captured_at` and never passed through timezone
 // math: a frame shot at 07:00 local can be a different UTC day, and recomputing
-// would quietly file it under the wrong one. Project-wide rule.
+// would quietly file it under the wrong one. Project-wide rule. Since migration
+// 0046 that column IS the local day wherever the frame's place is known (its
+// own GPS, an imported track, a neighbour's — lib/captureDays.ts); before it,
+// it was the UTC day and Atelier's sunrises landed on the day before.
 import { NextRequest } from "next/server";
 import { many, tx } from "@/lib/db";
 import {
@@ -100,7 +105,7 @@ async function geoByDay(filter: PartialAssetFilter) {
                 -- 'inferred' (a bulk-accepted suggestion; the value arrives
                 -- with a migration in flight) is deliberately NOT trustworthy.
                 (a.gps_lat IS NOT NULL
-                 AND (a.gps_source IS NULL OR a.gps_source = 'manual')) AS trusted
+                 AND (a.gps_source IS NULL OR a.gps_source IN ('manual', 'track'))) AS trusted
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
          WHERE ${where} AND a.capture_date IS NOT NULL

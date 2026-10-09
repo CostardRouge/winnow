@@ -3982,6 +3982,11 @@ html[data-theme="dark"] .btn-primary:hover {
   .pl-section {
     @apply flex flex-col gap-3;
   }
+  /* A page made of several .pl-section blocks (Dates & places): the blocks
+     need the air a heading alone does not give them. */
+  .pl-stack {
+    @apply flex flex-col gap-10;
+  }
   .pl-list {
     @apply grid gap-2;
   }

@@ -21,11 +21,14 @@ import {
   type IntegrityJob,
   type RelinkJob,
   RELINK_JOB,
+  type CaptureDaysJob,
+  CAPTURE_DAYS_JOB,
   type GpsWriteJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { runIntegrityJob } from "./lib/integrity";
 import { relinkMoved } from "./lib/relink";
+import { runCaptureDayBackfill } from "./lib/captureDays";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
@@ -262,6 +265,39 @@ const integrityWorker = new Worker(
           `[relink] root ${root.id}: ${report.matched} match(es), ` +
             `${report.relinked} relinked, ${report.ambiguous} ambiguous`,
         );
+      return out;
+    }
+    if (job.name === CAPTURE_DAYS_JOB) {
+      const { apply, reread, from, to } = job.data as CaptureDaysJob;
+      console.log(
+        `[capture-days] ${apply ? (reread ? "repair + re-read" : "repair") : "dry run"}…`,
+      );
+      // The re-read reads originals' headers: it honours the scan's pause and
+      // shares the scan's hourly budget, exactly as a scan's heavy reads do.
+      const out = await runCaptureDayBackfill(
+        { apply, reread, from: from ?? undefined, to: to ?? undefined },
+        {
+          shouldStop: async () => (await getSettings()).scanPaused,
+          throttle: async () => {
+            const { scanPerHour } = await getSettings();
+            if (scanPerHour <= 0) return;
+            let wait = await reserveSlot("scan", scanPerHour);
+            while (wait > 0) {
+              await sleep(Math.min(wait, 3000));
+              if ((await getSettings()).scanPaused) return;
+              wait = await reserveSlot("scan", scanPerHour);
+            }
+          },
+          onProgress: async (p) => {
+            await job.updateProgress(p).catch(() => {});
+          },
+        },
+      );
+      console.log(
+        `[capture-days] ${out.fromPosition} from a position, ` +
+          `${out.fromNeighbour} from a neighbour, ${out.reread_files} re-read` +
+          `${out.stopped ? " (paused: click again to resume)" : ""}`,
+      );
       return out;
     }
     const { rootId } = job.data as IntegrityJob;

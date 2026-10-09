@@ -355,7 +355,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
            WHERE a.deleted_at IS NULL
              AND a.gps_lat IS NOT NULL
              -- trustworthy only: never let an inferred position seed the next
-             AND (a.gps_source IS NULL OR a.gps_source = 'manual')
+             AND (a.gps_source IS NULL OR a.gps_source IN ('manual', 'track'))
          )
          SELECT h.idx, h.place_id,
                 count(*)::int AS n,

@@ -488,6 +488,45 @@ the same hand-off the map's *Show in grid* uses. `GET /api/assets/calendar`
 returns one row per capture date (`{date,count,cover_id}`) for the visible
 window plus the overall `bounds`, so a month renders in a single request.
 
+### Local capture day (page `/settings/pipeline/capture`)
+
+A frame belongs to the day on the photographer's wall clock, not the UTC one.
+Until migration 0046 `capture_date` was the UTC day, so anything shot before
+10:00 in Queensland (08:00 in Perth) was filed on the day before — the
+sunrises, and every morning of a road trip, which then pulled the previous
+day's position toward the next stop.
+
+`captured_at` still holds exactly what the file states; beside it each frame
+carries the **UTC offset of the place it was taken in**, and where that offset
+came from, strongest first: the frame's **own position** (zone looked up
+offline, DST included), an **imported GPS track**, the nearest frame from **any
+device** shot within 12 h (the phone in the pocket knows the zone the camera
+forgot), and last the **zone the camera wrote** — the weakest, since a camera
+left on its home zone abroad states a wrong one. A wall clock with no zone
+keeps its own date. The indexer decides this for every new or modified file;
+**Settings › Pipeline › Dates & places** repairs a library indexed before it:
+*Preview* (nothing written), *Apply* (database only), *Apply + re-read dates*
+(also reads the date tags of the frames the database cannot classify — the
+originals' headers, at the scan's pace, paused by its pause). Originals are
+never written, and clearing the offsets restores the old days exactly.
+`npm run capture-days [-- --apply [--reread]]` is the same job from a shell.
+
+**GPS track import** (same page). A track recorded beside the cameras — a
+Polarsteps export (`locations.json` + `trip.json`), a GPX, or a JSON list of
+`{lat, lon, time}` — places every frame of its span that has no position, by its
+capture instant: between two fixes on the move (≤ 60 min apart, never across a
+flight), between two fixes at the same spot (≤ 2 km apart, up to 12 h — the
+traveller stayed), or on the nearest fix within 15 min; a frame in a gap of the
+track gets only the zone it was in, for its capture day. These positions are
+`gps_source='track'`: trusted like a camera fix for a day's position, never
+written into an original, kept through re-indexing. A frame placed by its own
+file is never moved — when the track puts it more than 25 km away at that
+instant it is listed as a **conflict**, the signature of a camera clock set
+wrong — and positions set by hand or accepted from a folder suggestion are kept.
+*Preview* writes nothing; *Apply* records the import; *Undo* takes back exactly
+what it wrote. Frames indexed before the local-day repair are skipped until
+their date tags are re-read — the report offers to re-read just its span.
+
 ### Timeline: the library read as a story (page `/timeline`)
 
 > **Off by default.** The Timeline is behind a feature flag and ships disabled:
@@ -526,11 +565,11 @@ The **place granularity** is picked automatically (Région → Département →
 Ville, the first level giving a readable 6–30 chapters), shown as a chip and
 pinnable — an automatic cut nobody can see or pin is one nobody trusts.
 
-Two things worth knowing. Days are read **locally**: `capture_date` is
-materialized at UTC and the schema holds no timezone, so in Australia (+11)
-every frame shot before 11:00 local sits on the previous UTC day — the
-sunrises. A chapter's median longitude gives the offset (`round(lon / 15)`),
-stated on the chapter, approximate at zone borders on purpose. And a chapter
+Two things worth knowing. Days are read **locally**: a chapter's median
+longitude gives the offset it labels its span with (`round(lon / 15)`), stated
+on the chapter, approximate at zone borders on purpose — the per-frame day
+beneath it is exact wherever the place is known (see *Local capture day*
+below). And a chapter
 holding **no GPS at all** is named from its neighbours in time and badged
 *lieu déduit*: that inference lives in the response only. `POST
 /api/assets/geotag` writes coordinates into the **original file's EXIF**, and a
@@ -599,8 +638,8 @@ the map is one `GROUP BY` with no clustering pass and no PostGIS — and, unlike
 `/api/assets/geo`, no 10 000-point cap. The trade is that a bin does not refine
 as you zoom: its size is whatever the geocoder stored.
 
-Days are read in **UTC** (`capture_date` is a UTC column and Winnow keeps no
-per-asset timezone), and the page says so. Undated and ungeotagged media are
+Days are each frame's **local** day where its place is known and the UTC day
+otherwise (*Local capture day* below), and the page says so. Undated and ungeotagged media are
 **counted beside the view**, never silently dropped. Everything is in the URL —
 the reading, the measure, the granularity, the brushed span, the picked bin — and
 *Open in the grid* hands off with the same `date_from`/`date_to` pair the

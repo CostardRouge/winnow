@@ -21,12 +21,14 @@
     "ml-backfill": "tsx src/scripts/ml-backfill.ts",
     "people-backfill": "tsx src/scripts/people-backfill.ts",
     "srt-backfill": "tsx src/scripts/srt-backfill.ts",
+    "capture-days": "tsx src/scripts/capture-days.ts",
     "shutter-backfill": "tsx src/scripts/shutter-backfill.ts",
     "relink-moved": "tsx src/scripts/relink-moved.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",
     "@aws-sdk/s3-request-presigner": "^3.1095.0",
+    "@photostructure/tz-lookup": "^11.6.0",
     "bullmq": "^5.81.2",
     "chokidar": "^5.0.0",
     "clsx": "^2.1.1",

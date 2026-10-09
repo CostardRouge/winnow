@@ -9,9 +9,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config, HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
 import { readHeicOrientation, readOrientation } from "./orientation";
+import {
+  classifyCaptureTime,
+  type CapturedAtSource,
+  type ExifTimeLike,
+} from "./captureZone";
 
 export type Metadata = {
   captured_at: string | null;
+  // How captured_at was read (migration 0046, lib/captureZone.ts): a zoned
+  // instant ('exif'), a wall clock with no zone ('exif-wall', serialised with a
+  // trailing Z so Postgres stores the wall clock as UTC regardless of the
+  // session's TimeZone), or null when the file carries no usable date (the
+  // indexer then falls back to the mtime and records 'file').
+  captured_at_source: CapturedAtSource | null;
+  // The offset the camera itself WROTE (OffsetTimeOriginal & co.), minutes
+  // east of UTC — weak evidence: a camera left on its home zone abroad states
+  // a wrong one, so any position-derived offset outranks it.
+  exif_offset_min: number | null;
   camera_model: string | null;
   device: string | null;
   lens: string | null;
@@ -128,6 +143,45 @@ function str(v: unknown): string | null {
   return !s || s.startsWith("[object ") ? null : s;
 }
 
+// The capture time and how it reads, from the first date tag that holds a
+// real instant — the same precedence readMetadata has always used. Exported
+// for lib/captureDays.ts, whose backfill re-reads only these tags.
+export function readCaptureTime(t: Tags): {
+  captured_at: string | null;
+  captured_at_source: CapturedAtSource | null;
+  exif_offset_min: number | null;
+} {
+  const candidates: unknown[] = [
+    t.DateTimeOriginal,
+    t.SubSecDateTimeOriginal,
+    t.CreateDate,
+    (t as any).MediaCreateDate,
+  ];
+  for (const v of candidates) {
+    const iso = toIso(v);
+    if (!iso) continue;
+    if (v && typeof v === "object" && "hasZone" in (v as object)) {
+      const c = classifyCaptureTime(v as ExifTimeLike, (t as any).tzSource);
+      return {
+        // A wall clock is pinned to UTC explicitly: its date IS the local date.
+        captured_at:
+          c.source === "exif-wall" && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? `${iso}Z` : iso,
+        captured_at_source: c.source,
+        exif_offset_min: c.exifOffsetMin,
+      };
+    }
+    // An unparsed string that normalizeTimestamp still accepted: zoned only if
+    // it spells an offset itself.
+    const zoned = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
+    return {
+      captured_at: zoned ? iso : `${iso.replace(" ", "T")}Z`,
+      captured_at_source: zoned ? "exif" : "exif-wall",
+      exif_offset_min: null,
+    };
+  }
+  return { captured_at: null, captured_at_source: null, exif_offset_min: null };
+}
+
 export async function readMetadata(absPath: string): Promise<Metadata> {
   const t: Tags = await exiftool.read(absPath);
   const make = str(t.Make) ?? "";
@@ -139,13 +193,12 @@ export async function readMetadata(absPath: string): Promise<Metadata> {
   const lon = num(t.GPSLongitude);
   if (lat != null && lon != null) gps = { lat, lon };
 
+  const capture = readCaptureTime(t);
+
   return {
-    captured_at:
-      toIso(t.DateTimeOriginal) ??
-      toIso(t.SubSecDateTimeOriginal) ??
-      toIso(t.CreateDate) ??
-      toIso((t as any).MediaCreateDate) ??
-      null,
+    captured_at: capture.captured_at,
+    captured_at_source: capture.captured_at_source,
+    exif_offset_min: capture.exif_offset_min,
     camera_model: model || null,
     device,
     // Try each lens tag in turn, coercing every candidate to a clean string so an

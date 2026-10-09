@@ -387,9 +387,11 @@ export function absorbRuns(groupsIn: RunGroup[], absorbMin: number): RunGroup[] 
 
 /** Hours to add to UTC so a chapter's days read as they were lived.
  *
- *  capture_date and capture_year/month/day are materialized AT UTC by the
- *  trigger of migration 0003, and NO timezone column exists anywhere in the
- *  schema. In France the one-hour skew is invisible; in Australia (+11) every
+ *  Chapters are cut on instants (captured_at), and until migration 0046
+ *  capture_date was materialized AT UTC with no timezone anywhere in the
+ *  schema. 0046 now files a frame on its place's day per ROW
+ *  (capture_offset_min, lib/captureDays.ts), but a chapter still needs ONE
+ *  offset to label its span. In France the one-hour skew is invisible; in Australia (+11) every
  *  frame shot before 11:00 local is filed under the PREVIOUS day — which is
  *  exactly the sunrises. A chapter already carries a place, hence a longitude,
  *  and 15° of longitude is one hour: enough to put the day boundaries back
