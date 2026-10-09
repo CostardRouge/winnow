@@ -6,7 +6,7 @@
 // needing attention is one tap away — so culling a backlog is a continuous flow
 // rather than a round-trip through the list each time.
 
-import { useCallback, useEffect, useState, use as usePromise } from "react";
+import { useCallback, useEffect, useRef, useState, use as usePromise } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 import { Icons } from "@/app/ui";
@@ -36,6 +36,9 @@ type SessionRow = {
 // swipe without a round-trip to refetch the session.
 type Counts = { picks: number; rejects: number; skips: number; total: number };
 
+// Cards dealt per hand (see the loader).
+const DECK_MAX = 2000;
+
 export default function SiftSessionPage({
   params,
 }: {
@@ -47,6 +50,13 @@ export default function SiftSessionPage({
   const [cards, setCards] = useState<DeckCard[] | null>(null);
   const [counts, setCounts] = useState<Counts>({ picks: 0, rejects: 0, skips: 0, total: 0 });
   const [swiped, setSwiped] = useState(0);
+  // The deck is dealt in hands of DECK_MAX: `more` says the session holds
+  // unrated cards past this hand, and `hand` re-deals when it runs dry.
+  const [more, setMore] = useState(false);
+  const [hand, setHand] = useState(0);
+  // Verdict writes still in flight: the next hand is dealt only once they
+  // land, or `verdict=unrated` would deal the last cards swiped again.
+  const writes = useRef(new Set<Promise<unknown>>());
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [nextId, setNextId] = useState<number | null>(null);
@@ -71,9 +81,14 @@ export default function SiftSessionPage({
   }, [id]);
 
   // Load every unrated, ready-to-preview card, paging through the cursor so a
-  // big session deals the whole backlog (capped to keep memory sane).
+  // big session deals the whole backlog — in hands of DECK_MAX to keep memory
+  // sane. The cap used to be silent: a 5 000-frame session showed "2000 left",
+  // then "Session sorted! 🎉" with 3 000 frames still unrated. Now an empty
+  // hand deals the next one (what was rated drops out of `verdict=unrated`).
   useEffect(() => {
     let off = false;
+    setCards(null);
+    setSwiped(0);
     (async () => {
       try {
         const all: DeckCard[] = [];
@@ -91,9 +106,12 @@ export default function SiftSessionPage({
           }>(`/api/sessions/${id}/assets?${sp.toString()}`);
           all.push(...(data.assets ?? []));
           cursor = data.next_cursor ?? null;
-          if (!cursor || all.length >= 2000) break;
+          if (!cursor || all.length >= DECK_MAX) break;
         }
-        if (!off) setCards(all);
+        if (!off) {
+          setMore(cursor != null);
+          setCards(all);
+        }
       } catch (e) {
         if (!off) setError((e as Error).message);
       }
@@ -101,7 +119,7 @@ export default function SiftSessionPage({
     return () => {
       off = true;
     };
-  }, [id]);
+  }, [id, hand]);
 
   // Find the next session still needing triage (most recently touched first),
   // skipping this one — powers the "Next session" hand-off on completion.
@@ -139,11 +157,13 @@ export default function SiftSessionPage({
           c.rejects + (verdict === "reject" ? 1 : 0) - (prev === "reject" ? 1 : 0),
         skips: c.skips + (verdict === "skip" ? 1 : 0) - (prev === "skip" ? 1 : 0),
       }));
-      void fetch(`/api/assets/${card.id}/rating`, {
+      const w = fetch(`/api/assets/${card.id}/rating`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verdict }),
-      });
+      }).catch(() => null);
+      writes.current.add(w);
+      void w.finally(() => writes.current.delete(w));
     },
     [],
   );
@@ -186,7 +206,11 @@ export default function SiftSessionPage({
           ) : !finished && total > 0 ? (
             <>
               <strong>{left}</strong> left
-              <span className="sift-deck-total"> / {total}</span>
+              <span className="sift-deck-total">
+                {" "}
+                / {total}
+                {more ? " in this hand — more to come" : ""}
+              </span>
             </>
           ) : (
             "All sorted"
@@ -225,10 +249,16 @@ export default function SiftSessionPage({
           />
         ) : (
           <SwipeDeck
+            key={hand}
             cards={cards}
             onRate={rate}
             onUndo={undo}
-            onEmpty={() => setFinished(true)}
+            onEmpty={() => {
+              if (!more) return setFinished(true);
+              void Promise.allSettled([...writes.current]).then(() =>
+                setHand((h) => h + 1),
+              );
+            }}
             emptyState={
               <CompletionPanel
                 title="Session sorted! 🎉"

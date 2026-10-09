@@ -4770,6 +4770,14 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply text-[10px] font-normal;
     color: var(--color-faint);
   }
+  /* "+N more" is a button now (it pages the bin in): keep the cell's look. */
+  button.trash-more {
+    @apply cursor-pointer;
+    font: inherit;
+  }
+  button.trash-more:hover:not(:disabled) {
+    color: var(--color-text);
+  }
   .trash-jobs {
     @apply mt-4 flex flex-col gap-1.5;
   }

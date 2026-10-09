@@ -1252,8 +1252,13 @@ export default function GalleryShell({
         {notice && <span className="notice">{notice}</span>}
         {galleryActive && (
           <span className="hint">
-            {items.length}{hasMore ? "+" : ""} shown
-            {facets ? ` · ${facets.total} total` : ""}
+            {/* Two different units, said as such: tiles (filtered, a pair or
+                a pile is one) against every file in the section, unfiltered.
+                "N shown · M total" read as media missing even when fully
+                scrolled (63 304 tiles never reach 107 783 files). */}
+            {items.length.toLocaleString("en-GB")}
+            {hasMore ? "+" : ""} shown
+            {facets ? ` · ${facets.total.toLocaleString("en-GB")} files in all` : ""}
           </span>
         )}
       </div>

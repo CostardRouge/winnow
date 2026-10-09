@@ -12,7 +12,7 @@ import {
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { fetchJson } from "@/lib/fetchJson";
+import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
@@ -437,12 +437,11 @@ export default function SessionGrid({
       }
       try {
         // The pile is fetched WITHOUT the verdict filter: expanding is about
-        // seeing the whole run, whatever each frame is rated. Piles are seconds
-        // long, so one max-size page always covers a real burst.
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
+        // seeing the whole run, whatever each frame is rated — every page of
+        // it (an interval-shot pile can outrun one 500-row page).
+        const members = await fetchAllPages<AssetRow>(
           `/api/sessions/${id}/assets?burst_id=${burstId}&limit=500`,
         );
-        const members = data.assets ?? [];
         if (!members.length) return;
         setAssets((prev) => {
           const at = prev.findIndex((x) => x.id === a.id);
@@ -530,10 +529,10 @@ export default function SessionGrid({
       const bid = a.burst_id;
       if (bid == null) return;
       try {
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
+        const members = await fetchAllPages<AssetRow>(
           `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
         );
-        const ids = (data.assets ?? []).map((x) => x.id);
+        const ids = members.map((x) => x.id);
         if (ids.length) setExportIds(ids);
       } catch (e) {
         setNotice((e as Error).message);
@@ -552,10 +551,11 @@ export default function SessionGrid({
       const bid = a.burst_id;
       if (bid == null) return;
       try {
-        const data = await fetchJson<{ assets?: AssetRow[] }>(
-          `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
-        );
-        const members = (data.assets ?? []).filter((x) => x.sharpness != null);
+        const members = (
+          await fetchAllPages<AssetRow>(
+            `/api/sessions/${id}/assets?burst_id=${bid}&limit=500`,
+          )
+        ).filter((x) => x.sharpness != null);
         if (!members.length) {
           setNotice(
             "No sharpness scores in this pile yet — run “Detect faces & text” first",

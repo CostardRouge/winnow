@@ -173,6 +173,14 @@ export function RetrySection<K extends string | number>({
       <p className="hint" style={{ marginTop: 0 }}>
         {hint}
       </p>
+      {/* The list holds the newest rows only (api/failures LIMIT); the
+          family-wide buttons act server-side on every one of `count`. */}
+      {count > rows.length && rows.length > 0 && (
+        <p className="hint">
+          Showing the newest {rows.length.toLocaleString("en-GB")} of{" "}
+          {count.toLocaleString("en-GB")}; the buttons above act on all of them.
+        </p>
+      )}
       {count === 0 ? (
         <div className="empty" style={{ padding: 16 }}>
           Nothing here. 🎉

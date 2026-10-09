@@ -379,6 +379,8 @@ export default function PeoplePanel() {
   // Merge suggestions (near-identical stacks, cf. lib/people.suggestMerges):
   // best-effort — a failed fetch just means no banner.
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
+  // The list is a first batch when the server holds more pairs than it sent.
+  const [moreSuggestions, setMoreSuggestions] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   // Bulk merge: the checked cards, folded into ONE picked target in a single
   // confirm ("these five strangers are all Léa").
@@ -394,10 +396,13 @@ export default function PeoplePanel() {
     fetchJson<PeopleResponse>("/api/people")
       .then((d) => {
         setData(d);
-        return fetchJson<{ suggestions: MergeSuggestion[] }>(
+        return fetchJson<{ suggestions: MergeSuggestion[]; more?: boolean }>(
           "/api/people/suggestions",
         )
-          .then((s) => setSuggestions(s.suggestions))
+          .then((s) => {
+            setSuggestions(s.suggestions);
+            setMoreSuggestions(Boolean(s.more));
+          })
           .catch(() => {});
       })
       .catch((e: unknown) =>
@@ -733,9 +738,10 @@ export default function PeoplePanel() {
             // pairs and the modal walks them one merge (or dismissal) at a time.
             <div className="suggest-banner">
               <span className="hint">
-                {num(suggestions.length)}{" "}
-                {suggestions.length === 1 ? "pair" : "pairs"} of stacks look like
-                the same person.
+                {num(suggestions.length)}
+                {moreSuggestions ? "+" : ""}{" "}
+                {suggestions.length === 1 && !moreSuggestions ? "pair" : "pairs"} of
+                stacks look like the same person.
               </span>
               <button className="btn" onClick={() => setSuggestOpen(true)}>
                 Review
