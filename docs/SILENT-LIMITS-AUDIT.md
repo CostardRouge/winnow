@@ -174,9 +174,10 @@ were found, and neither was the map.
 failed in 25 s: Docker Hub answered `429 Too Many Requests` for the base image
 `node:24-slim`, because GitHub runners share their IPs and anonymous pulls are
 rate-limited. No image was published, so the redeploy pulled the old one again.
-**Open:** pull the base image from a mirror that is not rate-limited (for
-example `mirror.gcr.io/library/node:24-slim`), or log the build in to Docker
-Hub. The second option needs a secret, so it is the maintainer's call.
+**Fixed** (the maintainer chose the mirror): the `Dockerfile` pulls
+`mirror.gcr.io/library/node:24-slim`, Google's public mirror of Docker Hub's
+official images. The image and digest are the same, with no account and no
+Docker Hub limit.
 
 **G1 — Every manual pin West or South was written into its original mirrored.
 Fixed** (`41bcec2` stops it; the repair is on Settings › Pipeline › Dates &
