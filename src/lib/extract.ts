@@ -190,7 +190,12 @@ export function readCaptureTime(t: Tags): {
  * so every Sony, DJI and iPhone clip read as "no date in the file".
  */
 export async function readCaptureTimeFromFile(absPath: string) {
-  return readCaptureTime(await exiftool.read(absPath, { readArgs: ["-fast"] }));
+  const fast = readCaptureTime(await exiftool.read(absPath, { readArgs: ["-fast"] }));
+  if (fast.captured_at) return fast;
+  // No date where -fast looks: read the whole file, as the indexer does,
+  // before calling it dateless — a file is rarely without a date, so this
+  // second read costs little.
+  return readCaptureTime(await exiftool.read(absPath));
 }
 
 export async function readMetadata(absPath: string): Promise<Metadata> {

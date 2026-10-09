@@ -177,6 +177,34 @@ test("a 'file' whose time is not its mtime goes back to the re-read; a true one 
   assert.deepEqual(await day(clip), before); // no day moves
 });
 
+test("a file with no date at all leaves the re-read on its mtime, so nothing is left to read", { skip: skipWithoutDb }, async () => {
+  const { default: sharp } = await import("sharp");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "winnow-dateless-"));
+  try {
+    const p = path.join(dir, "export.jpg");
+    await sharp({ create: { width: 8, height: 8, channels: 3, background: "#888" } }).jpeg().toFile(p);
+    // Indexed with a time that is not its mtime: what a 'file' row the first
+    // re-read wrote over a stale time looks like once step 0 hands it back.
+    const id = (await db.one<{ id: number }>(
+      `INSERT INTO assets (session_id, abs_path, rel_path, filename, ext, media_type,
+                           captured_at, captured_at_source, file_mtime)
+       VALUES ($1, $2, 'export.jpg', 'export.jpg', 'jpg', 'photo',
+               '2025-07-07T21:30:18Z', 'file', '2026-01-09T10:00:00Z') RETURNING id`,
+      [sessionId, p],
+    ))!.id;
+    await cd.runCaptureDayBackfill({ apply: true, reread: true });
+    const r = (await db.one<{ s: string | null; same: boolean }>(
+      "SELECT captured_at_source AS s, captured_at = file_mtime AS same FROM assets WHERE id = $1",
+      [id],
+    ))!;
+    assert.deepEqual(r, { s: "file", same: true });
+    assert.equal((await cd.captureDayStats()).toRead, 0);
+  } finally {
+    // exiftool stays open: the next test reads with it, and closes it.
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("the re-read classifies only the frames of its window, from the file's own tags", { skip: skipWithoutDb }, async () => {
   const { default: sharp } = await import("sharp");
   const { exiftool } = await import("exiftool-vendored");
