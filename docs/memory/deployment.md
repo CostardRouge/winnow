@@ -6,7 +6,7 @@ Seeded 2026-08-20 from `Dockerfile`, `docker-compose*.yml`, `Makefile`, `.github
 
 ## One image, three roles (2026-08-20)
 
-**Decision**: a single `node:22-slim` image serves the Next app, the BullMQ worker and the one-shot `migrate` service; the compose services override `command`. The container runs as **root** on purpose.
+**Decision**: a single `node:24-slim` image (Node 22 until 2026-10-09, when 20 was already end of life and 22 in maintenance) serves the Next app, the BullMQ worker and the one-shot `migrate` service; the compose services override `command`. The container runs as **root** on purpose. **Node 24 move, 2026-10-09**: verified only what a container without Docker, Postgres or the NAS can show — `npm ci`, typecheck, tests, `next build`, and a smoke of the two runtime native addons (sharp/libvips, exiftool-vendored via perl; msgpackr-extract under bullmq) on 24.12, 24.18 and 24.21. NOT measured: the worker's RSS under jemalloc and `--max-old-space-size=1024` with V8 13, and the DB-backed tests (skipped without `WINNOW_TEST_DATABASE_URL`). **How to apply**: after a deploy that moves the Node major, watch the worker's memory for a day before trusting it; the tag floats on the 24 line (as `22-slim` did), so a Node-level regression like spotify-poller's better-sqlite3 abort (nodejs/node#63642, which hits V8-API addons, not N-API ones like sharp) would arrive with a re-pull — pin the exact version in the Dockerfile if one ever does.
 
 **Why**: named volumes and NAS mounts (NFS/SMB with their own uid mapping) are writable without friction that way. The maintainer chose fewer permission problems over the usual non-root posture on a single-tenant home box.
 
