@@ -124,9 +124,14 @@ export default function PersonDetail({ personId }: { personId: number }) {
   // First page keyed on personId (a merge navigates here with a NEW id, so the
   // grid must reset rather than append across people); VirtualGrid drives the
   // following pages through loadMore.
+  // The list generation: bumped by every first-page load, so a next page that
+  // left before a merge moved us to another person is dropped instead of
+  // appended to the new person's grid.
+  const listGen = useRef(0);
   useEffect(() => {
     if (!Number.isFinite(personId)) return;
     let alive = true;
+    listGen.current++;
     setItems([]);
     setCursor(null);
     setHasMore(true);
@@ -156,11 +161,13 @@ export default function PersonDetail({ personId }: { personId: number }) {
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore || !cursor) return;
+    const gen = listGen.current;
     setLoading(true);
     try {
       const d = await fetchJson<AssetsPage>(
         `/api/assets?person=${personId}&collapse=1&sort_dir=desc&limit=${PAGE}&cursor=${encodeURIComponent(cursor)}`,
       );
+      if (gen !== listGen.current) return;
       setItems((prev) => [...prev, ...d.assets]);
       setCursor(d.next_cursor);
       setHasMore(Boolean(d.next_cursor));

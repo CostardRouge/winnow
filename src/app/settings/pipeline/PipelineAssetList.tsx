@@ -365,6 +365,12 @@ export default function PipelineAssetList({
   // grid would eagerly pull the whole (100k) library behind the tree.
   const shouldLoad = view !== "folder" || folderPath != null;
 
+  // The query the list currently shows. An answer for any other one (a poll
+  // or a page that left before a status chip changed) is dropped: landing
+  // last, it used to fill the list with the other status's media.
+  const liveQuery = useRef(fullQuery);
+  liveQuery.current = fullQuery;
+
   const loadFirst = useCallback(async () => {
     if (!shouldLoad) {
       setItems([]);
@@ -374,6 +380,7 @@ export default function PipelineAssetList({
     }
     try {
       const d = await fetchJson<Page>(`/api/assets?${fullQuery}`);
+      if (fullQuery !== liveQuery.current) return;
       setItems(d.assets);
       setCursor(d.next_cursor);
       setError(null);
@@ -393,6 +400,7 @@ export default function PipelineAssetList({
       const d = await fetchJson<Page>(
         `/api/assets?${fullQuery}&cursor=${encodeURIComponent(cursor)}`,
       );
+      if (fullQuery !== liveQuery.current) return;
       setItems((prev) => [...prev, ...d.assets]);
       setCursor(d.next_cursor);
     } catch (e) {

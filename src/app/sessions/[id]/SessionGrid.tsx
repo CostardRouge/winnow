@@ -256,6 +256,15 @@ export default function SessionGrid({
   const sentinel = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  // Which list a page request belongs to. A verdict change or a refresh starts a new list
+  // (`cur === null`): it bumps the generation and aborts the request in
+  // flight, and any answer for an older generation is dropped. Before, a
+  // reset fetch was SKIPPED while a page was loading, the old answer then
+  // landed into the emptied list with its cursor, and the next scroll paged
+  // the new filter from the old position — the previous filter's media under
+  // the new one, and the head of the new results never fetched.
+  const pageGen = useRef(0);
+  const pageAbort = useRef<AbortController | null>(null);
 
   // Land the grid back on the media the viewer was showing when it closes. The
   // grid is a plain (non-virtualized) list mounted under the overlay, so every
@@ -299,11 +308,21 @@ export default function SessionGrid({
     setCursor(null);
     setHasMore(true);
     setExpandedBursts(new Map());
+    // A selection belongs to the list it was made in (see GalleryShell).
+    setSelected(new Set());
   }, []);
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
-      if (loadingRef.current) return;
+      // A next page never overlaps another request; a new list always runs.
+      if (cur && loadingRef.current) return;
+      if (!cur) {
+        pageGen.current++;
+        pageAbort.current?.abort();
+      }
+      const gen = pageGen.current;
+      const ctl = new AbortController();
+      pageAbort.current = ctl;
       loadingRef.current = true;
       setLoading(true);
       try {
@@ -320,7 +339,10 @@ export default function SessionGrid({
         const data = await fetchJson<{
           assets?: AssetRow[];
           next_cursor?: string | null;
-        }>(`/api/sessions/${id}/assets?${sp.toString()}&collapse=1`);
+        }>(`/api/sessions/${id}/assets?${sp.toString()}&collapse=1`, {
+          signal: ctl.signal,
+        });
+        if (gen !== pageGen.current) return;
         setError(null);
         setAssets((prev) =>
           cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? [],
@@ -328,11 +350,14 @@ export default function SessionGrid({
         setCursor(data.next_cursor ?? null);
         setHasMore(Boolean(data.next_cursor));
       } catch (e) {
+        if (gen !== pageGen.current) return;
         setError((e as Error).message);
         setHasMore(false);
       } finally {
-        setLoading(false);
-        loadingRef.current = false;
+        if (gen === pageGen.current) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
       }
     },
     [id, verdict],

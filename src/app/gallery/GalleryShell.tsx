@@ -347,6 +347,15 @@ export default function GalleryShell({
   const [facetsError, setFacetsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
+  // Which list a page request belongs to. A filter change starts a new list
+  // (`cur === null`): it bumps the generation and aborts the request in
+  // flight, and any answer for an older generation is dropped. Before, a
+  // reset fetch was SKIPPED while a page was loading, the old answer then
+  // landed into the emptied list with its cursor, and the next scroll paged
+  // the new filter from the old position — the previous filter's media under
+  // the new one, and the head of the new results never fetched.
+  const pageGen = useRef(0);
+  const pageAbort = useRef<AbortController | null>(null);
   // The grid's imperative handle, so closing the viewer can land the grid back on
   // the media that was on screen (even if navigation paged well past the opener).
   const gridRef = useRef<VirtualGridHandle>(null);
@@ -451,7 +460,15 @@ export default function GalleryShell({
 
   const fetchPage = useCallback(
     async (cur: string | null) => {
-      if (loadingRef.current) return;
+      // A next page never overlaps another request; a new list always runs.
+      if (cur && loadingRef.current) return;
+      if (!cur) {
+        pageGen.current++;
+        pageAbort.current?.abort();
+      }
+      const gen = pageGen.current;
+      const ctl = new AbortController();
+      pageAbort.current = ctl;
       loadingRef.current = true;
       setLoading(true);
       try {
@@ -462,17 +479,22 @@ export default function GalleryShell({
           next_cursor?: string | null;
         }>(
           `/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1&limit=${cur ? NEXT_PAGE : FIRST_PAGE}`,
+          { signal: ctl.signal },
         );
+        if (gen !== pageGen.current) return;
         setError(null);
         setItems((prev) => (cur ? [...prev, ...(data.assets ?? [])] : data.assets ?? []));
         setCursor(data.next_cursor ?? null);
         setHasMore(Boolean(data.next_cursor));
       } catch (e) {
+        if (gen !== pageGen.current) return;
         setError((e as Error).message);
         setHasMore(false);
       } finally {
-        setLoading(false);
-        loadingRef.current = false;
+        if (gen === pageGen.current) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
       }
     },
     [filters, scope, sortDir],
@@ -483,6 +505,10 @@ export default function GalleryShell({
     setItems([]);
     setCursor(null);
     setHasMore(true);
+    // A selection belongs to the list it was made in: kept across a filter
+    // change, the bar said "60 selected" and Pick / Delete hit media no
+    // longer on screen.
+    setSelected(new Set());
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, scope, galleryActive, sortDir]);
