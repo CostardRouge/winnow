@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { searchPlaces, type PlaceSuggestion } from "@/lib/assetActions";
@@ -38,6 +44,7 @@ export default function LocationPicker({
   layout = "stack",
   autoFocus = false,
   inputId = "location-picker-place",
+  aside,
 }: {
   value: PickedLocation | null;
   onChange: (v: PickedLocation) => void;
@@ -47,6 +54,11 @@ export default function LocationPicker({
   layout?: "stack" | "split";
   autoFocus?: boolean;
   inputId?: string;
+  /** `split` only: the host's own content, laid out as the picker's third
+   *  region — under the fields beside a full-height map on a wide screen,
+   *  full width under both on a narrower one (see .picker-split). It rides
+   *  inside the picker because only one grid can place the map against it. */
+  aside?: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -326,12 +338,13 @@ export default function LocationPicker({
   // `split` puts the map beside the fields, which is how it fits into a dialog
   // that already has a table to show.
   return layout === "split" ? (
-    <div className="picker-split">
+    <div className={`picker-split${aside ? " has-aside" : ""}`}>
       {map}
       <div className="picker-side">
         {search}
         {coords}
       </div>
+      {aside && <div className="picker-aside">{aside}</div>}
     </div>
   ) : (
     <>
