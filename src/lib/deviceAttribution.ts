@@ -23,18 +23,33 @@
 // merely that there is one — but a folder can hold two cameras. Weighed
 // together they separate the obvious from the arguable, and the arguable is
 // what the UI hands to the maintainer instead of guessing.
-import { many, one, q } from "./db";
+import { many, manyWithoutJit, one, q } from "./db";
+import type {
+  ApplyResult,
+  DeviceCandidate,
+  DeviceFolder,
+  DeviceSample,
+  DeviceSignal,
+  FolderSort,
+  KnownBody,
+} from "./deviceTypes";
 
-// One piece of evidence that a candidate belongs to a given body. Weights are
-// deliberately coarse — this ranks a triage list, it does not compute a
-// probability, and a tie is resolved by a human looking at the row.
-export type DeviceSignal =
-  | "telemetry" // a tied .SRT sidecar whose DJI flight log actually parsed
-  | "sidecar" // a tied .SRT sidecar, parsed or not
-  | "filename" // the maker's own naming scheme (DJI_0001.MP4)
-  | "sibling" // another live asset of the SAME folder already has a body
-  | "folder"; // the folder path names the gear ("dji drone", "drone")
+// The shapes live in deviceTypes.ts, which client components may import; they
+// are re-exported here so server callers keep one import.
+export type {
+  ApplyResult,
+  DeviceCandidate,
+  DeviceFolder,
+  DeviceSample,
+  DeviceSignal,
+  FolderSort,
+  KnownBody,
+};
 
+// One piece of evidence that a candidate belongs to a given body (the union is
+// DeviceSignal in deviceTypes.ts). Weights are deliberately coarse — this
+// ranks a triage list, it does not compute a probability, and a tie is
+// resolved by a human looking at the row.
 export const SIGNAL_WEIGHTS: Record<DeviceSignal, number> = {
   // Telemetry that PARSED is the one signal no ordinary subtitle file can fake:
   // lib/srt.ts only reports samples when it found real flight fixes.
@@ -54,46 +69,6 @@ export const SIGNAL_WEIGHTS: Record<DeviceSignal, number> = {
 // clear it, which is the intended headline case — a drone clip with a readable
 // flight log is not ambiguous.
 export const CONFIDENT_SCORE = 5;
-
-/** A body the library already knows, as the gear dimension spells it. */
-export type KnownBody = {
-  /** The raw EXIF string — the value every grid filters on. Never a label. */
-  device: string;
-  /** The bare model, carried along so an attributed row matches its siblings. */
-  camera_model: string | null;
-  /** How many live media already carry it (busiest first in the picker). */
-  count: number;
-};
-
-/** A medium carrying no body, with the evidence gathered about it — plus the
- *  facts the opened folder's table prints and the viewer needs to draw it.
- *
- *  What is NOT here, because Winnow does not index it: codec, frame rate and
- *  the stream's nominal bitrate. Nothing in the pipeline calls ffprobe — the
- *  derivative worker hands the file straight to ffmpeg — so those would need a
- *  column and a pass of their own. The table derives an AVERAGE bitrate from
- *  size over duration instead, and says so. */
-export type DeviceCandidate = {
-  id: number;
-  filename: string;
-  rel_path: string;
-  ext: string;
-  media_type: "photo" | "video";
-  file_size: number | null;
-  width: number | null;
-  height: number | null;
-  duration_s: number | null;
-  derivative_status: string;
-  captured_at: string | null;
-  session_name: string | null;
-  signals: DeviceSignal[];
-  score: number;
-  /** True once `score` clears CONFIDENT_SCORE — the UI pre-selects these. */
-  confident: boolean;
-  /** The body the vote proposes, or null when nothing named one. */
-  suggested_device: string | null;
-  suggested_camera_model: string | null;
-};
 
 // The raw evidence row, one per candidate. Everything is read from columns the
 // indexer already wrote — no file is touched.
@@ -190,7 +165,9 @@ export async function countUnattributed(sessionId?: number): Promise<number> {
  * clip lands on an existing card rather than beside it.
  */
 export async function listKnownBodies(): Promise<KnownBody[]> {
-  return many<KnownBody>(
+  // A GROUP BY over every live medium: JIT off, the rule for any whole-library
+  // aggregate (docs/memory/database.md).
+  return manyWithoutJit<KnownBody>(
     `SELECT a.device                                        AS device,
             mode() WITHIN GROUP (ORDER BY a.camera_model)   AS camera_model,
             count(*)::int                                   AS count
@@ -241,34 +218,6 @@ const scoreSql = (sibling: string) => `(
 )`;
 const SCORE_SQL = scoreSql(SIBLING_SQL);
 
-/** A thumbnail the card's strip draws — the same shape Unplaced's cards use. */
-export type DeviceSample = {
-  id: number;
-  ext: string;
-  media_type: "photo" | "video";
-};
-
-/** One folder with media waiting for a body: a card on the Devices page. */
-export type DeviceFolder = {
-  session_id: number;
-  name: string;
-  source_path: string;
-  /** Media in this folder carrying no body — what the card's verb acts on. */
-  total: number;
-  photos: number;
-  videos: number;
-  /** How many of them the vote is confident about (score >= CONFIDENT_SCORE). */
-  confident: number;
-  first_capture: string | null;
-  last_capture: string | null;
-  /** The signals carried by MORE THAN HALF the folder — what the card prints.
-   *  A signal two files out of 129 carry says nothing about the folder. */
-  signals: DeviceSignal[];
-  suggested_device: string | null;
-  suggested_camera_model: string | null;
-  sample: DeviceSample[];
-};
-
 type FolderRow = {
   session_id: number;
   name: string;
@@ -289,9 +238,6 @@ type FolderRow = {
   sample: DeviceSample[] | null;
 };
 
-/** How folders are ordered on the page. */
-export type FolderSort = "size" | "recent";
-
 /**
  * Every folder holding unattributed media, with its aggregate evidence.
  *
@@ -308,7 +254,12 @@ export async function listFolders(
       ? "ORDER BY last_capture DESC NULLS LAST, session_id DESC"
       : "ORDER BY total DESC, last_capture DESC NULLS LAST";
 
-  const rows = await many<FolderRow>(
+  // Whole-library: the `sib` CTE groups every medium that HAS a body, and the
+  // sidecar EXISTS terms run per candidate. That is the shape whose estimated
+  // cost crosses jit_above_cost and then spends longer compiling than running
+  // (docs/memory/database.md, docs/SILENT-LIMITS-AUDIT.md A2) — so JIT is off
+  // for this statement, as on the grid pages.
+  const rows = await manyWithoutJit<FolderRow>(
     `WITH sib AS (
        SELECT session_id, device, camera_model FROM (
          SELECT a.session_id,
@@ -532,14 +483,6 @@ function toCandidate(r: CandidateRow): DeviceCandidate {
   };
 }
 
-export type ApplyResult = {
-  /** Rows that actually received a body. */
-  updated: number;
-  /** Ids that matched nothing to write — already attributed, trashed, or (in
-   *  suggestion mode) carrying no proposal to apply. */
-  skipped: number;
-};
-
 /**
  * Write a body onto the given media.
  *
@@ -580,21 +523,27 @@ export async function applyAttribution(opts: {
   // client sent us. The page may have been open for a while, and the folder's
   // busiest body can have changed under it — the write has to reflect the
   // library as it is now, not as it was rendered.
-  const byId = new Map((await candidatesByIds(ids)).map((i) => [i.id, i]));
-  let updated = 0;
-  for (const id of ids) {
-    const hit = byId.get(id);
-    if (!hit?.suggested_device) continue;
-    const res = await q(
-      `UPDATE assets SET device = $2, camera_model = COALESCE(camera_model, $3),
-              device_source = 'derived', updated_at = now()
-        WHERE id = $1 AND (device IS NULL OR device = '')
-          AND deleted_at IS NULL AND purged_at IS NULL`,
-      [id, hit.suggested_device, hit.suggested_camera_model],
-    );
-    updated += res.rowCount ?? 0;
-  }
-  return { updated, skipped: ids.length - updated };
+  const hits = (await candidatesByIds(ids)).filter((c) => c.suggested_device);
+  if (!hits.length) return { updated: 0, skipped: ids.length };
+  // One statement for the whole selection, each id paired with its own
+  // proposal — not one UPDATE per id, which was 5 000 round trips for the
+  // largest selection the route accepts.
+  const rows = await many<{ id: number }>(
+    `UPDATE assets a
+        SET device = v.device,
+            camera_model = COALESCE(a.camera_model, v.camera_model),
+            device_source = 'derived', updated_at = now()
+       FROM unnest($1::bigint[], $2::text[], $3::text[]) AS v(id, device, camera_model)
+      WHERE a.id = v.id AND (a.device IS NULL OR a.device = '')
+        AND a.deleted_at IS NULL AND a.purged_at IS NULL
+      RETURNING a.id`,
+    [
+      hits.map((h) => h.id),
+      hits.map((h) => h.suggested_device),
+      hits.map((h) => h.suggested_camera_model),
+    ],
+  );
+  return { updated: rows.length, skipped: ids.length - rows.length };
 }
 
 /**
@@ -684,13 +633,6 @@ export async function applyFolder(opts: {
 // atoms, and rewriting them is exactly the change to an original the README
 // forbids.
 
-export type CorrectResult = {
-  /** Rows whose body actually changed. */
-  updated: number;
-  /** Ids that were not live, or already carried exactly that body. */
-  skipped: number;
-};
-
 /**
  * Give these media this body, REPLACING whatever they carry — the file's own
  * value or an earlier attribution. `device_source = 'override'`, which survives
@@ -701,7 +643,7 @@ export async function overrideDevice(opts: {
   ids: number[];
   device: string;
   cameraModel?: string | null;
-}): Promise<CorrectResult> {
+}): Promise<ApplyResult> {
   const ids = [...new Set(opts.ids)];
   if (!ids.length) return { updated: 0, skipped: 0 };
   const rows = await many<{ id: number }>(
@@ -726,7 +668,7 @@ export async function overrideDevice(opts: {
  * body at all, which returns it to the Devices backlog rather than leaving a
  * guess in place. Rows already matching their file are skipped.
  */
-export async function revertDevice(ids: number[]): Promise<CorrectResult> {
+export async function revertDevice(ids: number[]): Promise<ApplyResult> {
   const unique = [...new Set(ids)];
   if (!unique.length) return { updated: 0, skipped: 0 };
   const rows = await many<{ id: number }>(

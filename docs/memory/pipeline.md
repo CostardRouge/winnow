@@ -261,8 +261,10 @@ folder aggregate and the folder apply cannot afford a row trip. Both read
 parameters — so the rule has one home, at the cost of one constraint: the
 patterns must stay inside the POSIX ERE subset (no `\d`, no `\b`, no
 lookaround). After touching either, check them against each other on real
-rows; a fixture comparing SQL's per-folder `confident` with the JS verdict is
-what caught this working.
+rows; `deviceAttribution.test.ts` pins it (the folder aggregate's
+`confident` and signals against the per-medium JS verdict, and the
+confident-only folder write against the rows JS ticks). Both whole-library
+reads (`listFolders`, `listKnownBodies`) run through `manyWithoutJit`.
 
 **Winnow indexes no stream metadata** — no codec, no frame rate, no nominal
 bitrate — because nothing calls `ffprobe`: the derivative worker hands the file

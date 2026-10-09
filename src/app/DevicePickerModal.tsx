@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 import { Spinner } from "./ui";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { fetchJson } from "@/lib/fetchJson";
-import type { KnownBody } from "@/lib/deviceAttribution";
+import type { ApplyResult, KnownBody } from "@/lib/deviceTypes";
 import type { DeviceChange } from "@/lib/deviceChange";
 
 // The row rules (what each outcome does to a grid row) live in lib/deviceChange
@@ -35,6 +35,13 @@ export {
   deviceSelectionCounts,
   type DeviceChange,
 } from "@/lib/deviceChange";
+
+// The route's ceiling on one call (its zod schema). A grid selection is not
+// bounded by it — "Select all" takes every row loaded so far — so the write is
+// sent in slices of this size and the counts summed: a cap the selection could
+// outgrow, met by a 400 on the whole lot, is the silent limit
+// docs/SILENT-LIMITS-AUDIT.md exists to remove.
+const CHUNK = 5000;
 
 export default function DevicePickerModal({
   ids,
@@ -90,14 +97,52 @@ export default function DevicePickerModal({
   const withBody = ids.length - withoutBody;
   const targets = replace ? ids.length : withoutBody;
 
-  async function post(payload: Record<string, unknown>) {
-    return fetchJson<{ updated: number; skipped: number }>(
-      "/api/pipeline/device-attribution",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
+  // One write, sliced. Returns what landed; a slice that fails stops the run
+  // and is reported with the slices that DID land, so the grid reflects
+  // exactly those and the message says the rest was not touched.
+  async function post(
+    payload: Record<string, unknown>,
+  ): Promise<{ updated: number; done: number[]; failure: string | null }> {
+    let updated = 0;
+    const done: number[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      try {
+        const r = await fetchJson<ApplyResult>(
+          "/api/pipeline/device-attribution",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payload, ids: slice }),
+          },
+        );
+        updated += r.updated;
+        done.push(...slice);
+      } catch (e) {
+        return { updated, done, failure: (e as Error).message };
+      }
+    }
+    return { updated, done, failure: null };
+  }
+
+  // The outcome of a run: nothing landed → the error stays in the dialog;
+  // something landed → the grid is told, with the failure appended.
+  function settle(
+    res: { updated: number; done: number[]; failure: string | null },
+    message: string,
+    change: DeviceChange,
+  ) {
+    if (res.failure && !res.done.length) {
+      setError(res.failure);
+      setBusy(false);
+      return;
+    }
+    onApplied(
+      res.failure
+        ? `${message} — then a request failed (${res.failure}); the other ${(ids.length - res.done.length).toLocaleString()} selected media were not touched`
+        : message,
+      res.done,
+      change,
     );
   }
 
@@ -105,47 +150,36 @@ export default function DevicePickerModal({
     if (!body) return;
     setBusy(true);
     setError(null);
-    try {
-      const res = await post({
-        ids,
-        device: body.device,
-        camera_model: body.camera_model ?? undefined,
-        mode: replace ? "override" : "fill",
-      });
-      const name = friendlyCameraName(body.device);
-      onApplied(
-        res.updated
-          ? replace
-            ? `${res.updated.toLocaleString()} media set to ${name} — a correction that survives re-indexing`
-            : `${res.updated.toLocaleString()} media assigned to ${name}`
-          : replace
-            ? `Nothing changed — the selection already carries ${name}`
-            : "Nothing to assign — every selected medium already has a body",
-        ids,
-        replace ? { kind: "replace", body } : { kind: "fill", body },
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
+    const res = await post({
+      device: body.device,
+      camera_model: body.camera_model ?? undefined,
+      mode: replace ? "override" : "fill",
+    });
+    const name = friendlyCameraName(body.device);
+    settle(
+      res,
+      res.updated
+        ? replace
+          ? `${res.updated.toLocaleString()} media set to ${name} — a correction that survives re-indexing`
+          : `${res.updated.toLocaleString()} media assigned to ${name}`
+        : replace
+          ? `Nothing changed — the selection already carries ${name}`
+          : "Nothing to assign — every selected medium already has a body",
+      replace ? { kind: "replace", body } : { kind: "fill", body },
+    );
   }
 
   async function revert() {
     setBusy(true);
     setError(null);
-    try {
-      const res = await post({ ids, mode: "revert" });
-      onApplied(
-        res.updated
-          ? `${res.updated.toLocaleString()} media back to what their files say`
-          : "Nothing to revert — every selected body comes from its own file",
-        ids,
-        { kind: "revert" },
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
+    const res = await post({ mode: "revert" });
+    settle(
+      res,
+      res.updated
+        ? `${res.updated.toLocaleString()} media back to what their files say`
+        : "Nothing to revert — every selected body comes from its own file",
+      { kind: "revert" },
+    );
   }
 
   return (
@@ -159,7 +193,11 @@ export default function DevicePickerModal({
       >
         <h3 className="modal-title">Set camera body</h3>
         <div className="modal-body">
-          {error && <p className="dev-pick-warn">{error}</p>}
+          {error && (
+            <p className="dev-pick-warn" role="alert">
+              {error}
+            </p>
+          )}
 
           <p>
             {withoutBody > 0 ? (

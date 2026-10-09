@@ -21,8 +21,9 @@
 //
 // The per-file list inside a card exists for one case only — a folder that held
 // two cameras — and is fetched only when the card is opened.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import ActionMenu, { type MenuItem } from "../../../ActionMenu";
 import MediaViewer from "../../../MediaViewer";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
@@ -39,15 +40,22 @@ import {
 } from "@/lib/format";
 import { fetchJson } from "@/lib/fetchJson";
 import type {
+  ApplyResult,
   DeviceCandidate,
   DeviceFolder,
   DeviceSignal,
   FolderSort,
   KnownBody,
-} from "@/lib/deviceAttribution";
+} from "@/lib/deviceTypes";
 
 // How many media one opened card fetches at a time.
 const PAGE = 50;
+// The API's own ceiling on one page (lib/deviceAttribution.ts listCandidates):
+// a refresh after a write re-reads what was loaded, up to this.
+const MAX_PAGE = 1000;
+// The facet's URL value for "no proposal" — `?body=` with an empty value would
+// read as "no facet" on the way back in.
+const NO_PROPOSAL = "none";
 
 // What each signal claims, in the words of the evidence rather than of the
 // implementation — a card has to be readable by someone who has never opened
@@ -127,11 +135,37 @@ function mediaMix(f: DeviceFolder): string {
 
 export default function DeviceAttribution() {
   const { reload } = useStats();
+  const router = useRouter();
+  const sp = useSearchParams();
+  // Sort and facet live in the URL (docs/CODEBASE-AUDIT.md UX-08): a reload or
+  // the back button keeps the view, and "the drone folders, newest first" is a
+  // link. `?body=` is the raw EXIF string of the proposed body, `none` for the
+  // folders with no proposal.
+  const sort: FolderSort = sp?.get("sort") === "recent" ? "recent" : "size";
+  const bodyParam = sp?.get("body") ?? null;
+  const facet =
+    bodyParam == null ? null : bodyParam === NO_PROPOSAL ? "" : bodyParam;
+  const patch = useCallback(
+    (next: Record<string, string | null>) => {
+      const q = new URLSearchParams(sp?.toString() ?? "");
+      for (const [k, v] of Object.entries(next)) {
+        if (v === null) q.delete(k);
+        else q.set(k, v);
+      }
+      const qs = q.toString();
+      router.replace(`/settings/pipeline/devices${qs ? `?${qs}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [router, sp],
+  );
+  const setSort = (s: FolderSort) => patch({ sort: s === "size" ? null : s });
+  const setFacet = (key: string | null) =>
+    patch({ body: key == null ? null : key || NO_PROPOSAL });
+
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sort, setSort] = useState<FolderSort>("size");
-  const [facet, setFacet] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | "all" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   // The opened card: its folder id, the media fetched so far, and whether more
@@ -150,20 +184,32 @@ export default function DeviceAttribution() {
   // viewer is the app's own: a medium waiting for a body is looked AT before it
   // is decided, and a triage page that cannot show the frame is a spreadsheet.
   const [viewer, setViewer] = useState<number | null>(null);
+  // Every folder fetch takes a ticket; an answer whose ticket is no longer the
+  // latest is dropped. Without it, opening folder A then B (or closing A) lets
+  // A's late answer land over B — the paging race of
+  // docs/SILENT-LIMITS-AUDIT.md C1, where a list shows rows it no longer asked
+  // for.
+  const ticket = useRef(0);
+  // The same for the folder list itself: a sort change answered out of order
+  // must not leave the page drawn in the order it no longer shows.
+  const listTicket = useRef(0);
 
-  const load = useCallback(async (s: FolderSort) => {
+  const load = useCallback(async (s: FolderSort): Promise<Payload | null> => {
+    const mine = ++listTicket.current;
     setLoading(true);
     setError(null);
     try {
-      setData(
-        await fetchJson<Payload>(
-          `/api/pipeline/device-attribution?sort=${s}`,
-        ),
+      const d = await fetchJson<Payload>(
+        `/api/pipeline/device-attribution?sort=${s}`,
       );
+      if (mine !== listTicket.current) return null;
+      setData(d);
+      return d;
     } catch (err) {
-      setError((err as Error).message);
+      if (mine === listTicket.current) setError((err as Error).message);
+      return null;
     } finally {
-      setLoading(false);
+      if (mine === listTicket.current) setLoading(false);
     }
   }, []);
 
@@ -171,23 +217,44 @@ export default function DeviceAttribution() {
     void load(sort);
   }, [load, sort]);
 
+  function closeFolder() {
+    ticket.current++;
+    setOpen(null);
+    setViewer(null);
+  }
+
   // Opens (or pages) a folder's media. Returns what is loaded afterwards so a
   // caller can act on it — which is how a click on a card's thumbnail opens the
-  // folder AND lands the viewer on that exact medium in one gesture.
+  // folder AND lands the viewer on that exact medium in one gesture. `limit`
+  // is for a refresh after a write, which re-reads as much as was showing.
   async function openFolder(
-    f: DeviceFolder,
+    f: Pick<DeviceFolder, "session_id" | "total">,
     offset = 0,
-  ): Promise<DeviceCandidate[]> {
+    limit = PAGE,
+  ): Promise<DeviceCandidate[] | null> {
+    const mine = ++ticket.current;
+    const same = open?.sessionId === f.session_id;
     setOpen((o) =>
       offset === 0
-        ? { sessionId: f.session_id, items: [], total: f.total, loading: true }
+        ? {
+            sessionId: f.session_id,
+            items: o?.sessionId === f.session_id ? o.items : [],
+            total: f.total,
+            loading: true,
+          }
         : o && { ...o, loading: true },
     );
-    if (offset === 0) setPicked({});
+    // A different folder starts from the vote and from no preview; the same
+    // folder re-read after a write keeps both.
+    if (offset === 0 && !same) {
+      setPicked({});
+      setViewer(null);
+    }
     try {
       const page = await fetchJson<{ items: DeviceCandidate[]; total: number }>(
-        `/api/pipeline/device-attribution?session_id=${f.session_id}&limit=${PAGE}&offset=${offset}`,
+        `/api/pipeline/device-attribution?session_id=${f.session_id}&limit=${limit}&offset=${offset}`,
       );
+      if (mine !== ticket.current) return null;
       let loaded: DeviceCandidate[] = page.items;
       setOpen((o) => {
         loaded =
@@ -203,9 +270,10 @@ export default function DeviceAttribution() {
       });
       return loaded;
     } catch (err) {
+      if (mine !== ticket.current) return null;
       setMsg((err as Error).message);
-      setOpen(null);
-      return [];
+      closeFolder();
+      return null;
     }
   }
 
@@ -215,22 +283,51 @@ export default function DeviceAttribution() {
   // decides, so it stays right if either order ever changes.
   async function previewSample(f: DeviceFolder, index: number) {
     const wanted = f.sample[index]?.id;
-    const items = await openFolder(f);
-    const at = items.findIndex((i) => i.id === wanted);
+    // Already open: look the medium up in what is loaded rather than re-read
+    // the first page over the rows already paged in.
+    const items =
+      open?.sessionId === f.session_id && !open.loading
+        ? open.items
+        : await openFolder(f);
+    const at = items?.findIndex((i) => i.id === wanted) ?? -1;
     if (at >= 0) setViewer(at);
   }
 
+  // After any write: the folder list and the nav badge are re-read, and an
+  // opened folder is re-read IN PLACE rather than closed — its remaining media,
+  // its ticks and the preview stay where they were, so the next decision is
+  // one click away. The viewer, sitting on an index, lands on the medium that
+  // followed the one just written; past the end it closes.
+  async function refresh() {
+    const d = await load(sort);
+    void reload();
+    const was = open;
+    if (!was || !d) return;
+    const f = d.folders.find((x) => x.session_id === was.sessionId);
+    if (!f) return closeFolder();
+    const items = await openFolder(
+      f,
+      0,
+      Math.min(Math.max(PAGE, was.items.length), MAX_PAGE),
+    );
+    if (items)
+      setViewer((v) =>
+        v == null ? v : items.length ? Math.min(v, items.length - 1) : null,
+      );
+  }
+
   // Every write goes through here: a folder (a predicate the server resolves at
-  // write time) or an explicit selection made inside an opened card.
+  // write time) or an explicit selection made inside an opened card. The
+  // message is the SERVER's count, announced once it has answered.
   async function apply(
     key: number | "all",
     body: Record<string, unknown>,
-    done: (r: { updated: number; skipped: number }) => string,
+    done: (r: ApplyResult) => string,
   ) {
     setBusy(key);
     setMsg(null);
     try {
-      const res = await fetchJson<{ updated: number; skipped: number }>(
+      const res = await fetchJson<ApplyResult>(
         "/api/pipeline/device-attribution",
         {
           method: "POST",
@@ -239,9 +336,7 @@ export default function DeviceAttribution() {
         },
       );
       setMsg(done(res));
-      setOpen(null);
-      await load(sort);
-      await reload();
+      await refresh();
     } catch (err) {
       setMsg((err as Error).message);
     } finally {
@@ -265,12 +360,31 @@ export default function DeviceAttribution() {
           : `${f.name}: nothing written — no body to apply. Pick one from the menu.`,
     );
 
-  const applySelection = (f: DeviceFolder, ids: number[]) =>
+  // The ticked rows of an opened card: to each one's own proposal, or — for
+  // the folder that held two cameras, which is what the table exists for — all
+  // of them to one picked body.
+  const applySelection = (f: DeviceFolder, ids: number[], to?: KnownBody) =>
     apply(
       f.session_id,
-      { ids },
+      to
+        ? { ids, device: to.device, camera_model: to.camera_model ?? undefined }
+        : { ids },
       (r) =>
-        `${f.name}: ${r.updated.toLocaleString()} of ${ids.length.toLocaleString()} selected media attributed.`,
+        `${f.name}: ${r.updated.toLocaleString()} of ${ids.length.toLocaleString()} ticked media attributed` +
+        (to ? ` to ${friendlyCameraName(to.device)}.` : "."),
+    );
+
+  // One medium, from its row menu or from the viewer.
+  const assignOne = (sessionId: number, id: number, to: KnownBody | null) =>
+    apply(
+      sessionId,
+      to
+        ? { ids: [id], device: to.device, camera_model: to.camera_model ?? undefined }
+        : { ids: [id] },
+      (r) =>
+        r.updated
+          ? `1 medium attributed${to ? ` to ${friendlyCameraName(to.device)}` : ""}.`
+          : "Nothing written — that medium has no proposal of its own.",
     );
 
   if (loading && !data) {
@@ -306,9 +420,12 @@ export default function DeviceAttribution() {
   }
 
   const all = facets(data.folders);
-  const shown = facet == null
+  // A facet whose last folder was just attributed (or a stale link) would show
+  // an empty list under no highlighted chip — read as "every folder" instead.
+  const active = facet != null && all.some((f) => f.key === facet) ? facet : null;
+  const shown = active == null
     ? data.folders
-    : data.folders.filter((f) => (f.suggested_device ?? "") === facet);
+    : data.folders.filter((f) => (f.suggested_device ?? "") === active);
   const bulkTargets = shown.filter((f) => f.suggested_device);
   const bulkMedia = bulkTargets.reduce((n, f) => n + f.total, 0);
 
@@ -323,22 +440,26 @@ export default function DeviceAttribution() {
           click and only its folders remain. */}
       <div className="filterbar pl-toolbar">
         <div className="chips">
+          {/* The pressed chip carries a tick as well as the accent: its state
+              is not colour alone (docs/CODEBASE-AUDIT.md A11Y-08). */}
           <button
-            className={`chip${facet == null ? " active" : ""}`}
+            className={`chip${active == null ? " active" : ""}`}
             onClick={() => setFacet(null)}
-            aria-pressed={facet == null}
+            aria-pressed={active == null}
           >
+            {active == null && <span aria-hidden="true">✓</span>}
             Every folder
             <span className="chip-count">{data.folders.length}</span>
           </button>
           {all.map((f) => (
             <button
               key={f.key || "none"}
-              className={`chip${facet === f.key ? " active" : ""}`}
+              className={`chip${active === f.key ? " active" : ""}`}
               onClick={() => setFacet(f.key)}
-              aria-pressed={facet === f.key}
-              title={`${f.media.toLocaleString()} media across ${f.folders} folder(s)`}
+              aria-pressed={active === f.key}
+              title={`${f.media.toLocaleString()} media across ${f.folders} folder${f.folders === 1 ? "" : "s"}`}
             >
+              {active === f.key && <span aria-hidden="true">✓</span>}
               {f.label}
               <span className="chip-count">{f.folders}</span>
             </button>
@@ -353,11 +474,16 @@ export default function DeviceAttribution() {
         />
       </div>
 
+      {/* `.unplaced-head` is a grid: the sentence is ONE item, wrapped, or
+          every text run and <strong> in it lands on a row of its own. */}
       <div className="unplaced-head">
-        <strong>{data.total.toLocaleString()}</strong> media carry no camera
-        body, across <strong>{data.folders.length}</strong> folders — absent from
-        the gear shelf and from every <code>?device=</code> grid until a body is
-        written.
+        <p>
+          <strong>{data.total.toLocaleString()}</strong> media carry no camera
+          body, across <strong>{data.folders.length}</strong>{" "}
+          {data.folders.length === 1 ? "folder" : "folders"} — absent from the
+          gear shelf and from every <code>?device=</code> grid until a body is
+          written.
+        </p>
         <div className="hint card-rules">
           Nothing here was read from a file. A folder is proposed the body its
           own attributed media already carry, weighed per medium on five signals
@@ -372,7 +498,11 @@ export default function DeviceAttribution() {
         </div>
       </div>
 
-      {msg && <p className="hint">{msg}</p>}
+      {/* A polite live region, so the count a write answered with is read
+          out, not only drawn (docs/CODEBASE-AUDIT.md A11Y-10). */}
+      <p className={msg ? "hint" : "sr-only"} role="status" aria-live="polite">
+        {msg}
+      </p>
 
       {bulkTargets.length > 1 && (
         <div className="filterbar">
@@ -414,9 +544,8 @@ export default function DeviceAttribution() {
                     ? ` ${failed.length} failed: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""}.`
                     : ""),
               );
+              await refresh();
               setBusy(null);
-              await load(sort);
-              await reload();
             }}
             title="Give each of these folders the body its own media already carry"
           >
@@ -460,7 +589,7 @@ export default function DeviceAttribution() {
               label: isOpen ? "Close the media list" : `Review the ${f.total} one by one`,
               hint: "For a folder that held two cameras",
               icon: "☰",
-              onSelect: () => (isOpen ? setOpen(null) : void openFolder(f)),
+              onSelect: () => (isOpen ? closeFolder() : void openFolder(f)),
             },
           ];
 
@@ -544,22 +673,9 @@ export default function DeviceAttribution() {
                     setPicked((p) => ({ ...p, [id]: on }))
                   }
                   onMore={() => void openFolder(f, open.items.length)}
-                  onApply={(ids) => void applySelection(f, ids)}
+                  onApply={(ids, to) => void applySelection(f, ids, to)}
                   onAssignOne={(id, body) =>
-                    void apply(
-                      f.session_id,
-                      body
-                        ? {
-                            ids: [id],
-                            device: body.device,
-                            camera_model: body.camera_model ?? undefined,
-                          }
-                        : { ids: [id] },
-                      (r) =>
-                        r.updated
-                          ? `1 medium attributed${body ? ` to ${friendlyCameraName(body.device)}` : ""}.`
-                          : "Nothing written — that medium has no proposal of its own.",
-                    )
+                    void assignOne(f.session_id, id, body)
                   }
                   onPreview={(i) => setViewer(i)}
                   busy={busy != null}
@@ -595,20 +711,35 @@ export default function DeviceAttribution() {
                 <button
                   className="btn"
                   disabled={busy != null}
-                  onClick={() =>
-                    void apply(
-                      open.sessionId,
-                      { ids: [it.id] },
-                      (r) =>
-                        r.updated
-                          ? `1 medium attributed to ${friendlyCameraName(it.suggested_device!)}.`
-                          : "Nothing written.",
-                    )
-                  }
+                  onClick={() => void assignOne(open.sessionId, it.id, null)}
+                  title="This medium’s own proposal — the viewer moves on to the next one"
                 >
                   → {friendlyCameraName(it.suggested_device)}
                 </button>
               )}
+              {/* Any other body, while looking at the frame: the decision
+                  this preview exists for, without closing it. */}
+              <ActionMenu
+                ariaLabel={`Assign ${it.filename} to another body`}
+                label="Assign to"
+                disabled={busy != null}
+                trigger={{
+                  label: it.suggested_device ? "Other body" : "Assign to…",
+                  icon: "",
+                  className: "btn",
+                }}
+                items={data.bodies
+                  .filter((b) => b.device !== it.suggested_device)
+                  .map(
+                    (b): MenuItem => ({
+                      key: b.device,
+                      label: friendlyCameraName(b.device),
+                      hint: b.device,
+                      icon: "→",
+                      onSelect: () => void assignOne(open.sessionId, it.id, b),
+                    }),
+                  )}
+              />
             </>
           )}
         />
@@ -645,7 +776,8 @@ function FolderMedia({
   picked: Record<number, boolean>;
   onToggle: (id: number, on: boolean) => void;
   onMore: () => void;
-  onApply: (ids: number[]) => void;
+  /** The ticked ids — to each one's own proposal, or all to `to`. */
+  onApply: (ids: number[], to?: KnownBody) => void;
   onAssignOne: (id: number, body: KnownBody | null) => void;
   onPreview: (index: number) => void;
   busy: boolean;
@@ -703,14 +835,41 @@ function FolderMedia({
           bitrate is the average over the whole file
         </span>
         <span className="spacer" />
-        <button
-          className="btn btn-sm"
-          disabled={busy || !ids.length}
-          onClick={() => onApply(ids)}
-          title="Attribute the ticked media with their own proposal"
-        >
-          Assign the {ids.length} ticked
-        </button>
+        {/* A split action: the folder's proposal on the button, every other
+            body in its menu — the two-camera folder ticks the Sony clips and
+            sends them to the Sony in one gesture, not row by row. */}
+        <div className="card-actions">
+          <button
+            className="btn btn-sm"
+            disabled={busy || !ids.length || !folder.suggested_device}
+            onClick={() => onApply(ids)}
+            title={
+              folder.suggested_device
+                ? "Attribute the ticked media with their own proposal"
+                : "No proposal here — pick a body from the menu beside"
+            }
+          >
+            {folder.suggested_device
+              ? `Assign the ${ids.length} ticked to ${friendlyCameraName(folder.suggested_device)}`
+              : `${ids.length} ticked`}
+          </button>
+          <ActionMenu
+            ariaLabel={`Assign the ${ids.length} ticked to another body`}
+            label={`Assign the ${ids.length} ticked to`}
+            disabled={busy || !ids.length}
+            items={bodies
+              .filter((b) => b.device !== folder.suggested_device)
+              .map(
+                (b): MenuItem => ({
+                  key: b.device,
+                  label: friendlyCameraName(b.device),
+                  hint: b.device,
+                  icon: "→",
+                  onSelect: () => onApply(ids, b),
+                }),
+              )}
+          />
+        </div>
       </div>
 
       <div className="dev-table-block">
