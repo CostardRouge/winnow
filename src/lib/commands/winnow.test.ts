@@ -211,3 +211,17 @@ test("cull.setMany sends the bulk gesture, the pile only when asked", async () =
   const many = Array.from({ length: 501 }, (_, i) => i + 1);
   assert.match((await failure(reg.execute("cull.setMany", { ids: many, verdict: "pick" })))!, /500 at most/);
 });
+
+test("tags.assign sends trimmed names and refuses an empty gesture", async () => {
+  const { reg, calls } = fakeClient();
+  await reg.execute("tags.assign", { ids: [7], add: [" keeper "], remove: ["todo"] });
+  assert.deepEqual(calls.at(-1), {
+    method: "POST",
+    path: "/api/tags/assign",
+    body: { ids: [7], add: ["keeper"], remove: ["todo"] },
+  });
+  assert.match((await failure(reg.execute("tags.assign", { ids: [7] })))!, /^invalid: nothing to do/);
+  assert.match((await failure(reg.execute("tags.assign", { ids: [7], add: ["  "] })))!, /1–64 characters/);
+  const ro = fakeClient({ role: "viewer" });
+  assert.match((await failure(ro.reg.execute("tags.assign", { ids: [7], add: ["x"] })))!, /^unavailable/);
+});

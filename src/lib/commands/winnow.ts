@@ -473,6 +473,42 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
     },
 
     {
+      id: "tags.list",
+      title: "Tags",
+      description: "Every tag with how many media carry it (GET /api/tags).",
+      async run() {
+        return client.json("GET", "/api/tags");
+      },
+    },
+
+    {
+      id: "tags.assign",
+      title: "Tag",
+      description:
+        "Add and/or remove tags by NAME on several media (POST /api/tags/assign, the grid's tag gesture); a tag that does not exist yet is created. Tags are labels for finding media again — keepers for a series, a client, an edit to do — and change no verdict. Winnow records no author on a tag link, so an agent's tags are not marked as its own.",
+      available: canWrite,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `Asset ids (at most ${MAX_BULK} a call)` },
+        add: { type: "strings", optional: true, description: "Tag names to add (1–64 characters each)" },
+        remove: { type: "strings", optional: true, description: "Tag names to remove" },
+      },
+      async run(p) {
+        const add = (p.add as string[] | undefined)?.map((t) => t.trim()) ?? [];
+        const remove = (p.remove as string[] | undefined)?.map((t) => t.trim()) ?? [];
+        if (!add.length && !remove.length)
+          throw new CommandError("invalid", "nothing to do — give add or remove");
+        for (const t of [...add, ...remove])
+          if (t.length < 1 || t.length > 64)
+            throw new CommandError("invalid", `tag "${t}" — a name is 1–64 characters`);
+        return client.json("POST", "/api/tags/assign", {
+          ids: p.ids,
+          ...(add.length ? { add } : {}),
+          ...(remove.length ? { remove } : {}),
+        });
+      },
+    },
+
+    {
       id: "cull.setMany",
       title: "Cull many",
       description:
