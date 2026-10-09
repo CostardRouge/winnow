@@ -80,6 +80,8 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 ## A GPS track is a measurement, applied as a database fact with its own recap (2026-10-08)
 
+**exiftool-vendored writes the hemisphere from the SIGN, not from the ref** (2026-10-09). `writeGps` passed `Math.abs(lat/lon)` with explicit `GPSLatitudeRef`/`GPSLongitudeRef`. exiftool-vendored 37 derives the refs from the values' signs and overrides an explicit one, so every manual pin West or South went into the original mirrored. The next re-index then read the mirror back into the database, since the file wins and the `'manual'` label stays. Measured on the instance: whole Australian folders sat at 33° N in China and the Pacific (Streaky Bay, 1 732 media), and Saint-Quay-Portrieux sat in Seine-et-Marne. Clips were spared, because `GPSCoordinates` is one signed string. **How to apply**: pass signed values. `exifWrite.test.ts` writes and re-reads all four hemispheres. Any new tag write is checked by reading the file back, never by trusting the library's argument names. The repair of the damaged rows and files is its own pass (see `docs/SILENT-LIMITS-AUDIT.md` G1).
+
 **Every position write keeps the rest of the row honest** (2026-10-09). Checks that came out of the audit, each with a test in `geoWrites.test.ts` / `geocodeTwin.test.ts`:
 - A geotag and a track Undo null `place_*` with the point they replace. Otherwise the old city stays in the facets until the geocoder reaches the row, or forever when it is off.
 - The `gpswrite` job writes only while `gps_source = 'manual'`. It reads coordinates at run time, so an inferred overwrite landing behind a queued pin would otherwise have entered the original.

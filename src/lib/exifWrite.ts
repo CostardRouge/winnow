@@ -15,7 +15,8 @@ import { one, q } from "./db";
 export type GpsPoint = { lat: number; lon: number };
 
 // Write the coordinates into `absPath`'s metadata.
-//   - photos: the four standard EXIF GPS tags (signed value + hemisphere ref);
+//   - photos: the four standard EXIF GPS tags (signed value + hemisphere ref
+//     — the sign is what the library reads, see below);
 //   - videos: QuickTime `GPSCoordinates` ("lat lon", the Keys atom Apple and
 //     exiftool's composite GPSLatitude/GPSLongitude read back).
 // Flags: -overwrite_original_in_place edits the file without leaving exiftool's
@@ -38,10 +39,17 @@ export async function writeGps(
   const tags: WriteTags = isVideo
     ? // QuickTime containers keep GPS in one combined Keys tag.
       { GPSCoordinates: `${gps.lat} ${gps.lon}` }
-    : {
-        GPSLatitude: Math.abs(gps.lat),
+    : // SIGNED values, with the matching refs. exiftool-vendored derives the
+      // hemisphere ref from the sign of the value it is given and overrides
+      // an explicit one: the unsigned values written here until 2026-10-09
+      // put every pin West or South into the file as N/E — Brittany filed
+      // in Seine-et-Marne, Streaky Bay at 33° N in the Pacific — and the
+      // next re-index read the mirror back into the database.
+      // exifWrite.test.ts writes and re-reads all four hemispheres.
+      {
+        GPSLatitude: gps.lat,
         GPSLatitudeRef: gps.lat >= 0 ? "N" : "S",
-        GPSLongitude: Math.abs(gps.lon),
+        GPSLongitude: gps.lon,
         GPSLongitudeRef: gps.lon >= 0 ? "E" : "W",
       };
 
