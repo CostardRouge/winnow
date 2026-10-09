@@ -375,40 +375,6 @@ export function buildFilter(
     );
   }
 
-  // Collapse RAW+JPEG pairs to one row: hide the companion, keep the displayed
-  // primary. Opt-in (gallery/session grid) so exports and per-file triage still
-  // see every file. NULL group_role (unpaired) is always kept.
-  if (opts.collapseGroups) {
-    conditions.push("a.group_role IS DISTINCT FROM 'companion'");
-    // Collapse burst/bracket stacks to their cover frame, so a pile shows as one
-    // tile in the grid. Orthogonal to the pair collapse above (a stack is built
-    // over logical media, so a cover can itself be a pair primary). Suppressed
-    // when drilling into a specific pile (burst_id set) so that request returns
-    // every frame. Non-stacked assets (burst_id NULL) are always kept.
-    //
-    // The representative is the stored cover when it's still live, else the
-    // pile's first live frame — so trashing the cover surfaces the next frame
-    // instead of hiding the whole pile. Bounded per-pile subquery on
-    // assets_burst_idx (piles are small).
-    //
-    // `collapseBursts: false` skips this fold — `?collapse=pairs` on
-    // /api/assets. A frame elected INSIDE a pile is not its cover, so a
-    // client asking which frames were picked (Atelier's media picker) sees
-    // none of them through the fold.
-    if ((opts.collapseBursts ?? true) && filter.burst_id == null) {
-      conditions.push(
-        `(a.burst_id IS NULL
-          OR a.id = (
-            SELECT bm.id FROM assets bm
-            WHERE bm.burst_id = a.burst_id AND bm.deleted_at IS NULL
-            ORDER BY bm.id = (SELECT b.cover_asset_id FROM bursts b
-                              WHERE b.id = a.burst_id) DESC,
-                     bm.burst_seq ASC, bm.id ASC
-            LIMIT 1
-          ))`,
-      );
-    }
-  }
   if (filter.device) inAny("a.device", filter.device);
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
   if (filter.lens) inAny("a.lens", filter.lens);
@@ -572,6 +538,65 @@ export function buildFilter(
       conditions.push(`(a.gps_lon >= $${i} OR a.gps_lon <= $${i + 1})`);
       params.push(w, e);
       i += 2;
+    }
+  }
+
+  // Fold RAW+JPEG pairs and burst/bracket piles to one tile each — opt-in
+  // (gallery, session grid, Sift, People) so exports and per-file triage still
+  // see every file. Appended LAST because it is built from every condition
+  // above: the tile that stands for a pair or a pile is chosen among the
+  // members that MATCH THE FILTER, never fixed in advance.
+  //
+  // It used to be fixed — the companion always hidden, the pile always shown
+  // through its cover — and the filter was then applied to that one row. A
+  // filter the chosen row failed hid the whole group even when another member
+  // matched. Measured on the maintainer's library (2026-10-09): `.arw` showed
+  // 1 171 of 44 553 RAWs (a paired RAW is the companion of its HIF, which the
+  // extension filter rejects), and Picks / Rejects lacked 191 / 190 frames
+  // (ratings are per frame, a pick inside a pile is not its cover). A pair
+  // whose primary was trashed (its file deleted on the NAS) hid the surviving
+  // RAW from every folded grid for good.
+  //
+  // So each fold asks whether a BETTER member of the same group passes the same
+  // filter: the conditions above, re-aliased onto that sibling (`a.` → `x.`,
+  // the ratings join `r.` → `xr.`) and reusing the same parameters. Every
+  // other alias in the conditions (s, rt, e, pf, cl, nd, at, t) is its own
+  // subquery's and stays untouched. Unfiltered, the result is what it always
+  // was: the primary of each pair, the cover (else the first live frame) of
+  // each pile. Both lookups are bounded (a pair is two rows, a pile is
+  // seconds of frames) and ride assets_group_idx / assets_burst_idx.
+  if (opts.collapseGroups) {
+    const sibling = conditions
+      .map((c) => `(${c.replace(/\ba\./g, "x.").replace(/\br\./g, "xr.")})`)
+      .join(" AND ");
+    const better = (link: string, rank: string) =>
+      `NOT EXISTS (SELECT 1 FROM assets x
+                     LEFT JOIN ratings xr ON xr.asset_id = x.id
+                    WHERE ${link} AND x.id <> a.id AND ${rank}
+                      AND ${sibling})`;
+    // A companion gives way to its primary when the primary is live and
+    // matches; otherwise the companion is the pair's tile. A primary never
+    // gives way (NULL group_role, an unpaired file, is always kept).
+    conditions.push(
+      `(a.group_role IS DISTINCT FROM 'companion' OR ${better(
+        "x.group_id = a.group_id",
+        "x.group_role = 'primary'",
+      )})`,
+    );
+    // The pile's tile is its best-ranked matching frame: the stored cover
+    // first, then the pile's order. Skipped when drilling into one pile
+    // (burst_id set: that request wants every frame) and under
+    // `collapseBursts: false` (`?collapse=pairs` on /api/assets).
+    if ((opts.collapseBursts ?? true) && filter.burst_id == null) {
+      const coverRank = (t: string) =>
+        `(${t}.id IS DISTINCT FROM (SELECT b.cover_asset_id FROM bursts b WHERE b.id = a.burst_id))`;
+      conditions.push(
+        `(a.burst_id IS NULL OR ${better(
+          "x.burst_id = a.burst_id",
+          `(${coverRank("x")}, COALESCE(x.burst_seq, 0), x.id)
+             < (${coverRank("a")}, COALESCE(a.burst_seq, 0), a.id)`,
+        )})`,
+      );
     }
   }
 
