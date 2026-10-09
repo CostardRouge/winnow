@@ -24,7 +24,10 @@ import MediaViewer from "../MediaViewer";
 import ViewerActions from "../ViewerActions";
 import BulkActionBar from "../BulkActionBar";
 import GeotagRecapModal from "../GeotagRecapModal";
-import DevicePickerModal from "../DevicePickerModal";
+import DevicePickerModal, {
+  applyDeviceChange,
+  deviceSelectionCounts,
+} from "../DevicePickerModal";
 import type { PickedLocation } from "../LocationPickerModal";
 import { fetchJson } from "@/lib/fetchJson";
 import {
@@ -72,6 +75,11 @@ type Row = GalleryAsset & {
   height?: number | null;
   duration_s?: number | null;
   device?: string | null;
+  // Where the body came from, and what the file itself says (migration 0048) —
+  // read by "Set camera body…" and printed by the viewer beside a correction.
+  device_source?: string | null;
+  device_exif?: string | null;
+  camera_model_exif?: string | null;
   gps?: { lat: number; lon: number } | null;
   // 'manual' when a human placed the pin, 'inferred' when a folder suggestion
   // was accepted in bulk (cf. api/assets/geotag) — the recap modal badges it to
@@ -796,22 +804,19 @@ export default function GalleryShell({
   }, []);
 
   // --- Set camera body (cf. DevicePickerModal) ---------------------------- //
-  // The frozen selection the dialog was opened for, plus how many of those rows
-  // carry no body — counted here, from rows already in hand, so the dialog can
-  // state what it will and will not touch without a request of its own.
+  // The frozen selection the dialog was opened for, plus what it holds —
+  // counted here, from rows already in hand, so the dialog can state what each
+  // of its buttons will and will not touch without a request of its own.
   const [deviceFlow, setDeviceFlow] = useState<{
     ids: number[];
     withoutBody: number;
+    revertible: number;
   } | null>(null);
 
   const setDeviceSelection = useCallback(
     (ids: number[]) => {
       if (!ids.length) return;
-      const idset = new Set(ids);
-      const withoutBody = items.filter(
-        (a) => idset.has(a.id) && !a.device,
-      ).length;
-      setDeviceFlow({ ids, withoutBody });
+      setDeviceFlow({ ids, ...deviceSelectionCounts(items, ids) });
     },
     [items],
   );
@@ -1297,21 +1302,15 @@ export default function GalleryShell({
         <DevicePickerModal
           ids={deviceFlow.ids}
           withoutBody={deviceFlow.withoutBody}
+          revertible={deviceFlow.revertible}
           onClose={() => setDeviceFlow(null)}
-          onApplied={(message, ids, body) => {
+          onApplied={(message, ids, change) => {
             // Reflect it in the rows without a refetch, like every other bulk
-            // action here. Only the rows that HAD no body changed — the write
-            // fills gaps only, so anything already attributed is left as it is.
+            // action here — by the same rules the server applied.
             const idset = new Set(ids);
             setItems((prev) =>
               prev.map((a) =>
-                idset.has(a.id) && !a.device
-                  ? {
-                      ...a,
-                      device: body.device,
-                      camera_model: a.camera_model ?? body.camera_model,
-                    }
-                  : a,
+                idset.has(a.id) ? applyDeviceChange(a, change) : a,
               ),
             );
             setDeviceFlow(null);

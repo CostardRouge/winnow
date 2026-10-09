@@ -5,25 +5,48 @@
 // Pipeline › Devices clears the backlog by folder, which is the right shape for
 // three hundred clips at once. This is the other half: the media you are
 // already looking at, in the gallery or a session, given a body without leaving
-// the grid. Same endpoint, same rule.
+// the grid. Same endpoint.
 //
-// THE RULE, stated on screen because it decides what the button does: an
-// attribution only ever fills a HOLE. Media in the selection that already carry
-// a body — from their own EXIF or from an earlier attribution — are counted and
-// left alone. That is not timidity: `assets.device` is read from the file on
-// every re-index and the file always wins (cf. lib/indexer.ts), so a hand-made
-// override of a real EXIF value would silently revert the next time the clip's
-// mtime changed. A wrong body that a camera actually wrote is a different
-// problem, and it is not solved by letting this dialog lie.
+// Three things it can do, and the dialog says which one each button is:
+//   • FILL — the default. Only the selected media that carry no body get one;
+//     the rest are counted and left alone.
+//   • REPLACE — opt-in, behind a checkbox that names how many media it touches.
+//     For a file that is WRONG (a borrowed camera that kept its owner's name, an
+//     app that stamps a generic model). It records 'override' (migration 0048),
+//     the one provenance the indexer lets beat the file, so the correction
+//     survives every re-index. What the file said is kept beside it and shown
+//     in the viewer; nothing is written into the original.
+//   • REVERT — put the media back to what their own files say. Offered only
+//     when the selection holds something to revert (an override or an
+//     attribution).
+// Replacing is never the default and never implied by leaving a box unticked:
+// the one write that can overwrite a camera's own value has to be asked for.
 import { useEffect, useState } from "react";
 import { Spinner } from "./ui";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { fetchJson } from "@/lib/fetchJson";
-import type { KnownBody } from "@/lib/deviceAttribution";
+import type { ApplyResult, KnownBody } from "@/lib/deviceTypes";
+import type { DeviceChange } from "@/lib/deviceChange";
+
+// The row rules (what each outcome does to a grid row) live in lib/deviceChange
+// so both grids share them and a test covers them; re-exported for the hosts.
+export {
+  applyDeviceChange,
+  deviceSelectionCounts,
+  type DeviceChange,
+} from "@/lib/deviceChange";
+
+// The route's ceiling on one call (its zod schema). A grid selection is not
+// bounded by it — "Select all" takes every row loaded so far — so the write is
+// sent in slices of this size and the counts summed: a cap the selection could
+// outgrow, met by a 400 on the whole lot, is the silent limit
+// docs/SILENT-LIMITS-AUDIT.md exists to remove.
+const CHUNK = 5000;
 
 export default function DevicePickerModal({
   ids,
   withoutBody,
+  revertible,
   onClose,
   onApplied,
 }: {
@@ -32,11 +55,15 @@ export default function DevicePickerModal({
   /** How many of them carry no body yet, computed by the caller from rows it
    *  already has. The dialog never refetches the selection to say this. */
   withoutBody: number;
+  /** How many carry a body that did NOT come from their own file (an
+   *  attribution or an override) — what "Revert to the files" would touch. */
+  revertible: number;
   onClose: () => void;
-  onApplied: (message: string, ids: number[], body: KnownBody) => void;
+  onApplied: (message: string, ids: number[], change: DeviceChange) => void;
 }) {
   const [bodies, setBodies] = useState<KnownBody[] | null>(null);
   const [chosen, setChosen] = useState<string>("");
+  const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,36 +94,92 @@ export default function DevicePickerModal({
   }, [busy, onClose]);
 
   const body = bodies?.find((b) => b.device === chosen);
-  const skipped = ids.length - withoutBody;
+  const withBody = ids.length - withoutBody;
+  const targets = replace ? ids.length : withoutBody;
+
+  // One write, sliced. Returns what landed; a slice that fails stops the run
+  // and is reported with the slices that DID land, so the grid reflects
+  // exactly those and the message says the rest was not touched.
+  async function post(
+    payload: Record<string, unknown>,
+  ): Promise<{ updated: number; done: number[]; failure: string | null }> {
+    let updated = 0;
+    const done: number[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      try {
+        const r = await fetchJson<ApplyResult>(
+          "/api/pipeline/device-attribution",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payload, ids: slice }),
+          },
+        );
+        updated += r.updated;
+        done.push(...slice);
+      } catch (e) {
+        return { updated, done, failure: (e as Error).message };
+      }
+    }
+    return { updated, done, failure: null };
+  }
+
+  // The outcome of a run: nothing landed → the error stays in the dialog;
+  // something landed → the grid is told, with the failure appended.
+  function settle(
+    res: { updated: number; done: number[]; failure: string | null },
+    message: string,
+    change: DeviceChange,
+  ) {
+    if (res.failure && !res.done.length) {
+      setError(res.failure);
+      setBusy(false);
+      return;
+    }
+    onApplied(
+      res.failure
+        ? `${message} — then a request failed (${res.failure}); the other ${(ids.length - res.done.length).toLocaleString()} selected media were not touched`
+        : message,
+      res.done,
+      change,
+    );
+  }
 
   async function apply() {
     if (!body) return;
     setBusy(true);
     setError(null);
-    try {
-      const res = await fetchJson<{ updated: number; skipped: number }>(
-        "/api/pipeline/device-attribution",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ids,
-            device: body.device,
-            camera_model: body.camera_model ?? undefined,
-          }),
-        },
-      );
-      onApplied(
-        res.updated
-          ? `${res.updated.toLocaleString()} media assigned to ${friendlyCameraName(body.device)}`
+    const res = await post({
+      device: body.device,
+      camera_model: body.camera_model ?? undefined,
+      mode: replace ? "override" : "fill",
+    });
+    const name = friendlyCameraName(body.device);
+    settle(
+      res,
+      res.updated
+        ? replace
+          ? `${res.updated.toLocaleString()} media set to ${name} — a correction that survives re-indexing`
+          : `${res.updated.toLocaleString()} media assigned to ${name}`
+        : replace
+          ? `Nothing changed — the selection already carries ${name}`
           : "Nothing to assign — every selected medium already has a body",
-        ids,
-        body,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
+      replace ? { kind: "replace", body } : { kind: "fill", body },
+    );
+  }
+
+  async function revert() {
+    setBusy(true);
+    setError(null);
+    const res = await post({ mode: "revert" });
+    settle(
+      res,
+      res.updated
+        ? `${res.updated.toLocaleString()} media back to what their files say`
+        : "Nothing to revert — every selected body comes from its own file",
+      { kind: "revert" },
+    );
   }
 
   return (
@@ -110,76 +193,119 @@ export default function DevicePickerModal({
       >
         <h3 className="modal-title">Set camera body</h3>
         <div className="modal-body">
-          {error && <p className="dev-pick-warn">{error}</p>}
-
-          {withoutBody === 0 ? (
-            <p>
-              All {ids.length.toLocaleString()} selected media already carry a
-              camera body. Nothing here would change — an attribution only fills
-              a gap, it never overwrites what a file declares.
+          {error && (
+            <p className="dev-pick-warn" role="alert">
+              {error}
             </p>
-          ) : (
-            <>
-              <p>
+          )}
+
+          <p>
+            {withoutBody > 0 ? (
+              <>
                 <strong>{withoutBody.toLocaleString()}</strong> of the{" "}
                 {ids.length.toLocaleString()} selected media carry no camera
-                body. Give them one:
-              </p>
-              {bodies == null ? (
-                <Spinner sm />
-              ) : bodies.length === 0 ? (
-                <p className="dev-pick-warn">
-                  The library holds no camera body to copy yet — nothing has
-                  readable EXIF. Index some media from a camera first.
-                </p>
-              ) : (
-                <div className="dev-pick-list" role="radiogroup" aria-label="Camera body">
-                  {bodies.map((b) => (
-                    <label
-                      key={b.device}
-                      className={`dev-pick-row${chosen === b.device ? " is-on" : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        name="device-body"
-                        checked={chosen === b.device}
-                        onChange={() => setChosen(b.device)}
-                      />
-                      <span className="dev-pick-name">
-                        {friendlyCameraName(b.device)}
-                      </span>
-                      <span className="dev-pick-raw">{b.device}</span>
-                      <span className="dev-pick-count">
-                        {b.count.toLocaleString()}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {skipped > 0 && (
-                <p className="dev-pick-note">
-                  The other {skipped.toLocaleString()} already have a body and
-                  will not be touched — the file always wins over an
-                  attribution, so an override here would revert on the next
-                  re-index.
-                </p>
-              )}
-            </>
+                body
+                {withBody > 0 && (
+                  <>; {withBody.toLocaleString()} already have one</>
+                )}
+                .
+              </>
+            ) : (
+              <>
+                All {ids.length.toLocaleString()} selected media already carry
+                a camera body.
+              </>
+            )}
+          </p>
+
+          {bodies == null ? (
+            <Spinner sm />
+          ) : bodies.length === 0 ? (
+            <p className="dev-pick-warn">
+              The library holds no camera body to copy yet — nothing has
+              readable EXIF. Index some media from a camera first.
+            </p>
+          ) : (
+            <div className="dev-pick-list" role="radiogroup" aria-label="Camera body">
+              {bodies.map((b) => (
+                <label
+                  key={b.device}
+                  className={`dev-pick-row${chosen === b.device ? " is-on" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="device-body"
+                    checked={chosen === b.device}
+                    onChange={() => setChosen(b.device)}
+                  />
+                  <span className="dev-pick-name">
+                    {friendlyCameraName(b.device)}
+                  </span>
+                  <span className="dev-pick-raw">{b.device}</span>
+                  <span className="dev-pick-count">
+                    {b.count.toLocaleString()}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {withBody > 0 && (
+            <label className={`dev-pick-replace${replace ? " is-on" : ""}`}>
+              <input
+                type="checkbox"
+                checked={replace}
+                onChange={(e) => setReplace(e.target.checked)}
+              />
+              <span>
+                <strong>
+                  Also replace the body on the {withBody.toLocaleString()} that
+                  already have one
+                </strong>
+                <span className="dev-pick-note">
+                  For a file that names the wrong camera. The correction
+                  survives re-indexing; each file’s own value stays visible in
+                  the viewer and “Revert to the files” restores it. Nothing is
+                  written into the originals.
+                </span>
+              </span>
+            </label>
+          )}
+          {withBody > 0 && !replace && (
+            <p className="dev-pick-note">
+              Left unticked, {withBody === 1 ? "it is" : "they are"} not
+              touched.
+            </p>
           )}
         </div>
         <div className="modal-actions">
+          {revertible > 0 && (
+            <button
+              className="btn dev-pick-revert"
+              onClick={() => void revert()}
+              disabled={busy}
+              title="Put the selected media back to the body their own files declare — or to none, where the file names none"
+            >
+              Revert {revertible.toLocaleString()} to the files
+            </button>
+          )}
           <button className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
           <button
             className="btn btn-primary"
             onClick={() => void apply()}
-            disabled={busy || !body || withoutBody === 0}
+            disabled={busy || !body || targets === 0}
           >
             {busy ? (
               <Spinner sm />
+            ) : replace ? (
+              `Set ${targets.toLocaleString()}`
+            ) : targets === 0 ? (
+              // Not "Assign 0": say why the button is off.
+              "Nothing to assign"
             ) : (
-              `Assign ${withoutBody.toLocaleString()}`
+              `Assign ${targets.toLocaleString()}`
             )}
           </button>
         </div>

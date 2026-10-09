@@ -21,7 +21,10 @@ import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
 import GeotagRecapModal from "@/app/GeotagRecapModal";
-import DevicePickerModal from "@/app/DevicePickerModal";
+import DevicePickerModal, {
+  applyDeviceChange,
+  deviceSelectionCounts,
+} from "@/app/DevicePickerModal";
 import type { PickedLocation } from "@/app/LocationPickerModal";
 import DeleteSessionModal from "@/app/sessions/DeleteSessionModal";
 import ExportSessionModal from "@/app/sessions/ExportSessionModal";
@@ -78,6 +81,10 @@ type AssetRow = {
   height: number | null;
   duration_s: number | null;
   device: string | null;
+  // Where the body came from, and what the file itself says (migration 0048).
+  device_source?: string | null;
+  device_exif?: string | null;
+  camera_model_exif?: string | null;
   gps: { lat: number; lon: number } | null;
   // 'manual' when a human placed the pin, 'inferred' when a folder suggestion
   // was accepted in bulk (cf. api/assets/geotag) — the recap modal badges it to
@@ -763,21 +770,18 @@ export default function SessionGrid({
   }, []);
 
   // Set camera body (cf. DevicePickerModal), the grid-side half of Pipeline ›
-  // Devices. `withoutBody` is counted from the rows already loaded so the
-  // dialog can say what it will leave alone without a request of its own.
+  // Devices. The counts come from the rows already loaded so the dialog can
+  // say what each button touches without a request of its own.
   const [deviceFlow, setDeviceFlow] = useState<{
     ids: number[];
     withoutBody: number;
+    revertible: number;
   } | null>(null);
 
   const openSetDevice = useCallback(
     (ids: number[]) => {
       if (!ids.length) return;
-      const idset = new Set(ids);
-      setDeviceFlow({
-        ids,
-        withoutBody: assets.filter((a) => idset.has(a.id) && !a.device).length,
-      });
+      setDeviceFlow({ ids, ...deviceSelectionCounts(assets, ids) });
     },
     [assets],
   );
@@ -1279,16 +1283,14 @@ export default function SessionGrid({
         <DevicePickerModal
           ids={deviceFlow.ids}
           withoutBody={deviceFlow.withoutBody}
+          revertible={deviceFlow.revertible}
           onClose={() => setDeviceFlow(null)}
-          onApplied={(message, ids, body) => {
-            // Only the rows that HAD no body changed: the write fills gaps and
-            // never overwrites what a file declared.
+          onApplied={(message, ids, change) => {
+            // Same rules the server applied, shared with the gallery.
             const idset = new Set(ids);
             setAssets((prev) =>
               prev.map((a) =>
-                idset.has(a.id) && !a.device
-                  ? { ...a, device: body.device }
-                  : a,
+                idset.has(a.id) ? applyDeviceChange(a, change) : a,
               ),
             );
             setDeviceFlow(null);
