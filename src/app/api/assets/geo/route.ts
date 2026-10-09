@@ -47,6 +47,25 @@
 // 0046 that column IS the local day wherever the frame's place is known (its
 // own GPS, an imported track, a neighbour's — lib/captureDays.ts); before it,
 // it was the UTC day and Atelier's sunrises landed on the day before.
+//
+// ## `?by=place` — one marker per spot, for the gallery map
+//
+// `GET /api/assets/geo?<same cumulative filters>&by=place` answers
+// `{ places: [{ id, lat, lon, n?, video? }], media, truncated }`: the located
+// media grouped on their coordinate rounded to 5 decimals (~1 m), `n` the
+// count at that spot (omitted when 1), `id`/`video` the NEWEST media there
+// (what the marker's popover shows), `media` the total behind every place.
+// It exists because the points branch's 10 000 cap, newest first, had become
+// a window rather than a safety net: on the maintainer's library (77 670
+// located media, 2026-10-09) the map showed January–September 2026 only, and
+// every folder placed through Unplaced pushed older media off it — it read as
+// "placing a folder makes things vanish". Bulk placement writes ONE
+// coordinate per folder, so the same library is 18 420 spots: grouping is
+// what lets the whole distribution fit, and it is exact (no sampling). The
+// cap (lib/geoPlaces.ts, in spots) is a safety net again, reported as
+// `truncated`.
+// The zone actions do not read ids off the places — the gallery asks the
+// points branch with `bbox=` for the ids inside a zone, server-side.
 import { NextRequest } from "next/server";
 import { many, tx } from "@/lib/db";
 import {
@@ -55,6 +74,7 @@ import {
   type PartialAssetFilter,
 } from "@/lib/filter";
 import { json, badRequest, serverError } from "@/lib/api";
+import { geoPlaces } from "@/lib/geoPlaces";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
@@ -153,7 +173,9 @@ export async function GET(req: NextRequest) {
       return badRequest("Invalid filter", (e as Error).message);
     }
 
-    if (req.nextUrl.searchParams.get("by") === "day") return geoByDay(filter);
+    const by = req.nextUrl.searchParams.get("by");
+    if (by === "day") return geoByDay(filter);
+    if (by === "place") return json(await geoPlaces(filter));
 
     const { conditions, params } = buildFilter(filter, 1);
     // Only geotagged assets land on the map.
