@@ -35,6 +35,10 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 **Trap**: `src/lib/lensLabels.ts` contains literal NUL bytes (lines 116, 127), so git shows it as binary, `grep` says "binary file matches" and ripgrep **skips it silently**. Search with `grep -a` / `rg -a` until DX-03 escapes them.
 
 
+## `next dev` edits two tracked files: never commit them (2026-10-09)
+
+**Trap**: running `next dev` (16.x) appends a `nextjs-agent-rules` block to `CLAUDE.md` and rewrites `next-env.d.ts` to `./.next/dev/types/…`. Both are tooling noise: leave them unstaged and `git checkout --` them once the dev server is stopped (it re-adds them while running). The block's own text says committing it "keeps the tree clean" — that is the generator talking, not a project rule. A browser check of a page needs Postgres 16 **with pgvector** (`apt-get install postgresql-16-pgvector`; four migrations need it), a Redis, and a session cookie minted with `createSession()` from `lib/auth.ts`.
+
 ## The indexer is testable without Redis: index into an ignored session (2026-10-09)
 
 **Fact**: `indexRoot` touches Redis only to enqueue (derivatives, geocode), and

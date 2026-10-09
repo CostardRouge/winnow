@@ -203,15 +203,16 @@ export function ConfirmAutoModal({
 }) {
   return (
     <Modal
-      label="Resolve duplicate groups automatically"
-      title={`Collapse ${target.groups.toLocaleString()} group${
+      label="Keep the suggested copy in every resolvable group"
+      title={`Keep the suggested copy in ${target.groups.toLocaleString()} group${
         target.groups > 1 ? "s" : ""
       }?`}
       onCancel={onCancel}
     >
       <p className="hint" style={{ marginTop: 0 }}>
         Every group in <strong>{target.scopeLabel}</strong> whose survivor is not
-        a judgement call will be collapsed onto that survivor, freeing about{" "}
+        a judgement call keeps the copy marked <strong>suggested</strong> and
+        loses the others, freeing about{" "}
         <strong>{formatBytes(target.reclaimable)}</strong>. Two rules, in order:
       </p>
       <ul className="hint dup-rule-list">
@@ -239,7 +240,7 @@ export function ConfirmAutoModal({
           {busy ? "Stop" : "Cancel"}
         </button>
         <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
-          {busy ? "Working…" : "Collapse them"}
+          {busy ? "Working…" : "Keep suggested"}
         </button>
       </div>
     </Modal>

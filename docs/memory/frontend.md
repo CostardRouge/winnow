@@ -147,6 +147,12 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: the client loop must stop on **lack of progress** (`remaining` not shrinking), never on `remaining === 0`: a group whose deletions are refused keeps matching the rule forever. Every group still goes through `keepOneCopy`, so the path whitelist, view-only refusal and relink-before-unlink ordering are untouched — the bulk path adds a picker, not a shortcut.
 
+## Every duplicate group shows the survivor the rule would keep, and why (2026-10-09)
+
+**Decision**: `auto_keep` was computed per group and drawn nowhere, so the bulk button asked for trust over thousands of groups it never showed. Now `autoKeep()` (`lib/duplicateList.ts`) returns the branch with the path (`auto_rule`: `protected` = the lone Final/Export copy, `library` = the live entry with no protected copy), the card marks that copy **suggested** with the branch as its reason, and "Keep suggested" is the group's one primary action (UI review rule). The bulk button reads "Keep suggested in N groups" — the same verb, so a human can check the pick group by group before applying it to the filter. Paths are drawn by `lib/pathDiff.ts` (shared folders faint, the differing folder highlighted). The rules paragraph is folded into a `<details>`, not deleted.
+
+**How to apply**: the page's word for the rule's pick is "suggested". A new survivor heuristic (a " (1)" suffix, a dated folder vs a staging one) is shown as a suggestion the user applies, **never** folded into `autoKeep`, which stays narrow (cf. the bulk-rule entry above). The redesign this belongs to (plan by rule, folder pairs, review queue, strategies) was mocked up first in the "Winnow Dedup Mockups" artifact.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.

@@ -3925,6 +3925,56 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mt-2 grid list-disc gap-1 pl-5;
   }
 
+  /* ---- Deduplication: the suggested survivor -----------------------------
+     The bulk rule already picks a survivor per group (auto_keep); these draw
+     it, so a human can check the pick one group at a time instead of trusting
+     a button over thousands. Green is the verdict on a COPY (it stays), the
+     same green the zone pill uses for a protected one — never a count. */
+
+  /* A copy's path in three runs: the folders every copy shares recede, the
+     folder that tells this copy apart carries the eye, the file name follows.
+     Three near-identical absolute paths are otherwise one blur. */
+  .dup-cmp-path .dup-path-pre {
+    color: var(--color-faint);
+  }
+  .dup-cmp-path .dup-path-diff {
+    @apply rounded-sm px-0.5;
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--color-star) 16%, transparent);
+  }
+  .dup-member.is-suggested {
+    background: color-mix(in srgb, var(--color-pick) 7%, var(--color-surface));
+    box-shadow: inset 3px 0 0 var(--color-pick);
+  }
+  .dup-member.is-suggested.selected {
+    background: var(--color-accent-wash);
+  }
+  .dup-suggest {
+    @apply shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-pick);
+    border-color: transparent;
+    background: color-mix(in srgb, var(--color-pick) 12%, var(--color-surface));
+  }
+  /* The group's one primary action, beside the min-w-0 title track. */
+  .dup-head-action {
+    @apply ml-auto flex shrink-0 items-center;
+  }
+  /* The rules, folded: they govern every action on the page, so they stay one
+     click away rather than a paragraph to re-read above the list. */
+  .dup-rules {
+    @apply mb-3 rounded-[var(--radius)] border px-3 py-2 text-[13px];
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-rules summary {
+    @apply cursor-pointer select-none font-medium;
+    color: var(--color-muted);
+  }
+  .dup-rules p {
+    @apply mb-0 mt-2;
+    color: var(--color-muted);
+  }
+
   /* ---- Pipeline sub-route tabs -------------------------------------------
      Same compact segmented-control language as .view-toggle/.view-btn (the
      Sessions/Grid/Calendar/Map switcher), so the two read as one family —

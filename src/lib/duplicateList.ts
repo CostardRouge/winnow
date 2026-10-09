@@ -15,6 +15,7 @@ import { many } from "./db";
 import { PHOTO_RAW_EXTS } from "./config";
 import { keepOneCopy, viewOnlyChecker, zoneChecker, DuplicateError } from "./duplicates";
 import type {
+  DuplicateAutoRule,
   DuplicateCopy,
   DuplicateExisting,
   DuplicateFacet,
@@ -154,6 +155,7 @@ async function buildGroups(): Promise<{
         raw_in_gallery: false,
         stale: false,
         auto_keep: null,
+        auto_rule: null,
         updated_at: r.updated_at,
       };
       byHash.set(r.content_hash, g);
@@ -237,7 +239,9 @@ function finalizeGroup(g: DuplicateGroup, shadowed: boolean): void {
   // duplicate of anything, just a row nobody ever cleared.
   g.stale = !shadowed && g.members <= 1;
 
-  g.auto_keep = autoKeepPath(g, lib);
+  const auto = autoKeep(g, lib);
+  g.auto_keep = auto?.path ?? null;
+  g.auto_rule = auto?.rule ?? null;
 }
 
 // The survivor the bulk rule picks — deliberately narrow, because a wrong pick
@@ -263,10 +267,14 @@ function finalizeGroup(g: DuplicateGroup, shadowed: boolean): void {
 //     answer is to delete nothing at all;
 //   - a library entry in the trash, or a group of on-disk copies with no indexed
 //     one: which folder should hold the file is a judgement, not a chore.
-function autoKeepPath(
-  g: DuplicateGroup,
+//
+// Returns the branch alongside the path: the page prints it as the reason the
+// copy is suggested, which is what turns the bulk button from a leap of faith
+// into something a human can check one group at a time.
+export function autoKeep(
+  g: Pick<DuplicateGroup, "members" | "copies">,
   lib: DuplicateExisting | null,
-): string | null {
+): { path: string; rule: DuplicateAutoRule } | null {
   if (g.members < 2) return null;
   const protectedPaths = [
     ...(lib?.view_only && lib.abs_path ? [lib.abs_path] : []),
@@ -276,9 +284,10 @@ function autoKeepPath(
   if (protectedPaths.length === 1) {
     // `lib` is already null when the entry is purged (no bytes to keep).
     if (lib && lib.abs_path && lib.abs_path !== protectedPaths[0]) return null;
-    return protectedPaths[0];
+    return { path: protectedPaths[0], rule: "protected" };
   }
-  if (lib && !lib.deleted && lib.abs_path) return lib.abs_path;
+  if (lib && !lib.deleted && lib.abs_path)
+    return { path: lib.abs_path, rule: "library" };
   return null;
 }
 

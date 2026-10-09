@@ -32,6 +32,12 @@ export const DUPLICATE_SCOPES: DuplicateScope[] = [
 
 export type DuplicateSort = "size" | "recent" | "path";
 
+// The two branches of the bulk rule (lib/duplicateList → autoKeep), named so
+// the page can say WHY a copy is the suggested survivor instead of only which:
+//   protected — the one copy on a Final/Export volume, which is never deleted;
+//   library   — the live library entry, with no protected copy in the group.
+export type DuplicateAutoRule = "protected" | "library";
+
 /** The indexed asset holding this content: live, in the trash, or purged. */
 export type DuplicateExisting = {
   id: number;
@@ -77,6 +83,8 @@ export type DuplicateGroup = {
   stale: boolean;
   /** The survivor the bulk rule would pick, or null when the group needs a human. */
   auto_keep: string | null;
+  /** Which branch of that rule picked it — what the page prints as the reason. */
+  auto_rule: DuplicateAutoRule | null;
   updated_at: string;
 };
 

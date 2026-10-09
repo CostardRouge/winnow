@@ -14,6 +14,9 @@
 //     first page is the most disk a click can free,
 //   • server-side paging, so the page renders forty groups and not five
 //     thousand,
+//   • the survivor the bulk rule would keep, drawn on every group with the
+//     reason it was picked, so "Keep suggested" can be checked group by group
+//     before it is trusted over the whole filter,
 //   • one bulk collapse for the groups whose survivor is not a judgement call,
 //     because clicking through those one at a time is data entry, not triage,
 //   • a standing report of the RAW masters found in the Gallery: the workflow
@@ -449,11 +452,12 @@ export default function DuplicatesFailuresPage() {
                 scopeLabel,
               })
             }
-            title="Collapse every group in this view whose survivor is not a judgement call"
+            title="Keep the suggested copy in every group of this view whose survivor is not a judgement call"
           >
             {Icons.keep}
             <span>
-              Collapse {(data?.autoResolvable ?? 0).toLocaleString()} resolvable
+              Keep suggested in {(data?.autoResolvable ?? 0).toLocaleString()}{" "}
+              group{data?.autoResolvable === 1 ? "" : "s"}
             </span>
           </button>
         </div>
@@ -495,25 +499,34 @@ export default function DuplicatesFailuresPage() {
           </div>
         )}
 
-        <p className="hint" style={{ marginTop: 0 }}>
-          Files matched as duplicates by partial hash, grouped by content. Each
-          group holds the same bytes in more than one place — the library’s copy
-          and any extra copies on disk. Winnow doesn’t assume which is the
-          original: pick the one to keep with <strong>“Keep only this”</strong>{" "}
-          and the rest are removed (the library entry is relinked onto your pick
-          if it’s an on-disk copy), leaving a single media. A library copy
-          already in the trash is never relinked: its file is removed and the
-          entry marked purged — and it can be dropped on its own with its row’s
-          delete. Copies on a{" "}
-          <strong>Final or Export volume are never deleted</strong>: those
-          masters are view-only, so they’re shown locked and are the copy the
-          group collapses onto. False collisions — genuinely distinct content
-          that merely shares a partial hash — are indexed separately and never
-          collapsed; they’re listed below for audit only.
-          {data && data.falseCollisions > 0
-            ? ` ${data.falseCollisions} false collision(s) recovered.`
-            : ""}
-        </p>
+        {/* The rules govern every action below, so they stay one click away
+            instead of a paragraph to re-read above the list. */}
+        <details className="dup-rules">
+          <summary>How deduplication decides</summary>
+          <p>
+            Files matched as duplicates by partial hash, grouped by content. Each
+            group holds the same bytes in more than one place — the library’s copy
+            and any extra copies on disk. Where a rule can tell which copy to
+            keep — the one on a Final/Export volume, or else the live library
+            entry — that copy is marked <strong>suggested</strong> and{" "}
+            <strong>“Keep suggested”</strong> keeps it. Otherwise Winnow doesn’t
+            assume which is the original: pick the one to keep with{" "}
+            <strong>“Keep only this”</strong> and the rest are removed (the
+            library entry is relinked onto your pick if it’s an on-disk copy),
+            leaving a single media. A library copy
+            already in the trash is never relinked: its file is removed and the
+            entry marked purged — and it can be dropped on its own with its row’s
+            delete. Copies on a{" "}
+            <strong>Final or Export volume are never deleted</strong>: those
+            masters are view-only, so they’re shown locked and are the copy the
+            group collapses onto. False collisions — genuinely distinct content
+            that merely shares a partial hash — are indexed separately and never
+            collapsed; they’re listed below for audit only.
+            {data && data.falseCollisions > 0
+              ? ` ${data.falseCollisions} false collision(s) recovered.`
+              : ""}
+          </p>
+        </details>
 
         {loading && !data ? (
           <div className="empty" style={{ padding: 16 }}>
