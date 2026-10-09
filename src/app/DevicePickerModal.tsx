@@ -26,74 +26,15 @@ import { Spinner } from "./ui";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { fetchJson } from "@/lib/fetchJson";
 import type { KnownBody } from "@/lib/deviceAttribution";
+import type { DeviceChange } from "@/lib/deviceChange";
 
-/** What a confirmed dialog did, so the host can update its rows in place. */
-export type DeviceChange =
-  | { kind: "fill"; body: KnownBody }
-  | { kind: "replace"; body: KnownBody }
-  | { kind: "revert" };
-
-/** The slice of a grid row the dialog reads and rewrites. Grid rows are
- *  `a.*`, so every host already has these. */
-export type DeviceRow = {
-  id: number;
-  device?: string | null;
-  camera_model?: string | null;
-  device_source?: string | null;
-  device_exif?: string | null;
-  camera_model_exif?: string | null;
-};
-
-/** The two counts the dialog opens with, from rows the host already holds. */
-export function deviceSelectionCounts(
-  rows: readonly DeviceRow[],
-  ids: readonly number[],
-): { withoutBody: number; revertible: number } {
-  const idset = new Set(ids);
-  let withoutBody = 0;
-  let revertible = 0;
-  for (const a of rows) {
-    if (!idset.has(a.id)) continue;
-    if (!a.device) withoutBody++;
-    // Anything not read off the file itself can go back to the file.
-    if (a.device_source && a.device_source !== "exif") revertible++;
-  }
-  return { withoutBody, revertible };
-}
-
-/**
- * One row after a confirmed dialog — the same rules the server applied, so the
- * grid can update in place instead of refetching. Shared by every host so the
- * two grids cannot drift from each other or from the write.
- */
-export function applyDeviceChange<T extends DeviceRow>(
-  row: T,
-  change: DeviceChange,
-): T {
-  if (change.kind === "fill")
-    return row.device
-      ? row
-      : {
-          ...row,
-          device: change.body.device,
-          camera_model: row.camera_model ?? change.body.camera_model,
-          device_source: "manual",
-        };
-  if (change.kind === "replace")
-    return {
-      ...row,
-      device: change.body.device,
-      camera_model: change.body.camera_model,
-      device_source: "override",
-    };
-  if (!row.device_source || row.device_source === "exif") return row;
-  return {
-    ...row,
-    device: row.device_exif ?? null,
-    camera_model: row.camera_model_exif ?? null,
-    device_source: row.device_exif ? "exif" : null,
-  };
-}
+// The row rules (what each outcome does to a grid row) live in lib/deviceChange
+// so both grids share them and a test covers them; re-exported for the hosts.
+export {
+  applyDeviceChange,
+  deviceSelectionCounts,
+  type DeviceChange,
+} from "@/lib/deviceChange";
 
 export default function DevicePickerModal({
   ids,
