@@ -224,6 +224,48 @@ export function summarize(a: GridRow) {
   };
 }
 
+type Folder = {
+  id: number;
+  name: string;
+  captured_at_min: string | null;
+  captured_at_max: string | null;
+  asset_count: number;
+  pick_count: number;
+  reject_count: number;
+  skip_count: number;
+  unrated_count: number;
+  status: string;
+  ignored: boolean;
+  last_reviewed_at: string | null;
+  device_hint: string | null;
+};
+
+export function summarizeFolder(f: Folder) {
+  return {
+    id: f.id,
+    name: f.name,
+    from: f.captured_at_min,
+    to: f.captured_at_max,
+    media: f.asset_count,
+    picks: f.pick_count,
+    rejects: f.reject_count,
+    skips: f.skip_count,
+    unrated: f.unrated_count,
+    status: f.status,
+    ...(f.device_hint ? { device: f.device_hint } : {}),
+    ...(f.last_reviewed_at ? { last_reviewed_at: f.last_reviewed_at } : {}),
+  };
+}
+
+type Person = {
+  id: number;
+  name: string | null;
+  hidden: boolean;
+  asset_count: number;
+  incoming_asset_count: number;
+  gallery_asset_count: number;
+};
+
 type Chapter = {
   key: string;
   name: string;
@@ -365,7 +407,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
       id: "assets.list",
       title: "List media",
       description:
-        "Media in capture order with their culling (verdict, stars, colour, and `by: agent` when an agent set it), newest first unless `order` says otherwise. Filter by a day or a span, a verdict, a minimum star count, a type or a search. One line per RAW+JPEG pair and per burst pile by default (`fold: all`); `fold: pairs` lists every frame of a pile, and `burst` lists one pile's frames. Pages with `cursor` (the `next_cursor` of the previous page).",
+        "Media in capture order with their culling (verdict, stars, colour, and `by: agent` when an agent set it), newest first unless `order` says otherwise. Filter by a day or a span, a verdict, a minimum star count, a type, a folder, a tag, a person, a camera, a city or words. One line per RAW+JPEG pair and per burst pile by default (`fold: all`); `fold: pairs` lists every frame of a pile, and `burst` lists one pile's frames. Pages with `cursor` (the `next_cursor` of the previous page).",
       params: {
         day: { type: "string", optional: true, description: "One capture day, YYYY-MM-DD (or use from/to)" },
         from: { type: "string", optional: true, description: "First day, YYYY-MM-DD" },
@@ -376,6 +418,11 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         kind: { type: "string", enum: ["incoming", "final"], optional: true, description: "incoming = the cull's material, final = the delivered gallery" },
         search: { type: "string", optional: true, description: "Words matched against names, places, camera, text in the picture" },
         burst: { type: "number", integer: true, min: 1, optional: true, description: "One burst pile's id: every frame of it" },
+        folder: { type: "number", integer: true, min: 1, optional: true, description: "One folder's id (library.folders)" },
+        tag: { type: "string", optional: true, description: "Only media carrying this tag" },
+        person: { type: "number", integer: true, min: 1, optional: true, description: "Only media showing this person (people.list)" },
+        camera: { type: "string", optional: true, description: "Camera model, as library.facets names it" },
+        city: { type: "string", optional: true, description: "City, as library.facets names it" },
         fold: { type: "string", enum: ["all", "pairs"], optional: true, description: "all (default): a pair or a pile is one line; pairs: every frame of a pile" },
         order: { type: "string", enum: ["newest", "oldest"], optional: true, description: "newest (default) or oldest first" },
         limit: { type: "number", integer: true, min: 1, max: 200, optional: true, description: "Page size, 50 by default" },
@@ -396,6 +443,11 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
             kind: p.kind as string | undefined,
             q: p.search as string | undefined,
             burst_id: p.burst as number | undefined,
+            session_id: p.folder as number | undefined,
+            tags: p.tag as string | undefined,
+            person: p.person as number | undefined,
+            camera_model: p.camera as string | undefined,
+            place_city: p.city as string | undefined,
             collapse: p.fold === "pairs" ? "pairs" : "1",
             sort_dir: p.order === "oldest" ? "asc" : undefined,
             limit: (p.limit as number | undefined) ?? 50,
@@ -403,6 +455,126 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
           })}`,
         );
         return { assets: r.assets.map(summarize), next_cursor: r.next_cursor };
+      },
+    },
+
+    {
+      id: "library.folders",
+      title: "Folders",
+      description:
+        "The library's folders (shooting sessions) with their triage progress — picks, rejects, skips, unrated, and `status` (to_sort / done / empty) — what the Sift page ranks. `progress: incomplete` lists what is still to sort. Answers `total` and the first `limit` folders, so a partial answer says so.",
+      params: {
+        kind: { type: "string", enum: ["incoming", "final"], optional: true, description: "incoming (default) = the cull's material, final = the delivered gallery" },
+        progress: { type: "string", enum: ["untouched", "partial", "incomplete", "complete"], optional: true, description: "Only folders at this stage of the cull" },
+        sort: { type: "string", enum: ["captured", "touched", "progress", "count"], optional: true, description: "captured (default), touched (latest verdict), progress, count (media)" },
+        order: { type: "string", enum: ["desc", "asc"], optional: true, description: "desc (default) or asc" },
+        limit: { type: "number", integer: true, min: 1, max: 200, optional: true, description: "How many folders, 30 by default" },
+      },
+      async run(p) {
+        const r = await client.json<{ sessions: Folder[] }>(
+          "GET",
+          `/api/sessions${query({
+            kind: (p.kind as string | undefined) ?? "incoming",
+            progress: p.progress as string | undefined,
+            sort: p.sort as string | undefined,
+            sort_dir: p.order as string | undefined,
+          })}`,
+        );
+        const limit = (p.limit as number | undefined) ?? 30;
+        return {
+          total: r.sessions.length,
+          shown: Math.min(limit, r.sessions.length),
+          folders: r.sessions.slice(0, limit).map(summarizeFolder),
+        };
+      },
+    },
+
+    {
+      id: "library.facets",
+      title: "Facets",
+      description:
+        "The values the library's filters can take, with counts: years, months, cameras, lenses, devices, countries/regions/cities/places, people, tags, extensions, burst totals — what to put in assets.list's camera / city / person / tag.",
+      params: {
+        kind: { type: "string", enum: ["incoming", "final"], optional: true, description: "One half of the library; both when absent" },
+      },
+      async run(p) {
+        return client.json("GET", `/api/facets${query({ kind: p.kind as string | undefined })}`);
+      },
+    },
+
+    {
+      id: "people.list",
+      title: "People",
+      description:
+        "The people the face analysis has grouped — named ones first, then busiest — with how many media show them. Their ids filter assets.list (`person`). Answers `total` and the first `limit`.",
+      params: {
+        named: { type: "boolean", optional: true, description: "Only people who have a name" },
+        limit: { type: "number", integer: true, min: 1, max: 500, optional: true, description: "How many, 50 by default" },
+      },
+      async run(p) {
+        const r = await client.json<{ people: Person[] }>("GET", "/api/people");
+        const people = r.people.filter((x) => !x.hidden && (p.named !== true || !!x.name));
+        const limit = (p.limit as number | undefined) ?? 50;
+        return {
+          total: people.length,
+          shown: Math.min(limit, people.length),
+          people: people.slice(0, limit).map((x) => ({
+            id: x.id,
+            name: x.name,
+            media: x.asset_count,
+            incoming: x.incoming_asset_count,
+            gallery: x.gallery_asset_count,
+          })),
+        };
+      },
+    },
+
+    {
+      id: "assets.search",
+      title: "Search by meaning",
+      description:
+        "Media ranked by how well they match a description in plain words — 'sunset on the beach', 'people around a table', 'a bird close-up' (CLIP, GET /api/search). Closest first, with `distance` (lower is closer). Answers `enabled: false` with the reason when the instance's semantic index is off or empty; assets.list's `search` matches names and places instead.",
+      params: {
+        text: { type: "string", description: "What to look for, up to 300 characters" },
+        source: { type: "string", enum: ["incoming", "gallery"], optional: true, description: "One half of the library; both when absent" },
+        limit: { type: "number", integer: true, min: 1, max: 200, optional: true, description: "How many, 30 by default" },
+      },
+      async run(p) {
+        const text = (p.text as string).trim();
+        if (!text || text.length > 300)
+          throw new CommandError("invalid", `"text" must be 1–300 characters`);
+        const r = await client.json<{ items: (GridRow & { distance: number })[]; enabled?: boolean; reason?: string; indexed?: number }>(
+          "GET",
+          `/api/search${query({ q: text, source: p.source as string | undefined, limit: (p.limit as number | undefined) ?? 30 })}`,
+        );
+        if (r.enabled === false || r.indexed === 0)
+          return {
+            enabled: false,
+            reason: r.reason ?? (r.indexed === 0 ? "no media is indexed for search yet" : "semantic search is off on this instance"),
+            assets: [],
+          };
+        return {
+          enabled: true,
+          assets: r.items.map((a) => ({ ...summarize(a), distance: Math.round(a.distance * 1000) / 1000 })),
+        };
+      },
+    },
+
+    {
+      id: "assets.similar",
+      title: "Near-duplicates",
+      description:
+        "The media that LOOK like one medium — re-exports, burst neighbours, a slightly different crop — by perceptual-hash distance (0 = identical, ~10 = very close, >16 = probably unrelated). The 'which of these do I keep' question (GET /api/assets/:id/similar).",
+      params: {
+        id: { type: "number", integer: true, min: 1, description: "The asset id" },
+        maxDistance: { type: "number", integer: true, min: 0, max: 64, optional: true, description: "Farthest distance kept (the instance's default when absent)" },
+        limit: { type: "number", integer: true, min: 1, max: 200, optional: true, description: "How many (the instance's default when absent)" },
+      },
+      async run(p) {
+        return client.json(
+          "GET",
+          `/api/assets/${p.id}/similar${query({ max_distance: p.maxDistance as number | undefined, limit: p.limit as number | undefined })}`,
+        );
       },
     },
 

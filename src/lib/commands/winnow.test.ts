@@ -7,7 +7,7 @@ import { imageSize } from "./imageSize";
 
 type Call = { method: string; path: string; body?: unknown };
 
-function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object } = {}) {
+function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object; search?: object } = {}) {
   const calls: Call[] = [];
   const client: WinnowClient = {
     base: "https://winnow.test",
@@ -19,6 +19,15 @@ function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; byt
       if (path.startsWith("/api/assets?")) return { assets: [ROW], next_cursor: "abc" } as never;
       if (/^\/api\/assets\/\d+$/.test(path)) return { asset: opts.asset ?? ROW } as never;
       if (path.endsWith("/rating")) return { rating: { asset_id: 7, ...(body as object) } } as never;
+      if (path.startsWith("/api/sessions"))
+        return { sessions: [1, 2, 3].map((id) => ({ id, name: `f${id}`, asset_count: 10, pick_count: 1, reject_count: 2, skip_count: 0, unrated_count: 7, status: "to_sort", captured_at_min: null, captured_at_max: null, ignored: false, last_reviewed_at: null, device_hint: null })) } as never;
+      if (path === "/api/people")
+        return { people: [
+          { id: 1, name: "Vanessa", hidden: false, asset_count: 9, incoming_asset_count: 8, gallery_asset_count: 1 },
+          { id: 2, name: null, hidden: false, asset_count: 5, incoming_asset_count: 5, gallery_asset_count: 0 },
+          { id: 3, name: "Hidden", hidden: true, asset_count: 4, incoming_asset_count: 4, gallery_asset_count: 0 },
+        ] } as never;
+      if (path.startsWith("/api/search")) return (opts.search ?? { items: [{ ...ROW, distance: 0.21234 }], enabled: true, indexed: 10 }) as never;
       return {} as never;
     },
     async bytes(path) {
@@ -224,4 +233,46 @@ test("tags.assign sends trimmed names and refuses an empty gesture", async () =>
   assert.match((await failure(reg.execute("tags.assign", { ids: [7], add: ["  "] })))!, /1–64 characters/);
   const ro = fakeClient({ role: "viewer" });
   assert.match((await failure(ro.reg.execute("tags.assign", { ids: [7], add: ["x"] })))!, /^unavailable/);
+});
+
+test("library.folders defaults to Incoming and says when it shows part", async () => {
+  const { reg, calls } = fakeClient();
+  const r = (await reg.execute("library.folders", { progress: "incomplete", limit: 2 })) as { total: number; shown: number; folders: { id: number; unrated: number }[] };
+  const url = new URL(`https://x${calls.at(-1)!.path}`);
+  assert.equal(url.searchParams.get("kind"), "incoming");
+  assert.equal(url.searchParams.get("progress"), "incomplete");
+  assert.equal(r.total, 3);
+  assert.equal(r.shown, 2);
+  assert.deepEqual(r.folders.map((f) => f.id), [1, 2]);
+  assert.equal(r.folders[0].unrated, 7);
+});
+
+test("people.list hides hidden stacks and filters to named ones on request", async () => {
+  const { reg } = fakeClient();
+  const all = (await reg.execute("people.list")) as { total: number; people: { id: number }[] };
+  assert.deepEqual(all.people.map((x) => x.id), [1, 2]);
+  const named = (await reg.execute("people.list", { named: true })) as { people: { id: number; name: string }[] };
+  assert.deepEqual(named.people, [{ id: 1, name: "Vanessa", media: 9, incoming: 8, gallery: 1 }]);
+});
+
+test("assets.search summarises hits and reports an index that is off", async () => {
+  const { reg, calls } = fakeClient();
+  const r = (await reg.execute("assets.search", { text: " sunset ", source: "incoming" })) as { enabled: boolean; assets: { id: number; distance: number }[] };
+  const url = new URL(`https://x${calls.at(-1)!.path}`);
+  assert.equal(url.searchParams.get("q"), "sunset");
+  assert.equal(url.searchParams.get("limit"), "30");
+  assert.deepEqual([r.enabled, r.assets[0].id, r.assets[0].distance], [true, 7, 0.212]);
+  const off = fakeClient({ search: { items: [], enabled: false, reason: "pgvector not installed" } });
+  assert.deepEqual(await off.reg.execute("assets.search", { text: "x" }), { enabled: false, reason: "pgvector not installed", assets: [] });
+  assert.match((await failure(reg.execute("assets.search", { text: "   " })))!, /1–300/);
+});
+
+test("assets.list maps folder, tag, person, camera and city onto the filter", async () => {
+  const { reg, calls } = fakeClient();
+  await reg.execute("assets.list", { folder: 12, tag: "keeper", person: 515, camera: "ILCE-7CM2", city: "Ubud" });
+  const sp = new URL(`https://x${calls.at(-1)!.path}`).searchParams;
+  assert.deepEqual(
+    ["session_id", "tags", "person", "camera_model", "place_city"].map((k) => sp.get(k)),
+    ["12", "keeper", "515", "ILCE-7CM2", "Ubud"],
+  );
 });

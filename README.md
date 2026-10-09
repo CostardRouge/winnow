@@ -325,7 +325,12 @@ why) and `winnow_run` (`{ command, params }`). Commands today:
 | `app.status` | Account, role (capped), `via`, whether writes are allowed, whether the Timeline is on |
 | `library.days` `{ from, to, kind? }` | Capture days with counts and a cover, ≤ 366 days a call (`/api/assets/calendar`) |
 | `library.chapters` `{ from?, to?, mode? }` | The Timeline's chapters — only while that section is on (`/api/assets/timeline`) |
-| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, fold?, order?, limit?, cursor? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
+| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, folder?, tag?, person?, camera?, city?, fold?, order?, limit?, cursor? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
+| `library.folders` `{ kind?, progress?, sort?, order?, limit? }` | Folders with their triage counts and status — what is still to sort (`/api/sessions`) |
+| `library.facets` `{ kind? }` | The values the filters take, with counts — cameras, places, people, tags… (`/api/facets`) |
+| `people.list` `{ named?, limit? }` | The people face analysis grouped, with their media counts (`/api/people`) |
+| `assets.search` `{ text, source?, limit? }` | Media ranked by a plain-words description (CLIP, `/api/search`); says so when the index is off |
+| `assets.similar` `{ id, maxDistance?, limit? }` | Near-duplicates by perceptual hash (`/api/assets/:id/similar`) |
 | `assets.get` `{ id }` | The full row (`/api/assets/:id`) |
 | `assets.look` `{ id, detail? }` | The thumbnail (~400 px) or, with `detail`, the 2048 px proxy, as an image the agent sees (`/thumb`, `/proxy`) |
 | `cull.set` `{ id, verdict?, star?, color? }` | Verdict, stars, colour label — the grid's own write, pair companion included (`PATCH /api/assets/:id/rating`) |
