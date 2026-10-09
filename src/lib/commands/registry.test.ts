@@ -106,3 +106,24 @@ test("the latest registration of an id wins, the earlier one comes back", async 
   off();
   assert.equal(await reg.execute("x.y"), "a");
 });
+
+test("a list of numbers is checked item by item and capped", () => {
+  const ids: ParamSpecs = {
+    ids: { type: "numbers", description: "ids", integer: true, min: 1, maxItems: 3 },
+  };
+  assert.deepEqual(checkParams(ids, { ids: [1, 2] }), { ids: [1, 2] });
+  assert.match(code(() => checkParams(ids, { ids: [] }))!, /non-empty list/);
+  assert.match(code(() => checkParams(ids, { ids: [1, 2, 3, 4] }))!, /holds 4 items — 3 at most/);
+  assert.match(code(() => checkParams(ids, { ids: [1, 0] }))!, /"ids\[1\]" is 0, below its minimum 1/);
+  assert.match(code(() => checkParams(ids, { ids: [1.5] }))!, /"ids\[0\]" must be a whole number/);
+  assert.match(code(() => checkParams(ids, { ids: ["7"] }))!, /must be a finite number/);
+  assert.deepEqual(paramsJsonSchema(ids).properties, {
+    ids: {
+      type: "array",
+      minItems: 1,
+      maxItems: 3,
+      items: { type: "integer", minimum: 1 },
+      description: "ids",
+    },
+  });
+});

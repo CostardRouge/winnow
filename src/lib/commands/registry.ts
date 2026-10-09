@@ -38,6 +38,19 @@ export type ParamSpec =
   | { type: "string"; description: string; enum?: readonly string[]; optional?: boolean }
   | { type: "boolean"; description: string; optional?: boolean }
   | { type: "strings"; description: string; optional?: boolean }
+  // A list of numbers, each held to the same bounds as a `number`, and the
+  // list to `maxItems`: asset ids for a bulk verb. Added here first (Winnow
+  // is the one whose ids are numbers); Atelier's registry takes it too, so
+  // the dialect stays one.
+  | {
+      type: "numbers";
+      description: string;
+      min?: number;
+      max?: number;
+      integer?: boolean;
+      maxItems?: number;
+      optional?: boolean;
+    }
   | { type: "object"; description: string; optional?: boolean };
 
 export type ParamSpecs = Readonly<Record<string, ParamSpec>>;
@@ -167,6 +180,24 @@ export function checkParams(
           throw new CommandError("invalid", `"${key}" must be a list of strings`);
         }
         break;
+      case "numbers": {
+        if (!Array.isArray(v) || v.length === 0)
+          throw new CommandError("invalid", `"${key}" must be a non-empty list of numbers`);
+        if (spec.maxItems !== undefined && v.length > spec.maxItems)
+          throw new CommandError("invalid", `"${key}" holds ${v.length} items — ${spec.maxItems} at most a call`);
+        v.forEach((n, i) => {
+          const at = `"${key}[${i}]"`;
+          if (typeof n !== "number" || !Number.isFinite(n))
+            throw new CommandError("invalid", `${at} must be a finite number`);
+          if (spec.integer && !Number.isInteger(n))
+            throw new CommandError("invalid", `${at} must be a whole number`);
+          if (spec.min !== undefined && n < spec.min)
+            throw new CommandError("invalid", `${at} is ${n}, below its minimum ${spec.min}`);
+          if (spec.max !== undefined && n > spec.max)
+            throw new CommandError("invalid", `${at} is ${n}, above its maximum ${spec.max}`);
+        });
+        break;
+      }
       case "object":
         if (!isRecord(v)) throw new CommandError("invalid", `"${key}" must be an object`);
         break;
@@ -201,6 +232,18 @@ export function paramsJsonSchema(specs: ParamSpecs | undefined): Record<string, 
         break;
       case "strings":
         prop = { type: "array", items: { type: "string" } };
+        break;
+      case "numbers":
+        prop = {
+          type: "array",
+          minItems: 1,
+          ...(spec.maxItems !== undefined ? { maxItems: spec.maxItems } : {}),
+          items: {
+            type: spec.integer ? "integer" : "number",
+            ...(spec.min !== undefined ? { minimum: spec.min } : {}),
+            ...(spec.max !== undefined ? { maximum: spec.max } : {}),
+          },
+        };
         break;
       case "object":
         prop = { type: "object" };

@@ -329,6 +329,7 @@ why) and `winnow_run` (`{ command, params }`). Commands today:
 | `assets.get` `{ id }` | The full row (`/api/assets/:id`) |
 | `assets.look` `{ id, detail? }` | The thumbnail (~400 px) or, with `detail`, the 2048 px proxy, as an image the agent sees (`/thumb`, `/proxy`) |
 | `cull.set` `{ id, verdict?, star?, color? }` | Verdict, stars, colour label — the grid's own write, pair companion included (`PATCH /api/assets/:id/rating`) |
+| `cull.setMany` `{ ids, verdict?, star?, wholePile? }` | The grid's bulk rating, ≤ 500 ids a call; `wholePile` rates every frame of each id's burst too (`POST /api/ratings/bulk`) |
 
 Parameters are checked before anything is sent: an out-of-range value or a
 misspelt key is refused with the field named, never clamped or ignored.

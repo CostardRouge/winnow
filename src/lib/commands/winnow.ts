@@ -245,6 +245,11 @@ export const COLOR_LABELS = ["red", "yellow", "green", "blue", "purple", "none"]
 
 export const VERDICTS = ["pick", "reject", "skip", "unrated"] as const;
 
+// One bulk call's ceiling. The routes take any length; an agent's list is
+// held to what a person selects in a grid in one go, so a runaway loop
+// writes a page, not the library.
+export const MAX_BULK = 500;
+
 // ---------------------------------------------------------------------------
 
 export function winnowCommands(client: WinnowClient): CommandSpec[] {
@@ -464,6 +469,29 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         if (p.color !== undefined) body.color = p.color === "none" ? null : p.color;
         const r = await client.json<{ rating: unknown }>("PATCH", `/api/assets/${p.id}/rating`, body);
         return r.rating;
+      },
+    },
+
+    {
+      id: "cull.setMany",
+      title: "Cull many",
+      description:
+        "Set the verdict and/or stars of several media in one write — the grid's bulk gesture (POST /api/ratings/bulk), each pair's companion included. With `wholePile: true` every frame of each id's burst pile is rated too: the 'cull the pile' gesture, e.g. reject a whole burst once its keeper is picked (then pick the keeper again with cull.set). Colour labels are one at a time (cull.set). Marked as an agent's when the token was minted for one.",
+      available: canWrite,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `Asset ids (at most ${MAX_BULK} a call)` },
+        verdict: { type: "string", enum: VERDICTS, optional: true, description: "pick, reject, skip, or unrated to clear" },
+        star: { type: "number", integer: true, min: 0, max: 5, optional: true, description: "0–5 stars (0 clears)" },
+        wholePile: { type: "boolean", optional: true, description: "Also every frame of each id's burst pile" },
+      },
+      async run(p) {
+        if (p.verdict === undefined && p.star === undefined)
+          throw new CommandError("invalid", "nothing to set — give verdict or star");
+        const body: Record<string, unknown> = { ids: p.ids };
+        if (p.verdict !== undefined) body.verdict = p.verdict;
+        if (p.star !== undefined) body.star = p.star;
+        if (p.wholePile === true) body.expand_bursts = true;
+        return client.json("POST", "/api/ratings/bulk", body);
       },
     },
   ];

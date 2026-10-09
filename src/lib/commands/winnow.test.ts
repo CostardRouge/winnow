@@ -196,3 +196,18 @@ test("httpClient sends the Bearer token and surfaces the server's error text", a
   assert.equal(seen[0].url, "https://w.test/api/assets/1/rating");
   assert.equal((seen[0].init.headers as Record<string, string>).Authorization, "Bearer wnw_secret");
 });
+
+test("cull.setMany sends the bulk gesture, the pile only when asked", async () => {
+  const { reg, calls } = fakeClient();
+  await reg.execute("cull.setMany", { ids: [7, 9], verdict: "reject", wholePile: true });
+  assert.deepEqual(calls.at(-1), {
+    method: "POST",
+    path: "/api/ratings/bulk",
+    body: { ids: [7, 9], verdict: "reject", expand_bursts: true },
+  });
+  await reg.execute("cull.setMany", { ids: [7], star: 2 });
+  assert.deepEqual(calls.at(-1)!.body, { ids: [7], star: 2 });
+  assert.match((await failure(reg.execute("cull.setMany", { ids: [7] })))!, /^invalid: nothing to set/);
+  const many = Array.from({ length: 501 }, (_, i) => i + 1);
+  assert.match((await failure(reg.execute("cull.setMany", { ids: many, verdict: "pick" })))!, /500 at most/);
+});
