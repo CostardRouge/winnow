@@ -18,6 +18,15 @@ function registry() {
       run: () => null,
     },
     {
+      id: "assets.lookMany",
+      title: "Compare",
+      description: "see several",
+      run: () => [
+        { kind: "image", mimeType: "image/webp", data: "AAAA", width: 4, height: 3, note: "#1" },
+        { skipped: 2, why: "no picture yet" },
+      ],
+    },
+    {
       id: "assets.look",
       title: "Look",
       description: "see",
@@ -88,4 +97,13 @@ test("an image result becomes an MCP image block and its note", async () => {
 test("winnow_status runs app.status", async () => {
   const a = (await call("winnow_status")) as { result: { content: { text: string }[] } };
   assert.deepEqual(JSON.parse(a.result.content[0].text), { role: "viewer" });
+});
+
+test("a list of pictures becomes one image block per picture, a skipped one a text line", async () => {
+  const a = (await call("winnow_run", { command: "assets.lookMany" })) as { result: { content: object[] } };
+  assert.deepEqual(a.result.content, [
+    { type: "image", data: "AAAA", mimeType: "image/webp" },
+    { type: "text", text: "#1 — 4×3 image/webp" },
+    { type: "text", text: '{"skipped":2,"why":"no picture yet"}' },
+  ]);
 });

@@ -292,6 +292,10 @@ export const VERDICTS = ["pick", "reject", "skip", "unrated"] as const;
 // writes a page, not the library.
 export const MAX_BULK = 500;
 
+// Thumbnails one compare call returns: ~12 KB of WebP each, so a dozen is a
+// burst's worth without flooding the agent's context.
+export const MAX_LOOK = 12;
+
 // ---------------------------------------------------------------------------
 
 export function winnowCommands(client: WinnowClient): CommandSpec[] {
@@ -619,6 +623,44 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
           height: size.height,
           note: `#${asset.id} ${asset.filename} — ${detail ? "proxy" : "thumbnail"}, ${asset.verdict}${asset.star ? `, ${asset.star}★` : ""}`,
         };
+      },
+    },
+
+    {
+      id: "assets.lookMany",
+      title: "Compare",
+      description:
+        "Several thumbnails at once (about 400 px each), one image per medium in the order asked — a burst's frames or a few candidates side by side, to choose the keeper. At most 12 a call; a medium with no picture yet is named and skipped.",
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_LOOK, description: `Asset ids (at most ${MAX_LOOK})` },
+      },
+      async run(p): Promise<ImageResult[]> {
+        const ids = p.ids as number[];
+        const out = await Promise.all(
+          ids.map(async (id): Promise<ImageResult> => {
+            const { asset } = await client.json<{ asset: GridRow }>("GET", `/api/assets/${id}`);
+            if (asset.derivative_status !== "ready")
+              throw new CommandError("unavailable", `#${id}: no picture yet (derivatives ${asset.derivative_status})`);
+            const bytes = await client.bytes(`/api/assets/${id}/thumb`);
+            const size = imageSize(bytes);
+            if (!size) throw new CommandError("failed", `#${id}: the thumbnail is not a WebP, PNG or JPEG`);
+            return {
+              kind: "image",
+              mimeType: size.mimeType,
+              data: Buffer.from(bytes).toString("base64"),
+              width: size.width,
+              height: size.height,
+              note: `#${asset.id} ${asset.filename} — ${asset.verdict}${asset.star ? `, ${asset.star}★` : ""}`,
+            };
+          }).map((pr, i) =>
+            pr.catch((err: unknown) => {
+              // One missing derivative must not hide the eleven others.
+              const why = err instanceof Error ? err.message : String(err);
+              return { skipped: ids[i], why } as unknown as ImageResult;
+            }),
+          ),
+        );
+        return out;
       },
     },
 

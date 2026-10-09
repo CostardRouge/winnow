@@ -44,7 +44,7 @@ type Content =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string };
 
-const INSTRUCTIONS = `Winnow is a photographer's ingest → cull → export library (RAW photos and videos on a home NAS). You act as one account through an app token: call winnow_status first, then winnow_commands for what you may do, and winnow_run to do it. Days are the place's local capture days. Culling is a verdict (pick / reject / skip / unrated), 0–5 stars and a colour label; a RAW+JPEG pair is rated as one. Look at a picture (assets.look) before judging it. Writes need an editor token and are marked as an agent's when the token was minted for one; the originals are never touched.`;
+const INSTRUCTIONS = `Winnow is a photographer's ingest → cull → export library (RAW photos and videos on a home NAS). You act as one account through an app token: call winnow_status first, then winnow_commands for what you may do, and winnow_run to do it. Days are the place's local capture days. Culling is a verdict (pick / reject / skip / unrated), 0–5 stars and a colour label; a RAW+JPEG pair is rated as one. A cull usually goes: library.folders (progress: incomplete) or library.days → assets.list for a folder or a day → assets.lookMany to compare a burst or a run of frames (assets.look with detail for focus) → cull.set / cull.setMany (wholePile for a burst) → trash.move for rejects you are sure of. Never judge a picture you have not looked at. Writes need an editor token and are marked as an agent's when the token was minted for one; the originals are never touched.`;
 
 export function mcpTools() {
   return [
@@ -78,6 +78,13 @@ export function mcpTools() {
 }
 
 function toContent(value: unknown): Content[] {
+  // A list holding pictures (assets.lookMany): each picture its own image
+  // block with its note, anything else in the list a text line.
+  if (Array.isArray(value) && value.some(isImageResult)) {
+    return value.flatMap((v) =>
+      isImageResult(v) ? toContent(v) : [{ type: "text" as const, text: JSON.stringify(v) }],
+    );
+  }
   if (isImageResult(value)) {
     return [
       { type: "image", data: value.data, mimeType: value.mimeType },

@@ -292,3 +292,29 @@ test("trash.move trashes only rejected media, refusing the whole call otherwise"
   await reg.execute("trash.restore", { ids: [7] });
   assert.deepEqual(calls.at(-1)!.body, { ids: [7], restore: true });
 });
+
+test("assets.lookMany answers one picture per id, skipping one without a derivative", async () => {
+  const webp = new Uint8Array(
+    await sharp({ create: { width: 40, height: 30, channels: 3, background: "#888" } }).webp().toBuffer(),
+  );
+  const calls: string[] = [];
+  const client: WinnowClient = {
+    base: "x",
+    async json(_m, path) {
+      calls.push(path);
+      if (path === "/api/auth/me") return { user: { role: "viewer", via: "agent" } } as never;
+      const id = Number(path.split("/").pop());
+      return { asset: { ...ROW, id, derivative_status: id === 2 ? "pending" : "ready" } } as never;
+    },
+    async bytes() {
+      return webp;
+    },
+  };
+  const reg = createCommandRegistry();
+  reg.register("w", winnowCommands(client));
+  const out = (await reg.execute("assets.lookMany", { ids: [1, 2, 3] })) as Record<string, unknown>[];
+  assert.deepEqual(out.map((o) => o.kind ?? `skipped ${o.skipped}`), ["image", "skipped 2", "image"]);
+  assert.equal(out[2].width, 40);
+  assert.match(String(out[1].why), /no picture yet/);
+  assert.match((await failure(reg.execute("assets.lookMany", { ids: Array.from({ length: 13 }, (_, i) => i + 1) })))!, /12 at most/);
+});
