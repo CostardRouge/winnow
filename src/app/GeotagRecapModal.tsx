@@ -145,6 +145,7 @@ export default function GeotagRecapModal({
   sourceNote,
   onTargetChange,
   folders,
+  withCompanions = false,
   onClose,
   onApplied,
 }: {
@@ -167,6 +168,9 @@ export default function GeotagRecapModal({
   /** The folders this apply spans, when more than one is on offer — each gets
    *  a row and a checkbox. Media are matched to their folder by session_id. */
   folders?: RecapFolder[];
+  /** The host lists one row per RAW+JPEG pair (a folded grid): the write
+   *  then places each pair's other member too when it has no position. */
+  withCompanions?: boolean;
   onClose: () => void;
   /** Called once the update is applied, with ready-to-toast summary + the ids
    * actually written (for the host's optimistic state) + the source recorded. */
@@ -290,6 +294,7 @@ export default function GeotagRecapModal({
         ids,
         { lat: target.lat, lon: target.lon },
         source,
+        { companions: withCompanions },
       );
       const bits = [`${updated} geotagged`];
       const overwritten = withGps.filter((a) => checked.has(a.id)).length;

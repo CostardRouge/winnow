@@ -105,9 +105,11 @@ export default function LocationPicker({
         // leave the pin reporting to the first one.
         m.on("dragend", () => {
           const p = m.getLatLng();
+          // Wrapped like a click's: a pin dragged across the antimeridian
+          // reports 181°, which the geotag route refuses.
           onChangeRef.current({
             lat: round6(p.lat),
-            lon: round6(p.lng),
+            lon: round6(((((p.lng + 180) % 360) + 360) % 360) - 180),
             label: null,
           });
         });

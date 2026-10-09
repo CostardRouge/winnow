@@ -250,12 +250,21 @@ export async function geotagAssets(
   ids: number[],
   gps: { lat: number; lon: number },
   source: GeotagSource = "manual",
+  /** The ids come from a folded grid (one per RAW+JPEG pair): place each
+   *  pair's other member too when it has no position (api/assets/geotag). */
+  opts: { companions?: boolean } = {},
 ): Promise<number> {
   if (!ids.length) return 0;
   const res = await fetch("/api/assets/geotag", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, lat: gps.lat, lon: gps.lon, source }),
+    body: JSON.stringify({
+      ids,
+      lat: gps.lat,
+      lon: gps.lon,
+      source,
+      ...(opts.companions ? { companions: true } : {}),
+    }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -271,12 +280,18 @@ export async function geotagAssets(
 export async function exemptAssets(
   ids: number[],
   exempt: boolean,
+  /** From a folded grid: the pair's other member follows (geo-exempt). */
+  opts: { companions?: boolean } = {},
 ): Promise<number> {
   if (!ids.length) return 0;
   const res = await fetch("/api/assets/geo-exempt", {
     method: "POST",
     headers: HEADERS,
-    body: JSON.stringify({ ids, exempt }),
+    body: JSON.stringify({
+      ids,
+      exempt,
+      ...(opts.companions ? { companions: true } : {}),
+    }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

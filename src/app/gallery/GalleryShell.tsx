@@ -763,7 +763,7 @@ export default function GalleryShell({
     async (ids: number[], exempt: boolean) => {
       if (!ids.length) return;
       try {
-        const n = await exemptAssets(ids, exempt);
+        const n = await exemptAssets(ids, exempt, { companions: true });
         const idset = new Set(ids);
         const stamp = exempt ? new Date().toISOString() : null;
         setItems((prev) =>
@@ -1341,6 +1341,7 @@ export default function GalleryShell({
       )}
       {geotag?.loc && (
         <GeotagRecapModal
+          withCompanions
           assets={geotag.ids.flatMap((id) => {
             const a = items.find((x) => x.id === id);
             return a

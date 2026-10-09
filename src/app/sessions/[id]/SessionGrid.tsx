@@ -727,7 +727,7 @@ export default function SessionGrid({
     async (ids: number[], exempt: boolean) => {
       if (!ids.length) return;
       try {
-        const n = await exemptAssets(ids, exempt);
+        const n = await exemptAssets(ids, exempt, { companions: true });
         const idset = new Set(ids);
         const stamp = exempt ? new Date().toISOString() : null;
         setAssets((prev) =>
@@ -1298,6 +1298,7 @@ export default function SessionGrid({
       )}
       {geotag?.loc && (
         <GeotagRecapModal
+          withCompanions
           assets={
             geotag.recap ??
             geotag.ids.flatMap((id) => {

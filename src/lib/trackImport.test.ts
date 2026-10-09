@@ -160,10 +160,19 @@ test("undo takes back exactly what the import wrote", { skip: skipWithoutDb }, a
   const mine = listed.find((t) => t.id === Number(r.importId))!;
   assert.equal(mine.placed, 1);
   assert.equal(mine.zoned, 2);
+  // What the geocoder would have named it by the time Undo is pressed.
+  await db.q("UPDATE assets SET place_country = 'Australia', place_city = 'Rainbow Beach' WHERE id = $1", [sony]);
 
   const out = await ti.revertTrackImport(Number(r.importId));
   assert.deepEqual(out, { found: true, unplaced: 1, unzoned: 2 });
   assert.deepEqual(await state(sony), { lat: null, src: null, off: null, osrc: null, day: "2024-03-10", imp: null });
   assert.equal((await state(gap)).off, null);
+  // The names go with the position, or the frame stays under "Australia" in
+  // the facets with nothing to place it.
+  const names = await db.one<{ country: string | null; city: string | null }>(
+    "SELECT place_country AS country, place_city AS city FROM assets WHERE id = $1",
+    [sony],
+  );
+  assert.deepEqual(names, { country: null, city: null });
   assert.deepEqual(await ti.revertTrackImport(Number(r.importId)), { found: false, unplaced: 0, unzoned: 0 });
 });

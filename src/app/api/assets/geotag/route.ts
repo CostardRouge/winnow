@@ -21,6 +21,10 @@
 //      to NULL, laundering a bulk guess into what looks like a camera fix
 //      within one scan (docs/UNPLACED.md §4.3). It stays true in the database
 //      (the indexer keeps it, cf. lib/indexer.ts) and is served live by the API.
+//   2b. clear the old place names in the same UPDATE: they described the old
+//      point, and until the geocoder reaches the row (a bulk placement queues
+//      thousands) the media was filed under the old city in the facets while
+//      the map pinned it at the new one;
 //   4. re-decide each frame's capture DAY from its new place (migration 0046,
 //      lib/captureDays.ts) — for both: a frame placed in Perth is filed on
 //      Perth's calendar day. Never fatal: the position is already written.
@@ -39,6 +43,13 @@ const Body = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
   source: z.enum(["manual", "inferred"]).default("manual"),
+  // From a folded grid (gallery, session grid, Timeline) the selection holds
+  // one id per RAW+JPEG pair — the visible member. With this set, the pair's
+  // other member is placed too when it has NO position of its own (an existing
+  // one is never overwritten unseen). Without it, each placed pair left its RAW
+  // in the Unplaced backlog for good. The recap hosts that list every file
+  // (Unplaced, the session card) leave it off: there every row is a choice.
+  companions: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -46,7 +57,7 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success)
       return badRequest("ids, lat, lon required", parsed.error.issues);
-    const { ids, lat, lon, source } = parsed.data;
+    const { ids, lat, lon, source, companions } = parsed.data;
     const writeBack = source === "manual";
 
     // Live assets only — the recycle bin and purged rows keep their history.
@@ -58,10 +69,16 @@ export async function POST(req: NextRequest) {
          gps_write_status=CASE WHEN $4 THEN 'pending' ELSE 'skipped' END,
          gps_write_error=NULL,
          geocode_status='pending', geocode_error=NULL,
+         place_id=NULL, place_country=NULL, place_region=NULL,
+         place_county=NULL, place_city=NULL, place_poi=NULL,
          updated_at=now()
-       WHERE id = ANY($1) AND deleted_at IS NULL AND purged_at IS NULL
+       WHERE deleted_at IS NULL AND purged_at IS NULL
+         AND (id = ANY($1)
+              OR ($5 AND gps IS NULL AND group_id IN (
+                    SELECT group_id FROM assets
+                     WHERE id = ANY($1) AND group_id IS NOT NULL)))
        RETURNING id`,
-      [ids, JSON.stringify({ lat, lon }), source, writeBack],
+      [ids, JSON.stringify({ lat, lon }), source, writeBack, companions === true],
     );
 
     for (const { id } of rows) {

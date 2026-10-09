@@ -301,6 +301,33 @@ export async function runGeocodeJob(
     // at full precision now.
     let poi = asset.place_poi;
 
+    // Precise mode at a coordinate another media already resolved at this
+    // precision: take its answer, no network. A bulk placement writes ONE
+    // point on every media of a folder, and each used to cost its own
+    // zoom-18 Nominatim call — 800 identical requests for an 800-frame
+    // folder, an hour at the public rate, and the bulk use the provider's
+    // policy forbids. Now the first job of the batch pays, the rest copy.
+    if (precise && place) {
+      const twin = await one<{ place_poi: string | null }>(
+        `SELECT place_poi FROM assets
+          WHERE gps_lat = $1 AND gps_lon = $2 AND id <> $3
+            AND place_id = $4 AND geocode_status = 'ready'
+          LIMIT 1`,
+        [asset.gps_lat, asset.gps_lon, assetId, place.id],
+      );
+      if (twin) {
+        poi = twin.place_poi;
+        await q(
+          `UPDATE assets SET place_id=$2, place_country=$3, place_region=$4,
+                  place_county=$5, place_city=$6, place_poi=$7,
+                  geocode_status='ready', geocode_error=NULL, updated_at=now()
+            WHERE id=$1`,
+          [assetId, place.id, place.country, place.region, place.county, place.city, poi],
+        );
+        return;
+      }
+    }
+
     // Fetch when the cell isn't cached yet, or always in precise mode (we need
     // the exact-coordinate POI even if the admin names are already cached).
     if (!place || precise) {

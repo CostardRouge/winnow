@@ -471,6 +471,7 @@ export default function TimelinePanel() {
       )}
       {geotag?.loc && geotag.assets && (
         <GeotagRecapModal
+          withCompanions
           assets={geotag.assets}
           target={geotag.loc}
           onClose={() => setGeotag(null)}

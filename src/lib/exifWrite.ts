@@ -62,18 +62,24 @@ export async function runGpsWriteJob(assetId: number): Promise<void> {
     gps_lon: number | null;
     deleted_at: string | null;
     missing_at: string | null;
+    gps_source: string | null;
   }>(
-    "SELECT abs_path, ext, gps_lat, gps_lon, deleted_at, missing_at FROM assets WHERE id = $1",
+    "SELECT abs_path, ext, gps_lat, gps_lon, deleted_at, missing_at, gps_source FROM assets WHERE id = $1",
     [assetId],
   );
   // Gone, trashed, missing from disk, or coordinates cleared since the enqueue:
-  // nothing to write. Terminal, not an error.
+  // nothing to write. Terminal, not an error. Nor when the position is no
+  // longer a hand-placed pin: the job reads the coordinates at run time, so a
+  // manual pin queued (or retrying) and then overwritten by an accepted
+  // suggestion would have written that bulk guess into the original — the
+  // one thing 'inferred' must never do (docs/UNPLACED.md §4.3).
   if (
     !asset ||
     asset.deleted_at ||
     asset.missing_at ||
     asset.gps_lat == null ||
-    asset.gps_lon == null
+    asset.gps_lon == null ||
+    asset.gps_source !== "manual"
   ) {
     await q(
       "UPDATE assets SET gps_write_status='skipped', gps_write_error=NULL, updated_at=now() WHERE id=$1",
