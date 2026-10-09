@@ -425,10 +425,12 @@ export async function runCaptureDayBackfill(
         id: string;
         abs_path: string;
         captured_ms: string | number;
+        mtime_ms: string | number | null;
         capture_offset_source: OffsetSource | null;
       }>(
         `SELECT id, abs_path,
                 (extract(epoch FROM captured_at) * 1000)::float8 AS captured_ms,
+                (extract(epoch FROM file_mtime) * 1000)::float8 AS mtime_ms,
                 capture_offset_source FROM assets
           WHERE id > $1 AND captured_at_source IS NULL AND deleted_at IS NULL
             AND captured_at IS NOT NULL
@@ -453,9 +455,14 @@ export async function runCaptureDayBackfill(
           continue;
         }
         report.reread_files++;
-        // No date in the file: the stored value is the mtime fallback.
+        // No date in the file, even on a full read: the time IS the mtime, as
+        // the indexer would store it today — a 'file' row holding any other
+        // time would be handed back by step 0 on every run, and step 1 would
+        // never say it is done.
         const source: CapturedAtSource = c.captured_at ? (c.captured_at_source ?? "exif") : "file";
-        const freshAt = c.captured_at ? new Date(c.captured_at) : null;
+        const fresh =
+          c.captured_at ?? (r.mtime_ms != null ? new Date(Number(r.mtime_ms)).toISOString() : null);
+        const freshAt = fresh ? new Date(fresh) : null;
         const changedAt =
           freshAt != null &&
           Number.isFinite(freshAt.getTime()) &&
@@ -472,7 +479,7 @@ export async function runCaptureDayBackfill(
                                           WHEN $4::smallint IS NULL THEN NULL
                                           ELSE 'exif' END
            WHERE id = $1`,
-          [r.id, changedAt ? c.captured_at : null, source, c.exif_offset_min, keepStronger],
+          [r.id, changedAt ? fresh : null, source, c.exif_offset_min, keepStronger],
         );
         if (hooks.onProgress && report.reread_files % 200 === 0)
           await hooks.onProgress({ reread: report.reread_files, failed: report.reread_failed });
