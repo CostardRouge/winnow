@@ -81,11 +81,16 @@ export default function DedupReview({
   const [report, setReport] = useState<RunReport | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const fetched = useRef(0);
+  const inFlight = useRef(false);
   const dialog = useRef<HTMLDivElement>(null);
 
   // Pages of "Needs you" groups, fetched as the queue advances. Decisions are
   // staged, so the server's list does not move under us while reviewing.
   const fetchMore = useCallback(async () => {
+    // One page at a time: pages arriving out of order would break the queue's
+    // size order, and each request rebuilds the whole table server-side.
+    if (inFlight.current) return;
+    inFlight.current = true;
     const offset = fetched.current;
     fetched.current += PAGE;
     const p = new URLSearchParams({
@@ -103,6 +108,8 @@ export default function DedupReview({
       setQueue((q) => [...q, ...d.groups]);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      inFlight.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -147,6 +154,8 @@ export default function DedupReview({
   const keeps = staged.filter((d) => d.keep !== null);
 
   async function apply() {
+    if (applying) return;
+    setConfirmClose(false);
     const done: RunReport = {
       title: "Review",
       resolved: 0,
@@ -285,13 +294,21 @@ export default function DedupReview({
               changed.
             </p>
             <div className="modal-actions">
-              <button className="btn" onClick={() => setConfirmClose(false)}>
+              <button
+                className="btn"
+                disabled={!!applying}
+                onClick={() => setConfirmClose(false)}
+              >
                 Keep reviewing
               </button>
-              <button className="btn" onClick={() => onClose(false)}>
+              <button
+                className="btn"
+                disabled={!!applying}
+                onClick={() => onClose(false)}
+              >
                 Discard and close
               </button>
-              <button className="btn btn-danger" onClick={apply}>
+              <button className="btn btn-danger" disabled={!!applying} onClick={apply}>
                 Apply {keeps.length.toLocaleString()}
               </button>
             </div>

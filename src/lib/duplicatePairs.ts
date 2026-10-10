@@ -198,22 +198,40 @@ export async function resolveDuplicatePair(
 
   const max = Math.min(Math.max(query.max ?? 100, 1), 500);
   const exclude = new Set(query.exclude ?? []);
+  // A group whose copy on the kept side is a TRASHED library entry is left
+  // alone: keeping it would leave the trash's next purge holding the only
+  // copy (the same call autoKeep and strategyKeep leave to a human).
+  let inTrash = 0;
   const inPair = async () => {
     const { matched } = await selectGroups({ ...query, rule: undefined });
     const out: { hash: string; keepPath: string }[] = [];
+    inTrash = 0;
     for (const g of matched) {
       const pair = pairOf(g);
       if (!pair) continue;
       const keep = pair.find((m) => m.dir === keepDir);
       const drop = pair.find((m) => m.dir === dropDir);
-      if (keep && drop) out.push({ hash: g.hash, keepPath: keep.path });
+      if (!keep || !drop) continue;
+      if (keep.lib === "trashed") {
+        inTrash++;
+        continue;
+      }
+      out.push({ hash: g.hash, keepPath: keep.path });
     }
     return out;
   };
 
-  const targets = (await inPair()).filter((t) => !exclude.has(t.hash)).slice(0, max);
+  const all = await inPair();
+  const trashedLeft = inTrash;
+  const targets = all.filter((t) => !exclude.has(t.hash)).slice(0, max);
   const result = await keepEach(targets);
   const left = new Set([...exclude, ...result.retry]);
   result.remaining = (await inPair()).filter((t) => !left.has(t.hash)).length;
+  // Said once, by the batch that finishes the run — every batch sees them.
+  if (trashedLeft && result.remaining === 0)
+    result.skipped.push({
+      reason: "the copy on the kept side is in the trash — left for you to decide",
+      count: trashedLeft,
+    });
   return result;
 }

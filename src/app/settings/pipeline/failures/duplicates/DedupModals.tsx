@@ -266,6 +266,8 @@ export type PairTarget = {
   reclaims: number;
   /** The kept side is a Final/Export volume. */
   keepViewOnly: boolean;
+  /** Groups whose copy on the KEPT side is in the trash: left alone. */
+  keptTrashed: number;
 };
 
 export function ConfirmPairModal({
@@ -302,6 +304,14 @@ export function ConfirmPairModal({
           <strong className="dup-pair-drop">Delete from</strong> {target.dropDir}/
         </div>
       </div>
+      {target.keptTrashed > 0 && (
+        <p className="hint">
+          {target.keptTrashed.toLocaleString()} group
+          {target.keptTrashed === 1 ? " is" : "s are"} left alone: the copy on
+          the side you keep is in the trash, and keeping it would leave the
+          next purge holding the only copy.
+        </p>
+      )}
       {(target.relinks > 0 || target.reclaims > 0) && (
         <p className="hint">
           {target.relinks > 0 &&

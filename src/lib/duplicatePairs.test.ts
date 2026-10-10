@@ -154,3 +154,12 @@ test("a view-only side is never the one dropped", { skip: skipWithoutDb }, async
   );
   assert.equal(await exists(path.join(finals, "m.jpg")), true);
 });
+
+test("a pair never keeps a trashed library entry as the last copy", { skip: skipWithoutDb }, async () => {
+  const id = await twin(library, backup, "z.jpg");
+  await db.q("UPDATE assets SET deleted_at = now() WHERE id = $1", [id]);
+  const r = await pairs.resolveDuplicatePair({ q: base, keepDir: library, dropDir: backup });
+  assert.equal(r.resolved, 0);
+  assert.equal(await exists(path.join(backup, "z.jpg")), true, "the live copy stays");
+  assert.match(r.skipped[0].reason, /trash/);
+});

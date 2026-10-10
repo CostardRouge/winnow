@@ -76,6 +76,11 @@ export default function DedupPairs({
         `/api/failures/duplicates/pairs?${p}`,
       );
       if (ticket !== latest.current) return;
+      // The last page emptied by a run: step back to the new last page.
+      if (d.pairs.length === 0 && offset > 0 && d.matched > 0) {
+        setOffset(Math.floor((d.matched - 1) / PAGE) * PAGE);
+        return;
+      }
       setData(d);
       setError(null);
     } catch (e) {
@@ -87,6 +92,10 @@ export default function DedupPairs({
   useEffect(() => {
     load();
   }, [load]);
+  // A run ends by reloading whatever the user is looking at NOW: the filter
+  // may have changed while it ran.
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   const ask = (pair: DuplicatePair, keep: DuplicatePairSideKey) => {
     const kept = pair[keep];
@@ -94,11 +103,12 @@ export default function DedupPairs({
     setTarget({
       keepDir: kept.dir,
       dropDir: dropped.dir,
-      groups: pair.groups,
-      bytes: pair.bytes,
+      groups: pair.groups - kept.trashed,
+      bytes: (pair.bytes / pair.groups) * (pair.groups - kept.trashed),
       relinks: dropped.library,
       reclaims: dropped.trashed,
       keepViewOnly: kept.view_only,
+      keptTrashed: kept.trashed,
     });
   };
 
@@ -159,7 +169,7 @@ export default function DedupPairs({
       setTarget(null);
       setReport(done);
       setBusy(false);
-      await load();
+      await loadRef.current();
       onChanged();
     }
   }
@@ -310,6 +320,8 @@ function PairCard({
           // Keeping this side deletes the other one: never offered when the
           // other side is a view-only volume.
           if (other.view_only) return null;
+          // Every copy on this side is a trashed entry: nothing to keep here.
+          if (s.trashed >= pair.groups) return null;
           const relinks = other.library;
           return (
             <button

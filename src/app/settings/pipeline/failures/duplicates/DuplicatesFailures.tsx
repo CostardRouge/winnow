@@ -176,6 +176,16 @@ export default function DuplicatesFailuresPage() {
 
   const groups = useMemo(() => data?.groups ?? [], [data]);
 
+  // A bulk run can empty the page being shown (the last one): step back to
+  // the new last page instead of stranding the user without a pager.
+  useEffect(() => {
+    if (data && data.groups.length === 0 && query.offset > 0 && data.matched > 0)
+      setQuery((qq) => ({
+        ...qq,
+        offset: Math.floor((data.matched - 1) / PAGE_SIZE) * PAGE_SIZE,
+      }));
+  }, [data, query.offset]);
+
   // Keep the selection in sync with the copies still on screen: rows vanish
   // after a delete, and paging away must not carry a hidden pending deletion to
   // the next page's "Delete selected".

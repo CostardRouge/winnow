@@ -344,6 +344,10 @@ export function strategyKeep(
 
   if (lib?.view_only && pick !== lib.abs_path)
     return { skip: "the library copy is on a view-only volume and is never deleted" };
+  // Keeping a trashed entry would leave the trash's next purge holding the
+  // only copy — the call autoKeep leaves to a human, and so does this.
+  if (lib?.deleted && pick === lib.abs_path)
+    return { skip: "the copy it would keep is in the trash" };
   const kept = members.find((m) => m.path === pick)!;
   if (lib && !lib.deleted && pick !== lib.abs_path && kept.view_only)
     return { skip: "it would move the library entry onto a view-only volume" };

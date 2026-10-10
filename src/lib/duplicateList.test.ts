@@ -130,3 +130,9 @@ test("no strategy moves a live entry onto a view-only volume, nor drops a view-o
     /view-only/,
   );
 });
+
+test("no strategy keeps a trashed library entry as the last copy", () => {
+  const trashed = lib("/in/a.jpg", { deleted: true });
+  const r = strategyKeep(g([copy("/in/backup/a.jpg")], trashed), "shortest");
+  assert.match((r as { skip: string }).skip, /trash/);
+});

@@ -177,7 +177,7 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **Why the filter and not a checkbox selection** (the mockup's Gmail-style "select all matching"): every bulk path here already takes the filter so the server re-derives each survivor; narrowing is done with the search field and the plan cards, which also survive paging. A hand-picked list of groups was not built.
 
-**How to apply**: a strategy skips rather than guesses (tie, no match, several matches) and refuses two things for every strategy: dropping a view-only library entry, and moving a LIVE entry onto a view-only volume in bulk (the case `autoKeep` excludes; "Keep only this" still allows it one group at a time). "Oldest file" was not offered: Winnow knows when a hit was recorded, not the file's mtime, and getting it means a stat per copy on the NAS.
+**How to apply**: a strategy skips rather than guesses (tie, no match, several matches) and refuses two things for every strategy: dropping a view-only library entry, and moving a LIVE entry onto a view-only volume in bulk (the case `autoKeep` excludes; "Keep only this" still allows it one group at a time). Neither a strategy nor a folder pair keeps a TRASHED library entry as the survivor: the next purge would then hold the only copy — the review queue, where the human picks per group, still may. "Oldest file" was not offered: Winnow knows when a hit was recorded, not the file's mtime, and getting it means a stat per copy on the NAS.
 
 ## The UI files are too big and that is acknowledged (2026-08-20)
 

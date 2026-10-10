@@ -76,6 +76,12 @@ export default function DedupStrategy({
   const [report, setReport] = useState<RunReport | null>(null);
   const aborted = useRef(false);
   const latest = useRef(0);
+  // The run ends by reloading what the user looks at NOW (the filter may have
+  // changed while it ran), and a filter change mid-run must not hide Stop.
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  const onAppliedRef = useRef(onApplied);
+  onAppliedRef.current = onApplied;
 
   // The folder text reaches the query (and the list) a beat after typing.
   useEffect(() => {
@@ -110,8 +116,11 @@ export default function DedupStrategy({
     }
   };
 
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
   useEffect(() => {
-    setConfirming(false);
+    if (!busyRef.current) setConfirming(false);
     setPreview(null);
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,8 +186,8 @@ export default function DedupStrategy({
       setConfirming(false);
       setBusy(false);
       setReport(done);
-      onApplied();
-      refresh();
+      onAppliedRef.current();
+      refreshRef.current();
     }
   }
 
