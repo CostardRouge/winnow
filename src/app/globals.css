@@ -4192,6 +4192,48 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply grid gap-3 py-6 text-[14px];
   }
 
+  /* ---- Deduplication: your own rule -------------------------------------
+     Folded until opened; open, it previews and every listed group marks the
+     copy it would keep with an ink chip — distinct from the green of the
+     rule's own suggestion, so the two never read as one. */
+  .dup-strategy {
+    @apply mb-3 rounded-[var(--radius)] border px-3 py-2 text-[13px];
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-strategy[open] {
+    border-color: var(--color-border-strong);
+  }
+  .dup-strategy summary {
+    @apply cursor-pointer select-none font-medium;
+    color: var(--color-muted);
+  }
+  .dup-strategy-body {
+    @apply mt-2 grid gap-2;
+  }
+  .dup-strategy-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .dup-strategy-folder {
+    @apply w-56 max-w-full;
+  }
+  .dup-strategy-preview {
+    @apply m-0;
+    color: var(--color-muted);
+  }
+  .dup-strategy-preview strong {
+    color: var(--color-text);
+  }
+  .dup-strategy-ask {
+    @apply min-w-0 flex-1;
+  }
+  .dup-rulepick {
+    @apply shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-text);
+    border-color: var(--color-text);
+    background: var(--color-surface);
+  }
+
   /* The rules, folded: they govern every action on the page, so they stay one
      click away rather than a paragraph to re-read above the list. */
   .dup-rules {

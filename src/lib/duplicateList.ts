@@ -17,6 +17,8 @@ import { keepOneCopy, viewOnlyChecker, zoneChecker, DuplicateError } from "./dup
 import type {
   DuplicateAutoRule,
   DuplicatePlanKey,
+  DuplicateStrategy,
+  StrategyPreview,
   DuplicateCopy,
   DuplicateExisting,
   DuplicateFacet,
@@ -39,6 +41,10 @@ export type DuplicateListQuery = {
   rawInGallery?: boolean;
   /** Keep only one card of the plan: a branch of the rule, or "manual". */
   rule?: DuplicatePlanKey;
+  /** Annotate each listed group with what this strategy would keep. */
+  strategy?: DuplicateStrategy;
+  /** The text the "folder" strategy looks for in a copy's path. */
+  folder?: string;
   sort?: DuplicateSort;
   limit?: number;
   offset?: number;
@@ -294,6 +300,75 @@ export function autoKeep(
   return null;
 }
 
+// The survivor a user-chosen STRATEGY keeps in a group, or why it leaves the
+// group alone. Unlike autoKeep this is applied only on request, to a view the
+// user narrowed — but it is just as unwilling to guess: a tie, no match or two
+// matches skip the group. Two refusals hold for every strategy, the first
+// because keepOneCopy would refuse anyway, the second by choice:
+//   - a view-only library entry is never the loser;
+//   - a LIVE library entry is never moved onto a view-only volume in bulk —
+//     the exact case autoKeep excludes; "Keep only this" still allows it, one
+//     group at a time, with the relink spelled out.
+export function strategyKeep(
+  g: Pick<DuplicateGroup, "existing" | "copies" | "stale">,
+  strategy: DuplicateStrategy,
+  folder?: string,
+): { path: string } | { skip: string } {
+  const lib =
+    g.existing && !g.existing.purged && g.existing.abs_path ? g.existing : null;
+  const members = [
+    ...(lib ? [{ path: lib.abs_path!, view_only: lib.view_only }] : []),
+    ...g.copies
+      .filter((c) => c.abs_path !== lib?.abs_path)
+      .map((c) => ({ path: c.abs_path, view_only: c.view_only })),
+  ];
+  if (g.stale || members.length < 2) return { skip: "not a duplicate any more" };
+
+  let pick: string;
+  if (strategy === "library") {
+    if (!lib || lib.deleted) return { skip: "no live library entry" };
+    pick = lib.abs_path!;
+  } else if (strategy === "shortest") {
+    const byLength = [...members].sort((a, b) => a.path.length - b.path.length);
+    if (byLength[0].path.length === byLength[1].path.length)
+      return { skip: "two copies have paths of the same length" };
+    pick = byLength[0].path;
+  } else {
+    const needle = (folder ?? "").trim().toLowerCase();
+    if (!needle) return { skip: "no folder given" };
+    const hits = members.filter((m) => m.path.toLowerCase().includes(needle));
+    if (hits.length === 0) return { skip: "no copy matches the folder" };
+    if (hits.length > 1) return { skip: "several copies match the folder" };
+    pick = hits[0].path;
+  }
+
+  if (lib?.view_only && pick !== lib.abs_path)
+    return { skip: "the library copy is on a view-only volume and is never deleted" };
+  const kept = members.find((m) => m.path === pick)!;
+  if (lib && !lib.deleted && pick !== lib.abs_path && kept.view_only)
+    return { skip: "it would move the library entry onto a view-only volume" };
+  return { path: pick };
+}
+
+// What keeping `pick` does to a group: files deleted (view-only copies stay)
+// and whether the live library entry moves.
+function outcomeOf(g: DuplicateGroup, pick: string) {
+  const lib =
+    g.existing && !g.existing.purged && g.existing.abs_path ? g.existing : null;
+  const paths = [
+    ...(lib ? [{ path: lib.abs_path!, view_only: lib.view_only }] : []),
+    ...g.copies
+      .filter((c) => c.abs_path !== lib?.abs_path)
+      .map((c) => ({ path: c.abs_path, view_only: c.view_only })),
+  ];
+  const files = paths.filter((m) => m.path !== pick && !m.view_only).length;
+  return {
+    files,
+    bytes: files * (g.file_size ?? 0),
+    relink: !!(lib && !lib.deleted && lib.abs_path !== pick),
+  };
+}
+
 function matches(g: DuplicateGroup, needle: string): boolean {
   if (!needle) return true;
   if (g.existing?.abs_path?.toLowerCase().includes(needle)) return true;
@@ -406,12 +481,19 @@ export async function listDuplicateGroups(
   const offset = Math.max(query.offset ?? 0, 0);
   const s = await selectGroups(query);
   const auto = s.matched.filter((g) => g.auto_keep);
+  const page = s.matched.slice(offset, offset + limit);
+  if (query.strategy)
+    for (const g of page) {
+      const r = strategyKeep(g, query.strategy, query.folder);
+      g.strategy_keep = "path" in r ? r.path : null;
+      g.strategy_skip = "skip" in r ? r.skip : null;
+    }
 
   return {
     total: s.total,
     falseCollisions: s.falseCount,
     matched: s.matched.length,
-    groups: s.matched.slice(offset, offset + limit),
+    groups: page,
     falseItems: s.falseItems,
     facets: s.facets,
     plan: s.plan,
@@ -513,5 +595,68 @@ export async function resolveDuplicatesAuto(
   result.remaining = (await selectGroups(query)).matched.filter(
     (g) => g.auto_keep && !left.has(g.hash),
   ).length;
+  return result;
+}
+
+// What a strategy would do over the current view, before anything runs: the
+// preview the page prints beside its Apply button, computed by the same
+// strategyKeep the run uses. No disk access — the run re-checks every copy.
+export async function previewStrategy(
+  query: DuplicateListQuery & { strategy: DuplicateStrategy },
+): Promise<StrategyPreview> {
+  const { matched } = await selectGroups(query);
+  const preview: StrategyPreview = {
+    groups: 0,
+    files: 0,
+    bytes: 0,
+    relinks: 0,
+    skipped: [],
+  };
+  const reasons = new Map<string, number>();
+  for (const g of matched) {
+    if (g.stale) continue;
+    const r = strategyKeep(g, query.strategy, query.folder);
+    if ("skip" in r) {
+      reasons.set(r.skip, (reasons.get(r.skip) ?? 0) + 1);
+      continue;
+    }
+    const o = outcomeOf(g, r.path);
+    preview.groups++;
+    preview.files += o.files;
+    preview.bytes += o.bytes;
+    if (o.relink) preview.relinks++;
+  }
+  preview.skipped = [...reasons]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+  return preview;
+}
+
+// Apply a strategy to the current view, one bounded batch at a time — the
+// strategy counterpart of resolveDuplicatesAuto, same `exclude`/`retry`
+// contract, same keepEach underneath.
+export async function resolveStrategy(
+  query: DuplicateListQuery & {
+    strategy: DuplicateStrategy;
+    max?: number;
+    exclude?: string[];
+  },
+): Promise<KeepEachResult> {
+  const max = Math.min(Math.max(query.max ?? 100, 1), 500);
+  const exclude = new Set(query.exclude ?? []);
+  const picks = async () => {
+    const { matched } = await selectGroups(query);
+    const out: { hash: string; keepPath: string }[] = [];
+    for (const g of matched) {
+      if (g.stale) continue;
+      const r = strategyKeep(g, query.strategy, query.folder);
+      if ("path" in r) out.push({ hash: g.hash, keepPath: r.path });
+    }
+    return out;
+  };
+  const targets = (await picks()).filter((t) => !exclude.has(t.hash)).slice(0, max);
+  const result = await keepEach(targets);
+  const left = new Set([...exclude, ...result.retry]);
+  result.remaining = (await picks()).filter((t) => !left.has(t.hash)).length;
   return result;
 }

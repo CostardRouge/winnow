@@ -176,6 +176,9 @@ export default function DupGroupCard({
             {!suggested && group.members > 1 && !group.stale
               ? " · no rule picks a survivor: choose one below"
               : ""}
+            {group.strategy_skip
+              ? ` · your rule skips this group: ${group.strategy_skip}`
+              : ""}
           </div>
         </div>
         {suggested && (
@@ -228,6 +231,9 @@ export default function DupGroupCard({
                 ? reason
                 : null
             }
+            rulePick={
+              !!existing.abs_path && existing.abs_path === group.strategy_keep
+            }
             downloadHref={`/api/assets/${existing.id}/download`}
             canKeep={!!existing.abs_path && !existing.purged}
             onKeep={() => {
@@ -262,6 +268,7 @@ export default function DupGroupCard({
             path={c.abs_path}
             parts={partsOf.get(c.abs_path)}
             suggested={c.abs_path === suggested ? reason : null}
+            rulePick={c.abs_path === group.strategy_keep}
             downloadHref={`/api/failures/duplicates/file?path=${encodeURIComponent(
               c.abs_path,
             )}`}
@@ -320,6 +327,7 @@ function MemberRow({
   path,
   parts,
   suggested,
+  rulePick,
   downloadHref,
   canKeep,
   keepTitle,
@@ -338,6 +346,8 @@ function MemberRow({
   parts?: PathParts;
   /** This copy is the rule's survivor: the reason to print beside it. */
   suggested?: { label: string; title: string } | null;
+  /** The strategy being previewed would keep this copy. */
+  rulePick?: boolean;
   downloadHref: string;
   canKeep: boolean;
   keepTitle?: string;
@@ -370,6 +380,14 @@ function MemberRow({
       {suggested && (
         <span className="pill dup-suggest" title={suggested.title}>
           {suggested.label}
+        </span>
+      )}
+      {rulePick && (
+        <span
+          className="pill dup-rulepick"
+          title="The rule you are previewing above keeps this copy"
+        >
+          Your rule keeps this
         </span>
       )}
       <div className="dup-main">

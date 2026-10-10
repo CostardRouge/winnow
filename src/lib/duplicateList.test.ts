@@ -1,10 +1,11 @@
 // The bulk rule's survivor pick (autoKeep), pinned branch by branch now that
 // the page prints the branch as the REASON a copy is suggested: a wrong reason
-// beside a right path would be a lie the user acts on. Pure — no database: the
-// function only reads the group it is handed.
+// beside a right path would be a lie the user acts on — and the strategies a
+// user applies to a view (strategyKeep). Pure — no database: both functions
+// only read the group they are handed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoKeep } from "./duplicateList";
+import { autoKeep, strategyKeep } from "./duplicateList";
 import type { DuplicateCopy, DuplicateExisting } from "./duplicateTypes";
 
 function copy(abs_path: string, view_only = false): DuplicateCopy {
@@ -79,4 +80,53 @@ test("every judgement call stays manual", () => {
   assert.equal(autoKeep(group([copy("/in/a.jpg"), copy("/in/b/a.jpg")], null), null), null);
   // A lone copy is not a duplicate of anything.
   assert.equal(autoKeep(group([copy("/in/a.jpg")], null), null), null);
+});
+
+// ---- strategyKeep: the survivor rules a user applies to a view ----------
+
+const g = (copies: DuplicateCopy[], l: DuplicateExisting | null) => ({
+  copies,
+  existing: l,
+  stale: false,
+});
+
+test("library keeps the live entry, and skips a group without one", () => {
+  const l = lib("/in/2024/a.jpg");
+  assert.deepEqual(strategyKeep(g([copy("/in/b/a.jpg")], l), "library"), {
+    path: "/in/2024/a.jpg",
+  });
+  const trashed = lib("/in/2024/a.jpg", { deleted: true });
+  assert.ok("skip" in strategyKeep(g([copy("/in/b/a.jpg")], trashed), "library"));
+  assert.ok("skip" in strategyKeep(g([copy("/in/a.jpg"), copy("/in/b/a.jpg")], null), "library"));
+});
+
+test("shortest keeps the shortest path and skips a tie", () => {
+  assert.deepEqual(
+    strategyKeep(g([copy("/in/x/a.jpg"), copy("/in/backup/a.jpg")], null), "shortest"),
+    { path: "/in/x/a.jpg" },
+  );
+  assert.ok("skip" in strategyKeep(g([copy("/in/x/a.jpg"), copy("/in/y/a.jpg")], null), "shortest"));
+});
+
+test("folder keeps the one matching copy, and skips none or several", () => {
+  const two = g([copy("/in/2024/a.jpg"), copy("/in/backup/a.jpg")], null);
+  assert.deepEqual(strategyKeep(two, "folder", "2024/"), { path: "/in/2024/a.jpg" });
+  assert.ok("skip" in strategyKeep(two, "folder", "nowhere"));
+  assert.ok("skip" in strategyKeep(two, "folder", "/in/"));
+  assert.ok("skip" in strategyKeep(two, "folder", "  "));
+});
+
+test("no strategy moves a live entry onto a view-only volume, nor drops a view-only entry", () => {
+  // The live entry in Incoming, its twin on a Final volume with a shorter path.
+  const live = lib("/in/2023/long/a.jpg");
+  assert.match(
+    (strategyKeep(g([copy("/f/a.jpg", true)], live), "shortest") as { skip: string }).skip,
+    /view-only/,
+  );
+  // A view-only library entry is never the loser.
+  const master = lib("/finals/2024/Japan/a.jpg", { view_only: true });
+  assert.match(
+    (strategyKeep(g([copy("/in/a.jpg")], master), "shortest") as { skip: string }).skip,
+    /view-only/,
+  );
 });

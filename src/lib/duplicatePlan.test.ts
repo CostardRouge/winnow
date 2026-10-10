@@ -153,3 +153,26 @@ test("a card's run touches its own groups and says why it left one behind", { sk
   const none = await list.resolveDuplicatesAuto({ q: base, rule: "manual" });
   assert.equal(none.resolved, 0);
 });
+
+test("a strategy previews what its run then does", { skip: skipWithoutDb }, async () => {
+  await seed();
+  // "folder" on the incoming tree: keeps the one copy under incoming/copy/ in
+  // the manual group, skips the groups with no or several matching copies.
+  const folder = path.join(incoming, "copy") + "/";
+  const preview = await list.previewStrategy({ q: base, strategy: "folder", folder });
+  assert.equal(preview.groups, 1);
+  assert.equal(preview.files, 1);
+  assert.equal(preview.relinks, 0);
+  assert.equal(preview.skipped.reduce((n, s) => n + s.count, 0), 3);
+
+  const r = await list.resolveStrategy({ q: base, strategy: "folder", folder });
+  assert.equal(r.resolved, 1);
+  assert.equal(r.deleted, 1);
+  assert.equal(await exists(path.join(incoming, "U.jpg")), false);
+  assert.equal(await exists(path.join(incoming, "copy", "U.jpg")), true);
+
+  // The listing annotates each group with the strategy's pick or its skip.
+  const listed = await list.listDuplicateGroups({ q: base, strategy: "library" });
+  for (const grp of listed.groups)
+    assert.ok((grp.strategy_keep == null) !== (grp.strategy_skip == null));
+});

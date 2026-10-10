@@ -96,6 +96,10 @@ export type DuplicateGroup = {
   auto_keep: string | null;
   /** Which branch of that rule picked it — what the page prints as the reason. */
   auto_rule: DuplicateAutoRule | null;
+  /** With a strategy in the query: the copy it would keep, or why it skips
+   *  this group (exactly one of the two is set). Absent without a strategy. */
+  strategy_keep?: string | null;
+  strategy_skip?: string | null;
   updated_at: string;
 };
 
@@ -216,4 +220,26 @@ export type DuplicatePairList = {
   unpaired: number;
   limit: number;
   offset: number;
+};
+
+// ---- Strategies -----------------------------------------------------------
+//
+// A survivor rule the USER picks and applies to a whole view, beside the
+// narrow automatic one (autoKeep). Each skips a group rather than guess, and
+// none ever moves a live library entry onto a view-only volume.
+//   library  — keep the live library entry where it is (nothing relinked);
+//   shortest — keep the copy with the shortest path (a tie skips);
+//   folder   — keep the one copy whose path contains the given text.
+export type DuplicateStrategy = "library" | "shortest" | "folder";
+
+export type StrategyPreview = {
+  /** Groups in the view the strategy decides. */
+  groups: number;
+  /** Files it would delete, and the bytes they hold. */
+  files: number;
+  bytes: number;
+  /** Live library entries it would move onto the kept copy. */
+  relinks: number;
+  /** Groups it leaves alone, by reason. */
+  skipped: { reason: string; count: number }[];
 };

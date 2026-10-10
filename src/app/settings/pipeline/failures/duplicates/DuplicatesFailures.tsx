@@ -27,7 +27,7 @@
 //
 // Every destructive action still goes through the same lib/duplicates guards it
 // always did; nothing here reaches around them.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icons } from "../../../../ui";
 import { FamilyShell } from "../sections";
 import { formatBytes } from "../model";
@@ -35,6 +35,7 @@ import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
 import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
 import DedupPairs from "./DedupPairs";
 import DedupReview from "./DedupReview";
+import DedupStrategy from "./DedupStrategy";
 import { OptionPicker, type PickerOption } from "../../../../OptionPicker";
 import {
   ConfirmAutoModal,
@@ -166,6 +167,12 @@ export default function DuplicatesFailuresPage() {
 
   const patch = (p: Partial<DuplicateQuery>) =>
     setQuery((qq) => ({ ...qq, offset: 0, ...p }));
+  // Stable: the strategy panel debounces its folder field against it.
+  const setStrategy = useCallback(
+    (strategy: DuplicateQuery["strategy"], folder: string) =>
+      setQuery((qq) => ({ ...qq, offset: 0, strategy, folder })),
+    [],
+  );
 
   const groups = useMemo(() => data?.groups ?? [], [data]);
 
@@ -544,6 +551,24 @@ export default function DuplicatesFailuresPage() {
             }
             onReview={() => setReviewing(true)}
             onDismissReport={() => setReport(null)}
+          />
+        )}
+
+        {view === "groups" && data && (
+          <DedupStrategy
+            filter={{
+              scope: query.scope,
+              q: query.q,
+              rawInGallery: query.rawInGallery,
+              rule: query.rule,
+            }}
+            scopeLabel={
+              ruleLabel ? `${scopeLabel} · ${ruleLabel}` : scopeLabel
+            }
+            strategy={query.strategy}
+            folder={query.folder}
+            onChange={setStrategy}
+            onApplied={load}
           />
         )}
 

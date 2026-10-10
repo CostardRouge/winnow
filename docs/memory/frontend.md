@@ -171,6 +171,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: the queue mirrors keepOneCopy's members (purged entry excluded) and its one refusal up front — a view-only library entry is the only copy pickable. Any new one-by-one flow for destructive picks should stage the same way.
 
+## A user's own survivor rule applies to the filter, never to a picked list (2026-10-09)
+
+**Decision**: "Apply a rule of your own to this view" (`DedupStrategy.tsx`, `strategyKeep()` in `lib/duplicateList.ts`, `/api/failures/duplicates/strategy`) offers three strategies — library entry, shortest path, path contains… — over the current filter (scope, search, RAW, plan card). GET previews (groups decided, files/bytes, relinks, skips by reason); while open, the list marks each group's pick ("Your rule keeps this", ink, distinct from the green suggestion); Apply confirms inline and runs the same `exclude`/`retry` loop through `keepEach`.
+
+**Why the filter and not a checkbox selection** (the mockup's Gmail-style "select all matching"): every bulk path here already takes the filter so the server re-derives each survivor; narrowing is done with the search field and the plan cards, which also survive paging. A hand-picked list of groups was not built.
+
+**How to apply**: a strategy skips rather than guesses (tie, no match, several matches) and refuses two things for every strategy: dropping a view-only library entry, and moving a LIVE entry onto a view-only volume in bulk (the case `autoKeep` excludes; "Keep only this" still allows it one group at a time). "Oldest file" was not offered: Winnow knows when a hit was recorded, not the file's mtime, and getting it means a stat per copy on the NAS.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.
