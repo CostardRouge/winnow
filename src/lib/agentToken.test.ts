@@ -1,4 +1,4 @@
-// Migration 0048 + lib/auth.ts: a token minted for an agent validates like any
+// Migration 0049 + lib/auth.ts: a token minted for an agent validates like any
 // token (same ceiling) and says it is an agent's, which is what the proxy turns
 // into `via: "agent"` and the rating routes stamp into `ratings.rated_via`.
 // Database-backed: runs only with WINNOW_TEST_DATABASE_URL.

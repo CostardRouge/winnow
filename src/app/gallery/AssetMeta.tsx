@@ -26,6 +26,11 @@ export type AssetMetaInput = {
   duration_s?: number | null;
   device?: string | null;
   camera_model?: string | null;
+  // Where the body came from (cf. lib/deviceAttribution.ts) and what the file
+  // itself declares (migration 0048). Lets the Device row say when the body
+  // was given or corrected by hand rather than read off the file.
+  device_source?: string | null;
+  device_exif?: string | null;
   lens?: string | null;
   iso?: number | null;
   shutter?: string | null;
@@ -156,6 +161,47 @@ function exposureLine(a: AssetMetaInput): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
+// The Device row, with its provenance whenever the body did NOT come off the
+// file. A correction is the case that matters most: the panel then prints what
+// the file says beside it, so an override is never a silent rewrite.
+function deviceLine(a: AssetMetaInput): React.ReactNode {
+  const name = friendlyCameraName(a.device);
+  switch (a.device_source) {
+    case "override":
+      return (
+        <>
+          {name}{" "}
+          <span className="asset-meta-dim">
+            corrected
+            {a.device_exif
+              ? ` — file says ${friendlyCameraName(a.device_exif)}`
+              : " — file names none"}
+          </span>
+        </>
+      );
+    case "manual":
+      return (
+        <>
+          {name} <span className="asset-meta-dim">assigned — file names none</span>
+        </>
+      );
+    case "derived":
+      return (
+        <>
+          {name} <span className="asset-meta-dim">inferred from its folder</span>
+        </>
+      );
+    case "embedded":
+      return (
+        <>
+          {name} <span className="asset-meta-dim">from the clip’s metadata track</span>
+        </>
+      );
+    default:
+      return name;
+  }
+}
+
 export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   const camera = [friendlyCameraName(asset.camera_model), asset.lens]
     .filter(Boolean)
@@ -175,7 +221,7 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
     rows.push(["Duration", formatDuration(asset.duration_s)]);
   if (asset.file_size != null) rows.push(["Size", formatBytes(asset.file_size)]);
   if (typeStr) rows.push(["Type", typeStr]);
-  if (asset.device) rows.push(["Device", friendlyCameraName(asset.device)]);
+  if (asset.device) rows.push(["Device", deviceLine(asset)]);
   if (asset.gps) {
     const { lat, lon } = asset.gps;
     rows.push([

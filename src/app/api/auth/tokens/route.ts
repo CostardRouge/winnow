@@ -44,7 +44,7 @@ function publicToken(t: ListRow) {
     name: t.name,
     hint: t.hint,
     role: t.role,
-    // Minted for an agent (an MCP client, migration 0048): its writes are
+    // Minted for an agent (an MCP client, migration 0049): its writes are
     // stamped as an agent's.
     agent: t.agent,
     // What a request with it runs as TODAY — lower than `role` when the owner

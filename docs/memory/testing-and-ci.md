@@ -34,3 +34,18 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 
 **Trap**: `src/lib/lensLabels.ts` contains literal NUL bytes (lines 116, 127), so git shows it as binary, `grep` says "binary file matches" and ripgrep **skips it silently**. Search with `grep -a` / `rg -a` until DX-03 escapes them.
 
+
+## The indexer is testable without Redis: index into an ignored session (2026-10-09)
+
+**Fact**: `indexRoot` touches Redis only to enqueue (derivatives, geocode), and
+`lib/queue.ts` builds its ioredis client with `lazyConnect` — so a test that
+pre-creates the folder's session with `ignored = true` indexes real files, runs
+the real UPDATE and the end-of-scan reconciliations, and never opens a socket.
+`src/lib/deviceAttribution.test.ts` does exactly that over a real JPEG whose
+EXIF it writes with `exiftool-vendored`, then bumps the mtime and re-indexes.
+
+**How to apply**: a change to the indexer's write (a guard, a provenance, a
+column it must keep) gets a test in that shape, not a hand-copied SQL fragment —
+a copy proves nothing about the statement that ships. Check that it FAILS with
+the change removed: for the camera-body guard it did. Keep `GEOCODE_ENABLED=false`
+and fixtures without GPS, or the geocode enqueue reaches for Redis after all.

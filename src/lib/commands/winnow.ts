@@ -10,7 +10,7 @@
 // browser. Nothing here decides who may do what; `available()` only says
 // ahead of time what the server would refuse, so an agent is not offered a
 // verb its token cannot use. A write made this way is stamped as an agent's
-// when the token was minted for one (migration 0048, `ratings.rated_via`).
+// when the token was minted for one (migration 0049, `ratings.rated_via`).
 //
 // Answers are trimmed for an agent's context: a grid row is ~2.5 KB of
 // columns a person never reads, so lists carry a summary and `assets.get`

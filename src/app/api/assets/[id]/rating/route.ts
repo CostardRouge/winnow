@@ -29,7 +29,7 @@ export async function PATCH(
     // upsert targets the asset AND its group companion (cf. lib/pairing.ts).
     // Attribution: the account acting is stamped on the rating (kept when the
     // identity is somehow absent, never erased — cf. migration 0032), and so
-    // is the credential it came through — a browser, an app, an agent (0048).
+    // is the credential it came through — a browser, an app, an agent (0049).
     const userId = identityFromHeaders(req.headers)?.id ?? null;
     const via = authViaFromHeaders(req.headers);
     await q(

@@ -64,9 +64,16 @@ export type Asset = {
   // Where `device`/`camera_model` came from (cf. lib/deviceAttribution.ts,
   // migration 0043). 'exif' (or NULL on rows indexed before 0043) = read off
   // the file; 'derived' = attributed by the confidence vote; 'manual' = a human
-  // picked the body; 'embedded' = read from a container's timed-metadata track.
-  // Anything but 'exif' is protected from being overwritten by a re-index.
-  device_source: "exif" | "derived" | "manual" | "embedded" | null;
+  // picked the body for a file that named none; 'embedded' = read from a
+  // container's timed-metadata track; 'override' = a human REPLACED what the
+  // file declares (migration 0048) — the only one that beats the file at
+  // re-index. The others are kept only while the file names nothing.
+  device_source: "exif" | "derived" | "manual" | "embedded" | "override" | null;
+  // What the file itself declares, refreshed on every index whatever won above
+  // (migration 0048). NULL where it names nothing. Printed beside an override,
+  // and what "Revert to the file" restores.
+  device_exif: string | null;
+  camera_model_exif: string | null;
   file_size: number | null;
   file_mtime: string | null;
   content_hash: string | null;
@@ -313,7 +320,7 @@ export type Rating = {
   reviewed_at: string | null;
   // Attribution: account that last touched the rating (cf. migration 0032).
   rated_by: number | null;
-  // …and the credential it came through (0048); null before 0048.
+  // …and the credential it came through (0049); null before 0049.
   rated_via: RatedVia | null;
 };
 
@@ -330,8 +337,8 @@ export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;
   color_label: string | null;
-  // Which credential last rated it (migration 0048): "agent" marks an MCP
-  // client's verdict; null when unrated or rated before 0048.
+  // Which credential last rated it (migration 0049): "agent" marks an MCP
+  // client's verdict; null when unrated or rated before 0049.
   rated_via: RatedVia | null;
   tags: string[];
   // Pairing (cf. lib/pairing.ts): the other member of this asset's group and the
