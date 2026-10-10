@@ -75,3 +75,26 @@ test("the dialog's counts only see the selected rows", () => {
     revertible: 0,
   });
 });
+
+test("revert lands on the body the clip's own track names, where its EXIF names none", () => {
+  const clip = {
+    ...holeRow,
+    id: 4,
+    device: "SONY ILCE-6700",
+    camera_model: "ILCE-6700",
+    device_source: "override",
+    embedded_device: "DJI FC8482",
+    embedded_camera_model: "FC8482",
+  };
+  assert.deepEqual(applyDeviceChange(clip, { kind: "revert" }), {
+    ...clip,
+    device: "DJI FC8482",
+    camera_model: "FC8482",
+    device_source: "embedded",
+  });
+  // Already what its track says: nothing to revert, and not counted.
+  const read = applyDeviceChange(clip, { kind: "revert" });
+  assert.equal(applyDeviceChange(read, { kind: "revert" }), read);
+  assert.deepEqual(deviceSelectionCounts([clip, read], [4]), { withoutBody: 0, revertible: 1 });
+  assert.deepEqual(deviceSelectionCounts([read], [4]), { withoutBody: 0, revertible: 0 });
+});

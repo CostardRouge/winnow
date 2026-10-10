@@ -4041,6 +4041,11 @@ html[data-theme="dark"] .btn-primary:hover {
   .flow-actions {
     @apply flex flex-wrap items-center gap-2;
   }
+  /* Settings › Pipeline › Devices: step 2 is the folder list itself, so its
+     title stands alone above it rather than in a card of its own. */
+  .dev-step-head {
+    @apply mt-6 mb-3;
+  }
   .flow-warn {
     @apply m-0 rounded-[var(--radius)] px-3 py-2 text-sm;
     background: var(--color-accent-wash);

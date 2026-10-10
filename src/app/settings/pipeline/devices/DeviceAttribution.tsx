@@ -30,6 +30,7 @@ import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
 import { EmptyState, Icons, LazyImage, Spinner } from "../../../ui";
 import { useStats } from "../../../useStats";
+import DeviceProbeSection from "./DeviceProbeSection";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import {
   formatBitrate,
@@ -387,9 +388,30 @@ export default function DeviceAttribution() {
           : "Nothing written — that medium has no proposal of its own.",
     );
 
+  // Step 1, on every state of the page — including "every medium has a body",
+  // since the clips a vote or a hand-pick filled are exactly the ones whose
+  // own track may say otherwise. A finished pass re-reads the list below.
+  const probe = (
+    <DeviceProbeSection
+      onChanged={async () => {
+        await refresh();
+      }}
+    />
+  );
+  // Step 2's title: what the vote below is for once the files have spoken.
+  const step2 = (
+    <header className="flow-step-head dev-step-head">
+      <span className="flow-num" aria-hidden>
+        2
+      </span>
+      <h2>Assign what no file names</h2>
+    </header>
+  );
+
   if (loading && !data) {
     return (
       <div className="pl-section">
+        {probe}
         <Spinner />
       </div>
     );
@@ -398,6 +420,7 @@ export default function DeviceAttribution() {
   if (error) {
     return (
       <div className="pl-section">
+        {probe}
         <EmptyState
           icon={Icons.alert}
           title="Couldn’t read the attribution list"
@@ -410,6 +433,8 @@ export default function DeviceAttribution() {
   if (!data || !data.total) {
     return (
       <div className="pl-section">
+        {probe}
+        {step2}
         <EmptyState
           icon={Icons.gear}
           title="Every medium has a body"
@@ -436,6 +461,8 @@ export default function DeviceAttribution() {
 
   return (
     <div className="pl-section">
+      {probe}
+      {step2}
       {/* The body facet is the answer to "keep attributing the drone": one
           click and only its folders remain. */}
       <div className="filterbar pl-toolbar">

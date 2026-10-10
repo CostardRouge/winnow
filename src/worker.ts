@@ -23,12 +23,14 @@ import {
   RELINK_JOB,
   type CaptureDaysJob,
   CAPTURE_DAYS_JOB,
+  DEVICE_PROBE_JOB,
   type GpsWriteJob,
 } from "./lib/queue";
 import { indexRoot } from "./lib/indexer";
 import { runIntegrityJob } from "./lib/integrity";
 import { relinkMoved } from "./lib/relink";
 import { runCaptureDayBackfill } from "./lib/captureDays";
+import { runDeviceProbe } from "./lib/deviceProbe";
 import { generateDerivative } from "./lib/derivatives";
 import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
@@ -296,6 +298,34 @@ const integrityWorker = new Worker(
       console.log(
         `[capture-days] ${out.fromPosition} from a position, ` +
           `${out.fromNeighbour} from a neighbour, ${out.reread_files} re-read` +
+          `${out.stopped ? " (paused: click again to resume)" : ""}`,
+      );
+      return out;
+    }
+    if (job.name === DEVICE_PROBE_JOB) {
+      console.log("[device-probe] reading the clips' own metadata tracks…");
+      // It opens originals (a few KB each): the scan's pause and hourly budget
+      // apply, exactly as for the capture-day re-read above.
+      const out = await runDeviceProbe({}, {
+        shouldStop: async () => (await getSettings()).scanPaused,
+        throttle: async () => {
+          const { scanPerHour } = await getSettings();
+          if (scanPerHour <= 0) return;
+          let wait = await reserveSlot("scan", scanPerHour);
+          while (wait > 0) {
+            await sleep(Math.min(wait, 3000));
+            if ((await getSettings()).scanPaused) return;
+            wait = await reserveSlot("scan", scanPerHour);
+          }
+        },
+        onProgress: async (p) => {
+          await job.updateProgress(p).catch(() => {});
+        },
+      });
+      console.log(
+        `[device-probe] ${out.probed} read: ${out.filled} filled, ` +
+          `${out.corrected} corrected, ${out.confirmed} confirmed, ` +
+          `${out.noTrack} without a track, ${out.unreadable} unreadable` +
           `${out.stopped ? " (paused: click again to resume)" : ""}`,
       );
       return out;
