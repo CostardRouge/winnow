@@ -8,6 +8,7 @@ import { q, one } from "./db";
 import { classifyExt, config, isIgnoredEntry } from "./config";
 import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
+import { probeIndexedClip } from "./deviceProbe";
 import { enqueueDerivative, enqueueGeocode, PRIORITY } from "./queue";
 import { recordScanFailure } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
@@ -368,6 +369,10 @@ export async function indexRoot(
           dirCache,
         });
         res.sidecars += sc.recorded;
+        // A clip whose EXIF names no body (a DJI MP4): read the camera its
+        // own metadata track names (lib/deviceProbe.ts) — a few KB, while the
+        // file is being indexed anyway. Never fails the index.
+        if (!meta.device) await probeIndexedClip(existing.id, absPath);
         // Drone clips often carry no EXIF GPS; inherit the .SRT flight log's fix
         // when the file itself gave none, then geocode it like any other point.
         if (!meta.gps && sc.gps) {
@@ -521,6 +526,8 @@ export async function indexRoot(
         dirCache,
       });
       res.sidecars += sc.recorded;
+      // Same as above: the camera the clip's own track names.
+      if (!meta.device) await probeIndexedClip(inserted.id, absPath);
       // Drone clips often carry no EXIF GPS; inherit the .SRT flight log's fix
       // when the file itself gave none, then geocode it like any other point.
       if (!meta.gps && sc.gps) {

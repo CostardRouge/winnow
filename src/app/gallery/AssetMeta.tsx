@@ -31,6 +31,12 @@ export type AssetMetaInput = {
   // was given or corrected by hand rather than read off the file.
   device_source?: string | null;
   device_exif?: string | null;
+  // What a clip's own metadata track names (migration 0049): the camera, the
+  // product and its serial — the one fact that tells two identical bodies
+  // apart, printed so it can be read even though nothing groups on it yet.
+  embedded_device?: string | null;
+  embedded_model?: string | null;
+  embedded_serial?: string | null;
   lens?: string | null;
   iso?: number | null;
   shutter?: string | null;
@@ -173,8 +179,8 @@ function deviceLine(a: AssetMetaInput): React.ReactNode {
           {name}{" "}
           <span className="asset-meta-dim">
             corrected
-            {a.device_exif
-              ? ` — file says ${friendlyCameraName(a.device_exif)}`
+            {a.device_exif || a.embedded_device
+              ? ` — file says ${friendlyCameraName(a.device_exif ?? a.embedded_device)}`
               : " — file names none"}
           </span>
         </>
@@ -222,6 +228,11 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   if (asset.file_size != null) rows.push(["Size", formatBytes(asset.file_size)]);
   if (typeStr) rows.push(["Type", typeStr]);
   if (asset.device) rows.push(["Device", deviceLine(asset)]);
+  if (asset.embedded_serial)
+    rows.push([
+      "Unit",
+      [asset.embedded_model, `SN ${asset.embedded_serial}`].filter(Boolean).join(" · "),
+    ]);
   if (asset.gps) {
     const { lat, lon } = asset.gps;
     rows.push([

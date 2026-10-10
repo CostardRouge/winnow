@@ -93,3 +93,31 @@ export type ApplyResult = {
    *  fill, any body), not live, or (in suggestion mode) with no proposal. */
   skipped: number;
 };
+
+/** What a pass of the clip probe did (lib/deviceProbe.ts, migration 0049). */
+export type ProbeReport = {
+  /** Clips read, whatever they held. */
+  probed: number;
+  /** Had no body; now carry the one their track names. */
+  filled: number;
+  /** An attributed body (vote or hand-fill) the track agrees with. */
+  confirmed: number;
+  /** An attributed body the track contradicts — the track's value won. */
+  corrected: number;
+  /** A human override, kept; the track's value recorded beside it. */
+  overridden: number;
+  /** A DJI header naming no camera this reader knows (another product). */
+  untold: number;
+  /** No DJI metadata track at all — a phone clip, an edit, an export. */
+  noTrack: number;
+  /** Could not be read (missing, unmounted): left unread for the next pass. */
+  unreadable: number;
+  /** Paused (the scan's pause) before the backlog was through. */
+  stopped: boolean;
+  /** Clips still never read once the pass ended. */
+  remaining: number;
+  /** The bodies the track contradicted, first ones only. */
+  corrections: { id: number; filename: string; from: string | null; to: string }[];
+  /** Clips per camera the tracks named — WHICH body, not only how many. */
+  cameras: Record<string, number>;
+};
