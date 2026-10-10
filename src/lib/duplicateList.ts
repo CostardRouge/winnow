@@ -329,7 +329,9 @@ export function planKey(
 // collapsing to the tab you are already on. The plan is the mirror image: counted
 // over the scope but NOT over the rule, so every card keeps its number while the
 // list below shows one of them.
-async function selectGroups(query: DuplicateListQuery) {
+// Exported for lib/duplicatePairs, which reads the same filtered groups by
+// folder pair — one derivation of what a group IS, whatever the view.
+export async function selectGroups(query: DuplicateListQuery) {
   const { groups, falseItems, total, falseCount } = await buildGroups();
   const needle = (query.q ?? "").trim().toLowerCase();
 
@@ -422,6 +424,52 @@ export async function listDuplicateGroups(
   };
 }
 
+export type KeepEachResult = ResolveAutoResult & { retry: string[] };
+
+// Run keepOneCopy over a batch of (group, survivor) picks — the one loop every
+// bulk path shares (the plan's cards, the folder pairs), so they count, report
+// and leave groups behind the same way. `remaining` is the caller's to fill.
+export async function keepEach(
+  targets: { hash: string; keepPath: string }[],
+): Promise<KeepEachResult> {
+  const result: KeepEachResult = {
+    resolved: 0,
+    deleted: 0,
+    relinked: 0,
+    failed: 0,
+    remaining: 0,
+    skipped: [],
+    retry: [],
+  };
+  const reasons = new Map<string, number>();
+  const note = (reason: string) => reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  for (const t of targets) {
+    try {
+      const r = await keepOneCopy({ contentHash: t.hash, keepPath: t.keepPath });
+      result.resolved++;
+      result.deleted += r.deleted.length;
+      if (r.relinked) result.relinked++;
+      // A copy keepOneCopy refused keeps its row, so the group stays listed:
+      // say why, and do not pick it again in this run.
+      for (const sk of r.skipped) note(sk.reason);
+      if (r.skipped.length) result.retry.push(t.hash);
+    } catch (err) {
+      // A group that can't be collapsed (a copy vanished under us, a permission
+      // error) must not abort the batch: it keeps its rows and stays listed for
+      // the user, exactly as if it had never been picked.
+      if (!(err instanceof DuplicateError))
+        console.warn("keepEach:", (err as Error).message);
+      note((err as Error).message);
+      result.failed++;
+      result.retry.push(t.hash);
+    }
+  }
+  result.skipped = [...reasons]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+  return result;
+}
+
 // Collapse, in one pass, every group in the current filter that the rule above
 // can decide on its own. This is the answer to a five-thousand-entry backlog:
 // the vast majority of those groups are "a finalized master plus its leftover
@@ -448,50 +496,15 @@ export async function listDuplicateGroups(
 // the rest of the backlog waits behind them.
 export async function resolveDuplicatesAuto(
   query: DuplicateListQuery & { max?: number; exclude?: string[] },
-): Promise<ResolveAutoResult & { retry: string[] }> {
+): Promise<KeepEachResult> {
   const max = Math.min(Math.max(query.max ?? 100, 1), 500);
   const exclude = new Set(query.exclude ?? []);
   const pickable = (g: DuplicateGroup) => !!g.auto_keep && !exclude.has(g.hash);
   const targets = (await selectGroups(query)).matched.filter(pickable).slice(0, max);
 
-  const result: ResolveAutoResult & { retry: string[] } = {
-    resolved: 0,
-    deleted: 0,
-    relinked: 0,
-    failed: 0,
-    remaining: 0,
-    skipped: [],
-    retry: [],
-  };
-  const reasons = new Map<string, number>();
-  const note = (reason: string) => reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
-  for (const g of targets) {
-    try {
-      const r = await keepOneCopy({
-        contentHash: g.hash,
-        keepPath: g.auto_keep!,
-      });
-      result.resolved++;
-      result.deleted += r.deleted.length;
-      if (r.relinked) result.relinked++;
-      // A copy keepOneCopy refused keeps its row, so the group stays listed:
-      // say why, and do not pick it again in this run.
-      for (const sk of r.skipped) note(sk.reason);
-      if (r.skipped.length) result.retry.push(g.hash);
-    } catch (err) {
-      // A group that can't be collapsed (a copy vanished under us, a permission
-      // error) must not abort the batch: it keeps its rows and stays listed for
-      // the user, exactly as if it had never been picked.
-      if (!(err instanceof DuplicateError))
-        console.warn("resolveDuplicatesAuto:", (err as Error).message);
-      note((err as Error).message);
-      result.failed++;
-      result.retry.push(g.hash);
-    }
-  }
-  result.skipped = [...reasons]
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count);
+  const result = await keepEach(
+    targets.map((g) => ({ hash: g.hash, keepPath: g.auto_keep! })),
+  );
 
   // What a next batch would still find, this run's refusals excluded. The
   // caller still stops on lack of progress too: a group can turn refusable

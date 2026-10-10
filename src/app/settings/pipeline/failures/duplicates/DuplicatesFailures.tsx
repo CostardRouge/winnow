@@ -33,6 +33,8 @@ import { FamilyShell } from "../sections";
 import { formatBytes } from "../model";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
 import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
+import DedupPairs from "./DedupPairs";
+import { OptionPicker, type PickerOption } from "../../../../OptionPicker";
 import {
   ConfirmAutoModal,
   ConfirmDeleteModal,
@@ -93,6 +95,23 @@ const SORTS: { key: DuplicateSort; label: string }[] = [
 
 const SCOPE_KEY = "winnow.dedup.scope";
 
+// Two readings of the same filtered backlog: one card per group of identical
+// copies, or one per pair of folders those copies live in.
+type DedupView = "groups" | "pairs";
+const VIEWS: PickerOption<DedupView>[] = [
+  {
+    key: "groups",
+    label: "Groups",
+    hint: "One card per set of identical copies, with the plan above",
+  },
+  {
+    key: "pairs",
+    label: "Folder pairs",
+    hint: "One card per pair of folders holding the same files — keep one side",
+  },
+];
+const VIEW_KEY = "winnow.dedup.view";
+
 export default function DuplicatesFailuresPage() {
   const [query, setQuery] = useState<DuplicateQuery>(EMPTY_QUERY);
   // Typing must not fire a request per keystroke: the field is local, the query
@@ -116,6 +135,7 @@ export default function DuplicatesFailuresPage() {
   const [report, setReport] = useState<RunReport | null>(null);
 
   const { data, error, loading, load } = useDuplicates(query);
+  const [view, setView] = useState<DedupView>("groups");
 
   // Restore the chosen scope between visits, seeded once on mount so a later
   // write never yanks the tab out from under whatever the user just clicked —
@@ -124,7 +144,15 @@ export default function DuplicatesFailuresPage() {
     const saved = localStorage.getItem(SCOPE_KEY);
     if (saved && SCOPES.some((s) => s.key === saved))
       setQuery((qq) => ({ ...qq, scope: saved as DuplicateScope | "all" }));
+    const savedView = localStorage.getItem(VIEW_KEY);
+    if (savedView === "pairs" || savedView === "groups") setView(savedView);
   }, []);
+  const pickView = (v: DedupView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {}
+  };
 
   useEffect(() => {
     const t = setTimeout(
@@ -319,7 +347,7 @@ export default function DuplicatesFailuresPage() {
   const runAuto = (rule: DuplicateAutoRule) =>
     run(async () => {
       const done: RunReport = {
-        rule,
+        title: PLAN_CARDS.find((c) => c.key === rule)?.title ?? rule,
         resolved: 0,
         deleted: 0,
         relinked: 0,
@@ -381,7 +409,7 @@ export default function DuplicatesFailuresPage() {
     <FamilyShell onRefresh={load} error={error} msg={msg}>
       <section style={{ marginBottom: 28 }}>
         <div className="filterbar" style={{ marginBottom: 6 }}>
-          {selectable.length > 0 && (
+          {view === "groups" && selectable.length > 0 && (
             <input
               ref={headRef}
               type="checkbox"
@@ -407,14 +435,16 @@ export default function DuplicatesFailuresPage() {
             {Icons.reset}
             <span>Clear resolved</span>
           </button>
-          <button
-            className="btn btn-danger"
-            disabled={busy || sel.size === 0}
-            onClick={() => setConfirm([...sel])}
-          >
-            {Icons.trash}
-            <span>Delete selected ({sel.size})</span>
-          </button>
+          {view === "groups" && (
+            <button
+              className="btn btn-danger"
+              disabled={busy || sel.size === 0}
+              onClick={() => setConfirm([...sel])}
+            >
+              {Icons.trash}
+              <span>Delete selected ({sel.size})</span>
+            </button>
+          )}
         </div>
 
         <div className="tabs dup-scopes" role="group" aria-label="Which side of the library">
@@ -438,6 +468,13 @@ export default function DuplicatesFailuresPage() {
         </div>
 
         <div className="filterbar dup-toolbar">
+          <OptionPicker
+            size="sm"
+            ariaLabel="How to read the backlog"
+            options={VIEWS}
+            value={view}
+            onChange={pickView}
+          />
           <input
             className="input"
             style={{ maxWidth: 260 }}
@@ -455,23 +492,26 @@ export default function DuplicatesFailuresPage() {
             <span>RAW in Gallery only</span>
           </label>
           <span className="spacer" />
-          <label className="dup-sort">
-            <span className="hint">Sort</span>
-            <select
-              className="input"
-              value={query.sort}
-              onChange={(e) => patch({ sort: e.target.value as DuplicateSort })}
-            >
-              {SORTS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Pairs always come biggest first: the sort is the group view's. */}
+          {view === "groups" && (
+            <label className="dup-sort">
+              <span className="hint">Sort</span>
+              <select
+                className="input"
+                value={query.sort}
+                onChange={(e) => patch({ sort: e.target.value as DuplicateSort })}
+              >
+                {SORTS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        {activeFacet && (
+        {view === "groups" && activeFacet && (
           <p className="dup-summary">
             <strong>{matched.toLocaleString()}</strong> group
             {matched === 1 ? "" : "s"} in {scopeLabel}
@@ -485,7 +525,7 @@ export default function DuplicatesFailuresPage() {
           </p>
         )}
 
-        {data && (
+        {view === "groups" && data && (
           <DedupPlan
             plan={data.plan}
             active={query.rule}
@@ -557,7 +597,20 @@ export default function DuplicatesFailuresPage() {
           </p>
         </details>
 
-        {loading && !data ? (
+        {view === "pairs" ? (
+          <DedupPairs
+            filter={{
+              scope: query.scope,
+              q: query.q,
+              rawInGallery: query.rawInGallery,
+            }}
+            onChanged={load}
+            onShowGroups={(dir) => {
+              setSearch(dir);
+              pickView("groups");
+            }}
+          />
+        ) : loading && !data ? (
           <div className="empty" style={{ padding: 16 }}>
             Loading…
           </div>

@@ -251,3 +251,94 @@ export function ConfirmAutoModal({
     </Modal>
   );
 }
+
+// Keeping one side of a folder pair. Like the bulk card, it names no files —
+// a pair is hundreds of them — so it states what happens to each side and to
+// the library entries, which is what the user is agreeing to.
+export type PairTarget = {
+  keepDir: string;
+  dropDir: string;
+  groups: number;
+  bytes: number;
+  /** Live library entries on the dropped side: relinked onto the kept copies. */
+  relinks: number;
+  /** Trashed library entries on the dropped side: their file goes, purged. */
+  reclaims: number;
+  /** The kept side is a Final/Export volume. */
+  keepViewOnly: boolean;
+};
+
+export function ConfirmPairModal({
+  target,
+  progress,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  target: PairTarget;
+  progress: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const n = target.groups;
+  return (
+    <Modal
+      label="Keep one side of a folder pair"
+      title={`Delete ${n.toLocaleString()} cop${n === 1 ? "y" : "ies"} in this folder?`}
+      onCancel={onCancel}
+    >
+      <p className="hint" style={{ marginTop: 0 }}>
+        In <strong>{n.toLocaleString()}</strong> group{n === 1 ? "" : "s"}, the
+        copy in the folder to keep stays and the copy in the other folder is
+        permanently deleted, freeing about{" "}
+        <strong>{formatBytes(target.bytes)}</strong>.
+      </p>
+      <div className="dup-confirm-list">
+        <div className="dup-cmp-path">
+          <strong className="dup-pair-keep">Keep</strong> {target.keepDir}/
+        </div>
+        <div className="dup-cmp-path">
+          <strong className="dup-pair-drop">Delete from</strong> {target.dropDir}/
+        </div>
+      </div>
+      {(target.relinks > 0 || target.reclaims > 0) && (
+        <p className="hint">
+          {target.relinks > 0 &&
+            `${target.relinks.toLocaleString()} library entr${
+              target.relinks === 1 ? "y points" : "ies point"
+            } at the folder being emptied: ${
+              target.relinks === 1 ? "it is" : "they are"
+            } relinked onto the kept cop${
+              target.relinks === 1 ? "y" : "ies"
+            } first (ratings, tags and previews follow)${
+              target.keepViewOnly
+                ? ", and will then live on a view-only volume"
+                : ""
+            }. `}
+          {target.reclaims > 0 &&
+            `${target.reclaims.toLocaleString()} entr${
+              target.reclaims === 1 ? "y is" : "ies are"
+            } in the trash: ${
+              target.reclaims === 1 ? "its" : "their"
+            } file goes and the entry is marked purged.`}
+        </p>
+      )}
+      <p className="hint">
+        Each copy is checked against the one that stays just before it goes; a
+        copy that fails the check is left in place and listed in the report.
+        Deletions are permanent.
+        {progress ? ` ${progress}` : ""}
+      </p>
+      <div className="modal-actions">
+        {/* Never disabled: mid-run it becomes the abort. */}
+        <button className="btn" onClick={onCancel}>
+          {busy ? "Stop" : "Cancel"}
+        </button>
+        <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+          {busy ? "Working…" : `Delete ${n.toLocaleString()} cop${n === 1 ? "y" : "ies"}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}

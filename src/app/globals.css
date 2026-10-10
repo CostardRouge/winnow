@@ -4023,6 +4023,55 @@ html[data-theme="dark"] .btn-primary:hover {
     overflow-wrap: anywhere;
   }
 
+  /* ---- Deduplication: folder pairs -------------------------------------
+     One card per pair of folders holding the same files: the two sides side
+     by side (stacked on a phone), one line of numbers, the side buttons. The
+     suggested side wears the same green edge as a suggested copy. */
+  .dup-pairs {
+    @apply grid gap-2.5;
+  }
+  .dup-pair {
+    @apply grid gap-2 rounded-[var(--radius-lg)] border p-3;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-pair-sides {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  .dup-pair-side {
+    @apply grid min-w-0 content-start gap-1 rounded-[var(--radius)] border p-2;
+    border-color: var(--color-border);
+    background: var(--color-bg);
+  }
+  .dup-pair-side.is-suggested {
+    background: color-mix(in srgb, var(--color-pick) 7%, var(--color-surface));
+    box-shadow: inset 3px 0 0 var(--color-pick);
+  }
+  .dup-pair-tags {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-pair-tags .dup-zone {
+    @apply ml-0;
+  }
+  .dup-pair-meta {
+    @apply text-[12px];
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+  .dup-pair-meta strong {
+    color: var(--color-text);
+  }
+  .dup-pair-actions {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-pair-keep {
+    color: var(--color-pick);
+  }
+  .dup-pair-drop {
+    color: var(--color-reject);
+  }
+
   /* The rules, folded: they govern every action on the page, so they stay one
      click away rather than a paragraph to re-read above the list. */
   .dup-rules {

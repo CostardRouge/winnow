@@ -39,9 +39,10 @@ export const PLAN_CARDS: {
   },
 ];
 
-/** What a finished bulk run did, for the report under the cards. */
+/** What a finished bulk run did — a plan card's or a folder pair's. */
 export type RunReport = {
-  rule: DuplicateAutoRule;
+  /** What ran: the card's title, or the pair's two folders. */
+  title: string;
   resolved: number;
   deleted: number;
   relinked: number;
@@ -128,7 +129,7 @@ export default function DedupPlan({
 // left groups behind. A refusal is never just a number (CODEBASE-AUDIT UX-05):
 // the reason is what tells the user whether to rescan, fix a permission or move
 // a file by hand.
-function RunReportBox({
+export function RunReportBox({
   report,
   onDismiss,
 }: {
@@ -140,10 +141,7 @@ function RunReportBox({
     <div className="dup-run-report" role="status">
       <div className="dup-run-head">
         <span>
-          <strong>
-            {PLAN_CARDS.find((c) => c.key === report.rule)?.title}
-          </strong>
-          : kept the suggested copy in{" "}
+          <strong>{report.title}</strong>: kept one copy in{" "}
           <strong>{report.resolved.toLocaleString()}</strong> group
           {report.resolved === 1 ? "" : "s"}, deleting{" "}
           <strong>{report.deleted.toLocaleString()}</strong> file

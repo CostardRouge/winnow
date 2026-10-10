@@ -171,3 +171,49 @@ export type SweepResolvedResult = {
   /** Rows dropped because nothing shadows their content any more. */
   stale: number;
 };
+
+// ---- Folder pairs ---------------------------------------------------------
+//
+// Duplicates arrive by whole folders (a card imported twice, a backup, a
+// "(copy)" folder), so the pair view groups two-copy groups by the two folders
+// they live in: one decision per pair keeps every copy on one side.
+
+export type DuplicatePairSideKey = "left" | "right";
+
+export type DuplicatePairSide = {
+  /** The folder, with no trailing slash. */
+  dir: string;
+  zone: DuplicateZone;
+  /** On a Final/Export volume: its copies are never deleted. */
+  view_only: boolean;
+  /** Groups whose LIVE library entry is the copy on this side. */
+  library: number;
+  /** Groups whose library entry on this side is in the trash. */
+  trashed: number;
+};
+
+export type DuplicatePair = {
+  /** Stable id of the pair: the two folders, left then right. */
+  key: string;
+  left: DuplicatePairSide;
+  right: DuplicatePairSide;
+  /** Two-copy groups with one copy on each side. */
+  groups: number;
+  /** Bytes on ONE side — what keeping the other frees. */
+  bytes: number;
+  /** The side autoKeep would keep in every group of the pair, if they agree. */
+  suggest: DuplicatePairSideKey | null;
+  /** A few file names, to recognise the pair at a glance. */
+  sample: string[];
+};
+
+export type DuplicatePairList = {
+  pairs: DuplicatePair[];
+  /** Pairs matching the filter (the page above is a slice of these). */
+  matched: number;
+  /** Groups in the filter that are no pair: three or more copies, or two in
+   *  the same folder — they stay in the group view. */
+  unpaired: number;
+  limit: number;
+  offset: number;
+};

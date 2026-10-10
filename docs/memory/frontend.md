@@ -155,6 +155,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: the page's word for the rule's pick is "suggested". A new survivor heuristic (a " (1)" suffix, a dated folder vs a staging one) is shown as a suggestion the user applies, **never** folded into `autoKeep`, which stays narrow (cf. the bulk-rule entry above). The redesign this belongs to (plan by rule, folder pairs, review queue, strategies) was mocked up first in the "Winnow Dedup Mockups" artifact.
 
+## Duplicates can be cleared by folder pair (2026-10-09)
+
+**Decision**: a "Folder pairs" view (`DedupPairs.tsx`, `lib/duplicatePairs.ts`) aggregates the TWO-copy groups by the two folders they live in; one card per pair, one button per side ("Keep left/right"), the action naming the two folders and the server re-deriving the groups (`/pairs/resolve`, same `exclude`/`retry` loop as the plan, both through `keepEach`). Groups with three or more copies, or two copies in one folder, are **not** pairs and stay in the group view — the listing counts them (`unpaired`) rather than guessing a side.
+
+**Why**: duplicates arrive by whole folders (a card imported twice, a backup, a "(copy)"), so the group view asked one question hundreds of times. Same rule as Unplaced/Devices: a backlog cleared in bulk is a list of folder cards.
+
+**How to apply**: a side on a Final/Export volume is never offered for deletion (button absent in the UI, `PairRefused` on the server). Keeping the side without the library entries relinks them — the button says "relinks N" and the modal says it again; that is deliberate, not a bug, because the choice is explicit (the auto rule never does it). The pair side holding the library entries is drawn on the left.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.
