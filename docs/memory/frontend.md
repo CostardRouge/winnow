@@ -163,6 +163,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **How to apply**: a side on a Final/Export volume is never offered for deletion (button absent in the UI, `PairRefused` on the server). Keeping the side without the library entries relinks them — the button says "relinks N" and the modal says it again; that is deliberate, not a bug, because the choice is explicit (the auto rule never does it). The pair side holding the library entries is drawn on the left.
 
+## "Needs you" is reviewed one group at a time, decisions staged (2026-10-09)
+
+**Decision**: the plan's "Needs you" card opens `DedupReview.tsx`, a keyboard queue (1–9 pick, Enter keep, S skip, U undo, Esc close) over `rule=manual`, paged as it advances. Decisions are **staged client-side** and only "Apply" sends them, one `POST /keep` each, then reports refusals by reason. No survivor is preselected: these are exactly the groups no rule decides.
+
+**Why staged rather than a quarantine folder**: undo for free with no change to what a deletion means — a quarantine would MOVE files on the NAS, which touches the originals policy and was left to the maintainer. Closing with staged decisions asks first (apply / discard / keep reviewing); nothing on disk changes until Apply.
+
+**How to apply**: the queue mirrors keepOneCopy's members (purged entry excluded) and its one refusal up front — a view-only library entry is the only copy pickable. Any new one-by-one flow for destructive picks should stage the same way.
+
 ## The UI files are too big and that is acknowledged (2026-08-20)
 
 **Observation**: `MediaViewer.tsx` (~1480 LOC), `gallery/GalleryShell.tsx` (~1290), `sessions/[id]/SessionGrid.tsx` (~1280), `gallery/FilterPanel.tsx` (~1020). The backend does not have this problem (largest `lib` file ~570 LOC). Splitting them is P2 in the review.

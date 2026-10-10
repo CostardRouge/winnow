@@ -34,6 +34,7 @@ import { formatBytes } from "../model";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
 import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
 import DedupPairs from "./DedupPairs";
+import DedupReview from "./DedupReview";
 import { OptionPicker, type PickerOption } from "../../../../OptionPicker";
 import {
   ConfirmAutoModal,
@@ -136,6 +137,7 @@ export default function DuplicatesFailuresPage() {
 
   const { data, error, loading, load } = useDuplicates(query);
   const [view, setView] = useState<DedupView>("groups");
+  const [reviewing, setReviewing] = useState(false);
 
   // Restore the chosen scope between visits, seeded once on mount so a later
   // write never yanks the tab out from under whatever the user just clicked —
@@ -540,6 +542,7 @@ export default function DuplicatesFailuresPage() {
                 scopeLabel,
               })
             }
+            onReview={() => setReviewing(true)}
             onDismissReport={() => setReport(null)}
           />
         )}
@@ -682,6 +685,19 @@ export default function DuplicatesFailuresPage() {
         )}
       </section>
 
+      {reviewing && (
+        <DedupReview
+          filter={{
+            scope: query.scope,
+            q: query.q,
+            rawInGallery: query.rawInGallery,
+          }}
+          onClose={(changed) => {
+            setReviewing(false);
+            if (changed) load();
+          }}
+        />
+      )}
       {confirm && (
         <ConfirmDeleteModal
           paths={confirm}

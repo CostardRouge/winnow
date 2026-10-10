@@ -4072,6 +4072,126 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-reject);
   }
 
+  /* ---- Deduplication: the review queue ----------------------------------
+     A wide dialog: the preview on the left, the copies as numbered choices on
+     the right (stacked on a phone), the staged-decision bar at the foot. */
+  .modal.dup-review {
+    @apply grid max-w-4xl gap-3;
+  }
+  /* Focused programmatically on open so the keys work at once: the dialog is
+     not a control, so it draws no focus ring of its own. */
+  .modal.dup-review:focus,
+  .modal.dup-review:focus-visible {
+    outline: none;
+  }
+  .dup-review-top {
+    @apply flex items-center gap-3;
+  }
+  .dup-review-prog {
+    @apply text-[13px];
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .dup-review-bar {
+    @apply h-1 overflow-hidden rounded-full;
+    background: var(--color-surface-3);
+  }
+  .dup-review-bar span {
+    @apply block h-full;
+    background: var(--color-text);
+  }
+  .dup-review-body {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  }
+  .dup-review-photo {
+    @apply grid min-w-0 content-start gap-2;
+  }
+  .dup-review-photo img,
+  .dup-review-nothumb {
+    @apply w-full rounded-[var(--radius)] object-contain;
+    aspect-ratio: 3 / 2;
+    background: var(--color-surface-3);
+  }
+  .dup-review-nothumb {
+    @apply flex flex-col items-center justify-center gap-2 text-[12px];
+    color: var(--color-muted);
+  }
+  .dup-review-name {
+    @apply flex flex-wrap items-baseline justify-between gap-2 text-[13px];
+    overflow-wrap: anywhere;
+  }
+  .dup-review-copies {
+    @apply grid min-w-0 content-start gap-2;
+  }
+  .dup-choice {
+    @apply grid w-full gap-x-2.5 gap-y-1 rounded-[var(--radius)] border p-2.5 text-left;
+    grid-template-columns: auto minmax(0, 1fr);
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: inherit;
+    font: inherit;
+  }
+  .dup-choice:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+  }
+  .dup-choice:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+  .dup-choice.is-picked {
+    border-color: var(--color-pick);
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
+  }
+  .dup-choice-key {
+    @apply row-span-2 grid h-6 w-6 place-items-center rounded-md border text-[12px] font-semibold;
+    border-color: var(--color-border-strong);
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dup-choice.is-picked .dup-choice-key {
+    background: var(--color-pick);
+    border-color: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .dup-choice-tags {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-choice-tags .dup-zone {
+    @apply ml-0;
+  }
+  .dup-choice-fate {
+    @apply ml-auto text-[11px] font-semibold uppercase tracking-wide;
+  }
+  .dup-choice-fate.is-keep {
+    color: var(--color-pick);
+  }
+  .dup-choice-fate.is-delete {
+    color: var(--color-reject);
+  }
+  .dup-choice-fate.is-stays {
+    color: var(--color-muted);
+  }
+  .dup-review-note {
+    @apply m-0;
+  }
+  .dup-review-actions {
+    @apply flex flex-wrap items-center gap-2 border-t pt-3;
+    border-color: var(--color-border);
+  }
+  .dup-review-actions kbd,
+  .dup-review-keys kbd {
+    @apply ml-1 rounded border px-1 text-[10px];
+    border-color: currentColor;
+    opacity: 0.7;
+    font-family: var(--font-mono);
+  }
+  .dup-review-keys {
+    @apply m-0 text-[12px];
+  }
+  .dup-review-end {
+    @apply grid gap-3 py-6 text-[14px];
+  }
+
   /* The rules, folded: they govern every action on the page, so they stay one
      click away rather than a paragraph to re-read above the list. */
   .dup-rules {

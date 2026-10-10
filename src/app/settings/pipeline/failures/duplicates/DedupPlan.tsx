@@ -58,6 +58,7 @@ export default function DedupPlan({
   report,
   onShow,
   onRun,
+  onReview,
   onDismissReport,
 }: {
   plan: Record<DuplicatePlanKey, DuplicateFacet>;
@@ -66,6 +67,8 @@ export default function DedupPlan({
   report: RunReport | null;
   onShow: (key: DuplicatePlanKey | null) => void;
   onRun: (rule: DuplicateAutoRule) => void;
+  /** Open the one-by-one review of the "Needs you" groups. */
+  onReview: () => void;
   onDismissReport: () => void;
 }) {
   return (
@@ -99,6 +102,16 @@ export default function DedupPlan({
                 >
                   {on ? "Show all" : "Show these"}
                 </button>
+                {card.key === "manual" && (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={busy || !f.groups}
+                    onClick={onReview}
+                    title="One group at a time, with the keyboard; nothing is deleted until you apply"
+                  >
+                    <span>Review one by one</span>
+                  </button>
+                )}
                 {card.key !== "manual" && (
                   <button
                     className="btn btn-sm btn-danger"
