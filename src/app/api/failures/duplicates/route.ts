@@ -19,6 +19,7 @@ const Query = z.object({
   scope: z.enum(["all", "incoming", "gallery", "mixed", "elsewhere"]).default("all"),
   q: z.string().max(500).optional(),
   rawInGallery: z.coerce.boolean().optional(),
+  rule: z.enum(["protected", "library", "manual"]).optional(),
   sort: z.enum(["size", "recent", "path"]).default("size"),
   limit: z.coerce.number().int().min(1).max(200).default(40),
   offset: z.coerce.number().int().min(0).default(0),

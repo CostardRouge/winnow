@@ -17,8 +17,10 @@
 //   • the survivor the bulk rule would keep, drawn on every group with the
 //     reason it was picked, so "Keep suggested" can be checked group by group
 //     before it is trusted over the whole filter,
-//   • one bulk collapse for the groups whose survivor is not a judgement call,
-//     because clicking through those one at a time is data entry, not triage,
+//   • a cleanup plan — one card per branch of the bulk rule, plus "Needs you"
+//     — each with its rule, its numbers and its own bulk "Keep suggested",
+//     because clicking through those groups one at a time is data entry, not
+//     triage; a run reports why it left any group behind,
 //   • a standing report of the RAW masters found in the Gallery: the workflow
 //     says a RAW belongs in Incoming and an export in the Gallery, and those
 //     volumes are view-only, so this page can only name them — not fix them.
@@ -30,6 +32,7 @@ import { Icons } from "../../../../ui";
 import { FamilyShell } from "../sections";
 import { formatBytes } from "../model";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
+import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
 import {
   ConfirmAutoModal,
   ConfirmDeleteModal,
@@ -45,6 +48,7 @@ import {
   type DuplicateQuery,
 } from "./useDuplicates";
 import type {
+  DuplicateAutoRule,
   DuplicateExisting,
   DuplicateGroup,
   DuplicateScope,
@@ -109,6 +113,7 @@ export default function DuplicatesFailuresPage() {
   const [keep, setKeep] = useState<KeepTarget | null>(null);
   const [discard, setDiscard] = useState<DuplicateExisting | null>(null);
   const [auto, setAuto] = useState<AutoTarget | null>(null);
+  const [report, setReport] = useState<RunReport | null>(null);
 
   const { data, error, loading, load } = useDuplicates(query);
 
@@ -215,17 +220,24 @@ export default function DuplicatesFailuresPage() {
     }
   }
 
+  // What a single action left in place, with each copy's reason — a count
+  // alone does not tell the user whether to rescan, fix a permission or move a
+  // file by hand (CODEBASE-AUDIT UX-05).
+  const leftInPlace = (skipped: { path: string; reason: string }[] = []) =>
+    skipped.length
+      ? ` Left in place: ${skipped
+          .map((s) => `${s.path.split("/").pop()} (${s.reason})`)
+          .join("; ")}.`
+      : "";
+
   const runDelete = (paths: string[]) =>
     run(async () => {
       const { ok, data: d } = await post("/api/failures/duplicates/delete", {
         paths,
       });
-      const skipped = (d.skipped ?? []).length;
       setMsg(
         ok
-          ? `Deleted ${d.deleted ?? 0} duplicate file(s).${
-              skipped ? ` ${skipped} skipped (kept/protected).` : ""
-            }`
+          ? `Deleted ${d.deleted ?? 0} duplicate file(s).${leftInPlace(d.skipped)}`
           : `Error: ${d.error ?? "unknown"}`,
       );
       setSel(new Set());
@@ -238,7 +250,6 @@ export default function DuplicatesFailuresPage() {
         contentHash: t.hash,
         keepPath: t.keepPath,
       });
-      const skipped = (d.skipped ?? []).length;
       setMsg(
         ok
           ? `Kept 1 copy; deleted ${d.deleted ?? 0} file(s).${
@@ -247,7 +258,7 @@ export default function DuplicatesFailuresPage() {
               d.purged
                 ? " The library entry was in the trash: its bytes are reclaimed and it stays there."
                 : ""
-            }${skipped ? ` ${skipped} skipped (protected).` : ""}`
+            }${leftInPlace(d.skipped)}`
           : `Error: ${d.error ?? "unknown"}`,
       );
       setKeep(null);
@@ -299,16 +310,25 @@ export default function DuplicatesFailuresPage() {
       );
     });
 
-  // Collapse every auto-resolvable group in the current filter, batch after
-  // batch. The loop's stop condition is PROGRESS, not emptiness: a group whose
-  // deletions are refused (a vanished copy, a permission error) keeps matching
-  // the rule and would otherwise be retried forever, so the loop ends as soon as
-  // a batch fails to shrink `remaining`.
-  const runAuto = () =>
+  // Keep the suggested copy in every group of one plan card, within the
+  // current filter, batch after batch. The server derives every survivor from
+  // the filter; what the client sends back is only `exclude` — the groups this
+  // run already tried and left behind (`retry`), which can only narrow it and
+  // keep the next batch from re-picking the same refusals at the head of the
+  // size order. The loop still stops on lack of PROGRESS, never on emptiness.
+  const runAuto = (rule: DuplicateAutoRule) =>
     run(async () => {
-      let resolved = 0;
-      let deleted = 0;
-      let failed = 0;
+      const done: RunReport = {
+        rule,
+        resolved: 0,
+        deleted: 0,
+        relinked: 0,
+        failed: 0,
+        stopped: false,
+        skipped: [],
+      };
+      const reasons = new Map<string, number>();
+      const exclude: string[] = [];
       let before = Infinity;
       aborted.current = false;
       for (let batch = 0; batch < 200 && !aborted.current; batch++) {
@@ -316,30 +336,34 @@ export default function DuplicatesFailuresPage() {
           scope: query.scope,
           q: query.q.trim() || undefined,
           rawInGallery: query.rawInGallery || undefined,
+          rule,
           max: 100,
+          exclude,
         });
         if (!ok) {
           setMsg(`Error: ${d.error ?? "unknown"}`);
           break;
         }
-        resolved += d.resolved;
-        deleted += d.deleted;
-        failed += d.failed;
+        done.resolved += d.resolved;
+        done.deleted += d.deleted;
+        done.relinked += d.relinked;
+        done.failed += d.failed;
+        exclude.push(...(d.retry ?? []));
+        for (const s of d.skipped ?? [])
+          reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + s.count);
         setProgress(
-          `${resolved.toLocaleString()} group(s) collapsed, ${d.remaining.toLocaleString()} to go…`,
+          `${done.resolved.toLocaleString()} group(s) done, ${d.remaining.toLocaleString()} to go…`,
         );
         if (d.remaining === 0 || d.remaining >= before) break;
         before = d.remaining;
       }
+      done.stopped = aborted.current;
+      done.skipped = [...reasons]
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count);
       setProgress("");
       setAuto(null);
-      setMsg(
-        `Collapsed ${resolved.toLocaleString()} group(s), deleting ${deleted.toLocaleString()} file(s).${
-          failed
-            ? ` ${failed} group(s) could not be collapsed and stay listed.`
-            : ""
-        }${aborted.current ? " Stopped early — the rest is untouched." : ""}`,
-      );
+      setReport(done);
     });
 
   const facets = data?.facets;
@@ -349,6 +373,9 @@ export default function DuplicatesFailuresPage() {
   const from = matched === 0 ? 0 : query.offset + 1;
   const to = Math.min(query.offset + PAGE_SIZE, matched);
   const activeFacet = facets?.[query.scope] ?? null;
+  const ruleLabel = query.rule
+    ? PLAN_CARDS.find((c) => c.key === query.rule)?.title
+    : null;
 
   return (
     <FamilyShell onRefresh={load} error={error} msg={msg}>
@@ -442,30 +469,13 @@ export default function DuplicatesFailuresPage() {
               ))}
             </select>
           </label>
-          <button
-            className="btn btn-danger"
-            disabled={busy || !data?.autoResolvable}
-            onClick={() =>
-              setAuto({
-                groups: data?.autoResolvable ?? 0,
-                reclaimable: data?.autoReclaimable ?? 0,
-                scopeLabel,
-              })
-            }
-            title="Keep the suggested copy in every group of this view whose survivor is not a judgement call"
-          >
-            {Icons.keep}
-            <span>
-              Keep suggested in {(data?.autoResolvable ?? 0).toLocaleString()}{" "}
-              group{data?.autoResolvable === 1 ? "" : "s"}
-            </span>
-          </button>
         </div>
 
         {activeFacet && (
           <p className="dup-summary">
             <strong>{matched.toLocaleString()}</strong> group
-            {matched === 1 ? "" : "s"} in {scopeLabel} ·{" "}
+            {matched === 1 ? "" : "s"} in {scopeLabel}
+            {ruleLabel ? ` · ${ruleLabel}` : ""} ·{" "}
             <strong>{Math.round(activeFacet.extras).toLocaleString()}</strong>{" "}
             extra cop{activeFacet.extras === 1 ? "y" : "ies"} ·{" "}
             <strong>{formatBytes(activeFacet.reclaimable)}</strong> to reclaim
@@ -473,6 +483,25 @@ export default function DuplicatesFailuresPage() {
               ? ` · ${data.stale.toLocaleString()} already resolved (use “Clear resolved”)`
               : ""}
           </p>
+        )}
+
+        {data && (
+          <DedupPlan
+            plan={data.plan}
+            active={query.rule}
+            busy={busy}
+            report={report}
+            onShow={(rule) => patch({ rule })}
+            onRun={(rule) =>
+              setAuto({
+                rule,
+                groups: data.plan[rule].groups,
+                reclaimable: data.plan[rule].reclaimable,
+                scopeLabel,
+              })
+            }
+            onDismissReport={() => setReport(null)}
+          />
         )}
 
         {/* The workflow's standing rule, reported over the WHOLE table rather
@@ -633,7 +662,7 @@ export default function DuplicatesFailuresPage() {
             if (busy) aborted.current = true;
             else setAuto(null);
           }}
-          onConfirm={runAuto}
+          onConfirm={() => runAuto(auto.rule)}
         />
       )}
     </FamilyShell>

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import type {
   DuplicateListResult,
+  DuplicatePlanKey,
   DuplicateScope,
   DuplicateSort,
 } from "@/lib/duplicateTypes";
@@ -17,6 +18,8 @@ export type DuplicateQuery = {
   scope: DuplicateScope | "all";
   q: string;
   rawInGallery: boolean;
+  /** One card of the plan, or null for every group. */
+  rule: DuplicatePlanKey | null;
   sort: DuplicateSort;
   offset: number;
 };
@@ -27,6 +30,7 @@ export const EMPTY_QUERY: DuplicateQuery = {
   scope: "all",
   q: "",
   rawInGallery: false,
+  rule: null,
   sort: "size",
   offset: 0,
 };
@@ -40,6 +44,7 @@ export function queryParams(query: DuplicateQuery, limit = PAGE_SIZE): string {
   });
   if (query.q.trim()) p.set("q", query.q.trim());
   if (query.rawInGallery) p.set("rawInGallery", "true");
+  if (query.rule) p.set("rule", query.rule);
   return p.toString();
 }
 

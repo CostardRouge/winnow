@@ -3959,6 +3959,70 @@ html[data-theme="dark"] .btn-primary:hover {
   .dup-head-action {
     @apply ml-auto flex shrink-0 items-center;
   }
+  /* ---- Deduplication: the cleanup plan ----------------------------------
+     One card per branch of the bulk rule plus "Needs you". Three columns on a
+     desktop, stacked on a phone; the card's actions sit at its foot so the
+     buttons line up across cards whatever the length of the rule above. */
+  .dup-plan {
+    @apply mb-3;
+  }
+  .dup-plan-cards {
+    @apply grid gap-2.5;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+  .dup-plan-card {
+    @apply flex min-w-0 flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-plan-card.is-manual {
+    border-style: dashed;
+    border-color: var(--color-border-strong);
+  }
+  .dup-plan-card.is-active {
+    border-color: var(--color-text);
+    box-shadow: inset 0 0 0 1px var(--color-text);
+  }
+  .dup-plan-title {
+    @apply m-0 text-[13px] font-semibold;
+  }
+  .dup-plan-rule {
+    @apply m-0 text-[12px];
+    color: var(--color-muted);
+  }
+  .dup-plan-nums {
+    @apply m-0 text-[12px];
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .dup-plan-nums strong {
+    color: var(--color-text);
+  }
+  .dup-plan-actions {
+    @apply mt-auto flex flex-wrap items-center gap-1.5 pt-1;
+  }
+  /* A finished run's account of itself, under the cards. */
+  .dup-run-report {
+    @apply mt-2.5 grid gap-1.5 rounded-[var(--radius)] border p-2 text-[12px];
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+  .dup-run-head {
+    @apply flex items-start gap-2;
+  }
+  .dup-run-head > span {
+    @apply min-w-0 flex-1;
+  }
+  .dup-run-report summary {
+    @apply cursor-pointer;
+    color: var(--color-muted);
+  }
+  .dup-run-report ul {
+    @apply mb-0 mt-1 grid gap-0.5 pl-4;
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+
   /* The rules, folded: they govern every action on the page, so they stay one
      click away rather than a paragraph to re-read above the list. */
   .dup-rules {

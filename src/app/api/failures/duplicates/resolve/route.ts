@@ -1,4 +1,5 @@
-// POST /api/failures/duplicates/resolve { scope, q, rawInGallery, max } →
+// POST /api/failures/duplicates/resolve { scope, q, rawInGallery, rule, max,
+// exclude } →
 // collapses, in one batch, every duplicate group in that filter whose survivor
 // the rule can pick on its own (cf. resolveDuplicatesAuto): a lone Final/Export
 // copy, otherwise the live library copy. Everything else stays manual.
@@ -11,7 +12,9 @@
 // unchanged.
 //
 // Bounded per call (`max`, ≤ 500) so the request finishes inside a normal HTTP
-// lifetime; the caller loops while `resolved > 0`.
+// lifetime; the caller loops while `remaining` shrinks, sending back the
+// `retry` hashes it was handed as `exclude` (they can only narrow the run).
+// `rule` limits the run to one card of the plan.
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { json, badRequest, serverError } from "@/lib/api";
@@ -23,6 +26,8 @@ const Body = z.object({
   scope: z.enum(["all", "incoming", "gallery", "mixed", "elsewhere"]).default("all"),
   q: z.string().max(500).optional(),
   rawInGallery: z.boolean().optional(),
+  rule: z.enum(["protected", "library"]).optional(),
+  exclude: z.array(z.string().max(200)).max(50_000).optional(),
   max: z.number().int().min(1).max(500).default(100),
 });
 

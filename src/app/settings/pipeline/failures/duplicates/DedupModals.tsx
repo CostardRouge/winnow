@@ -5,7 +5,10 @@
 // what happens to the library entry — before the button, not after.
 import { formatBytes } from "../model";
 import { useOverlayDismiss } from "../../../../useOverlayDismiss";
-import type { DuplicateExisting } from "@/lib/duplicateTypes";
+import type {
+  DuplicateAutoRule,
+  DuplicateExisting,
+} from "@/lib/duplicateTypes";
 
 // A pending "keep only this" decision: the survivor, what gets deleted, and what
 // happens to the library entry — relinked onto the survivor (a LIVE entry, when
@@ -21,9 +24,10 @@ export type KeepTarget = {
   reclaim: boolean;
 };
 
-// What a bulk auto-resolve would do, computed server-side from the same filter
-// the list is showing.
+// What a bulk auto-resolve would do — one card of the plan, i.e. one branch of
+// the rule — computed server-side from the same filter the list is showing.
 export type AutoTarget = {
+  rule: DuplicateAutoRule;
   groups: number;
   reclaimable: number;
   scopeLabel: string;
@@ -210,27 +214,28 @@ export function ConfirmAutoModal({
       onCancel={onCancel}
     >
       <p className="hint" style={{ marginTop: 0 }}>
-        Every group in <strong>{target.scopeLabel}</strong> whose survivor is not
-        a judgement call keeps the copy marked <strong>suggested</strong> and
-        loses the others, freeing about{" "}
-        <strong>{formatBytes(target.reclaimable)}</strong>. Two rules, in order:
+        Every group of this card in <strong>{target.scopeLabel}</strong> keeps
+        the copy marked <strong>suggested</strong> and loses the others, freeing
+        about <strong>{formatBytes(target.reclaimable)}</strong>.{" "}
+        {target.rule === "protected" ? (
+          <>
+            The survivor is the one copy on a <strong>Final or Export</strong>{" "}
+            volume — those masters are view-only, so the other copies are the
+            only ones deduplication could remove anyway.
+          </>
+        ) : (
+          <>
+            The survivor is the <strong>live library entry</strong>: it stays
+            where it is and the extra on-disk copies go.
+          </>
+        )}{" "}
+        Nothing is relinked.
       </p>
-      <ul className="hint dup-rule-list">
-        <li>
-          a group with exactly one copy on a <strong>Final or Export</strong>{" "}
-          volume keeps that copy — those masters are view-only, so the other
-          copies are the only ones deduplication could remove anyway;
-        </li>
-        <li>
-          otherwise the <strong>live library entry</strong> keeps its file and
-          the extra on-disk copies go.
-        </li>
-      </ul>
       <p className="hint">
-        Everything else is left alone: a group with two protected copies, one
-        whose library entry is in the trash, and one made only of on-disk copies
-        all need you to say which folder should hold the file. Deletions are
-        permanent.
+        Each copy is checked against the one that stays just before it goes
+        (a full compare when it was never verified); a copy that fails the
+        check is left in place and listed in the report.
+        Deletions are permanent.
         {progress ? ` ${progress}` : ""}
       </p>
       <div className="modal-actions">

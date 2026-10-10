@@ -38,6 +38,17 @@ export type DuplicateSort = "size" | "recent" | "path";
 //   library   — the live library entry, with no protected copy in the group.
 export type DuplicateAutoRule = "protected" | "library";
 
+// Where a group sits in the cleanup PLAN: one of the rule's branches, or
+// "manual" when no rule can pick the survivor and a human has to. A stale group
+// (nothing shadows it any more) is in none of them — "Clear resolved" drops it.
+export type DuplicatePlanKey = DuplicateAutoRule | "manual";
+
+export const DUPLICATE_PLAN_KEYS: DuplicatePlanKey[] = [
+  "protected",
+  "library",
+  "manual",
+];
+
 /** The indexed asset holding this content: live, in the trash, or purged. */
 export type DuplicateExisting = {
   id: number;
@@ -119,6 +130,10 @@ export type DuplicateListResult = {
   groups: DuplicateGroup[];
   falseItems: DuplicateFalseItem[];
   facets: Record<DuplicateScope | "all", DuplicateFacet>;
+  /** The plan: the current scope's groups split by who picks the survivor —
+   *  counted before the `rule` filter, so every card keeps its number while
+   *  the list shows one of them. */
+  plan: Record<DuplicatePlanKey, DuplicateFacet>;
   /** Groups the bulk rule could resolve on its own, within the current filter. */
   autoResolvable: number;
   /** Bytes those groups alone would free — what the bulk confirmation promises. */
@@ -142,6 +157,9 @@ export type ResolveAutoResult = {
   failed: number;
   /** Auto-resolvable groups still matching the filter afterwards. */
   remaining: number;
+  /** Why copies or whole groups were left alone, grouped and counted — the
+   *  report says what happened to every group it did not collapse. */
+  skipped: { reason: string; count: number }[];
 };
 
 export type SweepResolvedResult = {

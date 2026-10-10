@@ -16,6 +16,7 @@ import { PHOTO_RAW_EXTS } from "./config";
 import { keepOneCopy, viewOnlyChecker, zoneChecker, DuplicateError } from "./duplicates";
 import type {
   DuplicateAutoRule,
+  DuplicatePlanKey,
   DuplicateCopy,
   DuplicateExisting,
   DuplicateFacet,
@@ -36,6 +37,8 @@ export type DuplicateListQuery = {
   q?: string;
   /** Keep only the groups with a RAW copy in the Gallery. */
   rawInGallery?: boolean;
+  /** Keep only one card of the plan: a branch of the rule, or "manual". */
+  rule?: DuplicatePlanKey;
   sort?: DuplicateSort;
   limit?: number;
   offset?: number;
@@ -301,13 +304,31 @@ function emptyFacet(): DuplicateFacet {
   return { groups: 0, extras: 0, reclaimable: 0 };
 }
 
+function count(f: DuplicateFacet, g: DuplicateGroup): void {
+  f.groups++;
+  f.extras += g.extras;
+  f.reclaimable += g.reclaimable;
+}
+
+// The plan card a group belongs to: the branch of the rule that picks its
+// survivor, or "manual". A stale group belongs to none — it is not a duplicate
+// of anything any more, and "Clear resolved" is its only action.
+export function planKey(
+  g: Pick<DuplicateGroup, "stale" | "auto_rule">,
+): DuplicatePlanKey | null {
+  if (g.stale) return null;
+  return g.auto_rule ?? "manual";
+}
+
 // Filter → facet → sort. One table pass, shared by the listing (which slices a
 // page out of `matched`) and the bulk resolution (which walks it in order), so
 // the two can never disagree about which groups a filter selects.
 //
-// The facets are counted over the path/RAW filter but NOT over the scope, so the
-// tab badges keep showing where the rest of the matches are instead of
-// collapsing to the tab you are already on.
+// The facets are counted over the path/RAW/rule filter but NOT over the scope,
+// so the tab badges keep showing where the rest of the matches are instead of
+// collapsing to the tab you are already on. The plan is the mirror image: counted
+// over the scope but NOT over the rule, so every card keeps its number while the
+// list below shows one of them.
 async function selectGroups(query: DuplicateListQuery) {
   const { groups, falseItems, total, falseCount } = await buildGroups();
   const needle = (query.q ?? "").trim().toLowerCase();
@@ -320,9 +341,13 @@ async function selectGroups(query: DuplicateListQuery) {
     { groups: 0, bytes: 0 },
   );
 
-  const preScope = groups.filter(
+  const base = groups.filter(
     (g) => matches(g, needle) && (!query.rawInGallery || g.raw_in_gallery),
   );
+  const inRule = (g: DuplicateGroup) => !query.rule || planKey(g) === query.rule;
+  const inScope = (g: DuplicateGroup) =>
+    !query.scope || query.scope === "all" || g.scope === query.scope;
+  const preScope = base.filter(inRule);
 
   const facets = {
     all: emptyFacet(),
@@ -332,17 +357,21 @@ async function selectGroups(query: DuplicateListQuery) {
     elsewhere: emptyFacet(),
   } as Record<DuplicateScope | "all", DuplicateFacet>;
   for (const g of preScope) {
-    for (const key of ["all", g.scope] as const) {
-      facets[key].groups++;
-      facets[key].extras += g.extras;
-      facets[key].reclaimable += g.reclaimable;
-    }
+    count(facets.all, g);
+    count(facets[g.scope], g);
   }
 
-  const matched =
-    query.scope && query.scope !== "all"
-      ? preScope.filter((g) => g.scope === query.scope)
-      : preScope;
+  const plan = {
+    protected: emptyFacet(),
+    library: emptyFacet(),
+    manual: emptyFacet(),
+  } as Record<DuplicatePlanKey, DuplicateFacet>;
+  for (const g of base) {
+    const key = planKey(g);
+    if (key && inScope(g)) count(plan[key], g);
+  }
+
+  const matched = preScope.filter(inScope);
 
   const sort = query.sort ?? "size";
   matched.sort((a, b) => {
@@ -361,6 +390,7 @@ async function selectGroups(query: DuplicateListQuery) {
       ? falseItems.filter((f) => f.abs_path.toLowerCase().includes(needle))
       : falseItems,
     facets,
+    plan,
     rawInGallery,
     total,
     falseCount,
@@ -382,6 +412,7 @@ export async function listDuplicateGroups(
     groups: s.matched.slice(offset, offset + limit),
     falseItems: s.falseItems,
     facets: s.facets,
+    plan: s.plan,
     autoResolvable: auto.length,
     autoReclaimable: auto.reduce((n, g) => n + g.reclaimable, 0),
     stale: s.matched.filter((g) => g.stale).length,
@@ -406,21 +437,34 @@ export async function listDuplicateGroups(
 // Every group still goes through keepOneCopy: full path whitelisting, the
 // view-only refusal, the relink-before-unlink ordering and the audit-row
 // cleanup are unchanged. This adds a picker, not a shortcut.
+//
+// `rule` narrows the run to one card of the plan (a branch of the rule). Asking
+// for "manual" selects nothing: no rule picks a survivor there, by definition.
+//
+// `exclude` lists the groups this run already tried and left behind (returned
+// as `retry` by earlier batches). It can only REMOVE groups from the run — the
+// server still derives every survivor itself — and it is what keeps a batch
+// from re-picking the same refused groups at the head of the size order while
+// the rest of the backlog waits behind them.
 export async function resolveDuplicatesAuto(
-  query: DuplicateListQuery & { max?: number },
-): Promise<ResolveAutoResult> {
+  query: DuplicateListQuery & { max?: number; exclude?: string[] },
+): Promise<ResolveAutoResult & { retry: string[] }> {
   const max = Math.min(Math.max(query.max ?? 100, 1), 500);
-  const targets = (await selectGroups(query))
-    .matched.filter((g) => g.auto_keep)
-    .slice(0, max);
+  const exclude = new Set(query.exclude ?? []);
+  const pickable = (g: DuplicateGroup) => !!g.auto_keep && !exclude.has(g.hash);
+  const targets = (await selectGroups(query)).matched.filter(pickable).slice(0, max);
 
-  const result: ResolveAutoResult = {
+  const result: ResolveAutoResult & { retry: string[] } = {
     resolved: 0,
     deleted: 0,
     relinked: 0,
     failed: 0,
     remaining: 0,
+    skipped: [],
+    retry: [],
   };
+  const reasons = new Map<string, number>();
+  const note = (reason: string) => reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
   for (const g of targets) {
     try {
       const r = await keepOneCopy({
@@ -430,21 +474,31 @@ export async function resolveDuplicatesAuto(
       result.resolved++;
       result.deleted += r.deleted.length;
       if (r.relinked) result.relinked++;
+      // A copy keepOneCopy refused keeps its row, so the group stays listed:
+      // say why, and do not pick it again in this run.
+      for (const sk of r.skipped) note(sk.reason);
+      if (r.skipped.length) result.retry.push(g.hash);
     } catch (err) {
       // A group that can't be collapsed (a copy vanished under us, a permission
       // error) must not abort the batch: it keeps its rows and stays listed for
       // the user, exactly as if it had never been picked.
       if (!(err instanceof DuplicateError))
         console.warn("resolveDuplicatesAuto:", (err as Error).message);
+      note((err as Error).message);
       result.failed++;
+      result.retry.push(g.hash);
     }
   }
+  result.skipped = [...reasons]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
 
-  // What a next batch would still find. NOTE for the caller: a group that keeps
-  // failing stays counted here, so a loop must stop on `resolved === 0`, not on
-  // `remaining === 0`, or it spins forever on the same refusals.
+  // What a next batch would still find, this run's refusals excluded. The
+  // caller still stops on lack of progress too: a group can turn refusable
+  // between two batches.
+  const left = new Set([...exclude, ...result.retry]);
   result.remaining = (await selectGroups(query)).matched.filter(
-    (g) => g.auto_keep,
+    (g) => g.auto_keep && !left.has(g.hash),
   ).length;
   return result;
 }
