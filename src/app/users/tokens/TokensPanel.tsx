@@ -61,7 +61,7 @@ const ACCESS: PickerOption<TokenRole>[] = [
 ];
 
 // Who holds it. An agent's token is capped exactly like an app's; the only
-// difference is that what it writes is stamped as an agent's (migration 0049),
+// difference is that what it writes is stamped as an agent's (migration 0050),
 // so a pick Claude made can be told from one made by hand.
 type Holder = "app" | "agent";
 

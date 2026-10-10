@@ -25,7 +25,39 @@ export type DeviceRow = {
   device_source?: string | null;
   device_exif?: string | null;
   camera_model_exif?: string | null;
+  /** The camera the clip's own metadata track names (migration 0049). */
+  embedded_device?: string | null;
+  embedded_camera_model?: string | null;
 };
+
+/** What "Revert to the files" puts back: the EXIF body, else the one the
+ *  clip's track names, else none — lib/deviceAttribution.ts revertDevice. */
+function fileBody(row: DeviceRow): {
+  device: string | null;
+  camera_model: string | null;
+  device_source: string | null;
+} {
+  if (row.device_exif)
+    return {
+      device: row.device_exif,
+      camera_model: row.camera_model_exif ?? null,
+      device_source: "exif",
+    };
+  if (row.embedded_device)
+    return {
+      device: row.embedded_device,
+      camera_model: row.embedded_camera_model ?? null,
+      device_source: "embedded",
+    };
+  return { device: null, camera_model: null, device_source: null };
+}
+
+/** True when revert would change this row. */
+function revertible(row: DeviceRow): boolean {
+  if (!row.device_source || row.device_source === "exif") return false;
+  const f = fileBody(row);
+  return (row.device ?? null) !== f.device || row.device_source !== f.device_source;
+}
 
 /** The two counts the dialog opens with, from rows the host already holds. */
 export function deviceSelectionCounts(
@@ -34,14 +66,14 @@ export function deviceSelectionCounts(
 ): { withoutBody: number; revertible: number } {
   const idset = new Set(ids);
   let withoutBody = 0;
-  let revertible = 0;
+  let n = 0;
   for (const a of rows) {
     if (!idset.has(a.id)) continue;
     if (!a.device) withoutBody++;
     // Anything not read off the file itself can go back to the file.
-    if (a.device_source && a.device_source !== "exif") revertible++;
+    if (revertible(a)) n++;
   }
-  return { withoutBody, revertible };
+  return { withoutBody, revertible: n };
 }
 
 /**
@@ -50,7 +82,8 @@ export function deviceSelectionCounts(
  *             file did declare;
  *   replace — every row gets the body ('override'), the file's own included;
  *   revert  — a row whose body did not come off its file goes back to what the
- *             file says ('exif'), or to no body where the file names none.
+ *             file says: its EXIF ('exif'), else the camera its metadata track
+ *             names ('embedded'), else no body.
  */
 export function applyDeviceChange<T extends DeviceRow>(
   row: T,
@@ -72,11 +105,6 @@ export function applyDeviceChange<T extends DeviceRow>(
       camera_model: change.body.camera_model,
       device_source: "override",
     };
-  if (!row.device_source || row.device_source === "exif") return row;
-  return {
-    ...row,
-    device: row.device_exif ?? null,
-    camera_model: row.camera_model_exif ?? null,
-    device_source: row.device_exif ? "exif" : null,
-  };
+  if (!revertible(row)) return row;
+  return { ...row, ...fileBody(row) };
 }

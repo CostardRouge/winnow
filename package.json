@@ -22,6 +22,7 @@
     "people-backfill": "tsx src/scripts/people-backfill.ts",
     "srt-backfill": "tsx src/scripts/srt-backfill.ts",
     "capture-days": "tsx src/scripts/capture-days.ts",
+    "device-probe": "tsx src/scripts/device-probe.ts",
     "shutter-backfill": "tsx src/scripts/shutter-backfill.ts",
     "relink-moved": "tsx src/scripts/relink-moved.ts"
   },

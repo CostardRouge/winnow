@@ -110,7 +110,7 @@ export default async function proxy(req: NextRequest) {
   let user: SessionUser | null;
   if (appToken) {
     user = await validateAccessToken(appToken);
-    // A token minted for an agent (migration 0049) is capped exactly like
+    // A token minted for an agent (migration 0050) is capped exactly like
     // any other; the distinct `via` is what stamps its writes as an agent's.
     via = user?.agent ? "agent" : "token";
   } else {

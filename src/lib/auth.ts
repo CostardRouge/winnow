@@ -44,7 +44,7 @@ export type SessionUser = {
   username: string;
   displayName: string | null;
   role: UserRole;
-  /** Set by validateAccessToken: the token was minted for an agent (0049). */
+  /** Set by validateAccessToken: the token was minted for an agent (0050). */
   agent?: boolean;
 };
 
@@ -75,7 +75,7 @@ export const HDR_USER_ROLE = "x-winnow-user-role";
 // "session", "token" or "agent": which credential proved the identity above.
 // The role header is already the capped one for a token; this says why it
 // may be lower than the account's own. "agent" is a token minted for an agent
-// (migration 0049) — capped exactly like any token, and stamped on what it
+// (migration 0050) — capped exactly like any token, and stamped on what it
 // writes (`ratings.rated_via`).
 export const HDR_AUTH_VIA = "x-winnow-auth-via";
 

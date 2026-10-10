@@ -217,23 +217,42 @@ clips are not missing from a filter — they are absent from the whole dimension
 (`gallery/AssetMeta.tsx`). The drone's card on `/gear` therefore counts
 `videos: 0` and links to a grid that can never hold them.
 
-**What the file does hold**: the bundled ExifTool knows
-`dvtm_Mini4_Pro.proto` and maps `dvtm_Mini4_Pro_1-1-10 → Model`, `1-1-5 →
-SerialNumber` (`Image::ExifTool::DJI`'s protobuf table) — but only out of the
-`djmd` **timed-metadata track**, which `QuickTime.pm` parses only under `-ee`
-(ExtractEmbedded). exiftool-vendored reads with `readArgs: ["-fast"]`, so the
-track is skipped entirely. Reaching it means a second, video-only
-`exiftool.read(p, { readArgs: ["-ee", …] })` that walks samples interleaved
-through a multi-hundred-MB file on the spinning HDD — measure it on a real clip
-before promising it, and keep it behind the stat gate like everything else.
+**What the file does hold** (measured 2026-10-10 on two real Mini 4 Pro clips
+of the library, pulled read-only through the API): the first sample of the
+`djmd` track is a protobuf header carrying `1-1-10` Model (`DJI Mini4 Pro`),
+`1-1-5` the AIRCRAFT serial (`1581F…`) and — the field that settles the
+two-spellings trap below — `2-2-1-4` = `DJI FC8482`, the camera exactly as its
+stills write Make + Model. That one field is the join key; nothing else is
+needed. Traps found on the way: the stills' EXIF `SerialNumber` is the CAMERA's
+(`6TVQ…`), not the aircraft's, so serials never join a clip to its photos; the
+plain `-fast` read already returns `Encoder: DJI Mini4 Pro` (product, not body);
+and `exiftool -ee` reads EVERY sample of the track (one seek + read per frame,
+~13 000 in a 3.7 GB / 223 s clip) for values that sit in the first one. DJI
+writes `moov` LAST, after the `mdat`, beside a ~1 MB `udta`.
 
 **The trap that survives whichever fix is chosen**: the embedded `Model` is the
 aircraft's own name, not `FC8482`, so writing it raw into `device` buys a
 *second* gear card for one aircraft. Anything that fills the column for videos
-must land on the string the photos already use, or the body needs a canonical key
-both spellings resolve to. `cameraLabels.ts` cannot be that key: it is
+must land on the string the photos already use — which is why the probe writes
+`2-2-1-4`, never `Model`. `cameraLabels.ts` cannot be a canonical key: it is
 display-only by design, because the raw value is what the grids filter on (the
 count/grid guarantee argued at the top of `lib/gear.ts`).
+
+**How it is read** (2026-10-10, `lib/djiTrack.ts`, `lib/deviceProbe.ts`,
+migration 0049): our own reader, not `-ee` — top-level box headers, `moov`'s
+children header by header (the `udta` stepped over), the `djmd` trak, ONE
+sample: ~2–4 ms and a few KB whatever the clip weighs, against 0.3–0.6 s for
+`-ee` on a 3 s clip. Unknown DJI protos keep model + serial and write no body
+(only the Mini 4 Pro has been seen). The answer is `device_source='embedded'`
+with `embedded_device/_camera_model/_model/_serial/_probed_at` beside it; it is
+the FILE speaking, so it beats `derived`/`manual` and yields to `override` and
+to EXIF. Delivery: the indexer probes every new/changed video whose EXIF names
+no body; Settings › Pipeline › Devices step 1 enqueues a `device-probe` job on
+the **integrity** queue (not index: that queue is per-root scans behind a scan
+lock) at the scan's budget and pause, resumable, its report the job's return
+value. A file that cannot be opened is never stamped — an unmounted share must
+not mark the library "read, nothing found". Revert goes to EXIF, else the
+track's body, else none.
 
 **How it is answered today** (2026-09-20, `lib/deviceAttribution.ts`, migration
 0043): not by reading the file again but by **voting on what the index already
@@ -317,8 +336,6 @@ override survives an mtime bump AND a genuine change of the file's Model, while
 Not written into originals: Make/Model are a camera's identity inside RAW maker
 notes and MP4 atoms — unlike a GPS pin, nothing outside Winnow needs them fixed.
 
-**Still open**: the `-ee` read above is not wired. It is the only source of the
-aircraft's `SerialNumber`, which is what would tell two identical bodies apart —
-the vote cannot. Wire it as an enqueue-only pass over the **index** queue (job
-name `device-probe`, told apart like `relink` on integrity), never inline: it is
-the only step here that touches an original.
+**Still open**: the serial is recorded (`embedded_serial`, the viewer's
+"Unit" row) but nothing groups on it — two identical aircraft still share one
+gear card. Grouping by unit is a gear-shelf decision, not a probe one.

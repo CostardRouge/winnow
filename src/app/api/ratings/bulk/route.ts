@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const expand = expand_bursts ? burstExpandCTE : groupExpandCTE;
     // Attribution: the account acting is stamped on every touched rating
     // (kept when the identity is somehow absent — cf. migration 0032), with
-    // the credential it came through — a browser, an app, an agent (0049).
+    // the credential it came through — a browser, an app, an agent (0050).
     const userId = identityFromHeaders(req.headers)?.id ?? null;
     const via = authViaFromHeaders(req.headers);
     await q(

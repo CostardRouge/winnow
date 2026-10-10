@@ -74,6 +74,13 @@ export type Asset = {
   // and what "Revert to the file" restores.
   device_exif: string | null;
   camera_model_exif: string | null;
+  // What the clip's own metadata track names (migration 0049,
+  // lib/deviceProbe.ts): the camera as its stills spell it, the product, the
+  // aircraft's serial. NULL until probed, and on anything but a DJI clip.
+  embedded_device: string | null;
+  embedded_camera_model: string | null;
+  embedded_model: string | null;
+  embedded_serial: string | null;
   file_size: number | null;
   file_mtime: string | null;
   content_hash: string | null;
@@ -320,7 +327,7 @@ export type Rating = {
   reviewed_at: string | null;
   // Attribution: account that last touched the rating (cf. migration 0032).
   rated_by: number | null;
-  // …and the credential it came through (0049); null before 0049.
+  // …and the credential it came through (0050); null before 0050.
   rated_via: RatedVia | null;
 };
 
@@ -337,8 +344,8 @@ export type AssetGridRow = Asset & {
   verdict: Verdict;
   star: number;
   color_label: string | null;
-  // Which credential last rated it (migration 0049): "agent" marks an MCP
-  // client's verdict; null when unrated or rated before 0049.
+  // Which credential last rated it (migration 0050): "agent" marks an MCP
+  // client's verdict; null when unrated or rated before 0050.
   rated_via: RatedVia | null;
   tags: string[];
   // Pairing (cf. lib/pairing.ts): the other member of this asset's group and the
