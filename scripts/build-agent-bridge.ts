@@ -21,11 +21,18 @@
  */
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipStore } from "../src/lib/zipStore";
 import { MCPB_ENTRY, mcpbManifest } from "../src/lib/commands/mcp";
+import {
+  BRIDGE_SOURCE_HASH,
+  BRIDGE_VERSION,
+  bridgeLabel,
+  bridgeSemver,
+} from "../src/lib/commands/bridgeVersion";
+import { bridgeSourceHash, bumpAdvice } from "../src/lib/commands/bridgeHash";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "public", "agent");
@@ -43,10 +50,28 @@ function commit(): string | null {
   }
 }
 
-const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: string };
-const version = pkg.version ?? "0.0.0";
+// The bridge's OWN number (v1, v2… — lib/commands/bridgeVersion), not the
+// site's: it moves only when the bridge does, so Claude Desktop offers an
+// Update exactly then. package.json's version never moved, which is why every
+// download used to look like the installed one. The commit only rides in the
+// banner, for whoever reads the file.
+//
+// A bridge that changed without a new number would reach people as the "same"
+// extension: in CI (which runs this through `npm run build`, while `npm test`
+// is not in CI yet) that fails the build; locally it only warns, so a dev
+// server still starts mid-edit.
+const now = await bridgeSourceHash(root);
+if (now !== BRIDGE_SOURCE_HASH) {
+  const advice = bumpAdvice(BRIDGE_VERSION, now);
+  if (process.env.CI) {
+    console.error(advice);
+    process.exit(1);
+  }
+  console.warn(`warning: ${advice}`);
+}
+const version = bridgeSemver(BRIDGE_VERSION);
 const sha = commit();
-const label = `${version}${sha ? `+${sha}` : ""}`;
+const label = `${bridgeLabel(BRIDGE_VERSION)}${sha ? ` (site ${sha})` : ""}`;
 
 const out = await build({
   entryPoints: [join(root, "src", "scripts", "mcp.ts")],
@@ -56,7 +81,6 @@ const out = await build({
   target: "node18",
   write: false,
   logLevel: "silent",
-  define: { WINNOW_BRIDGE_VERSION: JSON.stringify(label) },
   banner: { js: `// Winnow MCP bridge ${label} — generated from src/scripts/mcp.ts; do not edit.` },
 });
 const code = out.outputFiles[0].text;
@@ -66,8 +90,7 @@ await writeFile(join(outDir, "winnow-mcp.mjs"), code);
 await writeFile(
   join(outDir, "winnow.mcpb"),
   zipStore([
-    // The manifest's version must be plain semver; the label (with the
-    // commit) rides in the bridge's own serverInfo.
+    // The manifest's version must be plain semver: N.0.0 for bridge vN.
     { name: "manifest.json", data: JSON.stringify(mcpbManifest(version), null, 2) },
     { name: MCPB_ENTRY, data: code },
   ]),

@@ -19,6 +19,12 @@ import type { TokenRole, UserRole } from "@/lib/authz";
 import { Icons, LoadingState } from "../../ui";
 import { OptionPicker, type PickerOption } from "../../OptionPicker";
 import {
+  BRIDGE_CHANGES,
+  BRIDGE_VERSION,
+  bridgeLabel,
+  extensionFileName,
+} from "@/lib/commands/bridgeVersion";
+import {
   CopyRow,
   CreateTokenModal,
   claudeCodeSetup,
@@ -213,8 +219,10 @@ export default function AgentsGuide() {
                 your system’s keychain.
               </p>
               <div>
-                <a className="btn" href="/agent/winnow.mcpb" download>
-                  Download the Winnow extension
+                {/* Saved under its version (winnow-v1.mcpb), so two downloads
+                    are told apart; the served path stays the same. */}
+                <a className="btn" href="/agent/winnow.mcpb" download={extensionFileName()}>
+                  Download the Winnow extension · {bridgeLabel(BRIDGE_VERSION)}
                 </a>
               </div>
               <CopyRow label="Winnow address" value={origin} />
@@ -270,10 +278,32 @@ export default function AgentsGuide() {
           mark goes. Tags and the trash record no author.
         </p>
         <p>
-          <b>After a Winnow update</b>: re-run the download (Claude Code, other
-          apps) or download the extension again (Claude Desktop) to get the new
-          commands.
+          <b>Updating the bridge</b>: it has its own number — this instance
+          serves <b>{bridgeLabel(BRIDGE_VERSION)}</b> — which changes only when
+          the bridge does (a new or changed command), so a new number is worth
+          installing; <code>winnow_status</code> tells the agent which one runs
+          and whether a newer one is served. Claude Desktop: download the
+          extension again and open it, it offers <b>Update</b> (one installed
+          before numbering shows Uninstall instead: uninstall it once, then
+          install this one). Claude Code and other apps: re-run the download over
+          the old file (same name, same place), then start a new session;{" "}
+          <code>node ~/.winnow/winnow-mcp.mjs --version</code> prints a file’s
+          number.
         </p>
+        <div className="guide-changes">
+          {BRIDGE_CHANGES.map((entry) => (
+            <div key={entry.version}>
+              <p className="guide-change-head">
+                {bridgeLabel(entry.version)} · {entry.date}
+              </p>
+              <ul>
+                {entry.changes.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
         <p>
           <b>To stop it</b>: revoke its token on <a href="/users/tokens">App
           tokens</a> — the next request is refused. Disabling the account does

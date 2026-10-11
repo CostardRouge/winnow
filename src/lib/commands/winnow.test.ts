@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import { createCommandRegistry, type CommandError } from "./registry";
 import { HttpError, facesFilter, httpClient, resolvePeople, winnowCommands, type PersonRow, type WinnowClient } from "./winnow";
+import { BRIDGE_VERSION, bridgeLabel } from "./bridgeVersion";
 import { imageSize } from "./imageSize";
 
 type Call = { method: string; path: string; body?: unknown };
@@ -162,6 +163,9 @@ test("app.status says who the agent is and whether it may write", async () => {
     writes: false,
     markedAsAgent: true,
     timeline: true,
+    // This bridge's own number; the fake instance names no served bridge
+    // (an instance from before numbering), so no latestBridge / update.
+    bridge: bridgeLabel(BRIDGE_VERSION),
   });
 });
 

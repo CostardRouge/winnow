@@ -20,6 +20,7 @@ import { json, serverError } from "@/lib/api";
 import { DOC_KINDS, MAX_DOC_BYTES } from "@/lib/appDocuments";
 import { MAX_FILE_BYTES, MAX_USER_BYTES } from "@/lib/appFiles";
 import { getFeatures } from "@/lib/featureGate";
+import { BRIDGE_VERSION } from "@/lib/commands/bridgeVersion";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,11 @@ export async function GET(req: NextRequest) {
     const features = await getFeatures();
     return json({
       api: { version: API_VERSION },
+      // The agent bridge this instance serves at /agent/ (winnow-mcp.mjs, the
+      // .mcpb extension): its own number, v1, v2… (lib/commands/bridgeVersion).
+      // A running bridge compares it with its own and tells its person to
+      // update (`app.status`).
+      agentBridge: { version: BRIDGE_VERSION },
       auth: {
         // The session cookie, which a same-site client app gets for free
         // through CORS (lib/cors.ts), and an app token (migration 0045) for a
