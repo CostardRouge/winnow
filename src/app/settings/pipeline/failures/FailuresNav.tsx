@@ -1,8 +1,9 @@
 "use client";
 
 // Sub-route tab bar for the failure families. Each family is a real URL
-// (/settings/pipeline/failures/analyze, /scan, …) so a specific list — say the
-// deduplication triage — can be linked to directly. The per-family counts ride
+// (/settings/pipeline/failures/analyze, /scan, …) so a specific list can be
+// linked to directly. Deduplication used to be one of them; it is Library ›
+// Duplicates since 2026-10-11 (the old URL redirects there). The per-family counts ride
 // the shared /api/stats poll (stats.failures mirrors the /api/failures
 // families), so the badges stay live without loading the full listings.
 import Link from "next/link";
@@ -18,11 +19,6 @@ const FAMILIES: {
   { slug: "scan", label: "Scan", count: (s) => s?.failures?.scan ?? 0 },
   { slug: "import", label: "Import", count: (s) => s?.failures?.import ?? 0 },
   { slug: "ml", label: "Machine learning", count: (s) => s?.failures?.ml ?? 0 },
-  {
-    slug: "duplicates",
-    label: "Deduplication",
-    count: (s) => s?.failures?.duplicates ?? 0,
-  },
   {
     slug: "missing",
     label: "Missing files",

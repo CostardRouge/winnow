@@ -1,7 +1,10 @@
 "use client";
 
-// Failures › Deduplication: the duplicate-triage surface, on its own URL so a
-// review session ("here, sort these out") can be linked to directly.
+// Library › Duplicates: the duplicate-triage surface, on its own URL so a
+// review session ("here, sort these out") can be linked to directly. It lived
+// under Settings › Pipeline › Failures until 2026-10-11: a duplicate is not a
+// pipeline failure but a cleanup with a measurable win, and nobody looks for a
+// cleanup inside a failures tab (the old URL redirects here).
 //
 // The list this page draws is the biggest in the app — a real library carries
 // thousands of recorded duplicate hits — so it is built around finding the ones
@@ -28,15 +31,15 @@
 // Every destructive action still goes through the same lib/duplicates guards it
 // always did; nothing here reaches around them.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icons } from "../../../../ui";
-import { FamilyShell } from "../sections";
-import { formatBytes } from "../model";
+import { Icons } from "../../ui";
+import PullToRefresh from "../../PullToRefresh";
+import { formatBytes } from "@/lib/format";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
 import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
 import DedupPairs from "./DedupPairs";
 import DedupReview from "./DedupReview";
 import DedupStrategy from "./DedupStrategy";
-import { OptionPicker, type PickerOption } from "../../../../OptionPicker";
+import { OptionPicker, type PickerOption } from "../../OptionPicker";
 import {
   ConfirmAutoModal,
   ConfirmDeleteModal,
@@ -114,7 +117,36 @@ const VIEWS: PickerOption<DedupView>[] = [
 ];
 const VIEW_KEY = "winnow.dedup.view";
 
-export default function DuplicatesFailuresPage() {
+// The page's frame: pull-to-refresh, the load error, the last action's
+// message. (Under Failures this was that section's FamilyShell.)
+function Shell({
+  onRefresh,
+  error,
+  msg,
+  children,
+}: {
+  onRefresh: () => Promise<unknown> | void;
+  error: string | null;
+  msg: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <PullToRefresh className="tab-pane sessions-pane" onRefresh={onRefresh}>
+      {error && (
+        <div className="error-box">
+          <span>Couldn’t load the duplicates: {error}</span>
+          <button className="btn" onClick={onRefresh}>
+            Retry
+          </button>
+        </div>
+      )}
+      {msg && <p className="hint">{msg}</p>}
+      {children}
+    </PullToRefresh>
+  );
+}
+
+export default function DuplicatesPanel() {
   const [query, setQuery] = useState<DuplicateQuery>(EMPTY_QUERY);
   // Typing must not fire a request per keystroke: the field is local, the query
   // follows a beat later (and rewinds to the first page, or the user lands on
@@ -425,25 +457,25 @@ export default function DuplicatesFailuresPage() {
     : null;
 
   return (
-    <FamilyShell onRefresh={load} error={error} msg={msg}>
+    <Shell onRefresh={load} error={error} msg={msg}>
       <section style={{ marginBottom: 28 }}>
         <div className="filterbar" style={{ marginBottom: 6 }}>
+          {/* No title or count here: the Library tab above says "Duplicates"
+              and carries the count (a count is drawn once). */}
           {view === "groups" && selectable.length > 0 && (
-            <input
-              ref={headRef}
-              type="checkbox"
-              className="fail-check"
-              aria-label="Select every on-disk copy on this page"
-              checked={allChecked}
-              onChange={(e) =>
-                setSel(e.target.checked ? new Set(selectable) : new Set())
-              }
-            />
+            <label className="dup-check-label">
+              <input
+                ref={headRef}
+                type="checkbox"
+                className="fail-check"
+                checked={allChecked}
+                onChange={(e) =>
+                  setSel(e.target.checked ? new Set(selectable) : new Set())
+                }
+              />
+              <span>Select every copy on this page</span>
+            </label>
           )}
-          <h3 style={{ margin: 0 }}>
-            Deduplication{" "}
-            <span className="hint">({(data?.total ?? 0).toLocaleString()})</span>
-          </h3>
           <span className="spacer" />
           <button
             className="btn"
@@ -769,6 +801,6 @@ export default function DuplicatesFailuresPage() {
           onConfirm={() => runAuto(auto.rule)}
         />
       )}
-    </FamilyShell>
+    </Shell>
   );
 }

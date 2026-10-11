@@ -13,10 +13,10 @@
 // Keys: 1–9 pick a copy, Enter keeps it and moves on, S skips, U undoes the
 // last decision, Esc closes (asking first when decisions are staged).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Icons } from "../../../../ui";
+import { Icons } from "../../ui";
 import { fetchJson } from "@/lib/fetchJson";
 import { splitPaths } from "@/lib/pathDiff";
-import { formatBytes } from "../model";
+import { formatBytes } from "@/lib/format";
 import { RunReportBox, type RunReport } from "./DedupPlan";
 import { ZonePill } from "./DupGroupCard";
 import type {

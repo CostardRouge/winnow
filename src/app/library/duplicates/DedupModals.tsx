@@ -3,8 +3,8 @@
 // The confirmations of the deduplication page. Every one of them removes bytes
 // that cannot come back, so each states exactly what goes, what survives, and
 // what happens to the library entry — before the button, not after.
-import { formatBytes } from "../model";
-import { useOverlayDismiss } from "../../../../useOverlayDismiss";
+import { formatBytes } from "@/lib/format";
+import { useOverlayDismiss } from "../../useOverlayDismiss";
 import type {
   DuplicateAutoRule,
   DuplicateExisting,

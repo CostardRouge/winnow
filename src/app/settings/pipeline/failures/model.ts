@@ -1,9 +1,10 @@
 // Shared shapes for the Settings › Pipeline › Failures section. Each failure
 // family lives on its own sub-route (/settings/pipeline/failures/{analyze,
-// scan, import, ml, duplicates, missing}); they all read the same
-// GET /api/failures payload, typed here — except deduplication, whose listing
-// is far too large to ride that poll and has its own endpoint + types
-// (GET /api/failures/duplicates, src/lib/duplicateList.ts).
+// scan, import, ml, missing, gpswrite}); they all read the same
+// GET /api/failures payload, typed here. Deduplication, whose listing is far
+// too large to ride that poll, has its own endpoint + types
+// (GET /api/failures/duplicates, src/lib/duplicateList.ts) and its own page,
+// Library › Duplicates.
 
 export type DerivItem = {
   asset_id: number;

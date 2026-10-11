@@ -14,10 +14,10 @@
 // none moves a live library entry onto a view-only volume — that stays a
 // one-group decision ("Keep only this").
 import { useEffect, useRef, useState } from "react";
-import { Icons } from "../../../../ui";
+import { Icons } from "../../ui";
 import { fetchJson } from "@/lib/fetchJson";
-import { OptionPicker, type PickerOption } from "../../../../OptionPicker";
-import { formatBytes } from "../model";
+import { OptionPicker, type PickerOption } from "../../OptionPicker";
+import { formatBytes } from "@/lib/format";
 import { RunReportBox, type RunReport } from "./DedupPlan";
 import type {
   DuplicatePlanKey,

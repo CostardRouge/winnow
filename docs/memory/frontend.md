@@ -131,7 +131,7 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 ## Deduplication triage is paged server-side and off the shared poll (2026-09-02)
 
-**Decision**: `/settings/pipeline/failures/duplicates` reads its own `GET /api/failures/duplicates` (grouping, zone classification, filtering, facets and paging all server-side in `src/lib/duplicateList.ts`), not the `useFailures()` payload every other family page polls every 5 s. The dedup slice was removed from `GET /api/failures` entirely.
+**Decision**: the dedup page (`/library/duplicates` since 2026-10-11, see below) reads its own `GET /api/failures/duplicates` (grouping, zone classification, filtering, facets and paging all server-side in `src/lib/duplicateList.ts`), not the `useFailures()` payload every other family page polls every 5 s. The dedup slice was removed from `GET /api/failures` entirely.
 
 **Why**: it is the one family that reaches thousands of rows, and it was being serialized into every tick of a poll that five other pages share — while the page itself rendered every group at once, with no paging and a filter that only searched what had already been shipped. The maintainer's library carries ~5000 hits; the page was unusable at that size.
 
@@ -148,6 +148,14 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 **How to apply**: the client loop must stop on **lack of progress** (`remaining` not shrinking), never on `remaining === 0`: a group whose deletions are refused keeps matching the rule forever. Every group still goes through `keepOneCopy`, so the path whitelist, view-only refusal and relink-before-unlink ordering are untouched — the bulk path adds a picker, not a shortcut.
 
 **Since 2026-10-09 the bulk runs per plan card** (`DedupPlan.tsx`): one card per branch of the rule (`protected`, `library`) plus "Needs you", counted over the scope but not over the `rule` filter so each card keeps its number while "Show these" narrows the list. A run sends `rule` and accumulates `exclude` from each batch's `retry` (groups it tried and left behind): `exclude` may only narrow a run, never pick a survivor, and without it the refused groups at the head of the size order were re-picked every batch and stalled the rest. Refusals come back grouped and counted (`skipped: {reason, count}[]`) and the report prints them — a count alone was audit finding UX-05.
+
+## Duplicates live in Library › Duplicates, not under Failures (2026-10-11)
+
+**Decision** (the maintainer's call, asked for explicitly): the triage page is `/library/duplicates`, a Library tab beside Trash; `/settings/pipeline/failures/duplicates` redirects there, the Failures tab bar lost its Deduplication family, and `totalFailures()` no longer counts duplicates — the Library tab carries their count instead.
+
+**Why**: a duplicate is a cleanup with a measurable win, not a pipeline failure; under Failures it kept the red badge lit through ordinary cleanup and nobody looked for a cleanup there.
+
+**How to apply**: the tab is **admin-only** (the Library layout became a server component reading the role from the proxy's headers, like Settings) because every action on the page is an admin write. The API stays at `/api/failures/duplicates*` on purpose: `/api/failures` is an `ADMIN_WRITE_PREFIXES` entry in `lib/authz.ts`, so moving the routes would mean re-proving their guard for nothing a user sees.
 
 ## Every duplicate group shows the survivor the rule would keep, and why (2026-10-09)
 
