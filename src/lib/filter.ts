@@ -70,6 +70,14 @@ const intList = z
 // keeps false positives down while still catching bursts / re-exports / resizes.
 const NEAR_DUP_MAX_DISTANCE = 10;
 
+// Where a medium's camera body came from (cf. lib/deviceAttribution.ts), as
+// the `device_source` filter and its facet read it. A row indexed before
+// migration 0043 carries a body and no provenance — it could only have come
+// off the file — so it reads as 'exif' here rather than vanishing from the
+// "From the file" chip.
+export const DEVICE_SOURCE_SQL = `COALESCE(a.device_source,
+  CASE WHEN a.device IS NOT NULL AND a.device <> '' THEN 'exif' END)`;
+
 export const FilterSchema = z
   .object({
     // Explicit selection (per-asset / bulk actions, e.g. export a selection).
@@ -123,6 +131,10 @@ export const FilterSchema = z
 
     // Device / EXIF (multi)
     device: csv,
+    // Where the body came from (multi): exif | embedded | derived | manual |
+    // override | named | none. `named` is "a camera no file names", `none`
+    // "not a camera" — the two hand answers of migration 0051.
+    device_source: csv,
     camera_model: csv,
     lens: csv,
 
@@ -376,6 +388,7 @@ export function buildFilter(
   }
 
   if (filter.device) inAny("a.device", filter.device);
+  if (filter.device_source) inAny(DEVICE_SOURCE_SQL, filter.device_source);
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
   if (filter.lens) inAny("a.lens", filter.lens);
 
@@ -628,6 +641,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "is_edit",
     "has_edit",
     "device",
+    "device_source",
     "camera_model",
     "lens",
     "place_country",

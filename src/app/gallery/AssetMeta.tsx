@@ -191,6 +191,12 @@ function deviceLine(a: AssetMetaInput): React.ReactNode {
           {name} <span className="asset-meta-dim">assigned — file names none</span>
         </>
       );
+    case "named":
+      return (
+        <>
+          {name} <span className="asset-meta-dim">named by hand — no file names it</span>
+        </>
+      );
     case "derived":
       return (
         <>
@@ -228,6 +234,15 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
   if (asset.file_size != null) rows.push(["Size", formatBytes(asset.file_size)]);
   if (typeStr) rows.push(["Type", typeStr]);
   if (asset.device) rows.push(["Device", deviceLine(asset)]);
+  // No body on purpose (migration 0051): said, so a screenshot set aside on
+  // Devices does not read as one still waiting for a camera.
+  else if (asset.device_source === "none")
+    rows.push([
+      "Device",
+      <span key="none" className="asset-meta-dim">
+        not a camera — set by hand
+      </span>,
+    ]);
   if (asset.embedded_serial)
     rows.push([
       "Unit",

@@ -776,6 +776,7 @@ export default function SessionGrid({
     ids: number[];
     withoutBody: number;
     revertible: number;
+    relabelable: number;
   } | null>(null);
 
   const openSetDevice = useCallback(
@@ -1284,6 +1285,7 @@ export default function SessionGrid({
           ids={deviceFlow.ids}
           withoutBody={deviceFlow.withoutBody}
           revertible={deviceFlow.revertible}
+          relabelable={deviceFlow.relabelable}
           onClose={() => setDeviceFlow(null)}
           onApplied={(message, ids, change) => {
             // Same rules the server applied, shared with the gallery.

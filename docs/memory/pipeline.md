@@ -325,6 +325,20 @@ rows; `deviceAttribution.test.ts` pins it (the folder aggregate's
 confident-only folder write against the rows JS ticks). Both whole-library
 reads (`listFolders`, `listKnownBodies`) run through `manyWithoutJit`.
 
+**The backlog is Incoming's; the Gallery is shown, never counted**
+(2026-10-11, maintainer's word). The Gallery holds finalized masters accepted
+as they are — a 2009 webcam shot, a QQ avatar, a macOS screenshot has no camera
+to find — so the nav badge (`/api/stats` `device_missing`, now
+`countUnattributed({ source: "incoming" })`, which also stopped counting purged
+rows the page never listed) and the page's default are Incoming only; the
+Incoming/Gallery/All picker beside step 2 is NOT remembered between visits, so
+looking at the Gallery is a deliberate click each time. An ignored session is
+out of every half. Both rules live in ONE predicate, `backlogScopeSql`, used by
+the listing and the counts, never by a write. Measured on the instance that
+day: 113 left, 53 Incoming / 60 Gallery — and the "friend's Sony" folder was 14
+`WhatsApp Image …` files: WhatsApp strips EXIF, so anything received through it
+lands here whoever shot it.
+
 **Winnow indexes no stream metadata** — no codec, no frame rate, no nominal
 bitrate — because nothing calls `ffprobe`: the derivative worker hands the file
 straight to `ffmpeg` (`lib/video.ts`). The Devices table therefore prints an
@@ -345,7 +359,8 @@ card its own stills already built instead of minting a second one. Signals that
 merely argue "this is a drone" never invent a string; with no sibling the row is
 listed with its score and no proposal, and the picker (populated from the bodies
 the library actually holds) is the answer. Keep it that way — the value written
-must be one the gear dimension is already grouping on.
+must be one the gear dimension is already grouping on. The ONE sanctioned
+exception is a typed name, recorded as `'named'` (next entry).
 
 **Three writes, deliberately separate** (2026-10-09, migration 0048): *fill*
 gives a body to media that have none and never touches one that does — the
@@ -360,6 +375,34 @@ and are never reached by leaving a field out. In the dialog, replacing is a
 ticked box that names how many media it touches. The maintainer asked for
 correction explicitly after the first cut refused it; do not quietly fold it
 back into fill.
+
+**Two hand answers when no body fits: a camera named, or none** (2026-10-11,
+migration 0051, the maintainer's ask). `'named'` writes a typed name into
+`device` itself ("Appareil d'Emeric", "the wedding photographer") so /gear, the
+facets and `?device=` need no code; `'none'` leaves `device` NULL and only takes
+the medium out of the backlog — screenshots, webcam frames, app images. No new
+column (he weighed an "ignored" boolean and asked for the minimum); nothing is
+hidden, both are filterable (`?device_source=`, the "Body source" facet, whose
+`exif` also matches pre-0043 NULL-provenance rows). Rules that keep the free
+text from drifting: a name already given is reused whatever its case/spacing;
+a name equal to a body some FILE declares is refused (`DeviceNameTaken`, 400);
+a fill / folder proposal / vote that writes a named body records `'named'`, not
+`'manual'`/`'derived'`, so the filter keeps meaning "a camera I have no file
+for". By ids they touch only rows whose body did not come off their file
+(hole, derived, manual, named, none) — that is how a screenshot once assigned
+to the iPhone by hand gets set aside — never exif/embedded/override. Both
+revert, both survive a re-index, both yield to a file (EXIF or the clip's
+track) that later names a body. Two card-level suggestions ride on the
+folder aggregate, both one click and never applied alone: a folder of nothing
+but PNGs proposes "not a camera" as its primary verb (no camera writes PNG;
+`pngs`), and a folder of nothing but `WhatsApp Image/Video …` files (`received`)
+keeps its sibling proposal on screen but not as the button nor in "Apply every
+proposal shown" — WhatsApp strips EXIF, so the folder's body is the
+maintainer's, not the sender's (the farewell-party case). A card with no
+proposal opens its menu from the primary button ("Decide N"), never a dead
+"No proposal". What is still NOT modelled: "my own cameras" —
+a friend's Sony with intact EXIF is a real body, so "everything not shot by me"
+needs an ownership mark on /gear, a separate decision.
 
 **The indexer guard is the load-bearing part**, three rules in order:
 `device_source = 'override'` keeps the human's body whatever the file says;

@@ -8,7 +8,12 @@
 //   - the route refuses an override by folder or without a body;
 //   - a suggestion-mode apply gives each medium ITS OWN folder's body;
 //   - the folder aggregate (the vote in SQL) agrees with the per-medium vote
-//     (the same vote in JS) — the two engines share the weights and patterns.
+//     (the same vote in JS) — the two engines share the weights and patterns;
+//   - the backlog reads one half of the library and never an ignored folder;
+//   - a camera named by hand / "not a camera" (0051) leaves the backlog, never
+//     touches a body a file declares, reuses a name, refuses a real body's
+//     name, spreads as 'named' through a fill, reverts, survives a re-index
+//     and yields to a file that later names a body; the filter reads both.
 // Database-backed: runs only with WINNOW_TEST_DATABASE_URL (a migrated scratch
 // database). The re-index test indexes a real EXIF-tagged JPEG in an IGNORED
 // session, so the indexer enqueues nothing and no Redis is needed.
@@ -333,5 +338,253 @@ test("the folder aggregate and the per-medium vote agree", { skip: skipWithoutDb
   // vote ticks.
   const r = await da.applyFolder({ sessionId: f, minScore: da.CONFIDENT_SCORE });
   assert.deepEqual(r, { updated: 2, skipped: 1 });
-  assert.equal((await da.countUnattributed(f)), 1);
+  assert.equal((await da.countUnattributed({ sessionId: f })), 1);
+});
+
+test("the backlog reads one half of the library, and never an ignored folder", { skip: skipWithoutDb }, async () => {
+  // Incoming is the test root (kind 'source'); the Gallery is a `finals` root
+  // of its own, cleaned up here since the shared `after` only knows rootId.
+  const finals = (await db.one<{ id: number }>(
+    "INSERT INTO roots (path, kind, watch) VALUES ('/device-test-finals', 'finals', false) RETURNING id",
+  ))!.id;
+  try {
+    const inc = await folder("incoming-day");
+    const ign = await folder("ignored-day");
+    await db.q("UPDATE sessions SET ignored = true WHERE id = $1", [ign]);
+    const gal = (await db.one<{ id: number }>(
+      "INSERT INTO sessions (root_id, name, source_path) VALUES ($1, 'g', '/device-test-finals/g') RETURNING id",
+      [finals],
+    ))!.id;
+    await medium(inc, "a.mp4", { video: true });
+    await medium(ign, "b.mp4", { video: true });
+    await medium(gal, "c.jpg");
+
+    // Membership, never library-wide counts: other test files share the
+    // database and run alongside (docs/memory/testing-and-ci.md).
+    const ids = async (source: "incoming" | "gallery" | "all") =>
+      (await da.listFolders({ source })).map((f) => f.session_id);
+    const incoming = await ids("incoming");
+    const gallery = await ids("gallery");
+    const all = await ids("all");
+    assert.ok(incoming.includes(inc) && !incoming.includes(gal));
+    assert.ok(gallery.includes(gal) && !gallery.includes(inc));
+    assert.ok(all.includes(inc) && all.includes(gal));
+    // The ignored folder is in no half at all…
+    for (const half of [incoming, gallery, all]) assert.ok(!half.includes(ign));
+    assert.equal(await da.countUnattributed({ sessionId: ign }), 0);
+    // …and the per-half counts agree with the per-half listings.
+    assert.equal(await da.countUnattributed({ sessionId: gal, source: "incoming" }), 0);
+    assert.equal(await da.countUnattributed({ sessionId: gal, source: "gallery" }), 1);
+  } finally {
+    await db.q(
+      "DELETE FROM assets WHERE session_id IN (SELECT id FROM sessions WHERE root_id = $1)",
+      [finals],
+    );
+    await db.q("DELETE FROM sessions WHERE root_id = $1", [finals]);
+    await db.q("DELETE FROM roots WHERE id = $1", [finals]);
+  }
+});
+
+// A name of this run only: other test files share the database and run
+// alongside, and names are library-wide.
+const uniq = (label: string) => `${label} ${process.pid}-${Date.now()}`;
+
+test("naming or setting aside a folder empties its backlog, and nothing else", { skip: skipWithoutDb }, async () => {
+  const pot = await folder("pot-de-depart");
+  await medium(pot, "DSC1.ARW", { device: "SONY ILCE-7CM2", model: "ILCE-7CM2" });
+  const wa1 = await medium(pot, "WhatsApp Image 1.jpeg");
+  const wa2 = await medium(pot, "WhatsApp Image 2.jpeg");
+  const emeric = uniq("Appareil d'Emeric");
+
+  // The folder's proposal is the maintainer's own body — the lie this exists
+  // to avoid. Naming writes the typed name instead, on the backlog only.
+  assert.deepEqual(await da.labelDevice({ sessionId: pot, name: emeric }), { updated: 2, skipped: 0 });
+  for (const id of [wa1, wa2])
+    assert.deepEqual(
+      [(await read(id)).device, (await read(id)).device_source],
+      [emeric, "named"],
+    );
+  assert.equal(await da.countUnattributed({ sessionId: pot }), 0);
+  assert.ok(!(await da.listFolders()).some((f) => f.session_id === pot));
+  // It is a body now, known as named by hand.
+  const body = (await da.listKnownBodies()).find((b) => b.device === emeric);
+  assert.ok(body?.named);
+  assert.equal((await da.listKnownBodies()).find((b) => b.device === "SONY ILCE-7CM2")?.named, false);
+
+  const shots = await folder("screenshots");
+  const png = await medium(shots, "LQRB5637.PNG");
+  assert.deepEqual(await da.labelDevice({ sessionId: shots, name: null }), { updated: 1, skipped: 0 });
+  assert.deepEqual(await read(png), {
+    device: null,
+    camera_model: null,
+    device_source: "none",
+    device_exif: null,
+  });
+  assert.equal(await da.countUnattributed({ sessionId: shots }), 0);
+});
+
+test("by ids, a name or 'not a camera' never touches a body a file declared", { skip: skipWithoutDb }, async () => {
+  const exif = await asset("SONY ILCE-7CM2", "ILCE-7CM2");
+  const hole = await asset(null, null);
+  // The screenshot once assigned to the iPhone by hand.
+  const assigned = await asset(null, null);
+  await da.applyAttribution({ ids: [assigned], device: "Apple iPhone 15 Pro Max", cameraModel: "iPhone 15 Pro Max" });
+
+  assert.deepEqual(await da.labelDevice({ ids: [exif, hole, assigned], name: null }), { updated: 2, skipped: 1 });
+  assert.equal((await read(exif)).device_source, "exif");
+  assert.equal((await read(assigned)).device_source, "none");
+  assert.equal((await read(assigned)).device, null);
+  // Re-running it is free.
+  assert.deepEqual(await da.labelDevice({ ids: [hole, assigned], name: null }), { updated: 0, skipped: 2 });
+  // And revert puts them back in the backlog: their files name nothing.
+  assert.deepEqual(await da.revertDevice([hole, assigned]), { updated: 2, skipped: 0 });
+  assert.deepEqual([(await read(hole)).device_source, (await read(hole)).device], [null, null]);
+});
+
+test("a name is reused whatever its case, and a real body's name is refused", { skip: skipWithoutDb }, async () => {
+  const name = uniq("Photographe du mariage");
+  const a = await asset(null, null);
+  const b = await asset(null, null);
+  await da.labelDevice({ ids: [a], name });
+  await da.labelDevice({ ids: [b], name: `  ${name.toUpperCase()}  ` });
+  assert.equal((await read(b)).device, name);
+
+  // A string a file declares is a body, not a name: refused, nothing written.
+  const real = uniq("SONY ILCE-REAL");
+  await asset(real, "ILCE-REAL");
+  const c = await asset(null, null);
+  await assert.rejects(da.labelDevice({ ids: [c], name: real.toLowerCase() }), da.DeviceNameTaken);
+  assert.equal((await read(c)).device, null);
+
+  // A fill to a named camera — picked, or proposed by its folder — stays named.
+  const d = await asset(null, null);
+  await da.applyAttribution({ ids: [d], device: name });
+  assert.equal((await read(d)).device_source, "named");
+  const f = await folder("wedding");
+  await medium(f, "w1.jpg");
+  await da.labelDevice({ sessionId: f, name });
+  const e = await medium(f, "w2.jpg");
+  assert.deepEqual(await da.applyFolder({ sessionId: f }), { updated: 1, skipped: 0 });
+  assert.deepEqual([(await read(e)).device, (await read(e)).device_source], [name, "named"]);
+});
+
+test("the route takes name / none by folder or ids, and checks their shape", { skip: skipWithoutDb }, async () => {
+  const post = (body: unknown) =>
+    route.POST(
+      new NextRequest("http://x/api/pipeline/device-attribution", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+  assert.equal((await post({ session_id: sessionId, mode: "name" })).status, 400);
+  assert.equal((await post({ ids: [1], mode: "none", device: "X" })).status, 400);
+  const real = uniq("SONY ILCE-ROUTE");
+  await asset(real, "ILCE-ROUTE");
+  const hole = await asset(null, null);
+  assert.equal((await post({ ids: [hole], mode: "name", device: real })).status, 400);
+  const ok = await post({ session_id: sessionId, mode: "none" });
+  assert.equal(ok.status, 200);
+  assert.equal((await read(hole)).device_source, "none");
+});
+
+test("a name and 'not a camera' survive a re-index, and yield to a file that names a body", { skip: skipWithoutDb }, async () => {
+  const { default: sharp } = await import("sharp");
+  const { exiftool } = await import("exiftool-vendored");
+  const { indexRoot } = await import("./indexer");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "winnow-named-"));
+  const root = (await db.one<{ id: number }>(
+    "INSERT INTO roots (path, kind, watch) VALUES ($1, 'source', false) RETURNING id",
+    [dir],
+  ))!.id;
+  await db.q(
+    "INSERT INTO sessions (root_id, name, source_path, ignored) VALUES ($1, 'x', $2, true)",
+    [root, dir],
+  );
+  try {
+    // Distinct bytes, or the indexer folds the second file as a duplicate.
+    const make = async (name: string, colour: string) => {
+      const file = path.join(dir, name);
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: colour } }).jpeg().toFile(file);
+      return file;
+    };
+    const friend = await make("friend.jpg", "#123");
+    const shot = await make("shot.jpg", "#456");
+    const touch = async (file: string) => {
+      const t = new Date((await stat(file)).mtimeMs + 120_000);
+      await utimes(file, t, t);
+    };
+    const row = async (file: string) =>
+      (await db.one<{ id: number; device: string | null; device_source: string | null }>(
+        "SELECT id, device, device_source FROM assets WHERE abs_path = $1",
+        [file],
+      ))!;
+
+    await indexRoot(root);
+    const name = uniq("Sony inconnu");
+    await da.labelDevice({ ids: [(await row(friend)).id], name });
+    await da.labelDevice({ ids: [(await row(shot)).id], name: null });
+
+    // The files still name nothing: both answers hold.
+    await touch(friend);
+    await touch(shot);
+    await indexRoot(root);
+    assert.deepEqual([(await row(friend)).device, (await row(friend)).device_source], [name, "named"]);
+    assert.deepEqual([(await row(shot)).device, (await row(shot)).device_source], [null, "none"]);
+
+    // A file that comes to name its body wins, as it does over any hand-fill.
+    await exiftool.write(friend, { Make: "SONY", Model: "ILCE-7M4" }, { writeArgs: ["-overwrite_original"] });
+    await touch(friend);
+    await indexRoot(root);
+    assert.deepEqual([(await row(friend)).device, (await row(friend)).device_source], ["SONY ILCE-7M4", "exif"]);
+  } finally {
+    await db.q(
+      "DELETE FROM assets WHERE session_id IN (SELECT id FROM sessions WHERE root_id = $1)",
+      [root],
+    );
+    await db.q("DELETE FROM sessions WHERE root_id = $1", [root]);
+    await db.q("DELETE FROM roots WHERE id = $1", [root]);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the device_source filter reads a pre-0043 body as from the file", { skip: skipWithoutDb }, async () => {
+  const { buildFilter } = await import("./filter");
+  const legacy = await asset(null, null);
+  await db.q("UPDATE assets SET device = 'NIKON D90', device_source = NULL WHERE id = $1", [legacy]);
+  const gone = await asset(null, null);
+  await da.labelDevice({ ids: [gone], name: null });
+  const pick = async (sources: string[]) => {
+    const { conditions, params } = buildFilter({ device_source: sources, session_id: sessionId }, 1);
+    return (await db.many<{ id: number }>(
+      `SELECT a.id FROM assets a WHERE ${conditions.join(" AND ")} ORDER BY a.id`,
+      params,
+    )).map((r) => r.id);
+  };
+  assert.ok((await pick(["exif"])).includes(legacy));
+  assert.deepEqual(await pick(["none"]), [gone]);
+});
+
+test("a folder of nothing but PNGs is counted as such, for the card's proposal", { skip: skipWithoutDb }, async () => {
+  const shots = await folder("png-only");
+  const mixed = await folder("png-and-jpg");
+  for (const [f, name] of [[shots, "a.PNG"], [shots, "b.png"], [mixed, "c.png"], [mixed, "d.jpg"]] as const) {
+    const id = await medium(f, name);
+    // medium() stores every photo as jpg; the indexer stores the extension
+    // lower-cased WITH its dot, which is what the count must read.
+    if (/png$/i.test(name)) await db.q("UPDATE assets SET ext = '.png' WHERE id = $1", [id]);
+  }
+  const cards = await da.listFolders();
+  const card = (id: number) => cards.find((c) => c.session_id === id)!;
+  assert.deepEqual([card(shots).pngs, card(shots).total], [2, 2]);
+  assert.deepEqual([card(mixed).pngs, card(mixed).total], [1, 2]);
+
+  // Received through WhatsApp: counted by the name WhatsApp gives, whatever
+  // the case — and a camera's own file of the same folder is not.
+  const pot = await folder("whatsapp-pot");
+  await medium(pot, "DSC1.ARW", { device: "SONY ILCE-7CM2", model: "ILCE-7CM2" });
+  await medium(pot, "WhatsApp Image 2025-02-09 at 19.36.24.jpeg");
+  await medium(pot, "whatsapp video 2025-02-09 at 19.40.01.mp4", { video: true });
+  await medium(pot, "IMG_0001.jpg");
+  const potCard = (await da.listFolders()).find((c) => c.session_id === pot)!;
+  assert.deepEqual([potCard.received, potCard.total], [2, 3]);
 });
