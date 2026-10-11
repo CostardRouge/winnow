@@ -100,14 +100,18 @@ export async function migrate(
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
+    // One read, not one per file: the worker runs this on every boot, where
+    // all fifty-odd files are applied and the answer is "nothing to do". Read
+    // under the lock, so it is the state the loop below acts on.
+    const applied = new Set(
+      (await client.query<{ name: string }>("SELECT name FROM schema_migrations"))
+        .rows.map((r) => r.name),
+    );
+
     for (const file of files) {
-      const done = await client.query(
-        "SELECT 1 FROM schema_migrations WHERE name = $1",
-        [file],
-      );
-      // Silent when already applied: the worker runs this on every boot, and
-      // fifty "already applied" lines would bury the one that is not.
-      if (done.rowCount) continue;
+      // Silent when already applied: fifty "already applied" lines would bury
+      // the one that is not.
+      if (applied.has(file)) continue;
       const sql = await readFile(path.join(dir, file), "utf8");
       console.log(`▶ applying ${file}...`);
       await client.query("BEGIN");
@@ -120,7 +124,9 @@ export async function migrate(
         await client.query("COMMIT");
         console.log(`✔ ${file}`);
       } catch (err) {
-        await client.query("ROLLBACK");
+        // A ROLLBACK on a dead connection throws too; the migration's own
+        // error is the one the boot log must show.
+        await client.query("ROLLBACK").catch(() => {});
         throw err;
       }
     }

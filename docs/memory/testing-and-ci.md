@@ -37,7 +37,7 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 
 ## `next dev` edits two tracked files: never commit them (2026-10-09)
 
-**Trap**: running `next dev` (16.x) appends a `nextjs-agent-rules` block to `CLAUDE.md` and rewrites `next-env.d.ts` to `./.next/dev/types/…`. Both are tooling noise: leave them unstaged and `git checkout --` them once the dev server is stopped (it re-adds them while running). The block's own text says committing it "keeps the tree clean" — that is the generator talking, not a project rule. A browser check of a page needs Postgres 16 **with pgvector** (`apt-get install postgresql-16-pgvector`; four migrations need it), a Redis, and a session cookie minted with `createSession()` from `lib/auth.ts`.
+**Trap**: running `next dev` (16.x) appends a `nextjs-agent-rules` block to `CLAUDE.md` and rewrites `next-env.d.ts` to `./.next/dev/types/…`. Both are tooling noise: leave them unstaged and `git checkout --` them once the dev server is stopped (it re-adds them while running). The block's own text says committing it "keeps the tree clean" — that is the generator talking, not a project rule. A browser check of a page — and every DB-backed test — needs Postgres 16 **with pgvector** (`apt-get install postgresql-16-pgvector`; four migrations need it; where apt has no such package, as in a cloud container (2026-10-11), `postgresql-server-dev-16` + `git clone --branch v0.8.0 pgvector` + `make install` takes a minute), a Redis, and a session cookie minted with `createSession()` from `lib/auth.ts`.
 
 ## The indexer is testable without Redis: index into an ignored session (2026-10-09)
 
