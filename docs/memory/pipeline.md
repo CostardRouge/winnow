@@ -392,7 +392,15 @@ for". By ids they touch only rows whose body did not come off their file
 (hole, derived, manual, named, none) — that is how a screenshot once assigned
 to the iPhone by hand gets set aside — never exif/embedded/override. Both
 revert, both survive a re-index, both yield to a file (EXIF or the clip's
-track) that later names a body. What is still NOT modelled: "my own cameras" —
+track) that later names a body. Two card-level suggestions ride on the
+folder aggregate, both one click and never applied alone: a folder of nothing
+but PNGs proposes "not a camera" as its primary verb (no camera writes PNG;
+`pngs`), and a folder of nothing but `WhatsApp Image/Video …` files (`received`)
+keeps its sibling proposal on screen but not as the button nor in "Apply every
+proposal shown" — WhatsApp strips EXIF, so the folder's body is the
+maintainer's, not the sender's (the farewell-party case). A card with no
+proposal opens its menu from the primary button ("Decide N"), never a dead
+"No proposal". What is still NOT modelled: "my own cameras" —
 a friend's Sony with intact EXIF is a real body, so "everything not shot by me"
 needs an ownership mark on /gear, a separate decision.
 

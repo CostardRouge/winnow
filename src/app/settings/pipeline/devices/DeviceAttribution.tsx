@@ -594,7 +594,11 @@ export default function DeviceAttribution() {
   const shown = active == null
     ? data.folders
     : data.folders.filter((f) => (f.suggested_device ?? "") === active);
-  const bulkTargets = shown.filter((f) => f.suggested_device);
+  // A WhatsApp-only folder's proposal is shown, never bulk-applied (see the
+  // card): the body of the folder is not evidence of who shot those.
+  const bulkTargets = shown.filter(
+    (f) => f.suggested_device && f.received !== f.total,
+  );
   const bulkMedia = bulkTargets.reduce((n, f) => n + f.total, 0);
 
   const sortOptions: PickerOption<FolderSort>[] = [
@@ -672,8 +676,9 @@ export default function DeviceAttribution() {
           media carry. A folder with no attributed sibling gets no proposal:
           pick its body from the card’s menu — or, when no camera of yours
           shot it, name the camera (a friend’s, a photographer’s) or set it
-          aside as not a camera (screenshots, saved images). A folder you set
-          to Ignore is not listed.
+          aside as not a camera (screenshots, saved images); a folder of
+          nothing but PNGs is proposed as not a camera, since no camera writes
+          one. A folder you set to Ignore is not listed.
         </div>
       </div>
 
@@ -738,6 +743,15 @@ export default function DeviceAttribution() {
           const label = f.suggested_device
             ? friendlyCameraName(f.suggested_device)
             : null;
+          // Nothing but PNGs and no body to learn from: screenshots or saved
+          // images. Proposed as "not a camera" — one click, never automatic.
+          const screens = !label && f.pngs === f.total;
+          // Received through WhatsApp, which strips the camera: the folder's
+          // body is likely the maintainer's, not the sender's. The proposal is
+          // still shown, but it is not the button — a click on a wrong body
+          // was exactly how a friend's photos landed on the A7C II.
+          const received = f.received === f.total;
+          const verb = received ? null : label;
           const isOpen = open?.sessionId === f.session_id;
           const menu: MenuItem[] = [
             // Only when the split is real: "assign the 0 confident" is not an
@@ -799,7 +813,13 @@ export default function DeviceAttribution() {
                       </span>
                     ))}
                   </div>
-                  {label ? (
+                  {label && received ? (
+                    <div className="card-suggest is-none">
+                      Received through WhatsApp, which strips the camera — the
+                      folder’s body ({label}) may not be the sender’s. Assign
+                      it, name the camera, or set these aside from the menu.
+                    </div>
+                  ) : label ? (
                     <div className="card-suggest">
                       Proposed: <strong>{label}</strong>
                       <span className="conf">
@@ -808,35 +828,65 @@ export default function DeviceAttribution() {
                           : `${f.confident} of ${f.total} confident`}
                       </span>
                     </div>
+                  ) : screens ? (
+                    <div className="card-suggest">
+                      Proposed: <strong>not a camera</strong>
+                      <span className="conf">
+                        every file is a PNG — no camera writes one
+                      </span>
+                    </div>
                   ) : (
                     <div className="card-suggest is-none">
                       No attributed media in this folder to learn from — pick a
-                      body from the menu.
+                      body, name the camera, or set it aside as not a camera.
                     </div>
                   )}
                 </div>
                 <div className="card-side">
+                  {/* One primary verb, always a live one: the folder's body, the
+                      PNG folder's "not a camera", or — with no proposal at all —
+                      the menu itself, opened from the primary button instead of
+                      a dead "No proposal" beside a ⋮ that held every answer. */}
                   <div className="card-actions">
-                    <button
-                      className="btn btn-primary card-primary"
-                      disabled={busy != null || !f.suggested_device}
-                      onClick={() => void applyFolder(f)}
-                      title={
-                        f.suggested_device
-                          ? "Give every medium here the body this folder already carries"
-                          : "This folder has no proposal — pick a body from the menu"
-                      }
-                    >
-                      {busy === f.session_id
-                        ? "Applying…"
-                        : label
-                          ? `Assign ${f.total} to ${label}`
-                          : "No proposal"}
-                    </button>
-                    <ActionMenu
-                      ariaLabel={`More actions for ${f.name}`}
-                      items={menu}
-                    />
+                    {verb || screens ? (
+                      <>
+                        <button
+                          className="btn btn-primary card-primary"
+                          disabled={busy != null}
+                          onClick={() =>
+                            void (verb
+                              ? applyFolder(f)
+                              : setAside(f.session_id, { session_id: f.session_id }))
+                          }
+                          title={
+                            verb
+                              ? "Give every medium here the body this folder already carries"
+                              : "Take these out of the list — they stay in every grid"
+                          }
+                        >
+                          {busy === f.session_id
+                            ? "Applying…"
+                            : verb
+                              ? `Assign ${f.total} to ${verb}`
+                              : `Not a camera — set ${f.total} aside`}
+                        </button>
+                        <ActionMenu
+                          ariaLabel={`More actions for ${f.name}`}
+                          items={menu}
+                        />
+                      </>
+                    ) : (
+                      <ActionMenu
+                        ariaLabel={`Decide ${f.name}`}
+                        disabled={busy != null}
+                        trigger={{
+                          label: busy === f.session_id ? "Applying…" : `Decide ${f.total}`,
+                          icon: "",
+                          className: "btn btn-primary card-primary",
+                        }}
+                        items={menu}
+                      />
+                    )}
                   </div>
                 </div>
               </div>

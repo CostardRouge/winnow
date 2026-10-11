@@ -563,3 +563,28 @@ test("the device_source filter reads a pre-0043 body as from the file", { skip: 
   assert.ok((await pick(["exif"])).includes(legacy));
   assert.deepEqual(await pick(["none"]), [gone]);
 });
+
+test("a folder of nothing but PNGs is counted as such, for the card's proposal", { skip: skipWithoutDb }, async () => {
+  const shots = await folder("png-only");
+  const mixed = await folder("png-and-jpg");
+  for (const [f, name] of [[shots, "a.PNG"], [shots, "b.png"], [mixed, "c.png"], [mixed, "d.jpg"]] as const) {
+    const id = await medium(f, name);
+    // medium() stores every photo as jpg; the indexer stores the extension
+    // lower-cased WITH its dot, which is what the count must read.
+    if (/png$/i.test(name)) await db.q("UPDATE assets SET ext = '.png' WHERE id = $1", [id]);
+  }
+  const cards = await da.listFolders();
+  const card = (id: number) => cards.find((c) => c.session_id === id)!;
+  assert.deepEqual([card(shots).pngs, card(shots).total], [2, 2]);
+  assert.deepEqual([card(mixed).pngs, card(mixed).total], [1, 2]);
+
+  // Received through WhatsApp: counted by the name WhatsApp gives, whatever
+  // the case — and a camera's own file of the same folder is not.
+  const pot = await folder("whatsapp-pot");
+  await medium(pot, "DSC1.ARW", { device: "SONY ILCE-7CM2", model: "ILCE-7CM2" });
+  await medium(pot, "WhatsApp Image 2025-02-09 at 19.36.24.jpeg");
+  await medium(pot, "whatsapp video 2025-02-09 at 19.40.01.mp4", { video: true });
+  await medium(pot, "IMG_0001.jpg");
+  const potCard = (await da.listFolders()).find((c) => c.session_id === pot)!;
+  assert.deepEqual([potCard.received, potCard.total], [2, 3]);
+});

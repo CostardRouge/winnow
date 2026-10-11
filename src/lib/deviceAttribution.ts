@@ -292,6 +292,8 @@ type FolderRow = {
   photos: number;
   videos: number;
   confident: number;
+  pngs: number;
+  received: number;
   first_capture: string | null;
   last_capture: string | null;
   n_telemetry: number;
@@ -344,6 +346,7 @@ export async function listFolders(
      ),
      cand AS (
        SELECT a.id, a.session_id, a.ext, a.media_type, a.captured_at,
+              a.filename,
               sess.name                AS name,
               sess.source_path         AS source_path,
               sib.device               AS suggested_device,
@@ -365,6 +368,8 @@ export async function listFolders(
             count(*) FILTER (WHERE c.media_type = 'photo')::int       AS photos,
             count(*) FILTER (WHERE c.media_type = 'video')::int       AS videos,
             count(*) FILTER (WHERE c.score >= ${CONFIDENT_SCORE})::int AS confident,
+            count(*) FILTER (WHERE ltrim(lower(c.ext), '.') = 'png')::int AS pngs,
+            count(*) FILTER (WHERE c.filename ~* '^whatsapp (image|video) ')::int AS received,
             min(c.captured_at)                                       AS first_capture,
             max(c.captured_at)                                       AS last_capture,
             count(*) FILTER (WHERE c.has_telemetry)::int              AS n_telemetry,
@@ -403,6 +408,8 @@ export async function listFolders(
       photos: r.photos,
       videos: r.videos,
       confident: r.confident,
+      pngs: r.pngs,
+      received: r.received,
       first_capture: r.first_capture,
       last_capture: r.last_capture,
       signals: counts.filter(([, n]) => n > half).map(([s]) => s),

@@ -76,6 +76,14 @@ export type DeviceFolder = {
   videos: number;
   /** How many of them the vote is confident about (score >= CONFIDENT_SCORE). */
   confident: number;
+  /** How many are PNGs. No camera writes PNG — a folder that is nothing else
+   *  is screenshots or saved images, and the card proposes "not a camera". A
+   *  suggestion like the folder's body: it is never applied without a click. */
+  pngs: number;
+  /** How many arrived through WhatsApp (`WhatsApp Image/Video …`), which strips
+   *  EXIF: the folder's own body says nothing about who shot those, so a card
+   *  made of nothing else keeps its proposal but stops making it the verb. */
+  received: number;
   first_capture: string | null;
   last_capture: string | null;
   /** The signals carried by MORE THAN HALF the folder — what the card prints.
