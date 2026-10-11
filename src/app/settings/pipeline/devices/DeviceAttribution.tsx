@@ -705,28 +705,33 @@ export default function DeviceAttribution() {
             : data.source === "gallery"
               ? " in the Gallery"
               : ""}{" "}
-          carry no camera body, across <strong>{data.folders.length}</strong>{" "}
-          {data.folders.length === 1 ? "folder" : "folders"} — absent from the
-          gear shelf and from every <code>?device=</code> grid until a body is
-          written. {elsewhere(data)}
+          without a camera body, across{" "}
+          <strong>{data.folders.length}</strong>{" "}
+          {data.folders.length === 1 ? "folder" : "folders"}. {elsewhere(data)}
         </p>
         {answered(data)}
-        <div className="hint card-rules">
-          Nothing here was read from a file. A folder is proposed the body its
-          own attributed media already carry, weighed per medium on five signals
-          — a parsed flight log {data.rules.weights.telemetry}, a tied .SRT{" "}
-          {data.rules.weights.sidecar}, a maker filename{" "}
-          {data.rules.weights.filename}, the folder’s own body{" "}
-          {data.rules.weights.sibling}, a folder name naming the gear{" "}
-          {data.rules.weights.folder} — and a medium is confident at{" "}
-          {data.rules.confident}. A card lists the signals more than half its
-          media carry. A folder with no attributed sibling gets no proposal:
-          pick its body from the card’s menu — or, when no camera of yours
-          shot it, name the camera (a friend’s, a photographer’s) or set it
-          aside as not a camera (screenshots, saved images); a folder of
-          nothing but PNGs is proposed as not a camera, since no camera writes
-          one. A folder you set to Ignore is not listed.
-        </div>
+        {/* The rules, folded: a phone gets the cards first (cf. Unplaced). */}
+        <details className="card-rules">
+          <summary>How a folder gets its proposal</summary>
+          <p className="hint">
+            Until a body is written these media are absent from the gear shelf
+            and from every <code>?device=</code> grid. Nothing here was read
+            from a file. A folder is proposed the body its own attributed media
+            already carry, weighed per medium on five signals — a parsed flight
+            log {data.rules.weights.telemetry}, a tied .SRT{" "}
+            {data.rules.weights.sidecar}, a maker filename{" "}
+            {data.rules.weights.filename}, the folder’s own body{" "}
+            {data.rules.weights.sibling}, a folder name naming the gear{" "}
+            {data.rules.weights.folder} — and a medium is confident at{" "}
+            {data.rules.confident}. A card lists the signals more than half its
+            media carry. A folder with no attributed sibling gets no proposal:
+            pick its body from the card’s menu — or, when no camera of yours
+            shot it, name the camera (a friend’s, a photographer’s) or set it
+            aside as not a camera (screenshots, saved images); a folder of
+            nothing but PNGs is proposed as not a camera, since no camera
+            writes one. A folder you set to Ignore is not listed.
+          </p>
+        </details>
       </div>
 
       {/* A polite live region, so the count a write answered with is read

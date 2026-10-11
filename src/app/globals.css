@@ -4384,6 +4384,11 @@ html[data-theme="dark"] .btn-primary:hover {
        squeezing the title. */
     flex-wrap: wrap;
   }
+  /* A basis the picker cannot squeeze below: on a phone the title keeps one
+     line and the picker drops under it, instead of the title wrapping to two. */
+  .dev-step-head h2 {
+    flex: 1 1 14rem;
+  }
   .flow-warn {
     @apply m-0 rounded-[var(--radius)] px-3 py-2 text-sm;
     background: var(--color-accent-wash);
