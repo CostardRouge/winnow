@@ -3,9 +3,12 @@
 // The confirmations of the deduplication page. Every one of them removes bytes
 // that cannot come back, so each states exactly what goes, what survives, and
 // what happens to the library entry — before the button, not after.
-import { formatBytes } from "../model";
-import { useOverlayDismiss } from "../../../../useOverlayDismiss";
-import type { DuplicateExisting } from "@/lib/duplicateTypes";
+import { formatBytes } from "@/lib/format";
+import { useOverlayDismiss } from "../../useOverlayDismiss";
+import type {
+  DuplicateAutoRule,
+  DuplicateExisting,
+} from "@/lib/duplicateTypes";
 
 // A pending "keep only this" decision: the survivor, what gets deleted, and what
 // happens to the library entry — relinked onto the survivor (a LIVE entry, when
@@ -21,9 +24,10 @@ export type KeepTarget = {
   reclaim: boolean;
 };
 
-// What a bulk auto-resolve would do, computed server-side from the same filter
-// the list is showing.
+// What a bulk auto-resolve would do — one card of the plan, i.e. one branch of
+// the rule — computed server-side from the same filter the list is showing.
 export type AutoTarget = {
+  rule: DuplicateAutoRule;
   groups: number;
   reclaimable: number;
   scopeLabel: string;
@@ -203,33 +207,35 @@ export function ConfirmAutoModal({
 }) {
   return (
     <Modal
-      label="Resolve duplicate groups automatically"
-      title={`Collapse ${target.groups.toLocaleString()} group${
+      label="Keep the suggested copy in every resolvable group"
+      title={`Keep the suggested copy in ${target.groups.toLocaleString()} group${
         target.groups > 1 ? "s" : ""
       }?`}
       onCancel={onCancel}
     >
       <p className="hint" style={{ marginTop: 0 }}>
-        Every group in <strong>{target.scopeLabel}</strong> whose survivor is not
-        a judgement call will be collapsed onto that survivor, freeing about{" "}
-        <strong>{formatBytes(target.reclaimable)}</strong>. Two rules, in order:
+        Every group of this card in <strong>{target.scopeLabel}</strong> keeps
+        the copy marked <strong>suggested</strong> and loses the others, freeing
+        about <strong>{formatBytes(target.reclaimable)}</strong>.{" "}
+        {target.rule === "protected" ? (
+          <>
+            The survivor is the one copy on a <strong>Final or Export</strong>{" "}
+            volume — those masters are view-only, so the other copies are the
+            only ones deduplication could remove anyway.
+          </>
+        ) : (
+          <>
+            The survivor is the <strong>live library entry</strong>: it stays
+            where it is and the extra on-disk copies go.
+          </>
+        )}{" "}
+        Nothing is relinked.
       </p>
-      <ul className="hint dup-rule-list">
-        <li>
-          a group with exactly one copy on a <strong>Final or Export</strong>{" "}
-          volume keeps that copy — those masters are view-only, so the other
-          copies are the only ones deduplication could remove anyway;
-        </li>
-        <li>
-          otherwise the <strong>live library entry</strong> keeps its file and
-          the extra on-disk copies go.
-        </li>
-      </ul>
       <p className="hint">
-        Everything else is left alone: a group with two protected copies, one
-        whose library entry is in the trash, and one made only of on-disk copies
-        all need you to say which folder should hold the file. Deletions are
-        permanent.
+        Each copy is checked against the one that stays just before it goes
+        (a full compare when it was never verified); a copy that fails the
+        check is left in place and listed in the report.
+        Deletions are permanent.
         {progress ? ` ${progress}` : ""}
       </p>
       <div className="modal-actions">
@@ -239,7 +245,108 @@ export function ConfirmAutoModal({
           {busy ? "Stop" : "Cancel"}
         </button>
         <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
-          {busy ? "Working…" : "Collapse them"}
+          {busy ? "Working…" : "Keep suggested"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Keeping one side of a folder pair. Like the bulk card, it names no files —
+// a pair is hundreds of them — so it states what happens to each side and to
+// the library entries, which is what the user is agreeing to.
+export type PairTarget = {
+  keepDir: string;
+  dropDir: string;
+  groups: number;
+  bytes: number;
+  /** Live library entries on the dropped side: relinked onto the kept copies. */
+  relinks: number;
+  /** Trashed library entries on the dropped side: their file goes, purged. */
+  reclaims: number;
+  /** The kept side is a Final/Export volume. */
+  keepViewOnly: boolean;
+  /** Groups whose copy on the KEPT side is in the trash: left alone. */
+  keptTrashed: number;
+};
+
+export function ConfirmPairModal({
+  target,
+  progress,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  target: PairTarget;
+  progress: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const n = target.groups;
+  return (
+    <Modal
+      label="Keep one side of a folder pair"
+      title={`Delete ${n.toLocaleString()} cop${n === 1 ? "y" : "ies"} in this folder?`}
+      onCancel={onCancel}
+    >
+      <p className="hint" style={{ marginTop: 0 }}>
+        In <strong>{n.toLocaleString()}</strong> group{n === 1 ? "" : "s"}, the
+        copy in the folder to keep stays and the copy in the other folder is
+        permanently deleted, freeing about{" "}
+        <strong>{formatBytes(target.bytes)}</strong>.
+      </p>
+      <div className="dup-confirm-list">
+        <div className="dup-cmp-path">
+          <strong className="dup-pair-keep">Keep</strong> {target.keepDir}/
+        </div>
+        <div className="dup-cmp-path">
+          <strong className="dup-pair-drop">Delete from</strong> {target.dropDir}/
+        </div>
+      </div>
+      {target.keptTrashed > 0 && (
+        <p className="hint">
+          {target.keptTrashed.toLocaleString()} group
+          {target.keptTrashed === 1 ? " is" : "s are"} left alone: the copy on
+          the side you keep is in the trash, and keeping it would leave the
+          next purge holding the only copy.
+        </p>
+      )}
+      {(target.relinks > 0 || target.reclaims > 0) && (
+        <p className="hint">
+          {target.relinks > 0 &&
+            `${target.relinks.toLocaleString()} library entr${
+              target.relinks === 1 ? "y points" : "ies point"
+            } at the folder being emptied: ${
+              target.relinks === 1 ? "it is" : "they are"
+            } relinked onto the kept cop${
+              target.relinks === 1 ? "y" : "ies"
+            } first (ratings, tags and previews follow)${
+              target.keepViewOnly
+                ? ", and will then live on a view-only volume"
+                : ""
+            }. `}
+          {target.reclaims > 0 &&
+            `${target.reclaims.toLocaleString()} entr${
+              target.reclaims === 1 ? "y is" : "ies are"
+            } in the trash: ${
+              target.reclaims === 1 ? "its" : "their"
+            } file goes and the entry is marked purged.`}
+        </p>
+      )}
+      <p className="hint">
+        Each copy is checked against the one that stays just before it goes; a
+        copy that fails the check is left in place and listed in the report.
+        Deletions are permanent.
+        {progress ? ` ${progress}` : ""}
+      </p>
+      <div className="modal-actions">
+        {/* Never disabled: mid-run it becomes the abort. */}
+        <button className="btn" onClick={onCancel}>
+          {busy ? "Stop" : "Cancel"}
+        </button>
+        <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+          {busy ? "Working…" : `Delete ${n.toLocaleString()} cop${n === 1 ? "y" : "ies"}`}
         </button>
       </div>
     </Modal>

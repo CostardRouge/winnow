@@ -131,7 +131,7 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 ## Deduplication triage is paged server-side and off the shared poll (2026-09-02)
 
-**Decision**: `/settings/pipeline/failures/duplicates` reads its own `GET /api/failures/duplicates` (grouping, zone classification, filtering, facets and paging all server-side in `src/lib/duplicateList.ts`), not the `useFailures()` payload every other family page polls every 5 s. The dedup slice was removed from `GET /api/failures` entirely.
+**Decision**: the dedup page (`/library/duplicates` since 2026-10-11, see below) reads its own `GET /api/failures/duplicates` (grouping, zone classification, filtering, facets and paging all server-side in `src/lib/duplicateList.ts`), not the `useFailures()` payload every other family page polls every 5 s. The dedup slice was removed from `GET /api/failures` entirely.
 
 **Why**: it is the one family that reaches thousands of rows, and it was being serialized into every tick of a poll that five other pages share — while the page itself rendered every group at once, with no paging and a filter that only searched what had already been shipped. The maintainer's library carries ~5000 hits; the page was unusable at that size.
 
@@ -146,6 +146,46 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 **Why**: the excluded case that matters is a live library entry plus a protected copy elsewhere (an Export volume mirroring an incoming original). Collapsing onto the protected copy would relink a live asset onto a view-only volume — moving the library's idea of where that photo lives, across roots, unasked — and the right answer there is usually to delete nothing. Passing the filter rather than a list also means a page that went stale can never delete a copy the rule would no longer pick.
 
 **How to apply**: the client loop must stop on **lack of progress** (`remaining` not shrinking), never on `remaining === 0`: a group whose deletions are refused keeps matching the rule forever. Every group still goes through `keepOneCopy`, so the path whitelist, view-only refusal and relink-before-unlink ordering are untouched — the bulk path adds a picker, not a shortcut.
+
+**Since 2026-10-09 the bulk runs per plan card** (`DedupPlan.tsx`): one card per branch of the rule (`protected`, `library`) plus "Needs you", counted over the scope but not over the `rule` filter so each card keeps its number while "Show these" narrows the list. A run sends `rule` and accumulates `exclude` from each batch's `retry` (groups it tried and left behind): `exclude` may only narrow a run, never pick a survivor, and without it the refused groups at the head of the size order were re-picked every batch and stalled the rest. Refusals come back grouped and counted (`skipped: {reason, count}[]`) and the report prints them — a count alone was audit finding UX-05.
+
+## Duplicates live in Library › Duplicates, not under Failures (2026-10-11)
+
+**Decision** (the maintainer's call, asked for explicitly): the triage page is `/library/duplicates`, a Library tab beside Trash; `/settings/pipeline/failures/duplicates` redirects there, the Failures tab bar lost its Deduplication family, and `totalFailures()` no longer counts duplicates — the Library tab carries their count instead.
+
+**Why**: a duplicate is a cleanup with a measurable win, not a pipeline failure; under Failures it kept the red badge lit through ordinary cleanup and nobody looked for a cleanup there.
+
+**How to apply**: the tab is **admin-only** (the Library layout became a server component reading the role from the proxy's headers, like Settings) because every action on the page is an admin write. The API stays at `/api/failures/duplicates*` on purpose: `/api/failures` is an `ADMIN_WRITE_PREFIXES` entry in `lib/authz.ts`, so moving the routes would mean re-proving their guard for nothing a user sees.
+
+## Every duplicate group shows the survivor the rule would keep, and why (2026-10-09)
+
+**Decision**: `auto_keep` was computed per group and drawn nowhere, so the bulk button asked for trust over thousands of groups it never showed. Now `autoKeep()` (`lib/duplicateList.ts`) returns the branch with the path (`auto_rule`: `protected` = the lone Final/Export copy, `library` = the live entry with no protected copy), the card marks that copy **suggested** with the branch as its reason, and "Keep suggested" is the group's one primary action (UI review rule). The bulk button reads "Keep suggested in N groups" — the same verb, so a human can check the pick group by group before applying it to the filter. Paths are drawn by `lib/pathDiff.ts` (shared folders faint, the differing folder highlighted). The rules paragraph is folded into a `<details>`, not deleted.
+
+**How to apply**: the page's word for the rule's pick is "suggested". A new survivor heuristic (a " (1)" suffix, a dated folder vs a staging one) is shown as a suggestion the user applies, **never** folded into `autoKeep`, which stays narrow (cf. the bulk-rule entry above). The redesign this belongs to (plan by rule, folder pairs, review queue, strategies) was mocked up first in the "Winnow Dedup Mockups" artifact.
+
+## Duplicates can be cleared by folder pair (2026-10-09)
+
+**Decision**: a "Folder pairs" view (`DedupPairs.tsx`, `lib/duplicatePairs.ts`) aggregates the TWO-copy groups by the two folders they live in; one card per pair, one button per side ("Keep left/right"), the action naming the two folders and the server re-deriving the groups (`/pairs/resolve`, same `exclude`/`retry` loop as the plan, both through `keepEach`). Groups with three or more copies, or two copies in one folder, are **not** pairs and stay in the group view — the listing counts them (`unpaired`) rather than guessing a side.
+
+**Why**: duplicates arrive by whole folders (a card imported twice, a backup, a "(copy)"), so the group view asked one question hundreds of times. Same rule as Unplaced/Devices: a backlog cleared in bulk is a list of folder cards.
+
+**How to apply**: a side on a Final/Export volume is never offered for deletion (button absent in the UI, `PairRefused` on the server). Keeping the side without the library entries relinks them — the button says "relinks N" and the modal says it again; that is deliberate, not a bug, because the choice is explicit (the auto rule never does it). The pair side holding the library entries is drawn on the left.
+
+## "Needs you" is reviewed one group at a time, decisions staged (2026-10-09)
+
+**Decision**: the plan's "Needs you" card opens `DedupReview.tsx`, a keyboard queue (1–9 pick, Enter keep, S skip, U undo, Esc close) over `rule=manual`, paged as it advances. Decisions are **staged client-side** and only "Apply" sends them, one `POST /keep` each, then reports refusals by reason. No survivor is preselected: these are exactly the groups no rule decides.
+
+**Why staged rather than a quarantine folder**: undo for free with no change to what a deletion means — a quarantine would MOVE files on the NAS, which touches the originals policy and was left to the maintainer. Closing with staged decisions asks first (apply / discard / keep reviewing); nothing on disk changes until Apply.
+
+**How to apply**: the queue mirrors keepOneCopy's members (purged entry excluded) and its one refusal up front — a view-only library entry is the only copy pickable. Any new one-by-one flow for destructive picks should stage the same way.
+
+## A user's own survivor rule applies to the filter, never to a picked list (2026-10-09)
+
+**Decision**: "Apply a rule of your own to this view" (`DedupStrategy.tsx`, `strategyKeep()` in `lib/duplicateList.ts`, `/api/failures/duplicates/strategy`) offers three strategies — library entry, shortest path, path contains… — over the current filter (scope, search, RAW, plan card). GET previews (groups decided, files/bytes, relinks, skips by reason); while open, the list marks each group's pick ("Your rule keeps this", ink, distinct from the green suggestion); Apply confirms inline and runs the same `exclude`/`retry` loop through `keepEach`.
+
+**Why the filter and not a checkbox selection** (the mockup's Gmail-style "select all matching"): every bulk path here already takes the filter so the server re-derives each survivor; narrowing is done with the search field and the plan cards, which also survive paging. A hand-picked list of groups was not built.
+
+**How to apply**: a strategy skips rather than guesses (tie, no match, several matches) and refuses two things for every strategy: dropping a view-only library entry, and moving a LIVE entry onto a view-only volume in bulk (the case `autoKeep` excludes; "Keep only this" still allows it one group at a time). Neither a strategy nor a folder pair keeps a TRASHED library entry as the survivor: the next purge would then hold the only copy — the review queue, where the human picks per group, still may. "Oldest file" was not offered: Winnow knows when a hit was recorded, not the file's mtime, and getting it means a stat per copy on the NAS.
 
 ## The UI files are too big and that is acknowledged (2026-08-20)
 

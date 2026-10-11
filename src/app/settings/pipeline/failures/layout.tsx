@@ -13,8 +13,8 @@ export default function FailuresLayout({
     <div className="pl-section">
       <div className="filterbar">
         <span className="hint">
-          Everything that failed (scan · analyze · import · deduplication), in
-          one place. Pick a family below, fix the cause, then retry per item, by
+          Everything that failed (scan · analyze · import · machine learning ·
+          missing files · GPS write), in one place. Pick a family below, fix the cause, then retry per item, by
           selection, or by family.
         </span>
       </div>
