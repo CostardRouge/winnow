@@ -333,5 +333,49 @@ test("the folder aggregate and the per-medium vote agree", { skip: skipWithoutDb
   // vote ticks.
   const r = await da.applyFolder({ sessionId: f, minScore: da.CONFIDENT_SCORE });
   assert.deepEqual(r, { updated: 2, skipped: 1 });
-  assert.equal((await da.countUnattributed(f)), 1);
+  assert.equal((await da.countUnattributed({ sessionId: f })), 1);
+});
+
+test("the backlog reads one half of the library, and never an ignored folder", { skip: skipWithoutDb }, async () => {
+  // Incoming is the test root (kind 'source'); the Gallery is a `finals` root
+  // of its own, cleaned up here since the shared `after` only knows rootId.
+  const finals = (await db.one<{ id: number }>(
+    "INSERT INTO roots (path, kind, watch) VALUES ('/device-test-finals', 'finals', false) RETURNING id",
+  ))!.id;
+  try {
+    const inc = await folder("incoming-day");
+    const ign = await folder("ignored-day");
+    await db.q("UPDATE sessions SET ignored = true WHERE id = $1", [ign]);
+    const gal = (await db.one<{ id: number }>(
+      "INSERT INTO sessions (root_id, name, source_path) VALUES ($1, 'g', '/device-test-finals/g') RETURNING id",
+      [finals],
+    ))!.id;
+    await medium(inc, "a.mp4", { video: true });
+    await medium(ign, "b.mp4", { video: true });
+    await medium(gal, "c.jpg");
+
+    // Membership, never library-wide counts: other test files share the
+    // database and run alongside (docs/memory/testing-and-ci.md).
+    const ids = async (source: "incoming" | "gallery" | "all") =>
+      (await da.listFolders({ source })).map((f) => f.session_id);
+    const incoming = await ids("incoming");
+    const gallery = await ids("gallery");
+    const all = await ids("all");
+    assert.ok(incoming.includes(inc) && !incoming.includes(gal));
+    assert.ok(gallery.includes(gal) && !gallery.includes(inc));
+    assert.ok(all.includes(inc) && all.includes(gal));
+    // The ignored folder is in no half at all…
+    for (const half of [incoming, gallery, all]) assert.ok(!half.includes(ign));
+    assert.equal(await da.countUnattributed({ sessionId: ign }), 0);
+    // …and the per-half counts agree with the per-half listings.
+    assert.equal(await da.countUnattributed({ sessionId: gal, source: "incoming" }), 0);
+    assert.equal(await da.countUnattributed({ sessionId: gal, source: "gallery" }), 1);
+  } finally {
+    await db.q(
+      "DELETE FROM assets WHERE session_id IN (SELECT id FROM sessions WHERE root_id = $1)",
+      [finals],
+    );
+    await db.q("DELETE FROM sessions WHERE root_id = $1", [finals]);
+    await db.q("DELETE FROM roots WHERE id = $1", [finals]);
+  }
 });

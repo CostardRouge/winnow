@@ -30,6 +30,8 @@ import type {
   DeviceFolder,
   DeviceSample,
   DeviceSignal,
+  DeviceSource,
+  DeviceSourceCounts,
   FolderSort,
   KnownBody,
 } from "./deviceTypes";
@@ -42,6 +44,8 @@ export type {
   DeviceFolder,
   DeviceSample,
   DeviceSignal,
+  DeviceSource,
+  DeviceSourceCounts,
   FolderSort,
   KnownBody,
 };
@@ -145,17 +149,56 @@ const CANDIDATE_SCOPE = `
     AND a.group_role IS DISTINCT FROM 'companion'
     AND (a.device IS NULL OR a.device = '')`;
 
+// Which folders the BACKLOG reads — the listing and the counts, never a write.
+// Two rules, both about what a human asked not to be bothered with:
+//   - an ignored session ("skip this whole session", SessionMenu) is out: a
+//     folder set aside as a whole is not a camera question waiting for him;
+//   - the half of the library, as lib/gear.ts splits it (a `finals` root is the
+//     Gallery, any other kind is Incoming). The Gallery holds finalized
+//     masters, accepted as they are: a 2009 avatar or a QQ screenshot there is
+//     no camera to find, so the nav badge counts Incoming alone and the page
+//     opens on it — the Gallery stays one click away, never counted.
+// A correlated EXISTS rather than a join, so it drops into every query that
+// already reads `assets a` without reshaping it; the candidates are the few
+// rows with no body, so it runs a handful of times, not 10⁵.
+function backlogScopeSql(source: DeviceSource): string {
+  const half =
+    source === "gallery"
+      ? "AND r.kind = 'finals'"
+      : source === "incoming"
+        ? "AND r.kind <> 'finals'"
+        : "";
+  return `EXISTS (SELECT 1 FROM sessions s_ JOIN roots r ON r.id = s_.root_id
+                   WHERE s_.id = a.session_id AND NOT s_.ignored ${half})`;
+}
+
 /** How many media are waiting for a body — the nav badge and the page header.
  *  Scoped to one folder when `sessionId` is given (what an opened card pages
- *  through). */
-export async function countUnattributed(sessionId?: number): Promise<number> {
+ *  through), and to one half of the library by `source` (default: both). */
+export async function countUnattributed(
+  opts: { sessionId?: number; source?: DeviceSource } = {},
+): Promise<number> {
   const row = await one<{ count: number }>(
     `SELECT count(*)::int AS count FROM assets a
       WHERE ${CANDIDATE_SCOPE}
-        ${sessionId != null ? "AND a.session_id = $1" : ""}`,
-    sessionId != null ? [sessionId] : [],
+        AND ${backlogScopeSql(opts.source ?? "all")}
+        ${opts.sessionId != null ? "AND a.session_id = $1" : ""}`,
+    opts.sessionId != null ? [opts.sessionId] : [],
   );
   return row?.count ?? 0;
+}
+
+/** The backlog in each half at once — one scan, for the page's header. */
+export async function countUnattributedBySource(): Promise<DeviceSourceCounts> {
+  const row = await one<DeviceSourceCounts>(
+    `SELECT count(*) FILTER (WHERE r.kind <> 'finals')::int AS incoming,
+            count(*) FILTER (WHERE r.kind = 'finals')::int  AS gallery
+       FROM assets a
+       JOIN sessions s ON s.id = a.session_id AND NOT s.ignored
+       JOIN roots r ON r.id = s.root_id
+      WHERE ${CANDIDATE_SCOPE}`,
+  );
+  return row ?? { incoming: 0, gallery: 0 };
 }
 
 /**
@@ -247,7 +290,7 @@ type FolderRow = {
  * server-side — a card never loads a folder to draw four tiles.
  */
 export async function listFolders(
-  opts: { sort?: FolderSort } = {},
+  opts: { sort?: FolderSort; source?: DeviceSource } = {},
 ): Promise<DeviceFolder[]> {
   const order =
     opts.sort === "recent"
@@ -292,6 +335,7 @@ export async function listFolders(
          JOIN sessions sess ON sess.id = a.session_id
          LEFT JOIN sib ON sib.session_id = a.session_id
         WHERE ${CANDIDATE_SCOPE}
+          AND ${backlogScopeSql(opts.source ?? "all")}
      )
      SELECT c.session_id, c.name, c.source_path,
             count(*)::int                                            AS total,
@@ -375,10 +419,7 @@ export async function listCandidates(
   });
   return {
     items: rows.map(toCandidate),
-    total:
-      opts.sessionId != null
-        ? await countUnattributed(opts.sessionId)
-        : await countUnattributed(),
+    total: await countUnattributed({ sessionId: opts.sessionId }),
   };
 }
 
@@ -568,7 +609,7 @@ export async function applyFolder(opts: {
   device?: string;
   cameraModel?: string | null;
 }): Promise<ApplyResult> {
-  const pending = await countUnattributed(opts.sessionId);
+  const pending = await countUnattributed({ sessionId: opts.sessionId });
 
   // The folder's own body, always looked up: it names the device in suggestion
   // mode, AND it is the sibling term of the score in both modes — a folder that

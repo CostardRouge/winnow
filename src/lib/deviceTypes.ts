@@ -85,6 +85,16 @@ export type DeviceFolder = {
 /** How folders are ordered on the page. */
 export type FolderSort = "size" | "recent";
 
+/** Which half of the library the backlog is read over — the same three values
+ *  as the Incoming/Gallery/All picker (app/LibrarySourceTabs.tsx), spelled
+ *  here because a lib module must not import a client component. Gallery means
+ *  a `finals` root, Incoming every other kind, as lib/gear.ts splits them. */
+export type DeviceSource = "all" | "incoming" | "gallery";
+
+/** The backlog's size in each half, whatever half the page is showing — what
+ *  lets Incoming say "the Gallery holds 60 more" without counting them. */
+export type DeviceSourceCounts = { incoming: number; gallery: number };
+
 /** What every write answers. */
 export type ApplyResult = {
   /** Rows whose body actually changed. */

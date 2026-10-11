@@ -4370,6 +4370,10 @@ html[data-theme="dark"] .btn-primary:hover {
      title stands alone above it rather than in a card of its own. */
   .dev-step-head {
     @apply mt-6 mb-3;
+    /* The Incoming/Gallery/All picker rides beside the title, as it does in
+       PageHeader's tabs slot; on a phone it drops under it rather than
+       squeezing the title. */
+    flex-wrap: wrap;
   }
   .flow-warn {
     @apply m-0 rounded-[var(--radius)] px-3 py-2 text-sm;

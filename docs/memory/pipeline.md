@@ -291,6 +291,20 @@ rows; `deviceAttribution.test.ts` pins it (the folder aggregate's
 confident-only folder write against the rows JS ticks). Both whole-library
 reads (`listFolders`, `listKnownBodies`) run through `manyWithoutJit`.
 
+**The backlog is Incoming's; the Gallery is shown, never counted**
+(2026-10-11, maintainer's word). The Gallery holds finalized masters accepted
+as they are — a 2009 webcam shot, a QQ avatar, a macOS screenshot has no camera
+to find — so the nav badge (`/api/stats` `device_missing`, now
+`countUnattributed({ source: "incoming" })`, which also stopped counting purged
+rows the page never listed) and the page's default are Incoming only; the
+Incoming/Gallery/All picker beside step 2 is NOT remembered between visits, so
+looking at the Gallery is a deliberate click each time. An ignored session is
+out of every half. Both rules live in ONE predicate, `backlogScopeSql`, used by
+the listing and the counts, never by a write. Measured on the instance that
+day: 113 left, 53 Incoming / 60 Gallery — and the "friend's Sony" folder was 14
+`WhatsApp Image …` files: WhatsApp strips EXIF, so anything received through it
+lands here whoever shot it.
+
 **Winnow indexes no stream metadata** — no codec, no frame rate, no nominal
 bitrate — because nothing calls `ffprobe`: the derivative worker hands the file
 straight to `ffmpeg` (`lib/video.ts`). The Devices table therefore prints an

@@ -7,6 +7,7 @@ import { clipCoverage } from "@/lib/ml";
 import { getQueueStats } from "@/lib/queue";
 import { getSettings } from "@/lib/settings";
 import { failureCounts } from "@/lib/failures";
+import { countUnattributed } from "@/lib/deviceAttribution";
 import { json, serverError } from "@/lib/api";
 
 // DB/Redis-backed route: never pre-rendered/cached at build time.
@@ -28,7 +29,6 @@ export async function GET() {
       ml_pending: number;
       ml_errors: number;
       ml_skipped: number;
-      device_missing: number;
     }>(
       // `total` counts physical files; `media` counts logical items, where a
       // RAW+JPEG pair counts once (its companion is excluded). `pairs` is the
@@ -50,13 +50,7 @@ export async function GET() {
          count(*) FILTER (WHERE ml_status = 'ready')                         AS ml_ready,
          count(*) FILTER (WHERE ml_status IN ('pending','processing'))       AS ml_pending,
          count(*) FILTER (WHERE ml_status = 'error')                         AS ml_errors,
-         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped,
-         -- Media carrying no camera body at all (cf. lib/deviceAttribution.ts).
-         -- Counted on logical media, like the media column above, so a pair
-         -- never reports twice. Drives the Devices tab badge, which is the
-         -- progress bar of the attribution pass.
-         count(*) FILTER (WHERE (device IS NULL OR device = '')
-                            AND group_role IS DISTINCT FROM 'companion')     AS device_missing
+         count(*) FILTER (WHERE ml_status = 'skipped')                       AS ml_skipped
        FROM assets a
        WHERE a.deleted_at IS NULL`,
     );
@@ -71,6 +65,11 @@ export async function GET() {
     }
     const settings = await getSettings();
     const fails = await failureCounts();
+    // The Devices tab badge, the progress bar of the attribution pass: the very
+    // count the page opens on (Incoming, live, no ignored session — cf.
+    // lib/deviceAttribution.ts backlogScopeSql), not a FILTER of the scan
+    // above, which counted the Gallery and purged rows the page never lists.
+    const deviceMissing = await countUnattributed({ source: "incoming" });
 
     // Semantic-search coverage: how many media have a CLIP embedding under the
     // current model. Decoupled from ml_status on purpose — an asset analyzed for
@@ -83,21 +82,23 @@ export async function GET() {
       : null;
 
     return json({
-      assets: counts ?? {
-        total: 0,
-        media: 0,
-        pairs: 0,
-        photos: 0,
-        videos: 0,
-        analyzed: 0,
-        pending: 0,
-        errors: 0,
-        skipped: 0,
-        ml_ready: 0,
-        ml_pending: 0,
-        ml_errors: 0,
-        ml_skipped: 0,
-        device_missing: 0,
+      assets: {
+        ...(counts ?? {
+          total: 0,
+          media: 0,
+          pairs: 0,
+          photos: 0,
+          videos: 0,
+          analyzed: 0,
+          pending: 0,
+          errors: 0,
+          skipped: 0,
+          ml_ready: 0,
+          ml_pending: 0,
+          ml_errors: 0,
+          ml_skipped: 0,
+        }),
+        device_missing: deviceMissing,
       },
       queues,
       paused: queues?.paused ?? settings.scanPaused,

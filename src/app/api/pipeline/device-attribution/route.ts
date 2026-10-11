@@ -5,7 +5,8 @@
 //
 //   GET                 -> the FOLDERS holding unattributed media, each with its
 //                          aggregate evidence and proposal, plus the bodies the
-//                          library knows. This is the page.
+//                          library knows. This is the page. `?source=` picks
+//                          the half: incoming (default), gallery or all.
 //   GET ?session_id=N    -> that one folder's media, paged: what an opened card
 //                          shows, for the only case that needs a per-file
 //                          decision (a folder that held two cameras).
@@ -35,8 +36,9 @@ import {
   listCandidates,
   listFolders,
   listKnownBodies,
-  countUnattributed,
+  countUnattributedBySource,
   SIGNAL_WEIGHTS,
+  type DeviceSource,
 } from "@/lib/deviceAttribution";
 import { json, badRequest, serverError } from "@/lib/api";
 
@@ -64,16 +66,27 @@ export async function GET(req: NextRequest) {
     }
 
     // The page: folders, bodies, and the rules the cards are read against.
+    // Incoming unless asked otherwise — the Gallery is accepted as it is, so it
+    // is shown on request and never counted (cf. backlogScopeSql).
     const sort = sp.get("sort") === "recent" ? "recent" : "size";
-    const [folders, bodies, total] = await Promise.all([
-      listFolders({ sort }),
+    const sourceParam = sp.get("source");
+    const source: DeviceSource =
+      sourceParam === "gallery" || sourceParam === "all" ? sourceParam : "incoming";
+    const [folders, bodies, counts] = await Promise.all([
+      listFolders({ sort, source }),
       listKnownBodies(),
-      countUnattributed(),
+      countUnattributedBySource(),
     ]);
+    const total =
+      source === "all"
+        ? counts.incoming + counts.gallery
+        : counts[source];
     return json({
       folders,
       bodies,
+      source,
       total,
+      counts,
       // Printed above the list, the way Unplaced prints its donor rules and the
       // Heatmap its keeper-rate floor: the numbers that decided what you see
       // are on screen, not only in the source.

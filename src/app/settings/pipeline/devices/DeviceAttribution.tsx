@@ -28,6 +28,7 @@ import ActionMenu, { type MenuItem } from "../../../ActionMenu";
 import MediaViewer from "../../../MediaViewer";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
+import { LibrarySourceTabs } from "../../../LibrarySourceTabs";
 import { EmptyState, Icons, LazyImage, Spinner } from "../../../ui";
 import { useStats } from "../../../useStats";
 import DeviceProbeSection from "./DeviceProbeSection";
@@ -45,6 +46,8 @@ import type {
   DeviceCandidate,
   DeviceFolder,
   DeviceSignal,
+  DeviceSource,
+  DeviceSourceCounts,
   FolderSort,
   KnownBody,
 } from "@/lib/deviceTypes";
@@ -81,7 +84,11 @@ const SIGNAL_HINT: Record<DeviceSignal, string> = {
 type Payload = {
   folders: DeviceFolder[];
   bodies: KnownBody[];
+  /** The half the folders and `total` describe. */
+  source: DeviceSource;
   total: number;
+  /** Both halves, whichever one is shown. */
+  counts: DeviceSourceCounts;
   rules: { weights: Record<DeviceSignal, number>; confident: number };
 };
 
@@ -143,6 +150,13 @@ export default function DeviceAttribution() {
   // link. `?body=` is the raw EXIF string of the proposed body, `none` for the
   // folders with no proposal.
   const sort: FolderSort = sp?.get("sort") === "recent" ? "recent" : "size";
+  // The half of the library: Incoming unless the URL says otherwise, and NOT
+  // remembered between visits (unlike /gear's picker) — the Gallery is
+  // accepted as it is, so looking at it is a deliberate click each time, and
+  // the page always reopens on the half the nav badge counts.
+  const sourceParam = sp?.get("source");
+  const source: DeviceSource =
+    sourceParam === "gallery" || sourceParam === "all" ? sourceParam : "incoming";
   const bodyParam = sp?.get("body") ?? null;
   const facet =
     bodyParam == null ? null : bodyParam === NO_PROPOSAL ? "" : bodyParam;
@@ -161,6 +175,10 @@ export default function DeviceAttribution() {
     [router, sp],
   );
   const setSort = (s: FolderSort) => patch({ sort: s === "size" ? null : s });
+  const setSource = (s: DeviceSource) => {
+    closeFolder();
+    patch({ source: s === "incoming" ? null : s });
+  };
   const setFacet = (key: string | null) =>
     patch({ body: key == null ? null : key || NO_PROPOSAL });
 
@@ -195,13 +213,16 @@ export default function DeviceAttribution() {
   // must not leave the page drawn in the order it no longer shows.
   const listTicket = useRef(0);
 
-  const load = useCallback(async (s: FolderSort): Promise<Payload | null> => {
+  const load = useCallback(async (
+    s: FolderSort,
+    src: DeviceSource,
+  ): Promise<Payload | null> => {
     const mine = ++listTicket.current;
     setLoading(true);
     setError(null);
     try {
       const d = await fetchJson<Payload>(
-        `/api/pipeline/device-attribution?sort=${s}`,
+        `/api/pipeline/device-attribution?sort=${s}&source=${src}`,
       );
       if (mine !== listTicket.current) return null;
       setData(d);
@@ -215,8 +236,8 @@ export default function DeviceAttribution() {
   }, []);
 
   useEffect(() => {
-    void load(sort);
-  }, [load, sort]);
+    void load(sort, source);
+  }, [load, sort, source]);
 
   function closeFolder() {
     ticket.current++;
@@ -300,7 +321,7 @@ export default function DeviceAttribution() {
   // one click away. The viewer, sitting on an index, lands on the medium that
   // followed the one just written; past the end it closes.
   async function refresh() {
-    const d = await load(sort);
+    const d = await load(sort, source);
     void reload();
     const was = open;
     if (!was || !d) return;
@@ -398,15 +419,31 @@ export default function DeviceAttribution() {
       }}
     />
   );
-  // Step 2's title: what the vote below is for once the files have spoken.
+  // Step 2's title: what the vote below is for once the files have spoken —
+  // with the Incoming/Gallery/All picker beside it, the same control /gear,
+  // /people and /search carry beside theirs.
   const step2 = (
     <header className="flow-step-head dev-step-head">
       <span className="flow-num" aria-hidden>
         2
       </span>
       <h2>Assign what no file names</h2>
+      <LibrarySourceTabs
+        source={source}
+        onChange={setSource}
+        ariaLabel="Which half of the library to read"
+      />
     </header>
   );
+  // The other half's backlog, said in words where it is not shown: Incoming
+  // never counts the Gallery, but it does not pretend it is empty either.
+  const elsewhere = (d: Payload): string | null => {
+    if (d.source === "incoming" && d.counts.gallery)
+      return `The Gallery holds ${d.counts.gallery.toLocaleString()} more — finalized masters, accepted as they are and not counted here.`;
+    if (d.source === "gallery" && d.counts.incoming)
+      return `Incoming holds ${d.counts.incoming.toLocaleString()} more.`;
+    return null;
+  };
 
   if (loading && !data) {
     return (
@@ -431,15 +468,26 @@ export default function DeviceAttribution() {
   }
 
   if (!data || !data.total) {
+    const rest = data ? elsewhere(data) : null;
+    const where =
+      data?.source === "gallery" ? "the Gallery" : data?.source === "all" ? "the library" : "Incoming";
     return (
       <div className="pl-section">
         {probe}
         {step2}
-        <EmptyState
-          icon={Icons.gear}
-          title="Every medium has a body"
-          hint="Nothing in the live library is missing its camera, so the gear shelf accounts for all of it. 🎉"
-        />
+        {rest ? (
+          <EmptyState
+            icon={Icons.gear}
+            title={`Nothing in ${where} is missing its body`}
+            hint={rest}
+          />
+        ) : (
+          <EmptyState
+            icon={Icons.gear}
+            title="Every medium has a body"
+            hint="Nothing in the live library is missing its camera, so the gear shelf accounts for all of it. 🎉"
+          />
+        )}
       </div>
     );
   }
@@ -505,11 +553,16 @@ export default function DeviceAttribution() {
           every text run and <strong> in it lands on a row of its own. */}
       <div className="unplaced-head">
         <p>
-          <strong>{data.total.toLocaleString()}</strong> media carry no camera
-          body, across <strong>{data.folders.length}</strong>{" "}
+          <strong>{data.total.toLocaleString()}</strong> media
+          {data.source === "incoming"
+            ? " in Incoming"
+            : data.source === "gallery"
+              ? " in the Gallery"
+              : ""}{" "}
+          carry no camera body, across <strong>{data.folders.length}</strong>{" "}
           {data.folders.length === 1 ? "folder" : "folders"} — absent from the
           gear shelf and from every <code>?device=</code> grid until a body is
-          written.
+          written. {elsewhere(data)}
         </p>
         <div className="hint card-rules">
           Nothing here was read from a file. A folder is proposed the body its
@@ -521,7 +574,8 @@ export default function DeviceAttribution() {
           {data.rules.weights.folder} — and a medium is confident at{" "}
           {data.rules.confident}. A card lists the signals more than half its
           media carry. A folder with no attributed sibling gets no proposal:
-          pick its body from the card’s menu.
+          pick its body from the card’s menu. A folder you set to Ignore is not
+          listed.
         </div>
       </div>
 
