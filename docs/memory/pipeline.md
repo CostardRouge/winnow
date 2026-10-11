@@ -34,6 +34,40 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **Why**: 0048/0049 shipped unapplied and the indexer logged 9 124 "failures" that were one missing column; each failed file has no row, so every rescan re-hashed and re-exiftooled its original again (65 attempts in a day) — the "originals read once" rule broken by a logging path. **How to apply**: a new per-file error that means "the code is wrong" (not "the file is") belongs in `isSchemaError`'s family, not in the table. Failures › Scan should now empty itself on the next rescan after a cause is fixed; a row that stays open is a file still failing.
 
+## Derivative sources: the preview first, the sensor only when there is none (2026-10-11)
+
+**Decision**: `extractSourceJpeg` keeps the embedded preview as THE path, and
+adds two fallbacks measured on the instance's 13 derivative errors: (1) the
+first 12 bytes decide before the extension does — a JPEG/PNG/WebP goes straight
+to sharp (TIFF magic deliberately excluded: every RAW is a TIFF container);
+(2) a RAW with no embedded image at all is demosaiced by LibRaw's `dcraw_emu`
+(`libraw-bin` in the Dockerfile), half size, out-of-process, serialized, 120 s
+cap, with the DNG's `BaselineExposure + BaselineExposureOffset` applied as
+`-aexpo` (LibRaw ignores it; without it an iPhone DNG renders ~1¼ EV darker
+than macOS shows it). LibRaw applies the orientation itself, so that path
+returns none — re-applying it rotated twice in the first test.
+
+**What the failures were** (all `/nas-incoming/iphone/photos/2025/august 2025`
+or summer 2026): five iPhone 15 Pro Max DNGs whose XMP says `cr_sdk (iOS)` and
+`Indigo Embedded Camera Profile` (Adobe's camera SDK, not Photomator) with only
+the raw CFA + a sky semantic mask — no preview of any size; two `IMG_E….HEIC`
+that are baseline JPEGs (an edit's rendition exported under the original's
+extension); six `.MOV` with no readable `moov` — five cut at exact MiB sizes
+(`mdat` declares 786 MB, the file holds 654 MB: an interrupted copy), one whose
+first bytes are garbage. The videos are not Winnow's to fix: the error now
+says "Damaged file … copy it again from the source" ahead of ffmpeg's tail
+(`ffmpegHint`, and `-hide_banner` so the 400-char tail is the cause, not the
+build banner).
+
+**Traps**: LibRaw refuses a frame under 22 px a side (the synthetic DNG in
+`extract.test.ts` is 64×32 for that reason); sharp's prebuilt libvips reads
+TIFF but NOT PPM, so `-T` is required. The "very dark" DNGs the maintainer
+reported are, for the 10 darkest of 2 877 measured thumbnails (mean luma < 12),
+genuine night/astro frames, not a rendering bug. **How to apply**: a new
+"cannot build a derivative" family starts by pulling the original read-only
+through `/api/assets/:id/download` (it ignores `Range` and sends the whole
+file — mind the disk) and asking exiftool/`file` what it really is.
+
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
 **Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder
