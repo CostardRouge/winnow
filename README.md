@@ -343,10 +343,16 @@ why) and `winnow_run` (`{ command, params }`). Commands today:
 | `app.status` | Account, role (capped), `via`, whether writes are allowed, whether the Timeline is on |
 | `library.days` `{ from, to, kind? }` | Capture days with counts and a cover, ≤ 366 days a call (`/api/assets/calendar`) |
 | `library.chapters` `{ from?, to?, mode? }` | The Timeline's chapters — only while that section is on (`/api/assets/timeline`) |
-| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, folder?, tag?, person?, camera?, city?, fold?, order?, limit?, cursor? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
+| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, folder?, tag?, people? \| who?, together?, faces?, camera?, city?, fold?, order?, limit?, cursor?, trash? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
 | `library.folders` `{ kind?, progress?, sort?, order?, limit? }` | Folders with their triage counts and status — what is still to sort (`/api/sessions`) |
 | `library.facets` `{ kind? }` | The values the filters take, with counts — cameras, places, people, tags… (`/api/facets`) |
-| `people.list` `{ named?, limit? }` | The people face analysis grouped, with their media counts (`/api/people`) |
+| `people.list` `{ named? \| unnamed?, hidden?, offset?, limit? }` | The people face analysis grouped, with their media counts (`/api/people`) |
+| `people.get` `{ id, faces? }` | One person: counts per half, cover, faces (face, asset, score) (`/api/people/:id`) |
+| `people.sheet` `{ ids? \| named? \| unnamed?, offset?, limit? }` | Up to 24 cover faces as images labelled `#id name` — to see who a stack is (`/api/faces/:id/thumb`) |
+| `people.suggestions` `{ limit? }` | Stacks that are probably the same person, with names (`/api/people/suggestions`) |
+| `assets.faces` `{ id }` | Who is in one medium: face, person, name, score, box (`/api/assets/:id/faces`) |
+| `people.name` `{ id, name }` · `people.hide` `{ id, hidden }` | Name a person (`""` clears) or hide a stack (`PATCH /api/people/:id`) |
+| `people.merge` `{ from, into }` · `people.reassign` `{ person, assets, to? }` | Fold one stack into another; move one person's faces in some photos elsewhere (`POST /api/people/:id/merge`, `…/reassign`) |
 | `assets.search` `{ text, source?, limit? }` | Media ranked by a plain-words description (CLIP, `/api/search`); says so when the index is off |
 | `assets.similar` `{ id, maxDistance?, limit? }` | Near-duplicates by perceptual hash (`/api/assets/:id/similar`) |
 | `assets.get` `{ id }` | The full row (`/api/assets/:id`) |
