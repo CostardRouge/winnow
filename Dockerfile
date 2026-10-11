@@ -13,6 +13,9 @@ FROM mirror.gcr.io/library/node:24-slim
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
 #  - ffmpeg          : video derivatives (poster + mp4 proxy).
+#  - libraw-bin      : `dcraw_emu`, the last resort for a RAW that embeds no
+#    preview at all (DNGs written by Adobe's iOS camera SDK) — the worker
+#    demosaics those out-of-process instead of failing them (lib/extract.ts).
 #  - postgresql-client-16 : pg_dump for the on-demand backup download
 #    (GET /api/db/backup, Settings › Database). Debian bookworm only packages
 #    client v15 — which refuses to dump the v16 server — so the client comes
@@ -31,7 +34,7 @@ FROM mirror.gcr.io/library/node:24-slim
 # ffmpeg libx264, works without /dev/dri). For a recent Intel iGPU (Gen8+ / iHD),
 # add `intel-media-va-driver-non-free` (non-free repo).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends perl ffmpeg libjemalloc2 \
+  && apt-get install -y --no-install-recommends perl ffmpeg libraw-bin libjemalloc2 \
        postgresql-common ca-certificates \
   && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
        apt-get install -y --no-install-recommends i965-va-driver vainfo; \

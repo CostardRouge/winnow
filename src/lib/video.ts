@@ -13,7 +13,11 @@ import { config } from "./config";
 
 function run(args: string[], timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    // -hide_banner: the stored error is the last 400 characters of stderr, and
+    // the build banner used to fill most of them before the actual cause.
+    const proc = spawn("ffmpeg", ["-hide_banner", ...args], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
     let stderr = "";
     proc.stderr.on("data", (d) => {
       stderr += d.toString();
@@ -30,9 +34,21 @@ function run(args: string[], timeoutMs: number): Promise<void> {
     proc.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) resolve();
-      else reject(new Error(`ffmpeg code ${code}: ${stderr.slice(-400).trim()}`));
+      else reject(new Error(`${ffmpegHint(stderr)}ffmpeg code ${code}: ${stderr.slice(-400).trim()}`));
     });
   });
+}
+
+// A plain-words cause ahead of ffmpeg's own, for the failure no rerun can fix.
+// A camera writes the `moov` index at the END of a clip, so a copy cut short
+// (a sync or transfer interrupted — seen on the instance at whole-MiB sizes)
+// keeps a readable start and loses the index; a copy whose first bytes are
+// garbage hides an intact one. Either way the file is broken and only a fresh
+// copy from the phone/card repairs it. Exported for the tests.
+export function ffmpegHint(stderr: string): string {
+  return /moov atom not found/.test(stderr)
+    ? "Damaged file: no readable moov index (an incomplete or corrupt copy — copy it again from the source). "
+    : "";
 }
 
 let _available: boolean | null = null;
