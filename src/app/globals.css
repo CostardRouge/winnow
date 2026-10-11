@@ -5061,6 +5061,62 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: var(--color-border-strong);
     box-shadow: var(--shadow-pop);
   }
+  /* "Assign to another camera…": a searchable list in a modal, a bottom sheet
+     on a phone (BodyChooserModal). The list scrolls, the head and the search
+     field stay put, so twenty cameras never push the way out off-screen. */
+  .body-chooser {
+    @apply flex max-h-[80dvh] max-w-[480px] flex-col gap-3;
+  }
+  .body-chooser-head {
+    @apply flex items-center justify-between gap-3;
+  }
+  .body-chooser-head .modal-title {
+    @apply m-0 min-w-0;
+  }
+  .body-chooser-list {
+    @apply -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain;
+  }
+  .body-chooser-row {
+    @apply flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-left;
+    min-height: 48px;
+  }
+  .body-chooser-row:hover,
+  .body-chooser-row:focus-visible {
+    background: var(--color-surface);
+  }
+  .body-chooser-text {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+  .body-chooser-name {
+    @apply flex items-center gap-2 text-sm font-medium;
+    color: var(--color-text);
+  }
+  .body-chooser-tag {
+    @apply shrink-0 text-[10px];
+  }
+  .body-chooser-raw {
+    @apply truncate text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .body-chooser-count {
+    @apply shrink-0 text-[11px];
+    font-family: var(--font-mono);
+    color: var(--color-faint);
+  }
+  .body-chooser-empty {
+    @apply px-3 py-4;
+  }
+  @media (max-width: 640px) {
+    .body-chooser-backdrop {
+      @apply items-end p-0;
+    }
+    .body-chooser {
+      @apply max-w-none rounded-b-none;
+      max-height: 85dvh;
+      padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
   .modal-title {
     @apply text-base font-semibold;
     color: var(--color-text);

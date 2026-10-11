@@ -439,3 +439,9 @@ page. Put the trigger in view, or accept the dismissal.
 **Decision**: `.session-tools` (verdict filters + triage bar + Select/Done) is `position: sticky` right under `.page-head`, so a multi-selection can start from the bottom of a long folder and be dismissed with Done without scrolling up (the maintainer's ask). `SessionGrid` publishes the header's measured height as `--page-head-h` on `<html>` (ResizeObserver; removed on unmount) because the header wraps to a taller block on a phone and a constant would leave a gap or an overlap.
 
 **How to apply**: another detail page that wants its second band pinned reuses the same variable; the band is z-[19], just under the header's z-20, and must keep a solid background (it is `--color-surface`).
+
+## Devices menus carry actions; the bodies live in a searchable sheet (2026-10-11)
+
+**Decision**: the folder card, the per-row and the "ticked" menus on Settings › Pipeline › Devices no longer list every camera body inline. With ~19 bodies the folder menu ran three screens tall on a phone and the answers that matter (name a camera, not a camera, review one by one) sat below the fold. Each menu now holds one "Assign to another camera…" entry that opens `BodyChooserModal` (search field, proposed body pinned first, busiest-first, one tap picks and writes); the card's primary button still assigns the proposal in one tap.
+
+**How to apply**: the chooser is a bottom sheet under 640 px (head and search stay put, the list scrolls) and a modal above. A long list of *values* never goes in an `ActionMenu` — that one is for a handful of actions; `OptionPicker` (≤ N options) or this chooser (many, searchable) is the shape.

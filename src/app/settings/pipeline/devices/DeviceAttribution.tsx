@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActionMenu, { type MenuItem } from "../../../ActionMenu";
 import MediaViewer from "../../../MediaViewer";
+import BodyChooserModal from "../../../BodyChooserModal";
 import NameCameraModal from "../../../NameCameraModal";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
@@ -209,6 +210,18 @@ export default function DeviceAttribution() {
     target: Record<string, unknown>;
     what: string;
   } | null>(null);
+  // "Assign to another camera…": the searchable list of bodies, opened from a
+  // card, a row or the viewer. `onPick` is the write it stands for.
+  const [choosing, setChoosing] = useState<{
+    title: string;
+    pinned: string | null;
+    onPick: (b: KnownBody) => void;
+  } | null>(null);
+  const chooseBody = (
+    title: string,
+    pinned: string | null,
+    onPick: (b: KnownBody) => void,
+  ) => setChoosing({ title, pinned, onPick });
   // The full-screen preview, as an index into the opened folder's media. The
   // viewer is the app's own: a medium waiting for a body is looked AT before it
   // is decided, and a triage page that cannot show the frame is a spreadsheet.
@@ -768,15 +781,20 @@ export default function DeviceAttribution() {
                   } as MenuItem,
                 ]
               : []),
-            ...data.bodies.map(
-              (b): MenuItem => ({
-                key: `body-${b.device}`,
-                label: `Assign ${f.total} to ${friendlyCameraName(b.device)}`,
-                hint: b.named ? "named by hand" : b.device,
-                icon: "→",
-                onSelect: () => void applyFolder(f, { device: b }),
-              }),
-            ),
+            // The twenty bodies live behind one entry (searchable), so the
+            // answers below it stay on screen on a phone.
+            {
+              key: "other-body",
+              label: f.suggested_device ? "Assign to another camera…" : `Assign ${f.total} to a camera…`,
+              hint: `Search the ${data.bodies.length} the library holds`,
+              icon: "→",
+              onSelect: () =>
+                chooseBody(
+                  `Assign the ${f.total} media of ${f.name}`,
+                  f.suggested_device,
+                  (b) => void applyFolder(f, { device: b }),
+                ),
+            },
             ...handItems(
               f.session_id,
               { session_id: f.session_id },
@@ -902,7 +920,8 @@ export default function DeviceAttribution() {
                 <FolderMedia
                   folder={f}
                   state={open}
-                  bodies={data.bodies}
+                  bodyCount={data.bodies.length}
+                  chooseBody={chooseBody}
                   picked={picked}
                   onToggle={(id, on) =>
                     setPicked((p) => ({ ...p, [id]: on }))
@@ -967,22 +986,37 @@ export default function DeviceAttribution() {
                   className: "btn",
                 }}
                 items={[
-                  ...data.bodies
-                    .filter((b) => b.device !== it.suggested_device)
-                    .map(
-                      (b): MenuItem => ({
-                        key: b.device,
-                        label: friendlyCameraName(b.device),
-                        hint: b.named ? "named by hand" : b.device,
-                        icon: "→",
-                        onSelect: () => void assignOne(open.sessionId, it.id, b),
-                      }),
-                    ),
+                  {
+                    key: "other-body",
+                    label: "Another camera…",
+                    hint: `Search the ${data.bodies.length} the library holds`,
+                    icon: "→",
+                    onSelect: () =>
+                      chooseBody(
+                        `Assign ${it.filename}`,
+                        it.suggested_device,
+                        (b) => void assignOne(open.sessionId, it.id, b),
+                      ),
+                  },
                   ...handItems(open.sessionId, { ids: [it.id] }, it.filename, 1),
                 ]}
               />
             </>
           )}
+        />
+      )}
+
+      {choosing && (
+        <BodyChooserModal
+          title={choosing.title}
+          bodies={data.bodies}
+          pinned={choosing.pinned}
+          onClose={() => setChoosing(null)}
+          onPick={(b) => {
+            const pick = choosing.onPick;
+            setChoosing(null);
+            pick(b);
+          }}
         />
       )}
 
@@ -1011,7 +1045,8 @@ export default function DeviceAttribution() {
 function FolderMedia({
   folder,
   state,
-  bodies,
+  bodyCount,
+  chooseBody,
   picked,
   onToggle,
   onMore,
@@ -1023,7 +1058,14 @@ function FolderMedia({
 }: {
   folder: DeviceFolder;
   state: { items: DeviceCandidate[]; total: number; loading: boolean };
-  bodies: KnownBody[];
+  /** How many bodies the searchable list holds (for the entry's hint). */
+  bodyCount: number;
+  /** Opens the searchable list of bodies; `onPick` is the write. */
+  chooseBody: (
+    title: string,
+    pinned: string | null,
+    onPick: (b: KnownBody) => void,
+  ) => void;
   picked: Record<number, boolean>;
   onToggle: (id: number, on: boolean) => void;
   onMore: () => void;
@@ -1057,17 +1099,18 @@ function FolderMedia({
           } as MenuItem,
         ]
       : []),
-    ...bodies
-      .filter((b) => b.device !== c.suggested_device)
-      .map(
-        (b): MenuItem => ({
-          key: `body-${b.device}`,
-          label: `Assign to ${friendlyCameraName(b.device)}`,
-          hint: b.named ? "named by hand" : b.device,
-          icon: "→",
-          onSelect: () => onAssignOne(c.id, b),
-        }),
-      ),
+    {
+      key: "other-body",
+      label: c.suggested_device ? "Another camera…" : "Assign to a camera…",
+      hint: `Search the ${bodyCount} the library holds`,
+      icon: "→",
+      onSelect: () =>
+        chooseBody(
+          `Assign ${c.filename}`,
+          c.suggested_device,
+          (b) => onAssignOne(c.id, b),
+        ),
+    },
     ...handItems([c.id], c.filename),
     {
       key: "download",
@@ -1112,17 +1155,18 @@ function FolderMedia({
             label={`Assign the ${ids.length} ticked to`}
             disabled={busy || !ids.length}
             items={[
-              ...bodies
-                .filter((b) => b.device !== folder.suggested_device)
-                .map(
-                  (b): MenuItem => ({
-                    key: b.device,
-                    label: friendlyCameraName(b.device),
-                    hint: b.named ? "named by hand" : b.device,
-                    icon: "→",
-                    onSelect: () => onApply(ids, b),
-                  }),
-                ),
+              {
+                key: "other-body",
+                label: "Another camera…",
+                hint: `Search the ${bodyCount} the library holds`,
+                icon: "→",
+                onSelect: () =>
+                  chooseBody(
+                    `Assign the ${ids.length} ticked`,
+                    folder.suggested_device,
+                    (b) => onApply(ids, b),
+                  ),
+              },
               ...handItems(ids, `the ${ids.length} ticked`),
             ]}
           />
