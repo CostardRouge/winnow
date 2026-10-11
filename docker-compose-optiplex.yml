@@ -206,7 +206,10 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-shot: applies the migrations then exits. app/worker wait for it.
+  # One-shot: applies the migrations then exits. app/worker wait for it on a
+  # `docker compose up`. Watchtower never re-runs it, which is why the WORKER
+  # also migrates at boot (src/worker.ts, under an advisory lock shared with
+  # this service): a redeploy through Watchtower applies new migrations too.
   migrate:
     image: ghcr.io/costardrouge/winnow:main
     container_name: winnow_migrate
