@@ -7,15 +7,20 @@
 // where it sits, and what may be done to it.
 //
 // The library copy comes first when there is one, then every recorded on-disk
-// copy. Winnow makes no assumption about which is "the original": the user picks
-// the survivor with "Keep only this". One copy is never a candidate for removal
-// — a Final/Export one — so it is drawn locked, and it is then the only survivor
+// copy. Winnow makes no assumption about which is "the original" beyond the
+// bulk rule's own pick (auto_keep): when that rule can decide, its survivor is
+// drawn as the suggestion — with the branch that chose it as the reason — and
+// "Keep suggested" is the group's one primary action. When it cannot, the user
+// picks with "Keep only this". One copy is never a candidate for removal — a
+// Final/Export one — so it is drawn locked, and it is then the only survivor
 // the group can collapse onto.
 import { useState } from "react";
-import { Icons, LazyImage } from "../../../../ui";
-import MediaViewer from "../../../../MediaViewer";
-import { formatBytes } from "../model";
+import { Icons, LazyImage } from "../../ui";
+import MediaViewer from "../../MediaViewer";
+import { formatBytes } from "@/lib/format";
+import { splitPaths, type PathParts } from "@/lib/pathDiff";
 import type {
+  DuplicateAutoRule,
   DuplicateExisting,
   DuplicateFalseItem,
   DuplicateGroup,
@@ -36,6 +41,39 @@ export function ZonePill({ zone }: { zone: DuplicateZone }) {
     <span className={`pill dup-zone dup-zone-${zone}`} title={`In the ${ZONE_LABEL[zone]}`}>
       {ZONE_LABEL[zone]}
     </span>
+  );
+}
+
+// Why the rule picked the copy it suggests — one branch of autoKeep each. The
+// label is what the row says; the title is the rule in full, for the hover.
+const SUGGEST_REASON: Record<DuplicateAutoRule, { label: string; title: string }> = {
+  protected: {
+    label: "Suggested · view-only master",
+    title:
+      "This copy is on a Final/Export volume, which deduplication never deletes — the other copies are the only ones it could remove anyway",
+  },
+  library: {
+    label: "Suggested · library entry",
+    title:
+      "The live library entry: it stays where it is and nothing is relinked; the extra on-disk copies go",
+  },
+};
+
+// A copy's path drawn in three runs (lib/pathDiff): the shared folders recede,
+// the folder that differs is highlighted — or the file name, when the copies
+// sit side by side under two names.
+function DupPath({ path, parts }: { path: string; parts?: PathParts }) {
+  if (!parts) return <div className="dup-cmp-path">{path}</div>;
+  return (
+    <div className="dup-cmp-path">
+      <span className="dup-path-pre">{parts.prefix}</span>
+      {parts.rest && <span className="dup-path-diff">{parts.rest}</span>}
+      {parts.fileDiffers ? (
+        <span className="dup-path-diff">{parts.file}</span>
+      ) : (
+        parts.file
+      )}
+    </div>
   );
 }
 
@@ -67,6 +105,23 @@ export default function DupGroupCard({
   // The identical copies share their bytes, so the library copy's preview stands
   // in for the whole group — open it full-size to eyeball before deciding.
   const [preview, setPreview] = useState(false);
+
+  // Every path the group draws, split against the others so the one folder
+  // that tells the copies apart stands out.
+  const listed = [
+    ...(existing?.abs_path ? [existing.abs_path] : []),
+    ...copies.map((c) => c.abs_path),
+  ];
+  const partsOf = new Map(
+    splitPaths(listed).map((parts, i) => [listed[i], parts] as const),
+  );
+
+  const suggested = group.auto_keep;
+  const reason = group.auto_rule ? SUGGEST_REASON[group.auto_rule] : null;
+  const suggestedLabel =
+    existing && suggested === existing.abs_path
+      ? `#${existing.id} · ${existing.filename ?? existing.abs_path}`
+      : (suggested ?? "");
 
   return (
     <div className="dup-group">
@@ -118,8 +173,27 @@ export default function DupGroupCard({
               ? `${formatBytes(group.reclaimable)} to reclaim · `
               : "nothing to reclaim · "}
             {hash.slice(0, 12)}…
+            {!suggested && group.members > 1 && !group.stale
+              ? " · no rule picks a survivor: choose one below"
+              : ""}
+            {group.strategy_skip
+              ? ` · your rule skips this group: ${group.strategy_skip}`
+              : ""}
           </div>
         </div>
+        {suggested && (
+          <div className="dup-head-action">
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => onKeep(suggested, suggestedLabel)}
+              disabled={busy}
+              title={reason?.title}
+            >
+              {Icons.keep}
+              <span>Keep suggested</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="dup-members">
@@ -151,6 +225,15 @@ export default function DupGroupCard({
                     : undefined
             }
             path={existing.abs_path ?? "(path unknown)"}
+            parts={existing.abs_path ? partsOf.get(existing.abs_path) : undefined}
+            suggested={
+              existing.abs_path && existing.abs_path === suggested
+                ? reason
+                : null
+            }
+            rulePick={
+              !!existing.abs_path && existing.abs_path === group.strategy_keep
+            }
             downloadHref={`/api/assets/${existing.id}/download`}
             canKeep={!!existing.abs_path && !existing.purged}
             onKeep={() => {
@@ -183,6 +266,9 @@ export default function DupGroupCard({
                 : c.source
             }
             path={c.abs_path}
+            parts={partsOf.get(c.abs_path)}
+            suggested={c.abs_path === suggested ? reason : null}
+            rulePick={c.abs_path === group.strategy_keep}
             downloadHref={`/api/failures/duplicates/file?path=${encodeURIComponent(
               c.abs_path,
             )}`}
@@ -239,6 +325,9 @@ function MemberRow({
   sub,
   primary,
   path,
+  parts,
+  suggested,
+  rulePick,
   downloadHref,
   canKeep,
   keepTitle,
@@ -254,6 +343,11 @@ function MemberRow({
   sub?: string;
   primary?: string;
   path: string;
+  parts?: PathParts;
+  /** This copy is the rule's survivor: the reason to print beside it. */
+  suggested?: { label: string; title: string } | null;
+  /** The strategy being previewed would keep this copy. */
+  rulePick?: boolean;
   downloadHref: string;
   canKeep: boolean;
   keepTitle?: string;
@@ -265,7 +359,11 @@ function MemberRow({
   busy: boolean;
 }) {
   return (
-    <div className={`dup-member${selected ? " selected" : ""}`}>
+    <div
+      className={`dup-member${suggested ? " is-suggested" : ""}${
+        selected ? " selected" : ""
+      }`}
+    >
       {onToggleSel ? (
         <input
           type="checkbox"
@@ -279,9 +377,22 @@ function MemberRow({
       )}
       <span className="pill dup-member-tag">{label}</span>
       {zone && <ZonePill zone={zone} />}
+      {suggested && (
+        <span className="pill dup-suggest" title={suggested.title}>
+          {suggested.label}
+        </span>
+      )}
+      {rulePick && (
+        <span
+          className="pill dup-rulepick"
+          title="The rule you are previewing above keeps this copy"
+        >
+          Your rule keeps this
+        </span>
+      )}
       <div className="dup-main">
         {primary && <div className="dup-cmp-name">{primary}</div>}
-        <div className="dup-cmp-path">{path}</div>
+        <DupPath path={path} parts={parts} />
         {sub && <div className="dup-sub">{sub}</div>}
       </div>
       <div className="dup-actions">

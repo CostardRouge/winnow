@@ -15,6 +15,10 @@ import { many } from "./db";
 import { PHOTO_RAW_EXTS } from "./config";
 import { keepOneCopy, viewOnlyChecker, zoneChecker, DuplicateError } from "./duplicates";
 import type {
+  DuplicateAutoRule,
+  DuplicatePlanKey,
+  DuplicateStrategy,
+  StrategyPreview,
   DuplicateCopy,
   DuplicateExisting,
   DuplicateFacet,
@@ -35,6 +39,12 @@ export type DuplicateListQuery = {
   q?: string;
   /** Keep only the groups with a RAW copy in the Gallery. */
   rawInGallery?: boolean;
+  /** Keep only one card of the plan: a branch of the rule, or "manual". */
+  rule?: DuplicatePlanKey;
+  /** Annotate each listed group with what this strategy would keep. */
+  strategy?: DuplicateStrategy;
+  /** The text the "folder" strategy looks for in a copy's path. */
+  folder?: string;
   sort?: DuplicateSort;
   limit?: number;
   offset?: number;
@@ -154,6 +164,7 @@ async function buildGroups(): Promise<{
         raw_in_gallery: false,
         stale: false,
         auto_keep: null,
+        auto_rule: null,
         updated_at: r.updated_at,
       };
       byHash.set(r.content_hash, g);
@@ -237,7 +248,9 @@ function finalizeGroup(g: DuplicateGroup, shadowed: boolean): void {
   // duplicate of anything, just a row nobody ever cleared.
   g.stale = !shadowed && g.members <= 1;
 
-  g.auto_keep = autoKeepPath(g, lib);
+  const auto = autoKeep(g, lib);
+  g.auto_keep = auto?.path ?? null;
+  g.auto_rule = auto?.rule ?? null;
 }
 
 // The survivor the bulk rule picks — deliberately narrow, because a wrong pick
@@ -263,10 +276,14 @@ function finalizeGroup(g: DuplicateGroup, shadowed: boolean): void {
 //     answer is to delete nothing at all;
 //   - a library entry in the trash, or a group of on-disk copies with no indexed
 //     one: which folder should hold the file is a judgement, not a chore.
-function autoKeepPath(
-  g: DuplicateGroup,
+//
+// Returns the branch alongside the path: the page prints it as the reason the
+// copy is suggested, which is what turns the bulk button from a leap of faith
+// into something a human can check one group at a time.
+export function autoKeep(
+  g: Pick<DuplicateGroup, "members" | "copies">,
   lib: DuplicateExisting | null,
-): string | null {
+): { path: string; rule: DuplicateAutoRule } | null {
   if (g.members < 2) return null;
   const protectedPaths = [
     ...(lib?.view_only && lib.abs_path ? [lib.abs_path] : []),
@@ -276,10 +293,84 @@ function autoKeepPath(
   if (protectedPaths.length === 1) {
     // `lib` is already null when the entry is purged (no bytes to keep).
     if (lib && lib.abs_path && lib.abs_path !== protectedPaths[0]) return null;
-    return protectedPaths[0];
+    return { path: protectedPaths[0], rule: "protected" };
   }
-  if (lib && !lib.deleted && lib.abs_path) return lib.abs_path;
+  if (lib && !lib.deleted && lib.abs_path)
+    return { path: lib.abs_path, rule: "library" };
   return null;
+}
+
+// The survivor a user-chosen STRATEGY keeps in a group, or why it leaves the
+// group alone. Unlike autoKeep this is applied only on request, to a view the
+// user narrowed — but it is just as unwilling to guess: a tie, no match or two
+// matches skip the group. Two refusals hold for every strategy, the first
+// because keepOneCopy would refuse anyway, the second by choice:
+//   - a view-only library entry is never the loser;
+//   - a LIVE library entry is never moved onto a view-only volume in bulk —
+//     the exact case autoKeep excludes; "Keep only this" still allows it, one
+//     group at a time, with the relink spelled out.
+export function strategyKeep(
+  g: Pick<DuplicateGroup, "existing" | "copies" | "stale">,
+  strategy: DuplicateStrategy,
+  folder?: string,
+): { path: string } | { skip: string } {
+  const lib =
+    g.existing && !g.existing.purged && g.existing.abs_path ? g.existing : null;
+  const members = [
+    ...(lib ? [{ path: lib.abs_path!, view_only: lib.view_only }] : []),
+    ...g.copies
+      .filter((c) => c.abs_path !== lib?.abs_path)
+      .map((c) => ({ path: c.abs_path, view_only: c.view_only })),
+  ];
+  if (g.stale || members.length < 2) return { skip: "not a duplicate any more" };
+
+  let pick: string;
+  if (strategy === "library") {
+    if (!lib || lib.deleted) return { skip: "no live library entry" };
+    pick = lib.abs_path!;
+  } else if (strategy === "shortest") {
+    const byLength = [...members].sort((a, b) => a.path.length - b.path.length);
+    if (byLength[0].path.length === byLength[1].path.length)
+      return { skip: "two copies have paths of the same length" };
+    pick = byLength[0].path;
+  } else {
+    const needle = (folder ?? "").trim().toLowerCase();
+    if (!needle) return { skip: "no folder given" };
+    const hits = members.filter((m) => m.path.toLowerCase().includes(needle));
+    if (hits.length === 0) return { skip: "no copy matches the folder" };
+    if (hits.length > 1) return { skip: "several copies match the folder" };
+    pick = hits[0].path;
+  }
+
+  if (lib?.view_only && pick !== lib.abs_path)
+    return { skip: "the library copy is on a view-only volume and is never deleted" };
+  // Keeping a trashed entry would leave the trash's next purge holding the
+  // only copy — the call autoKeep leaves to a human, and so does this.
+  if (lib?.deleted && pick === lib.abs_path)
+    return { skip: "the copy it would keep is in the trash" };
+  const kept = members.find((m) => m.path === pick)!;
+  if (lib && !lib.deleted && pick !== lib.abs_path && kept.view_only)
+    return { skip: "it would move the library entry onto a view-only volume" };
+  return { path: pick };
+}
+
+// What keeping `pick` does to a group: files deleted (view-only copies stay)
+// and whether the live library entry moves.
+function outcomeOf(g: DuplicateGroup, pick: string) {
+  const lib =
+    g.existing && !g.existing.purged && g.existing.abs_path ? g.existing : null;
+  const paths = [
+    ...(lib ? [{ path: lib.abs_path!, view_only: lib.view_only }] : []),
+    ...g.copies
+      .filter((c) => c.abs_path !== lib?.abs_path)
+      .map((c) => ({ path: c.abs_path, view_only: c.view_only })),
+  ];
+  const files = paths.filter((m) => m.path !== pick && !m.view_only).length;
+  return {
+    files,
+    bytes: files * (g.file_size ?? 0),
+    relink: !!(lib && !lib.deleted && lib.abs_path !== pick),
+  };
 }
 
 function matches(g: DuplicateGroup, needle: string): boolean {
@@ -292,14 +383,34 @@ function emptyFacet(): DuplicateFacet {
   return { groups: 0, extras: 0, reclaimable: 0 };
 }
 
+function count(f: DuplicateFacet, g: DuplicateGroup): void {
+  f.groups++;
+  f.extras += g.extras;
+  f.reclaimable += g.reclaimable;
+}
+
+// The plan card a group belongs to: the branch of the rule that picks its
+// survivor, or "manual". A stale group belongs to none — it is not a duplicate
+// of anything any more, and "Clear resolved" is its only action.
+export function planKey(
+  g: Pick<DuplicateGroup, "stale" | "auto_rule">,
+): DuplicatePlanKey | null {
+  if (g.stale) return null;
+  return g.auto_rule ?? "manual";
+}
+
 // Filter → facet → sort. One table pass, shared by the listing (which slices a
 // page out of `matched`) and the bulk resolution (which walks it in order), so
 // the two can never disagree about which groups a filter selects.
 //
-// The facets are counted over the path/RAW filter but NOT over the scope, so the
-// tab badges keep showing where the rest of the matches are instead of
-// collapsing to the tab you are already on.
-async function selectGroups(query: DuplicateListQuery) {
+// The facets are counted over the path/RAW/rule filter but NOT over the scope,
+// so the tab badges keep showing where the rest of the matches are instead of
+// collapsing to the tab you are already on. The plan is the mirror image: counted
+// over the scope but NOT over the rule, so every card keeps its number while the
+// list below shows one of them.
+// Exported for lib/duplicatePairs, which reads the same filtered groups by
+// folder pair — one derivation of what a group IS, whatever the view.
+export async function selectGroups(query: DuplicateListQuery) {
   const { groups, falseItems, total, falseCount } = await buildGroups();
   const needle = (query.q ?? "").trim().toLowerCase();
 
@@ -311,9 +422,13 @@ async function selectGroups(query: DuplicateListQuery) {
     { groups: 0, bytes: 0 },
   );
 
-  const preScope = groups.filter(
+  const base = groups.filter(
     (g) => matches(g, needle) && (!query.rawInGallery || g.raw_in_gallery),
   );
+  const inRule = (g: DuplicateGroup) => !query.rule || planKey(g) === query.rule;
+  const inScope = (g: DuplicateGroup) =>
+    !query.scope || query.scope === "all" || g.scope === query.scope;
+  const preScope = base.filter(inRule);
 
   const facets = {
     all: emptyFacet(),
@@ -323,17 +438,21 @@ async function selectGroups(query: DuplicateListQuery) {
     elsewhere: emptyFacet(),
   } as Record<DuplicateScope | "all", DuplicateFacet>;
   for (const g of preScope) {
-    for (const key of ["all", g.scope] as const) {
-      facets[key].groups++;
-      facets[key].extras += g.extras;
-      facets[key].reclaimable += g.reclaimable;
-    }
+    count(facets.all, g);
+    count(facets[g.scope], g);
   }
 
-  const matched =
-    query.scope && query.scope !== "all"
-      ? preScope.filter((g) => g.scope === query.scope)
-      : preScope;
+  const plan = {
+    protected: emptyFacet(),
+    library: emptyFacet(),
+    manual: emptyFacet(),
+  } as Record<DuplicatePlanKey, DuplicateFacet>;
+  for (const g of base) {
+    const key = planKey(g);
+    if (key && inScope(g)) count(plan[key], g);
+  }
+
+  const matched = preScope.filter(inScope);
 
   const sort = query.sort ?? "size";
   matched.sort((a, b) => {
@@ -352,6 +471,7 @@ async function selectGroups(query: DuplicateListQuery) {
       ? falseItems.filter((f) => f.abs_path.toLowerCase().includes(needle))
       : falseItems,
     facets,
+    plan,
     rawInGallery,
     total,
     falseCount,
@@ -365,14 +485,22 @@ export async function listDuplicateGroups(
   const offset = Math.max(query.offset ?? 0, 0);
   const s = await selectGroups(query);
   const auto = s.matched.filter((g) => g.auto_keep);
+  const page = s.matched.slice(offset, offset + limit);
+  if (query.strategy)
+    for (const g of page) {
+      const r = strategyKeep(g, query.strategy, query.folder);
+      g.strategy_keep = "path" in r ? r.path : null;
+      g.strategy_skip = "skip" in r ? r.skip : null;
+    }
 
   return {
     total: s.total,
     falseCollisions: s.falseCount,
     matched: s.matched.length,
-    groups: s.matched.slice(offset, offset + limit),
+    groups: page,
     falseItems: s.falseItems,
     facets: s.facets,
+    plan: s.plan,
     autoResolvable: auto.length,
     autoReclaimable: auto.reduce((n, g) => n + g.reclaimable, 0),
     stale: s.matched.filter((g) => g.stale).length,
@@ -380,6 +508,52 @@ export async function listDuplicateGroups(
     limit,
     offset,
   };
+}
+
+export type KeepEachResult = ResolveAutoResult & { retry: string[] };
+
+// Run keepOneCopy over a batch of (group, survivor) picks — the one loop every
+// bulk path shares (the plan's cards, the folder pairs), so they count, report
+// and leave groups behind the same way. `remaining` is the caller's to fill.
+export async function keepEach(
+  targets: { hash: string; keepPath: string }[],
+): Promise<KeepEachResult> {
+  const result: KeepEachResult = {
+    resolved: 0,
+    deleted: 0,
+    relinked: 0,
+    failed: 0,
+    remaining: 0,
+    skipped: [],
+    retry: [],
+  };
+  const reasons = new Map<string, number>();
+  const note = (reason: string) => reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  for (const t of targets) {
+    try {
+      const r = await keepOneCopy({ contentHash: t.hash, keepPath: t.keepPath });
+      result.resolved++;
+      result.deleted += r.deleted.length;
+      if (r.relinked) result.relinked++;
+      // A copy keepOneCopy refused keeps its row, so the group stays listed:
+      // say why, and do not pick it again in this run.
+      for (const sk of r.skipped) note(sk.reason);
+      if (r.skipped.length) result.retry.push(t.hash);
+    } catch (err) {
+      // A group that can't be collapsed (a copy vanished under us, a permission
+      // error) must not abort the batch: it keeps its rows and stays listed for
+      // the user, exactly as if it had never been picked.
+      if (!(err instanceof DuplicateError))
+        console.warn("keepEach:", (err as Error).message);
+      note((err as Error).message);
+      result.failed++;
+      result.retry.push(t.hash);
+    }
+  }
+  result.skipped = [...reasons]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+  return result;
 }
 
 // Collapse, in one pass, every group in the current filter that the rule above
@@ -397,45 +571,96 @@ export async function listDuplicateGroups(
 // Every group still goes through keepOneCopy: full path whitelisting, the
 // view-only refusal, the relink-before-unlink ordering and the audit-row
 // cleanup are unchanged. This adds a picker, not a shortcut.
+//
+// `rule` narrows the run to one card of the plan (a branch of the rule). Asking
+// for "manual" selects nothing: no rule picks a survivor there, by definition.
+//
+// `exclude` lists the groups this run already tried and left behind (returned
+// as `retry` by earlier batches). It can only REMOVE groups from the run — the
+// server still derives every survivor itself — and it is what keeps a batch
+// from re-picking the same refused groups at the head of the size order while
+// the rest of the backlog waits behind them.
 export async function resolveDuplicatesAuto(
-  query: DuplicateListQuery & { max?: number },
-): Promise<ResolveAutoResult> {
+  query: DuplicateListQuery & { max?: number; exclude?: string[] },
+): Promise<KeepEachResult> {
   const max = Math.min(Math.max(query.max ?? 100, 1), 500);
-  const targets = (await selectGroups(query))
-    .matched.filter((g) => g.auto_keep)
-    .slice(0, max);
+  const exclude = new Set(query.exclude ?? []);
+  const pickable = (g: DuplicateGroup) => !!g.auto_keep && !exclude.has(g.hash);
+  const targets = (await selectGroups(query)).matched.filter(pickable).slice(0, max);
 
-  const result: ResolveAutoResult = {
-    resolved: 0,
-    deleted: 0,
-    relinked: 0,
-    failed: 0,
-    remaining: 0,
-  };
-  for (const g of targets) {
-    try {
-      const r = await keepOneCopy({
-        contentHash: g.hash,
-        keepPath: g.auto_keep!,
-      });
-      result.resolved++;
-      result.deleted += r.deleted.length;
-      if (r.relinked) result.relinked++;
-    } catch (err) {
-      // A group that can't be collapsed (a copy vanished under us, a permission
-      // error) must not abort the batch: it keeps its rows and stays listed for
-      // the user, exactly as if it had never been picked.
-      if (!(err instanceof DuplicateError))
-        console.warn("resolveDuplicatesAuto:", (err as Error).message);
-      result.failed++;
-    }
-  }
+  const result = await keepEach(
+    targets.map((g) => ({ hash: g.hash, keepPath: g.auto_keep! })),
+  );
 
-  // What a next batch would still find. NOTE for the caller: a group that keeps
-  // failing stays counted here, so a loop must stop on `resolved === 0`, not on
-  // `remaining === 0`, or it spins forever on the same refusals.
+  // What a next batch would still find, this run's refusals excluded. The
+  // caller still stops on lack of progress too: a group can turn refusable
+  // between two batches.
+  const left = new Set([...exclude, ...result.retry]);
   result.remaining = (await selectGroups(query)).matched.filter(
-    (g) => g.auto_keep,
+    (g) => g.auto_keep && !left.has(g.hash),
   ).length;
+  return result;
+}
+
+// What a strategy would do over the current view, before anything runs: the
+// preview the page prints beside its Apply button, computed by the same
+// strategyKeep the run uses. No disk access — the run re-checks every copy.
+export async function previewStrategy(
+  query: DuplicateListQuery & { strategy: DuplicateStrategy },
+): Promise<StrategyPreview> {
+  const { matched } = await selectGroups(query);
+  const preview: StrategyPreview = {
+    groups: 0,
+    files: 0,
+    bytes: 0,
+    relinks: 0,
+    skipped: [],
+  };
+  const reasons = new Map<string, number>();
+  for (const g of matched) {
+    if (g.stale) continue;
+    const r = strategyKeep(g, query.strategy, query.folder);
+    if ("skip" in r) {
+      reasons.set(r.skip, (reasons.get(r.skip) ?? 0) + 1);
+      continue;
+    }
+    const o = outcomeOf(g, r.path);
+    preview.groups++;
+    preview.files += o.files;
+    preview.bytes += o.bytes;
+    if (o.relink) preview.relinks++;
+  }
+  preview.skipped = [...reasons]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+  return preview;
+}
+
+// Apply a strategy to the current view, one bounded batch at a time — the
+// strategy counterpart of resolveDuplicatesAuto, same `exclude`/`retry`
+// contract, same keepEach underneath.
+export async function resolveStrategy(
+  query: DuplicateListQuery & {
+    strategy: DuplicateStrategy;
+    max?: number;
+    exclude?: string[];
+  },
+): Promise<KeepEachResult> {
+  const max = Math.min(Math.max(query.max ?? 100, 1), 500);
+  const exclude = new Set(query.exclude ?? []);
+  const picks = async () => {
+    const { matched } = await selectGroups(query);
+    const out: { hash: string; keepPath: string }[] = [];
+    for (const g of matched) {
+      if (g.stale) continue;
+      const r = strategyKeep(g, query.strategy, query.folder);
+      if ("path" in r) out.push({ hash: g.hash, keepPath: r.path });
+    }
+    return out;
+  };
+  const targets = (await picks()).filter((t) => !exclude.has(t.hash)).slice(0, max);
+  const result = await keepEach(targets);
+  const left = new Set([...exclude, ...result.retry]);
+  result.remaining = (await picks()).filter((t) => !left.has(t.hash)).length;
   return result;
 }

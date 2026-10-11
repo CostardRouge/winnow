@@ -78,9 +78,11 @@ export function active(c: QueueCounts | undefined): number {
   return (c.active ?? 0) + (c.waiting ?? 0) + (c.prioritized ?? 0);
 }
 
-// Sum of every failure family surfaced by /api/stats. Mirrors the tabs on
-// /pipeline/failures — deduplication included — so the aggregate badge stays in
-// sync with the subsections and drops as duplicates are resolved.
+// Sum of the failure families surfaced by /api/stats, mirroring the tabs on
+// /settings/pipeline/failures. Duplicates are NOT counted since they moved to
+// Library › Duplicates (2026-10-11): a backlog of copies to clear is not a
+// failure, and counting it here kept the Failures badge red for weeks of
+// ordinary cleanup. Their own count rides the Library tab.
 export function totalFailures(s: Stats | null): number {
   const f = s?.failures;
   return (
@@ -88,7 +90,6 @@ export function totalFailures(s: Stats | null): number {
     (f?.scan ?? 0) +
     (f?.import ?? 0) +
     (f?.ml ?? 0) +
-    (f?.duplicates ?? 0) +
     (f?.missing ?? 0)
   );
 }

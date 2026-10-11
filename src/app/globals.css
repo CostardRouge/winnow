@@ -3925,6 +3925,331 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply mt-2 grid list-disc gap-1 pl-5;
   }
 
+  /* ---- Deduplication: the suggested survivor -----------------------------
+     The bulk rule already picks a survivor per group (auto_keep); these draw
+     it, so a human can check the pick one group at a time instead of trusting
+     a button over thousands. Green is the verdict on a COPY (it stays), the
+     same green the zone pill uses for a protected one — never a count. */
+
+  /* A copy's path in three runs: the folders every copy shares recede, the
+     folder that tells this copy apart carries the eye, the file name follows.
+     Three near-identical absolute paths are otherwise one blur. */
+  .dup-cmp-path .dup-path-pre {
+    color: var(--color-faint);
+  }
+  .dup-cmp-path .dup-path-diff {
+    @apply rounded-sm px-0.5;
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--color-star) 16%, transparent);
+  }
+  .dup-member.is-suggested {
+    background: color-mix(in srgb, var(--color-pick) 7%, var(--color-surface));
+    box-shadow: inset 3px 0 0 var(--color-pick);
+  }
+  .dup-member.is-suggested.selected {
+    background: var(--color-accent-wash);
+  }
+  .dup-suggest {
+    @apply shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-pick);
+    border-color: transparent;
+    background: color-mix(in srgb, var(--color-pick) 12%, var(--color-surface));
+  }
+  /* The group's one primary action, beside the min-w-0 title track. */
+  .dup-head-action {
+    @apply ml-auto flex shrink-0 items-center;
+  }
+  /* ---- Deduplication: the cleanup plan ----------------------------------
+     One card per branch of the bulk rule plus "Needs you". Three columns on a
+     desktop, stacked on a phone; the card's actions sit at its foot so the
+     buttons line up across cards whatever the length of the rule above. */
+  .dup-plan {
+    @apply mb-3;
+  }
+  .dup-plan-cards {
+    @apply grid gap-2.5;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+  .dup-plan-card {
+    @apply flex min-w-0 flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-plan-card.is-manual {
+    border-style: dashed;
+    border-color: var(--color-border-strong);
+  }
+  .dup-plan-card.is-active {
+    border-color: var(--color-text);
+    box-shadow: inset 0 0 0 1px var(--color-text);
+  }
+  .dup-plan-title {
+    @apply m-0 text-[13px] font-semibold;
+  }
+  .dup-plan-rule {
+    @apply m-0 text-[12px];
+    color: var(--color-muted);
+  }
+  .dup-plan-nums {
+    @apply m-0 text-[12px];
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .dup-plan-nums strong {
+    color: var(--color-text);
+  }
+  .dup-plan-actions {
+    @apply mt-auto flex flex-wrap items-center gap-1.5 pt-1;
+  }
+  /* A finished run's account of itself, under the cards. */
+  .dup-run-report {
+    @apply mt-2.5 grid gap-1.5 rounded-[var(--radius)] border p-2 text-[12px];
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+  }
+  .dup-run-head {
+    @apply flex items-start gap-2;
+  }
+  .dup-run-head > span {
+    @apply min-w-0 flex-1;
+  }
+  .dup-run-report summary {
+    @apply cursor-pointer;
+    color: var(--color-muted);
+  }
+  .dup-run-report ul {
+    @apply mb-0 mt-1 grid gap-0.5 pl-4;
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- Deduplication: folder pairs -------------------------------------
+     One card per pair of folders holding the same files: the two sides side
+     by side (stacked on a phone), one line of numbers, the side buttons. The
+     suggested side wears the same green edge as a suggested copy. */
+  .dup-pairs {
+    @apply grid gap-2.5;
+  }
+  .dup-pair {
+    @apply grid gap-2 rounded-[var(--radius-lg)] border p-3;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-pair-sides {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  .dup-pair-side {
+    @apply grid min-w-0 content-start gap-1 rounded-[var(--radius)] border p-2;
+    border-color: var(--color-border);
+    background: var(--color-bg);
+  }
+  .dup-pair-side.is-suggested {
+    background: color-mix(in srgb, var(--color-pick) 7%, var(--color-surface));
+    box-shadow: inset 3px 0 0 var(--color-pick);
+  }
+  .dup-pair-tags {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-pair-tags .dup-zone {
+    @apply ml-0;
+  }
+  .dup-pair-meta {
+    @apply text-[12px];
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+  .dup-pair-meta strong {
+    color: var(--color-text);
+  }
+  .dup-pair-actions {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-pair-keep {
+    color: var(--color-pick);
+  }
+  .dup-pair-drop {
+    color: var(--color-reject);
+  }
+
+  /* ---- Deduplication: the review queue ----------------------------------
+     A wide dialog: the preview on the left, the copies as numbered choices on
+     the right (stacked on a phone), the staged-decision bar at the foot. */
+  .modal.dup-review {
+    @apply grid max-w-4xl gap-3;
+  }
+  /* Focused programmatically on open so the keys work at once: the dialog is
+     not a control, so it draws no focus ring of its own. */
+  .modal.dup-review:focus,
+  .modal.dup-review:focus-visible {
+    outline: none;
+  }
+  .dup-review-top {
+    @apply flex items-center gap-3;
+  }
+  .dup-review-prog {
+    @apply text-[13px];
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .dup-review-bar {
+    @apply h-1 overflow-hidden rounded-full;
+    background: var(--color-surface-3);
+  }
+  .dup-review-bar span {
+    @apply block h-full;
+    background: var(--color-text);
+  }
+  .dup-review-body {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  }
+  .dup-review-photo {
+    @apply grid min-w-0 content-start gap-2;
+  }
+  .dup-review-photo img,
+  .dup-review-nothumb {
+    @apply w-full rounded-[var(--radius)] object-contain;
+    aspect-ratio: 3 / 2;
+    background: var(--color-surface-3);
+  }
+  .dup-review-nothumb {
+    @apply flex flex-col items-center justify-center gap-2 text-[12px];
+    color: var(--color-muted);
+  }
+  .dup-review-name {
+    @apply flex flex-wrap items-baseline justify-between gap-2 text-[13px];
+    overflow-wrap: anywhere;
+  }
+  .dup-review-copies {
+    @apply grid min-w-0 content-start gap-2;
+  }
+  .dup-choice {
+    @apply grid w-full gap-x-2.5 gap-y-1 rounded-[var(--radius)] border p-2.5 text-left;
+    grid-template-columns: auto minmax(0, 1fr);
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: inherit;
+    font: inherit;
+  }
+  .dup-choice:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+  }
+  .dup-choice:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+  .dup-choice.is-picked {
+    border-color: var(--color-pick);
+    background: color-mix(in srgb, var(--color-pick) 8%, var(--color-surface));
+  }
+  .dup-choice-key {
+    @apply row-span-2 grid h-6 w-6 place-items-center rounded-md border text-[12px] font-semibold;
+    border-color: var(--color-border-strong);
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .dup-choice.is-picked .dup-choice-key {
+    background: var(--color-pick);
+    border-color: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .dup-choice-tags {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+  .dup-choice-tags .dup-zone {
+    @apply ml-0;
+  }
+  .dup-choice-fate {
+    @apply ml-auto text-[11px] font-semibold uppercase tracking-wide;
+  }
+  .dup-choice-fate.is-keep {
+    color: var(--color-pick);
+  }
+  .dup-choice-fate.is-delete {
+    color: var(--color-reject);
+  }
+  .dup-choice-fate.is-stays {
+    color: var(--color-muted);
+  }
+  .dup-review-note {
+    @apply m-0;
+  }
+  .dup-review-actions {
+    @apply flex flex-wrap items-center gap-2 border-t pt-3;
+    border-color: var(--color-border);
+  }
+  .dup-review-actions kbd,
+  .dup-review-keys kbd {
+    @apply ml-1 rounded border px-1 text-[10px];
+    border-color: currentColor;
+    opacity: 0.7;
+    font-family: var(--font-mono);
+  }
+  .dup-review-keys {
+    @apply m-0 text-[12px];
+  }
+  .dup-review-end {
+    @apply grid gap-3 py-6 text-[14px];
+  }
+
+  /* ---- Deduplication: your own rule -------------------------------------
+     Folded until opened; open, it previews and every listed group marks the
+     copy it would keep with an ink chip — distinct from the green of the
+     rule's own suggestion, so the two never read as one. */
+  .dup-strategy {
+    @apply mb-3 rounded-[var(--radius)] border px-3 py-2 text-[13px];
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-strategy[open] {
+    border-color: var(--color-border-strong);
+  }
+  .dup-strategy summary {
+    @apply cursor-pointer select-none font-medium;
+    color: var(--color-muted);
+  }
+  .dup-strategy-body {
+    @apply mt-2 grid gap-2;
+  }
+  .dup-strategy-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .dup-strategy-folder {
+    @apply w-56 max-w-full;
+  }
+  .dup-strategy-preview {
+    @apply m-0;
+    color: var(--color-muted);
+  }
+  .dup-strategy-preview strong {
+    color: var(--color-text);
+  }
+  .dup-strategy-ask {
+    @apply min-w-0 flex-1;
+  }
+  .dup-rulepick {
+    @apply shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    color: var(--color-text);
+    border-color: var(--color-text);
+    background: var(--color-surface);
+  }
+
+  /* The rules, folded: they govern every action on the page, so they stay one
+     click away rather than a paragraph to re-read above the list. */
+  .dup-rules {
+    @apply mb-3 rounded-[var(--radius)] border px-3 py-2 text-[13px];
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .dup-rules summary {
+    @apply cursor-pointer select-none font-medium;
+    color: var(--color-muted);
+  }
+  .dup-rules p {
+    @apply mb-0 mt-2;
+    color: var(--color-muted);
+  }
+
   /* ---- Pipeline sub-route tabs -------------------------------------------
      Same compact segmented-control language as .view-toggle/.view-btn (the
      Sessions/Grid/Calendar/Map switcher), so the two read as one family —

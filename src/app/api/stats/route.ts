@@ -120,9 +120,9 @@ export async function GET() {
       geocodeEnabled: config.geocode.enabled,
       // null when CLIP is off (tile hidden), {indexed, library} otherwise.
       clip,
-      // Same source as the /pipeline/failures tabs (lib/failures.failureCounts),
-      // so the aggregate "Failures" badge always equals the sum of the
-      // subsections — including deduplication, which it previously omitted.
+      // Same source as the /pipeline/failures tabs (lib/failures.failureCounts).
+      // `duplicates` is no longer a failure family (Library › Duplicates since
+      // 2026-10-11): it feeds that tab's badge, not the "Failures" total.
       failures: {
         derivative: fails.derivative,
         scan: fails.scan,

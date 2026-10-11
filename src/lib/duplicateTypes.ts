@@ -32,6 +32,23 @@ export const DUPLICATE_SCOPES: DuplicateScope[] = [
 
 export type DuplicateSort = "size" | "recent" | "path";
 
+// The two branches of the bulk rule (lib/duplicateList → autoKeep), named so
+// the page can say WHY a copy is the suggested survivor instead of only which:
+//   protected — the one copy on a Final/Export volume, which is never deleted;
+//   library   — the live library entry, with no protected copy in the group.
+export type DuplicateAutoRule = "protected" | "library";
+
+// Where a group sits in the cleanup PLAN: one of the rule's branches, or
+// "manual" when no rule can pick the survivor and a human has to. A stale group
+// (nothing shadows it any more) is in none of them — "Clear resolved" drops it.
+export type DuplicatePlanKey = DuplicateAutoRule | "manual";
+
+export const DUPLICATE_PLAN_KEYS: DuplicatePlanKey[] = [
+  "protected",
+  "library",
+  "manual",
+];
+
 /** The indexed asset holding this content: live, in the trash, or purged. */
 export type DuplicateExisting = {
   id: number;
@@ -77,6 +94,12 @@ export type DuplicateGroup = {
   stale: boolean;
   /** The survivor the bulk rule would pick, or null when the group needs a human. */
   auto_keep: string | null;
+  /** Which branch of that rule picked it — what the page prints as the reason. */
+  auto_rule: DuplicateAutoRule | null;
+  /** With a strategy in the query: the copy it would keep, or why it skips
+   *  this group (exactly one of the two is set). Absent without a strategy. */
+  strategy_keep?: string | null;
+  strategy_skip?: string | null;
   updated_at: string;
 };
 
@@ -111,6 +134,10 @@ export type DuplicateListResult = {
   groups: DuplicateGroup[];
   falseItems: DuplicateFalseItem[];
   facets: Record<DuplicateScope | "all", DuplicateFacet>;
+  /** The plan: the current scope's groups split by who picks the survivor —
+   *  counted before the `rule` filter, so every card keeps its number while
+   *  the list shows one of them. */
+  plan: Record<DuplicatePlanKey, DuplicateFacet>;
   /** Groups the bulk rule could resolve on its own, within the current filter. */
   autoResolvable: number;
   /** Bytes those groups alone would free — what the bulk confirmation promises. */
@@ -134,6 +161,9 @@ export type ResolveAutoResult = {
   failed: number;
   /** Auto-resolvable groups still matching the filter afterwards. */
   remaining: number;
+  /** Why copies or whole groups were left alone, grouped and counted — the
+   *  report says what happened to every group it did not collapse. */
+  skipped: { reason: string; count: number }[];
 };
 
 export type SweepResolvedResult = {
@@ -144,4 +174,72 @@ export type SweepResolvedResult = {
   released: number;
   /** Rows dropped because nothing shadows their content any more. */
   stale: number;
+};
+
+// ---- Folder pairs ---------------------------------------------------------
+//
+// Duplicates arrive by whole folders (a card imported twice, a backup, a
+// "(copy)" folder), so the pair view groups two-copy groups by the two folders
+// they live in: one decision per pair keeps every copy on one side.
+
+export type DuplicatePairSideKey = "left" | "right";
+
+export type DuplicatePairSide = {
+  /** The folder, with no trailing slash. */
+  dir: string;
+  zone: DuplicateZone;
+  /** On a Final/Export volume: its copies are never deleted. */
+  view_only: boolean;
+  /** Groups whose LIVE library entry is the copy on this side. */
+  library: number;
+  /** Groups whose library entry on this side is in the trash. */
+  trashed: number;
+};
+
+export type DuplicatePair = {
+  /** Stable id of the pair: the two folders, left then right. */
+  key: string;
+  left: DuplicatePairSide;
+  right: DuplicatePairSide;
+  /** Two-copy groups with one copy on each side. */
+  groups: number;
+  /** Bytes on ONE side — what keeping the other frees. */
+  bytes: number;
+  /** The side autoKeep would keep in every group of the pair, if they agree. */
+  suggest: DuplicatePairSideKey | null;
+  /** A few file names, to recognise the pair at a glance. */
+  sample: string[];
+};
+
+export type DuplicatePairList = {
+  pairs: DuplicatePair[];
+  /** Pairs matching the filter (the page above is a slice of these). */
+  matched: number;
+  /** Groups in the filter that are no pair: three or more copies, or two in
+   *  the same folder — they stay in the group view. */
+  unpaired: number;
+  limit: number;
+  offset: number;
+};
+
+// ---- Strategies -----------------------------------------------------------
+//
+// A survivor rule the USER picks and applies to a whole view, beside the
+// narrow automatic one (autoKeep). Each skips a group rather than guess, and
+// none ever moves a live library entry onto a view-only volume.
+//   library  — keep the live library entry where it is (nothing relinked);
+//   shortest — keep the copy with the shortest path (a tie skips);
+//   folder   — keep the one copy whose path contains the given text.
+export type DuplicateStrategy = "library" | "shortest" | "folder";
+
+export type StrategyPreview = {
+  /** Groups in the view the strategy decides. */
+  groups: number;
+  /** Files it would delete, and the bytes they hold. */
+  files: number;
+  bytes: number;
+  /** Live library entries it would move onto the kept copy. */
+  relinks: number;
+  /** Groups it leaves alone, by reason. */
+  skipped: { reason: string; count: number }[];
 };

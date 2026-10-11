@@ -1,7 +1,10 @@
 "use client";
 
-// Failures › Deduplication: the duplicate-triage surface, on its own URL so a
-// review session ("here, sort these out") can be linked to directly.
+// Library › Duplicates: the duplicate-triage surface, on its own URL so a
+// review session ("here, sort these out") can be linked to directly. It lived
+// under Settings › Pipeline › Failures until 2026-10-11: a duplicate is not a
+// pipeline failure but a cleanup with a measurable win, and nobody looks for a
+// cleanup inside a failures tab (the old URL redirects here).
 //
 // The list this page draws is the biggest in the app — a real library carries
 // thousands of recorded duplicate hits — so it is built around finding the ones
@@ -14,19 +17,29 @@
 //     first page is the most disk a click can free,
 //   • server-side paging, so the page renders forty groups and not five
 //     thousand,
-//   • one bulk collapse for the groups whose survivor is not a judgement call,
-//     because clicking through those one at a time is data entry, not triage,
+//   • the survivor the bulk rule would keep, drawn on every group with the
+//     reason it was picked, so "Keep suggested" can be checked group by group
+//     before it is trusted over the whole filter,
+//   • a cleanup plan — one card per branch of the bulk rule, plus "Needs you"
+//     — each with its rule, its numbers and its own bulk "Keep suggested",
+//     because clicking through those groups one at a time is data entry, not
+//     triage; a run reports why it left any group behind,
 //   • a standing report of the RAW masters found in the Gallery: the workflow
 //     says a RAW belongs in Incoming and an export in the Gallery, and those
 //     volumes are view-only, so this page can only name them — not fix them.
 //
 // Every destructive action still goes through the same lib/duplicates guards it
 // always did; nothing here reaches around them.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Icons } from "../../../../ui";
-import { FamilyShell } from "../sections";
-import { formatBytes } from "../model";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icons } from "../../ui";
+import PullToRefresh from "../../PullToRefresh";
+import { formatBytes } from "@/lib/format";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
+import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
+import DedupPairs from "./DedupPairs";
+import DedupReview from "./DedupReview";
+import DedupStrategy from "./DedupStrategy";
+import { OptionPicker, type PickerOption } from "../../OptionPicker";
 import {
   ConfirmAutoModal,
   ConfirmDeleteModal,
@@ -42,6 +55,7 @@ import {
   type DuplicateQuery,
 } from "./useDuplicates";
 import type {
+  DuplicateAutoRule,
   DuplicateExisting,
   DuplicateGroup,
   DuplicateScope,
@@ -86,7 +100,53 @@ const SORTS: { key: DuplicateSort; label: string }[] = [
 
 const SCOPE_KEY = "winnow.dedup.scope";
 
-export default function DuplicatesFailuresPage() {
+// Two readings of the same filtered backlog: one card per group of identical
+// copies, or one per pair of folders those copies live in.
+type DedupView = "groups" | "pairs";
+const VIEWS: PickerOption<DedupView>[] = [
+  {
+    key: "groups",
+    label: "Groups",
+    hint: "One card per set of identical copies, with the plan above",
+  },
+  {
+    key: "pairs",
+    label: "Folder pairs",
+    hint: "One card per pair of folders holding the same files — keep one side",
+  },
+];
+const VIEW_KEY = "winnow.dedup.view";
+
+// The page's frame: pull-to-refresh, the load error, the last action's
+// message. (Under Failures this was that section's FamilyShell.)
+function Shell({
+  onRefresh,
+  error,
+  msg,
+  children,
+}: {
+  onRefresh: () => Promise<unknown> | void;
+  error: string | null;
+  msg: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <PullToRefresh className="tab-pane sessions-pane" onRefresh={onRefresh}>
+      {error && (
+        <div className="error-box">
+          <span>Couldn’t load the duplicates: {error}</span>
+          <button className="btn" onClick={onRefresh}>
+            Retry
+          </button>
+        </div>
+      )}
+      {msg && <p className="hint">{msg}</p>}
+      {children}
+    </PullToRefresh>
+  );
+}
+
+export default function DuplicatesPanel() {
   const [query, setQuery] = useState<DuplicateQuery>(EMPTY_QUERY);
   // Typing must not fire a request per keystroke: the field is local, the query
   // follows a beat later (and rewinds to the first page, or the user lands on
@@ -106,8 +166,11 @@ export default function DuplicatesFailuresPage() {
   const [keep, setKeep] = useState<KeepTarget | null>(null);
   const [discard, setDiscard] = useState<DuplicateExisting | null>(null);
   const [auto, setAuto] = useState<AutoTarget | null>(null);
+  const [report, setReport] = useState<RunReport | null>(null);
 
   const { data, error, loading, load } = useDuplicates(query);
+  const [view, setView] = useState<DedupView>("groups");
+  const [reviewing, setReviewing] = useState(false);
 
   // Restore the chosen scope between visits, seeded once on mount so a later
   // write never yanks the tab out from under whatever the user just clicked —
@@ -116,7 +179,15 @@ export default function DuplicatesFailuresPage() {
     const saved = localStorage.getItem(SCOPE_KEY);
     if (saved && SCOPES.some((s) => s.key === saved))
       setQuery((qq) => ({ ...qq, scope: saved as DuplicateScope | "all" }));
+    const savedView = localStorage.getItem(VIEW_KEY);
+    if (savedView === "pairs" || savedView === "groups") setView(savedView);
   }, []);
+  const pickView = (v: DedupView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {}
+  };
 
   useEffect(() => {
     const t = setTimeout(
@@ -128,8 +199,24 @@ export default function DuplicatesFailuresPage() {
 
   const patch = (p: Partial<DuplicateQuery>) =>
     setQuery((qq) => ({ ...qq, offset: 0, ...p }));
+  // Stable: the strategy panel debounces its folder field against it.
+  const setStrategy = useCallback(
+    (strategy: DuplicateQuery["strategy"], folder: string) =>
+      setQuery((qq) => ({ ...qq, offset: 0, strategy, folder })),
+    [],
+  );
 
   const groups = useMemo(() => data?.groups ?? [], [data]);
+
+  // A bulk run can empty the page being shown (the last one): step back to
+  // the new last page instead of stranding the user without a pager.
+  useEffect(() => {
+    if (data && data.groups.length === 0 && query.offset > 0 && data.matched > 0)
+      setQuery((qq) => ({
+        ...qq,
+        offset: Math.floor((data.matched - 1) / PAGE_SIZE) * PAGE_SIZE,
+      }));
+  }, [data, query.offset]);
 
   // Keep the selection in sync with the copies still on screen: rows vanish
   // after a delete, and paging away must not carry a hidden pending deletion to
@@ -212,17 +299,24 @@ export default function DuplicatesFailuresPage() {
     }
   }
 
+  // What a single action left in place, with each copy's reason — a count
+  // alone does not tell the user whether to rescan, fix a permission or move a
+  // file by hand (CODEBASE-AUDIT UX-05).
+  const leftInPlace = (skipped: { path: string; reason: string }[] = []) =>
+    skipped.length
+      ? ` Left in place: ${skipped
+          .map((s) => `${s.path.split("/").pop()} (${s.reason})`)
+          .join("; ")}.`
+      : "";
+
   const runDelete = (paths: string[]) =>
     run(async () => {
       const { ok, data: d } = await post("/api/failures/duplicates/delete", {
         paths,
       });
-      const skipped = (d.skipped ?? []).length;
       setMsg(
         ok
-          ? `Deleted ${d.deleted ?? 0} duplicate file(s).${
-              skipped ? ` ${skipped} skipped (kept/protected).` : ""
-            }`
+          ? `Deleted ${d.deleted ?? 0} duplicate file(s).${leftInPlace(d.skipped)}`
           : `Error: ${d.error ?? "unknown"}`,
       );
       setSel(new Set());
@@ -235,7 +329,6 @@ export default function DuplicatesFailuresPage() {
         contentHash: t.hash,
         keepPath: t.keepPath,
       });
-      const skipped = (d.skipped ?? []).length;
       setMsg(
         ok
           ? `Kept 1 copy; deleted ${d.deleted ?? 0} file(s).${
@@ -244,7 +337,7 @@ export default function DuplicatesFailuresPage() {
               d.purged
                 ? " The library entry was in the trash: its bytes are reclaimed and it stays there."
                 : ""
-            }${skipped ? ` ${skipped} skipped (protected).` : ""}`
+            }${leftInPlace(d.skipped)}`
           : `Error: ${d.error ?? "unknown"}`,
       );
       setKeep(null);
@@ -296,16 +389,25 @@ export default function DuplicatesFailuresPage() {
       );
     });
 
-  // Collapse every auto-resolvable group in the current filter, batch after
-  // batch. The loop's stop condition is PROGRESS, not emptiness: a group whose
-  // deletions are refused (a vanished copy, a permission error) keeps matching
-  // the rule and would otherwise be retried forever, so the loop ends as soon as
-  // a batch fails to shrink `remaining`.
-  const runAuto = () =>
+  // Keep the suggested copy in every group of one plan card, within the
+  // current filter, batch after batch. The server derives every survivor from
+  // the filter; what the client sends back is only `exclude` — the groups this
+  // run already tried and left behind (`retry`), which can only narrow it and
+  // keep the next batch from re-picking the same refusals at the head of the
+  // size order. The loop still stops on lack of PROGRESS, never on emptiness.
+  const runAuto = (rule: DuplicateAutoRule) =>
     run(async () => {
-      let resolved = 0;
-      let deleted = 0;
-      let failed = 0;
+      const done: RunReport = {
+        title: PLAN_CARDS.find((c) => c.key === rule)?.title ?? rule,
+        resolved: 0,
+        deleted: 0,
+        relinked: 0,
+        failed: 0,
+        stopped: false,
+        skipped: [],
+      };
+      const reasons = new Map<string, number>();
+      const exclude: string[] = [];
       let before = Infinity;
       aborted.current = false;
       for (let batch = 0; batch < 200 && !aborted.current; batch++) {
@@ -313,30 +415,34 @@ export default function DuplicatesFailuresPage() {
           scope: query.scope,
           q: query.q.trim() || undefined,
           rawInGallery: query.rawInGallery || undefined,
+          rule,
           max: 100,
+          exclude,
         });
         if (!ok) {
           setMsg(`Error: ${d.error ?? "unknown"}`);
           break;
         }
-        resolved += d.resolved;
-        deleted += d.deleted;
-        failed += d.failed;
+        done.resolved += d.resolved;
+        done.deleted += d.deleted;
+        done.relinked += d.relinked;
+        done.failed += d.failed;
+        exclude.push(...(d.retry ?? []));
+        for (const s of d.skipped ?? [])
+          reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + s.count);
         setProgress(
-          `${resolved.toLocaleString()} group(s) collapsed, ${d.remaining.toLocaleString()} to go…`,
+          `${done.resolved.toLocaleString()} group(s) done, ${d.remaining.toLocaleString()} to go…`,
         );
         if (d.remaining === 0 || d.remaining >= before) break;
         before = d.remaining;
       }
+      done.stopped = aborted.current;
+      done.skipped = [...reasons]
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count);
       setProgress("");
       setAuto(null);
-      setMsg(
-        `Collapsed ${resolved.toLocaleString()} group(s), deleting ${deleted.toLocaleString()} file(s).${
-          failed
-            ? ` ${failed} group(s) could not be collapsed and stay listed.`
-            : ""
-        }${aborted.current ? " Stopped early — the rest is untouched." : ""}`,
-      );
+      setReport(done);
     });
 
   const facets = data?.facets;
@@ -346,27 +452,30 @@ export default function DuplicatesFailuresPage() {
   const from = matched === 0 ? 0 : query.offset + 1;
   const to = Math.min(query.offset + PAGE_SIZE, matched);
   const activeFacet = facets?.[query.scope] ?? null;
+  const ruleLabel = query.rule
+    ? PLAN_CARDS.find((c) => c.key === query.rule)?.title
+    : null;
 
   return (
-    <FamilyShell onRefresh={load} error={error} msg={msg}>
+    <Shell onRefresh={load} error={error} msg={msg}>
       <section style={{ marginBottom: 28 }}>
         <div className="filterbar" style={{ marginBottom: 6 }}>
-          {selectable.length > 0 && (
-            <input
-              ref={headRef}
-              type="checkbox"
-              className="fail-check"
-              aria-label="Select every on-disk copy on this page"
-              checked={allChecked}
-              onChange={(e) =>
-                setSel(e.target.checked ? new Set(selectable) : new Set())
-              }
-            />
+          {/* No title or count here: the Library tab above says "Duplicates"
+              and carries the count (a count is drawn once). */}
+          {view === "groups" && selectable.length > 0 && (
+            <label className="dup-check-label">
+              <input
+                ref={headRef}
+                type="checkbox"
+                className="fail-check"
+                checked={allChecked}
+                onChange={(e) =>
+                  setSel(e.target.checked ? new Set(selectable) : new Set())
+                }
+              />
+              <span>Select every copy on this page</span>
+            </label>
           )}
-          <h3 style={{ margin: 0 }}>
-            Deduplication{" "}
-            <span className="hint">({(data?.total ?? 0).toLocaleString()})</span>
-          </h3>
           <span className="spacer" />
           <button
             className="btn"
@@ -377,14 +486,16 @@ export default function DuplicatesFailuresPage() {
             {Icons.reset}
             <span>Clear resolved</span>
           </button>
-          <button
-            className="btn btn-danger"
-            disabled={busy || sel.size === 0}
-            onClick={() => setConfirm([...sel])}
-          >
-            {Icons.trash}
-            <span>Delete selected ({sel.size})</span>
-          </button>
+          {view === "groups" && (
+            <button
+              className="btn btn-danger"
+              disabled={busy || sel.size === 0}
+              onClick={() => setConfirm([...sel])}
+            >
+              {Icons.trash}
+              <span>Delete selected ({sel.size})</span>
+            </button>
+          )}
         </div>
 
         <div className="tabs dup-scopes" role="group" aria-label="Which side of the library">
@@ -408,6 +519,13 @@ export default function DuplicatesFailuresPage() {
         </div>
 
         <div className="filterbar dup-toolbar">
+          <OptionPicker
+            size="sm"
+            ariaLabel="How to read the backlog"
+            options={VIEWS}
+            value={view}
+            onChange={pickView}
+          />
           <input
             className="input"
             style={{ maxWidth: 260 }}
@@ -425,43 +543,30 @@ export default function DuplicatesFailuresPage() {
             <span>RAW in Gallery only</span>
           </label>
           <span className="spacer" />
-          <label className="dup-sort">
-            <span className="hint">Sort</span>
-            <select
-              className="input"
-              value={query.sort}
-              onChange={(e) => patch({ sort: e.target.value as DuplicateSort })}
-            >
-              {SORTS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="btn btn-danger"
-            disabled={busy || !data?.autoResolvable}
-            onClick={() =>
-              setAuto({
-                groups: data?.autoResolvable ?? 0,
-                reclaimable: data?.autoReclaimable ?? 0,
-                scopeLabel,
-              })
-            }
-            title="Collapse every group in this view whose survivor is not a judgement call"
-          >
-            {Icons.keep}
-            <span>
-              Collapse {(data?.autoResolvable ?? 0).toLocaleString()} resolvable
-            </span>
-          </button>
+          {/* Pairs always come biggest first: the sort is the group view's. */}
+          {view === "groups" && (
+            <label className="dup-sort">
+              <span className="hint">Sort</span>
+              <select
+                className="input"
+                value={query.sort}
+                onChange={(e) => patch({ sort: e.target.value as DuplicateSort })}
+              >
+                {SORTS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        {activeFacet && (
+        {view === "groups" && activeFacet && (
           <p className="dup-summary">
             <strong>{matched.toLocaleString()}</strong> group
-            {matched === 1 ? "" : "s"} in {scopeLabel} ·{" "}
+            {matched === 1 ? "" : "s"} in {scopeLabel}
+            {ruleLabel ? ` · ${ruleLabel}` : ""} ·{" "}
             <strong>{Math.round(activeFacet.extras).toLocaleString()}</strong>{" "}
             extra cop{activeFacet.extras === 1 ? "y" : "ies"} ·{" "}
             <strong>{formatBytes(activeFacet.reclaimable)}</strong> to reclaim
@@ -469,6 +574,44 @@ export default function DuplicatesFailuresPage() {
               ? ` · ${data.stale.toLocaleString()} already resolved (use “Clear resolved”)`
               : ""}
           </p>
+        )}
+
+        {view === "groups" && data && (
+          <DedupPlan
+            plan={data.plan}
+            active={query.rule}
+            busy={busy}
+            report={report}
+            onShow={(rule) => patch({ rule })}
+            onRun={(rule) =>
+              setAuto({
+                rule,
+                groups: data.plan[rule].groups,
+                reclaimable: data.plan[rule].reclaimable,
+                scopeLabel,
+              })
+            }
+            onReview={() => setReviewing(true)}
+            onDismissReport={() => setReport(null)}
+          />
+        )}
+
+        {view === "groups" && data && (
+          <DedupStrategy
+            filter={{
+              scope: query.scope,
+              q: query.q,
+              rawInGallery: query.rawInGallery,
+              rule: query.rule,
+            }}
+            scopeLabel={
+              ruleLabel ? `${scopeLabel} · ${ruleLabel}` : scopeLabel
+            }
+            strategy={query.strategy}
+            folder={query.folder}
+            onChange={setStrategy}
+            onApplied={load}
+          />
         )}
 
         {/* The workflow's standing rule, reported over the WHOLE table rather
@@ -495,27 +638,49 @@ export default function DuplicatesFailuresPage() {
           </div>
         )}
 
-        <p className="hint" style={{ marginTop: 0 }}>
-          Files matched as duplicates by partial hash, grouped by content. Each
-          group holds the same bytes in more than one place — the library’s copy
-          and any extra copies on disk. Winnow doesn’t assume which is the
-          original: pick the one to keep with <strong>“Keep only this”</strong>{" "}
-          and the rest are removed (the library entry is relinked onto your pick
-          if it’s an on-disk copy), leaving a single media. A library copy
-          already in the trash is never relinked: its file is removed and the
-          entry marked purged — and it can be dropped on its own with its row’s
-          delete. Copies on a{" "}
-          <strong>Final or Export volume are never deleted</strong>: those
-          masters are view-only, so they’re shown locked and are the copy the
-          group collapses onto. False collisions — genuinely distinct content
-          that merely shares a partial hash — are indexed separately and never
-          collapsed; they’re listed below for audit only.
-          {data && data.falseCollisions > 0
-            ? ` ${data.falseCollisions} false collision(s) recovered.`
-            : ""}
-        </p>
+        {/* The rules govern every action below, so they stay one click away
+            instead of a paragraph to re-read above the list. */}
+        <details className="dup-rules">
+          <summary>How deduplication decides</summary>
+          <p>
+            Files matched as duplicates by partial hash, grouped by content. Each
+            group holds the same bytes in more than one place — the library’s copy
+            and any extra copies on disk. Where a rule can tell which copy to
+            keep — the one on a Final/Export volume, or else the live library
+            entry — that copy is marked <strong>suggested</strong> and{" "}
+            <strong>“Keep suggested”</strong> keeps it. Otherwise Winnow doesn’t
+            assume which is the original: pick the one to keep with{" "}
+            <strong>“Keep only this”</strong> and the rest are removed (the
+            library entry is relinked onto your pick if it’s an on-disk copy),
+            leaving a single media. A library copy
+            already in the trash is never relinked: its file is removed and the
+            entry marked purged — and it can be dropped on its own with its row’s
+            delete. Copies on a{" "}
+            <strong>Final or Export volume are never deleted</strong>: those
+            masters are view-only, so they’re shown locked and are the copy the
+            group collapses onto. False collisions — genuinely distinct content
+            that merely shares a partial hash — are indexed separately and never
+            collapsed; they’re listed below for audit only.
+            {data && data.falseCollisions > 0
+              ? ` ${data.falseCollisions} false collision(s) recovered.`
+              : ""}
+          </p>
+        </details>
 
-        {loading && !data ? (
+        {view === "pairs" ? (
+          <DedupPairs
+            filter={{
+              scope: query.scope,
+              q: query.q,
+              rawInGallery: query.rawInGallery,
+            }}
+            onChanged={load}
+            onShowGroups={(dir) => {
+              setSearch(dir);
+              pickView("groups");
+            }}
+          />
+        ) : loading && !data ? (
           <div className="empty" style={{ padding: 16 }}>
             Loading…
           </div>
@@ -587,6 +752,19 @@ export default function DuplicatesFailuresPage() {
         )}
       </section>
 
+      {reviewing && (
+        <DedupReview
+          filter={{
+            scope: query.scope,
+            q: query.q,
+            rawInGallery: query.rawInGallery,
+          }}
+          onClose={(changed) => {
+            setReviewing(false);
+            if (changed) load();
+          }}
+        />
+      )}
       {confirm && (
         <ConfirmDeleteModal
           paths={confirm}
@@ -620,9 +798,9 @@ export default function DuplicatesFailuresPage() {
             if (busy) aborted.current = true;
             else setAuto(null);
           }}
-          onConfirm={runAuto}
+          onConfirm={() => runAuto(auto.rule)}
         />
       )}
-    </FamilyShell>
+    </Shell>
   );
 }
