@@ -487,35 +487,40 @@ land in the wrong one", "I keep taking the same decision".*
    first of the next — the drive — not at the midpoint (`placeCuts`); each
    place becomes a card, `kind: 'part'` with `place: {index, count}`, its own
    window and its own suggestion by the same rule as a whole card
-   (`runSuggestion`). Details that are decisions:
+   (`runSuggestion`). *Revised the same day (§11.1): the places are no
+   longer separate cards but the STOPS of one card.* Details that are
+   decisions:
    - the precondition is the donors' **spread** (bounding-box diagonal from
      the aggregate query), not their cell count: thousands of donors are not
      geocoded yet and have no cell, and a city walk crosses cells;
    - day-window donors never split a card — a frame from hours away says
      nothing about when the card moved;
-   - a place card offers **no folder alongside**: the other body's folder
-     spans both towns too, and offering it whole would put both at one point
-     again. A two-body, two-town day is four one-click cards;
+   - a card with stops offers **no folder alongside**: the other body's
+     folder spans both towns too, and offering it whole would put both at
+     one point again. A two-body, two-town day is two cards of two stops;
    - the cut bounds are written as instants; the card's own first and last
      bounds stay pg's strings (an ISO instant is milliseconds and would drop
      a last frame stamped in microseconds).
    **Known limit**: someone else's phone, located in another town at the
    same hours and imported into the library, alternates runs (A A B B A A)
    and cuts a folder that was one place. `split_min` absorbs a single stray,
-   not a second photographer. Rejected for now: placing each frame at its
-   nearest donor in time — that is a per-frame write with no one-pin recap,
-   i.e. the fourth path §4.5 refuses (see 3c).
+   not a second photographer. Placing each frame at its nearest donor
+   in time was rejected here, then built the same day as "Follow a track…"
+   (§11.3), behind its own dialog.
 3. **Decisions already taken, offered back.** The Place dialog lists, under
    the record, the spots a human already applied (`'manual'` or `'inferred'`)
    within `reuse_d` (30) days of the card, nearest in time first, six at most
    — "Pérols, France · 2 days before · 40" — and one click puts the pin there
    (`placesNear`, `GET /api/assets/unplaced/places`, `GeotagRecapModal`'s
    `places`). They are **offered, never pre-filled and never donors**: §8.1's
-   "an inferred position never seeds another inference" stands, and a human
-   picking a spot on a map is a human placing a pin — recorded `'manual'`
-   (unless it happens to be within `move_m` of the card's own suggestion),
-   like a place typed in the search box. Proposed and **not built**, each the
-   maintainer's call:
+   "an inferred position never seeds another inference" stands. What a
+   picked spot records is what that spot WAS (*revised the same evening*,
+   after review): a spot placed by hand records `'manual'`, like a place
+   typed in the search box; a spot that was itself an accepted suggestion,
+   taken as offered (within `move_m`), records `'inferred'` — borrowing a
+   guess must never turn it into a fact written into the originals. The
+   first cut recorded every pick `'manual'`. Proposed here, **all three approved
+   and built the same day** (§11):
    - (a) a keyboard review over the Ready cards — Enter applies the
      suggestion as offered, → skips, the recap still shown — the dedup
      triage's staged review, applied here;
@@ -528,3 +533,73 @@ land in the wrong one", "I keep taking the same decision".*
      donors, but it decides what `'track'` means (a measured track, or any
      located frame of anyone) and Atelier trusts `'track'` like a camera fix
      (§6) — the reason it is not done by default.
+
+---
+
+## 11. The third round: stops, the review, the track
+
+*2026-10-11, the evening of §10, from the "Winnow Unplaced — faster placing"
+canvas (screens A–H). The maintainer approved A, B, C, D, F, G and H,
+rejected E (a stops list with no map), and asked for the design as drawn.*
+
+1. **One card per FOLDER, its places as STOPS.** §10.2's place cards
+   ("place 1 of 2", "place 2 of 2") made one folder two cards; the
+   maintainer's model is the folder he opened. The card now carries
+   `stops` (each a window, its tallies, first/last frame, a suggestion),
+   prints them as a strip, and its one verb is *Place N · k stops*, which
+   opens **the stops dialog** (`StopsDialog`). A card with stops is never
+   *Ready*: it needs a look, not a key.
+2. **The stops dialog is where the frames are seen.** The maintainer's
+   complaint: opening the grid to check a stop left the page, and coming
+   back lost the dialog, the choices and the scroll. So a stop unfolds into
+   a **contact sheet** in the dialog; click / Shift-click selects; the
+   selection is moved to another stop (the cut moves), to a **new stop**, or
+   left unplaced; a double-click opens the shared viewer **stacked over the
+   dialog**, whose keys 1–9 send the frame to that stop and 0 leaves it out
+   (Shift: this frame and the rest of its stop), its info panel listing
+   every stop's first and last frame. The grid is still a link, **secondary,
+   in a new tab** — its URL can only say "these days of this folder", not
+   the stop's minutes. Each stop is written through the one-pin route with
+   the one-pin rule: as offered → `'inferred'`, moved or picked → `'manual'`.
+3. **"Follow a track…" (⋯ menu, every card).** A small dialog lists what a
+   track can be made of around the card — the applied GPS imports whose
+   fixes fall there, and the located frames shot then, **per camera body**
+   (a friend's camera elsewhere can be unticked) — and links to Settings ›
+   Pipeline › Dates & places to import a GPX or Polarsteps export instead of
+   growing a second upload. Only CAMERA media are matched (a screenshot's
+   verb is Exempt, §9.4), and on a container's span card the action is
+   offered only when the container was too scattered to cut — a cut
+   container's frames belong to its part cards. *Show the stops* matches every frame with the
+   import's own rule (`positionAt`), groups them into stops (`traceStops`:
+   within `split_km`, and a stretch shorter than `stay_min` 30 min is
+   *passed through* — consecutive passes join one **on the move** stop, not
+   a stop every 5 km of a drive) and opens the same dialog, read-only pins,
+   each frame at its own point. The write is a new route,
+   `POST /api/assets/geotag/points` (`writeGeotagPoints`): per-frame
+   coordinates, **never an overwrite** (`gps IS NULL`), never `'manual'`.
+   What it records is decided by the fix, not the human: an imported
+   track's fix is `'track'` with its `track_import_id` (so that import's
+   Undo takes it back too); a fix from other frames is `'inferred'` — not
+   `'track'`, which Atelier trusts like a camera fix (§6): the phone's
+   frames are good evidence, but a library frame may be someone else's.
+   **This is a sanctioned path past the one-pin recap**: the dialog IS its
+   recap (every stop, its frames, the map), and the `gps IS NULL` guard is
+   the overwrite protection the recap's per-row opt-in gave.
+4. **The fixes of an import are kept** (`0052_track_points`): until now an
+   apply kept only its record and the frames it placed, so a frame indexed
+   later had nothing to be matched against. Imports applied before 0052 say
+   "fixes not kept" in Settings; Undo then import the same file again.
+5. **A card nothing suggests names the nearest human placement** — the
+   position applied by hand or by an accepted suggestion closest in time,
+   within `reuse_d`, with its folder ("Pérols, France — folder 2026-05-30
+   perols · 9 days before"); its verb is *Place N there…*, which opens the
+   recap on it. Taken as offered it records what that placement was —
+   `'manual'` if it was placed by hand, `'inferred'` if it was an accepted
+   suggestion (§10.3) — and moving the pin records `'manual'`. Still never a
+   donor.
+6. **Review N ready** walks the Ready cards from the keyboard (`ReviewReady`):
+   Enter applies, → skips, ← goes back, Esc returns. A card whose media all
+   lack a position has nothing for the recap to protect and is written by
+   Enter; one with placed media is handed to the full recap, never one key.
+7. **A thumbnail on a card opens the card's dialog**, no longer the session
+   page — the same "never leave by accident" rule.

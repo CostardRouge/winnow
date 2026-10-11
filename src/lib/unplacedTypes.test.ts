@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import {
   placeCuts,
   placeRuns,
+  traceStops,
+  type TraceFrame,
   runSuggestion,
   sortGroups,
   parseUnplacedSort,
@@ -122,7 +124,8 @@ function card(id: number, folderUnplaced: number, unplaced: number, t0: string, 
     sample: [],
     suggestion: null,
     part: null,
-    place: null,
+    stops: null,
+    nearest: null,
     moments: null,
     ...extra,
   };
@@ -147,4 +150,42 @@ test("sortGroups by date, and the URL value falls back to size", () => {
   assert.equal(parseUnplacedSort(null), "size");
   assert.equal(parseUnplacedSort("bogus"), "size");
   assert.equal(parseUnplacedSort("ready"), "ready");
+});
+
+function tf(id: number, min: number, at: { lat: number; lon: number } | null): TraceFrame {
+  return { id, at: min * 60000, pos: at, source: at ? "inferred" : null, import_id: null };
+}
+
+test("traceStops: frames in two towns are two stops, frames with no point are gaps", () => {
+  const frames = [
+    tf(1, 0, MPL), tf(2, 5, MPL), tf(3, 10, MPL),
+    tf(4, 20, null),
+    tf(5, 200, SETE), tf(6, 205, SETE), tf(7, 210, SETE),
+  ];
+  const { runs, gaps } = traceStops(frames, 5000);
+  assert.deepEqual(runs.map((r) => r.frames.map((f) => f.id)), [[1, 2, 3], [5, 6, 7]]);
+  assert.deepEqual(gaps, [4]);
+  assert.ok(runs.every((r) => !r.moving));
+});
+
+test("traceStops: frames shot along a road join one moving stop, not a list of tiny ones", () => {
+  // An hour in Montpellier, then one frame every ~6 km on the way to Sète,
+  // six minutes apart, then an hour in Sète.
+  // (The last road frame stays ~10 km short of Sète: one within split_km of
+  // it would rightly join the Sète stop.)
+  const road = Array.from({ length: 3 }, (_, k) => ({
+    lat: MPL.lat - (k + 1) * 0.045,
+    lon: MPL.lon - (k + 1) * 0.035,
+  }));
+  const frames = [
+    tf(1, 0, MPL), tf(2, 30, MPL), tf(3, 60, MPL),
+    ...road.map((p, k) => tf(10 + k, 70 + k * 6, p)),
+    tf(20, 100, SETE), tf(21, 130, SETE), tf(22, 160, SETE),
+  ];
+  const { runs } = traceStops(frames, 5000);
+  assert.equal(runs.length, 3, JSON.stringify(runs.map((r) => r.frames.map((f) => f.id))));
+  assert.equal(runs[1].moving, true);
+  assert.deepEqual(runs[1].frames.map((f) => f.id), [10, 11, 12]);
+  assert.equal(runs[0].moving, false);
+  assert.equal(runs[2].moving, false);
 });

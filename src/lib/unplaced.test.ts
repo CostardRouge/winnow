@@ -9,12 +9,16 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { skipWithoutDb, useTestDatabase } from "../test/db";
 
-useTestDatabase();
+// No Redis in a test: the geocoder queue stays off.
+useTestDatabase({ GEOCODE_ENABLED: "false" });
 
 let up: typeof import("./unplaced");
 let db: typeof import("./db");
 let rootId: number;
 let camId: number;
+let lonelyId: number;
+let roadId: number;
+let importId: number;
 let seq = 0;
 
 const MPL = { lat: 43.6108, lon: 3.8767 };
@@ -54,6 +58,8 @@ async function media(
 
 const at = (h: number, m = 0) =>
   `1999-06-01T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
+const day6 = (h: number, m = 0) =>
+  `1999-06-06T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
 
 before(async () => {
   if (skipWithoutDb) return;
@@ -80,6 +86,32 @@ before(async () => {
   const earlier = await session("earlier", "1999-05-30T09:00:00Z", "1999-05-30T10:00:00Z");
   for (let i = 0; i < 3; i++)
     await media(earlier, `1999-05-30T09:0${i}:00Z`, { gps: PEROLS, source: "inferred" });
+
+  // A folder three days after the towns, with no frame located near it: the
+  // nearest human placement is the Pérols folder (the phone's fixes are not
+  // placements).
+  lonelyId = await session("lonely", "1999-06-04T10:00:00Z", "1999-06-04T11:00:00Z");
+  await media(lonelyId, "1999-06-04T10:00:00Z");
+  await media(lonelyId, "1999-06-04T11:00:00Z");
+
+  // An applied GPS import with its fixes kept (0052): Montpellier in the
+  // morning, Sète in the afternoon, every 20 minutes.
+  const imp = await db.one<{ id: string }>(
+    `INSERT INTO track_imports (name, kind, span_start, span_end, point_count, report)
+     VALUES ('test trip', 'gpx', $1, $2, 0, '{"match":{"maxBracketMin":60,"maxNearestMin":15}}'::jsonb) RETURNING id`,
+    [day6(9), day6(16)],
+  );
+  importId = Number(imp!.id);
+  for (let m = 9 * 60; m <= 16 * 60; m += 20) {
+    const p = m < 12 * 60 + 30 ? MPL : SETE;
+    await db.q("INSERT INTO track_points (import_id, t, lat, lon) VALUES ($1, $2, $3, $4)", [
+      importId, day6(Math.floor(m / 60), m % 60), p.lat, p.lon,
+    ]);
+  }
+  // A road-trip folder shot that day, none of it located.
+  roadId = await session("road", day6(10), day6(15));
+  for (const [h, m] of [[10, 0], [10, 30], [11, 0], [14, 0], [14, 30], [15, 0]])
+    await media(roadId, day6(h, m));
 });
 
 after(async () => {
@@ -88,22 +120,23 @@ after(async () => {
     "DELETE FROM assets WHERE session_id IN (SELECT id FROM sessions WHERE root_id = $1)",
     [rootId],
   );
+  await db.q("DELETE FROM track_imports WHERE id = $1", [importId]);
   await db.q("DELETE FROM sessions WHERE root_id = $1", [rootId]);
   await db.q("DELETE FROM roots WHERE id = $1", [rootId]);
   await db.pool.end();
 });
 
-test("a folder shot in two towns becomes one card per town", { skip: skipWithoutDb }, async () => {
+test("a folder shot in two towns is ONE card with a stop per town", { skip: skipWithoutDb }, async () => {
   const r = await up.listUnplaced();
-  const cards = r.groups
-    .filter((g) => g.sessions[0].id === camId)
-    .sort((a, b) => Date.parse(a.t0) - Date.parse(b.t0));
-  assert.equal(cards.length, 2, JSON.stringify(cards.map((c) => c.key)));
-  const [mpl, sete] = cards;
-  assert.equal(mpl.kind, "part");
-  assert.deepEqual(mpl.place, { index: 1, count: 2 });
-  assert.deepEqual(sete.place, { index: 2, count: 2 });
-  assert.deepEqual(mpl.siblings, []);
+  const cards = r.groups.filter((g) => g.sessions[0].id === camId);
+  assert.equal(cards.length, 1, JSON.stringify(cards.map((c) => c.key)));
+  const [card] = cards;
+  assert.equal(card.kind, "shoot");
+  assert.equal(card.unplaced, 23);
+  assert.deepEqual(card.siblings, []);
+  const stops = card.stops!;
+  assert.equal(stops.length, 2);
+  const [mpl, sete] = stops;
   // 13 frames in Montpellier (10:00…12:00), 10 in Sète (13:30…15:00).
   assert.equal(mpl.unplaced, 13);
   assert.equal(sete.unplaced, 10);
@@ -112,10 +145,67 @@ test("a folder shot in two towns becomes one card per town", { skip: skipWithout
   assert.ok(Date.parse(sete.t0) > Date.parse(at(12)));
   assert.ok(Date.parse(mpl.t1) <= Date.parse(sete.t0));
   // Each its own suggestion, in its own town.
-  assert.ok(Math.abs(mpl.suggestion!.lat - MPL.lat) < 1e-6);
-  assert.ok(Math.abs(sete.suggestion!.lat - SETE.lat) < 1e-6);
-  assert.equal(mpl.suggestion!.located, 3);
-  assert.equal(mpl.suggestion!.window, "near");
+  assert.ok(Math.abs(mpl.suggestion.lat - MPL.lat) < 1e-6);
+  assert.ok(Math.abs(sete.suggestion.lat - SETE.lat) < 1e-6);
+  assert.equal(mpl.suggestion.located, 3);
+  // A card with stops is not a one-key card.
+  const { isReady } = await import("./unplacedTypes");
+  assert.equal(isReady(card), false);
+});
+
+test("a card nothing suggests names the nearest human placement", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  const card = r.groups.find((g) => g.sessions[0].id === lonelyId)!;
+  assert.ok(card, "the lonely folder has a card");
+  assert.equal(card.suggestion, null);
+  assert.ok(card.nearest, JSON.stringify(card));
+  assert.equal(card.nearest!.folder, "earlier");
+  assert.ok(Math.abs(card.nearest!.lat - PEROLS.lat) < 1e-6);
+  assert.equal(card.nearest!.verified, false);
+  assert.ok(card.nearest!.gap_h < 0, "the placement is before the card");
+});
+
+test("following a kept track places each frame at its own point, never over a position", { skip: skipWithoutDb }, async () => {
+  const trace = await import("./unplacedTrace");
+  const gp = await import("./geotagPoints");
+  const sources = await trace.traceSources(day6(9), day6(16));
+  const imp = sources.find((x) => x.kind === "import");
+  assert.ok(imp && imp.kind === "import" && imp.id === importId, JSON.stringify(sources));
+
+  const r = await trace.traceCard({ sessionId: roadId, from: day6(9), to: day6(16), imports: [importId], models: [] });
+  assert.equal(r.frames.length, 6);
+  assert.ok(r.frames.every((f) => f.source === "track" && f.import_id === importId));
+  assert.equal(r.stops.length, 2, JSON.stringify(r.stops));
+  assert.ok(Math.abs(r.stops[0].lat - MPL.lat) < 0.01);
+  assert.ok(Math.abs(r.stops[1].lat - SETE.lat) < 0.01);
+  assert.ok(r.line.length >= 2);
+
+  const pts = r.frames.map((f) => ({ id: f.id, ...f.pos!, source: f.source!, import_id: f.import_id }));
+  const w1 = await gp.writeGeotagPoints(pts);
+  assert.deepEqual(w1, { updated: 6, skipped: 0 });
+  const rows = await db.many<{ gps_source: string; track_import_id: string; gps_write_status: string }>(
+    "SELECT gps_source, track_import_id, gps_write_status FROM assets WHERE session_id = $1",
+    [roadId],
+  );
+  assert.ok(rows.every((x) => x.gps_source === "track" && Number(x.track_import_id) === importId && x.gps_write_status === "skipped"));
+  // A second write finds every frame placed and leaves it alone.
+  const w2 = await gp.writeGeotagPoints(pts.map((p) => ({ ...p, lat: 0.5, lon: 0.5 })));
+  assert.deepEqual(w2, { updated: 0, skipped: 6 });
+});
+
+test("a track point naming an import that is gone is skipped, never left un-undoable", { skip: skipWithoutDb }, async () => {
+  const gp = await import("./geotagPoints");
+  const one = await db.one<{ id: string }>(
+    "SELECT id FROM assets WHERE session_id = $1 ORDER BY captured_at LIMIT 1",
+    [lonelyId],
+  );
+  // Import 999999 never existed (or was undone while the dialog was open).
+  const w = await gp.writeGeotagPoints([
+    { id: Number(one!.id), lat: MPL.lat, lon: MPL.lon, source: "track", import_id: 999999 },
+  ]);
+  assert.deepEqual(w, { updated: 0, skipped: 1 });
+  const row = await db.one<{ gps: unknown }>("SELECT gps FROM assets WHERE id = $1", [Number(one!.id)]);
+  assert.equal(row!.gps, null);
 });
 
 test("the places already used near a card, nearest first", { skip: skipWithoutDb }, async () => {

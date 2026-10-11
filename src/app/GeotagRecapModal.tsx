@@ -107,6 +107,10 @@ export type RecapPlace = {
   detail: string;
   /** Hover text: the same, in a sentence. */
   title?: string;
+  /** Some media there were placed by hand. When false the spot is itself an
+   *  accepted suggestion, and taking it as offered stays a suggestion — the
+   *  host decides the record (a guess is never laundered into 'manual'). */
+  verified?: boolean;
 };
 
 // A checkbox with the third state the DOM has and React does not expose as a

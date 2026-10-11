@@ -71,6 +71,8 @@ type PartRow = {
   unplaced: number;
   exempt: number;
   no_exif: number;
+  first: string | null;
+  last: string | null;
   sample: UnplacedSample[] | null;
 };
 
@@ -85,6 +87,7 @@ async function tallyWindows(client: PoolClient, ws: WindowSpec[]): Promise<PartR
     `SELECT w.sid AS session_id, w.idx,
             d.total::int AS total, d.unplaced::int AS unplaced,
             d.exempt::int AS exempt, d.no_exif::int AS no_exif,
+            d.first, d.last,
             samp.sample
      FROM unnest($1::int[], $2::int[], $3::timestamptz[], $4::timestamptz[])
           AS w(sid, idx, t0, t1)
@@ -92,7 +95,9 @@ async function tallyWindows(client: PoolClient, ws: WindowSpec[]): Promise<PartR
        SELECT count(*) AS total,
               count(*) FILTER (WHERE ${TODO}) AS unplaced,
               count(*) FILTER (WHERE a.geo_exempt_at IS NOT NULL) AS exempt,
-              count(*) FILTER (WHERE ${TODO} AND ${NO_EXIF}) AS no_exif
+              count(*) FILTER (WHERE ${TODO} AND ${NO_EXIF}) AS no_exif,
+              min(a.captured_at) FILTER (WHERE ${TODO}) AS first,
+              max(a.captured_at) FILTER (WHERE ${TODO}) AS last
        FROM assets a
        WHERE a.session_id = w.sid AND a.deleted_at IS NULL
          AND a.captured_at >= w.t0 AND a.captured_at <= w.t1
@@ -326,7 +331,8 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           sample: s.sample,
           suggestion: null,
           part: null,
-          place: null,
+          stops: null,
+          nearest: null,
           moments: null,
         });
         continue;
@@ -351,7 +357,8 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           sample: p.sample ?? [],
           suggestion: null,
           part: { index: p.idx, count: parts.length },
-          place: null,
+          stops: null,
+          nearest: null,
           moments: null,
         });
       }
@@ -375,7 +382,8 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           sample: s.sample,
           suggestion: null,
           part: null,
-          place: null,
+          stops: null,
+          nearest: null,
           moments: cuts.length > UNPLACED_RULES.parts_max ? cuts.length : null,
         });
       }
@@ -481,15 +489,15 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
     //    located frames in time order make runs that stay within split_km
     //    (placeRuns), each run is a place, and the card's own media are cut
     //    between two places in the longest silence of the camera
-    //    (placeCuts). Each place becomes a card — a time window into the
-    //    folder, like a container's part — with its own suggestion, by the
-    //    same rule as a whole card (runSuggestion). Day-window donors never
+    //    (placeCuts). Each place becomes a STOP of the card — a time window
+    //    into it, with its own suggestion by the same rule as a whole card
+    //    (runSuggestion) — and the card stays one card: the folder is one
+    //    thing the maintainer opened (§11). Day-window donors never
     //    split a card: a frame from hours away says nothing about when the
     //    card moved.
     const mixed = askable.filter(
       (i) => (spreadOf.get(i) ?? 0) > UNPLACED_RULES.split_km * 1000,
     );
-    const splits = new Map<number, UnplacedGroup[]>();
     if (mixed.length) {
       const pad = `${UNPLACED_RULES.near_h} hours`;
       const { rows: raw } = await client.query<RawDonorRow>(
@@ -606,47 +614,99 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
         if (places.length < 2) continue;
         const g = groups[idx];
         const runs = runsOf.get(idx)!;
-        const cards: UnplacedGroup[] = places.map(({ w, t }, n) => ({
-          key: `${g.key}@${n + 1}`,
-          kind: "part",
-          sessions: g.sessions,
-          siblings: [],
+        g.stops = places.map(({ w, t }, n) => ({
+          index: n + 1,
           t0: w.t0,
           t1: w.t1,
+          first: t.first,
+          last: t.last,
           total: t.total,
           unplaced: t.unplaced,
-          exempt: t.exempt,
           no_exif: t.no_exif,
           sample: t.sample ?? [],
           suggestion: runSuggestion(runs[w.k].donors),
-          part: g.part,
-          place: { index: n + 1, count: places.length },
-          moments: null,
         }));
-        // A shoot's media with no capture time sit in no window: they stay
-        // behind on a span card, as a container's do.
-        const rest = g.unplaced - cards.reduce((n, c) => n + c.unplaced, 0);
-        if (g.kind === "shoot" && rest > 0) {
-          cards.push({
-            ...g,
-            key: `${g.key}@rest`,
-            kind: "span",
-            siblings: [],
-            unplaced: rest,
-            exempt: Math.max(0, g.exempt - cards.reduce((n, c) => n + c.exempt, 0)),
-            no_exif: Math.max(0, g.no_exif - cards.reduce((n, c) => n + c.no_exif, 0)),
-            suggestion: null,
-          });
-        }
-        splits.set(idx, cards);
+        // The other body's folder spans the same places: offered whole, it
+        // would put both towns at one point again.
+        g.siblings = [];
       }
     }
-    const final = groups.flatMap((g, i) => splits.get(i) ?? [g]);
+
+    // 6. The nearest human placement, for the cards nothing suggests: the
+    //    position applied by hand or by an accepted suggestion closest in
+    //    time to the card, within reuse_d days either side — the decision
+    //    the maintainer already took for the folder shot the day before.
+    //    Shown on the card and one click away; never a suggestion (§8.1).
+    //    Two index walks per card on captured_at, bounded by reuse_d.
+    const lonely = groups.flatMap((g, i) =>
+      g.kind !== "span" && g.suggestion == null ? [i] : [],
+    );
+    if (lonely.length) {
+      const { rows: near } = await client.query<{
+        idx: number;
+        lat: number;
+        lon: number;
+        at: string;
+        city: string | null;
+        country: string | null;
+        folder: string;
+        manual: boolean;
+      }>(
+        `WITH win AS (
+           SELECT * FROM unnest($1::int[], $2::timestamptz[], $3::timestamptz[]) AS w(idx, t0, t1)
+         )
+         SELECT DISTINCT ON (w.idx) w.idx, c.gps_lat AS lat, c.gps_lon AS lon, c.captured_at AS at,
+                c.place_city AS city, c.place_country AS country, s.name AS folder,
+                c.gps_source = 'manual' AS manual
+         FROM win w
+         CROSS JOIN LATERAL (
+           (SELECT a.id, a.session_id, a.gps_lat, a.gps_lon, a.captured_at, a.place_city,
+                   a.place_country, a.gps_source, w.t0 - a.captured_at AS gap
+              FROM assets a
+             WHERE a.captured_at < w.t0 AND a.captured_at >= w.t0 - $4::interval
+               AND a.deleted_at IS NULL AND a.gps_lat IS NOT NULL
+               AND a.gps_source IN ('manual', 'inferred')
+             ORDER BY a.captured_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT a.id, a.session_id, a.gps_lat, a.gps_lon, a.captured_at, a.place_city,
+                   a.place_country, a.gps_source, a.captured_at - w.t1 AS gap
+              FROM assets a
+             WHERE a.captured_at > w.t1 AND a.captured_at <= w.t1 + $4::interval
+               AND a.deleted_at IS NULL AND a.gps_lat IS NOT NULL
+               AND a.gps_source IN ('manual', 'inferred')
+             ORDER BY a.captured_at ASC LIMIT 1)
+         ) c
+         JOIN sessions s ON s.id = c.session_id
+         ORDER BY w.idx, c.gap ASC`,
+        [
+          lonely,
+          lonely.map((i) => groups[i].t0),
+          lonely.map((i) => groups[i].t1),
+          `${UNPLACED_RULES.reuse_d} days`,
+        ],
+      );
+      for (const r of near) {
+        const g = groups[r.idx];
+        const at = Date.parse(r.at);
+        const gap_h =
+          at < Date.parse(g.t0)
+            ? -(Date.parse(g.t0) - at) / H
+            : (at - Date.parse(g.t1)) / H;
+        g.nearest = {
+          lat: Number(r.lat),
+          lon: Number(r.lon),
+          name: r.city ? (r.country ? `${r.city}, ${r.country}` : r.city) : r.country,
+          folder: r.folder,
+          gap_h,
+          verified: r.manual === true,
+        };
+      }
+    }
 
     // Worked from the top: the confident suggestions first, the biggest pile
     // first within a tier, the spans last. The page re-sorts on demand
     // (sortGroups); this is the order a client that does not gets.
-    const ordered = sortGroups(final, "ready");
+    const ordered = sortGroups(groups, "ready");
 
     const ready = ordered.filter(isReady).length;
     return {
