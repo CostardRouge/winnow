@@ -39,7 +39,7 @@ type TokenItem = {
   expired: boolean;
 };
 
-type Account = {
+export type Account = {
   id: number;
   username: string;
   displayName: string | null;
@@ -63,7 +63,7 @@ const ACCESS: PickerOption<TokenRole>[] = [
 // Who holds it. An agent's token is capped exactly like an app's; the only
 // difference is that what it writes is stamped as an agent's (migration 0050),
 // so a pick Claude made can be told from one made by hand.
-type Holder = "app" | "agent";
+export type Holder = "app" | "agent";
 
 const HOLDERS: PickerOption<Holder>[] = [
   {
@@ -276,24 +276,29 @@ export default function TokensPanel() {
   );
 }
 
-function CreateTokenModal({
+export function CreateTokenModal({
   accounts,
   defaultOwner,
+  defaultHolder,
+  defaultName,
   onClose,
   onCreated,
 }: {
   accounts: Account[];
   defaultOwner: number | null;
+  /** Users › Agents opens it already set for an agent. */
+  defaultHolder?: Holder;
+  defaultName?: string;
   onClose: () => void;
   onCreated: (m: Minted) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(defaultName ?? "");
   const [ownerId, setOwnerId] = useState<number | null>(
     accounts.some((a) => a.id === defaultOwner)
       ? defaultOwner
       : (accounts[0]?.id ?? null),
   );
-  const [holder, setHolder] = useState<Holder>("app");
+  const [holder, setHolder] = useState<Holder>(defaultHolder ?? "app");
   const [access, setAccess] = useState<TokenRole>("viewer");
   const [lifetime, setLifetime] = useState<Lifetime>("365");
   const [busy, setBusy] = useState(false);
@@ -427,14 +432,14 @@ function CreateTokenModal({
   );
 }
 
-type Minted = { name: string; secret: string; agent: boolean };
+export type Minted = { name: string; secret: string; agent: boolean };
 
 // The agent bridge (src/scripts/mcp.ts) is served by this instance as one
 // plain-JS file and as a Claude Desktop extension (scripts/build-agent-bridge.ts,
 // /agent/ is outside the session check), so connecting Claude needs no
 // checkout. Claude Code: download it, then register it at user scope so the
 // token never lands in a project's committed .mcp.json.
-function claudeCodeSetup(origin: string, secret: string): string {
+export function claudeCodeSetup(origin: string, secret: string): string {
   return `mkdir -p ~/.winnow && curl -fsSL ${origin}/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs && claude mcp add winnow --scope user -e WINNOW_HOST=${origin} -e WINNOW_TOKEN=${secret} -- node ~/.winnow/winnow-mcp.mjs`;
 }
 
@@ -486,8 +491,9 @@ function SecretModal({
                 Download the Winnow extension
               </a>
               , open it, and paste the address and the token above when Claude
-              asks — it keeps the token in your system’s keychain. README ›
-              “Driving Winnow from Claude”.
+              asks — it keeps the token in your system’s keychain. The whole
+              walk-through, with prompts to try:{" "}
+              <a href="/users/agents">Users › Agents</a>.
             </p>
           </>
         )}
@@ -502,7 +508,16 @@ function SecretModal({
   );
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+export function CopyRow({
+  label,
+  value,
+  bare,
+}: {
+  label: string;
+  value: string;
+  /** No visible label (it still names the field for a screen reader). */
+  bare?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -520,7 +535,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 
   return (
     <>
-      <span className="modal-label">{label}</span>
+      {!bare && <span className="modal-label">{label}</span>}
       <div className="invite-link-row">
         <input
           ref={inputRef}

@@ -8881,6 +8881,42 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply m-0 max-w-[76ch];
   }
 
+  /* ---- Users › Agents: a numbered walk-through ------------------------- */
+  /* Steps on a rail of numbers. The number is ink, not vermillion (the
+     accent is brand/rail/focus only, docs/UI-REVIEW.md); a finished step
+     turns the keeper green the grid uses for a pick. */
+  .guide {
+    @apply flex w-full max-w-[860px] flex-col gap-4;
+  }
+  .guide-steps {
+    @apply m-0 flex list-none flex-col gap-5 p-0;
+  }
+  .guide-step {
+    @apply flex items-start gap-3;
+  }
+  .guide-num {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold;
+    background: var(--color-text);
+    color: var(--color-bg);
+  }
+  .guide-step.is-done .guide-num {
+    background: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .guide-body {
+    @apply flex min-w-0 flex-1 flex-col gap-2 pt-0.5;
+  }
+  .guide-prompts {
+    @apply m-0 flex list-none flex-col gap-1.5 p-0;
+  }
+  .guide-code {
+    @apply m-0 overflow-x-auto p-3 text-[12px] leading-snug;
+    font-family: var(--font-mono);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
   /* ---- Settings › Instance --------------------------------------------- */
   .inst-page {
     @apply flex w-full flex-col gap-6;

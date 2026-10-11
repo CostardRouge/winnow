@@ -301,6 +301,9 @@ built from `src/` at every `npm run build` by `scripts/build-agent-bridge.ts` �
 no checkout of this repository is needed. `/agent/` is the one path outside the
 session check besides the PWA files: it holds this public code and no secret.
 
+The steps below are also an in-app guide, **Users › Agents**: pick your app,
+mint the token from there, and it fills the setup in and offers prompts to try.
+
 1. **Mint a token for the agent** — Users › App tokens › *New token*, *Used
    by: An agent*. *Read only* lets it browse and look; *Read & write* also lets
    it cull. Its ratings are marked as an agent's (`rated_via = 'agent'`, `by:
