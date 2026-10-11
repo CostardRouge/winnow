@@ -22,6 +22,10 @@ export type KnownBody = {
   camera_model: string | null;
   /** How many live media already carry it (busiest first in the picker). */
   count: number;
+  /** True for a camera named by hand (`device_source = 'named'`, migration
+   *  0051) — no file of the library names it. The picker files these apart,
+   *  and a medium assigned to one is recorded as named too. */
+  named: boolean;
 };
 
 /** A medium carrying no body, with the evidence gathered about it — plus the
@@ -72,6 +76,14 @@ export type DeviceFolder = {
   videos: number;
   /** How many of them the vote is confident about (score >= CONFIDENT_SCORE). */
   confident: number;
+  /** How many are PNGs. No camera writes PNG — a folder that is nothing else
+   *  is screenshots or saved images, and the card proposes "not a camera". A
+   *  suggestion like the folder's body: it is never applied without a click. */
+  pngs: number;
+  /** How many arrived through WhatsApp (`WhatsApp Image/Video …`), which strips
+   *  EXIF: the folder's own body says nothing about who shot those, so a card
+   *  made of nothing else keeps its proposal but stops making it the verb. */
+  received: number;
   first_capture: string | null;
   last_capture: string | null;
   /** The signals carried by MORE THAN HALF the folder — what the card prints.
@@ -84,6 +96,16 @@ export type DeviceFolder = {
 
 /** How folders are ordered on the page. */
 export type FolderSort = "size" | "recent";
+
+/** Which half of the library the backlog is read over — the same three values
+ *  as the Incoming/Gallery/All picker (app/LibrarySourceTabs.tsx), spelled
+ *  here because a lib module must not import a client component. Gallery means
+ *  a `finals` root, Incoming every other kind, as lib/gear.ts splits them. */
+export type DeviceSource = "all" | "incoming" | "gallery";
+
+/** The backlog's size in each half, whatever half the page is showing — what
+ *  lets Incoming say "the Gallery holds 60 more" without counting them. */
+export type DeviceSourceCounts = { incoming: number; gallery: number };
 
 /** What every write answers. */
 export type ApplyResult = {
@@ -120,4 +142,16 @@ export type ProbeReport = {
   corrections: { id: number; filename: string; from: string | null; to: string }[];
   /** Clips per camera the tracks named — WHICH body, not only how many. */
   cameras: Record<string, number>;
+};
+
+/** Where a body came from, in the words the filter panel and the Devices page
+ *  print (the `device_source` values, migrations 0043 → 0051). */
+export const DEVICE_SOURCE_LABEL: Record<string, string> = {
+  exif: "From the file",
+  embedded: "From the clip’s track",
+  derived: "Inferred from its folder",
+  manual: "Assigned by hand",
+  override: "Corrected by hand",
+  named: "Named by hand",
+  none: "Not a camera",
 };

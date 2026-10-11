@@ -280,11 +280,14 @@ export async function indexRoot(
            --   2. otherwise the FILE wins when it has something to say;
            --   3. and when it names nothing (a DJI MP4 carries no Make/Model at
            --      all), an attributed body is kept rather than wiped — the same
-           --      contract as the manual geotag below.
+           --      contract as the manual geotag below. A hand-named camera
+           --      ('named', 0051) is one of them; 'not a camera' ('none') keeps
+           --      its NULL body through the ELSE branches and its provenance
+           --      through the last one, so it stays out of the backlog.
            -- Every branch reads the row's OLD values: one UPDATE, one snapshot.
            device=CASE WHEN device_source = 'override' THEN device
                        WHEN $6::text IS NOT NULL THEN $6
-                       WHEN device_source IN ('derived','manual','embedded')
+                       WHEN device_source IN ('derived','manual','embedded','named')
                          THEN device END,
            device_source=CASE WHEN device_source = 'override' THEN 'override'
                               WHEN $6::text IS NOT NULL THEN 'exif'
@@ -295,7 +298,7 @@ export async function indexRoot(
            file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
            camera_model=CASE WHEN device_source = 'override' THEN camera_model
                              WHEN $11::text IS NOT NULL THEN $11
-                             WHEN device_source IN ('derived','manual','embedded')
+                             WHEN device_source IN ('derived','manual','embedded','named')
                                THEN camera_model END,
            lens=$12, iso=$13, shutter=$14, aperture=$15,
            focal_length=$16,

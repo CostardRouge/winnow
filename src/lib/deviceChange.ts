@@ -7,14 +7,22 @@
 // one module, beside a test, so the two grids cannot drift from each other or
 // from the write.
 
-/** A body as the picker offers it: the raw EXIF string and its bare model. */
-export type BodyRef = { device: string; camera_model: string | null };
+/** A body as the picker offers it: the raw EXIF string and its bare model,
+ *  and whether it is a camera named by hand (no file names it). */
+export type BodyRef = {
+  device: string;
+  camera_model: string | null;
+  named?: boolean;
+};
 
-/** What a confirmed dialog did. */
+/** What a confirmed dialog did. `name` and `none` are the two hand answers of
+ *  migration 0051: a camera no file names, or not a camera at all. */
 export type DeviceChange =
   | { kind: "fill"; body: BodyRef }
   | { kind: "replace"; body: BodyRef }
-  | { kind: "revert" };
+  | { kind: "revert" }
+  | { kind: "name"; device: string }
+  | { kind: "none" };
 
 /** The slice of a grid row the dialog reads and rewrites. Grid rows are
  *  `a.*`, so every host already has these. */
@@ -52,6 +60,16 @@ function fileBody(row: DeviceRow): {
   return { device: null, camera_model: null, device_source: null };
 }
 
+/** True when a name / "not a camera" may be written on this row: its body did
+ *  not come off its own file — a hole, or an earlier attribution or label.
+ *  lib/deviceAttribution.ts labelDevice, by ids. */
+function relabelable(row: DeviceRow): boolean {
+  return (
+    !row.device ||
+    ["derived", "manual", "named", "none"].includes(row.device_source ?? "")
+  );
+}
+
 /** True when revert would change this row. */
 function revertible(row: DeviceRow): boolean {
   if (!row.device_source || row.device_source === "exif") return false;
@@ -63,27 +81,32 @@ function revertible(row: DeviceRow): boolean {
 export function deviceSelectionCounts(
   rows: readonly DeviceRow[],
   ids: readonly number[],
-): { withoutBody: number; revertible: number } {
+): { withoutBody: number; revertible: number; relabelable: number } {
   const idset = new Set(ids);
   let withoutBody = 0;
   let n = 0;
+  let label = 0;
   for (const a of rows) {
     if (!idset.has(a.id)) continue;
     if (!a.device) withoutBody++;
     // Anything not read off the file itself can go back to the file.
     if (revertible(a)) n++;
+    if (relabelable(a)) label++;
   }
-  return { withoutBody, revertible: n };
+  return { withoutBody, revertible: n, relabelable: label };
 }
 
 /**
  * One row after a confirmed dialog, by the rules the server applied:
- *   fill    — only a row with no body gets one ('manual'), keeping a model the
- *             file did declare;
+ *   fill    — only a row with no body gets one ('manual', or 'named' for a
+ *             camera named by hand), keeping a model the file did declare;
  *   replace — every row gets the body ('override'), the file's own included;
  *   revert  — a row whose body did not come off its file goes back to what the
  *             file says: its EXIF ('exif'), else the camera its metadata track
- *             names ('embedded'), else no body.
+ *             names ('embedded'), else no body;
+ *   name    — a row whose body did not come off its file gets the typed name
+ *             ('named'), the model back to what the file says;
+ *   none    — the same rows lose their body ('none').
  */
 export function applyDeviceChange<T extends DeviceRow>(
   row: T,
@@ -96,7 +119,7 @@ export function applyDeviceChange<T extends DeviceRow>(
           ...row,
           device: change.body.device,
           camera_model: row.camera_model ?? change.body.camera_model,
-          device_source: "manual",
+          device_source: change.body.named ? "named" : "manual",
         };
   if (change.kind === "replace")
     return {
@@ -105,6 +128,15 @@ export function applyDeviceChange<T extends DeviceRow>(
       camera_model: change.body.camera_model,
       device_source: "override",
     };
+  if (change.kind === "name" || change.kind === "none") {
+    if (!relabelable(row)) return row;
+    return {
+      ...row,
+      device: change.kind === "name" ? change.device : null,
+      camera_model: row.camera_model_exif ?? null,
+      device_source: change.kind === "name" ? "named" : "none",
+    };
+  }
   if (!revertible(row)) return row;
   return { ...row, ...fileBody(row) };
 }

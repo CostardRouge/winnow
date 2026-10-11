@@ -69,10 +69,12 @@ test("the dialog's counts only see the selected rows", () => {
   assert.deepEqual(deviceSelectionCounts(rows, [1, 2, 3]), {
     withoutBody: 1,
     revertible: 1,
+    relabelable: 2,
   });
   assert.deepEqual(deviceSelectionCounts(rows, [1]), {
     withoutBody: 0,
     revertible: 0,
+    relabelable: 0,
   });
 });
 
@@ -95,6 +97,44 @@ test("revert lands on the body the clip's own track names, where its EXIF names 
   // Already what its track says: nothing to revert, and not counted.
   const read = applyDeviceChange(clip, { kind: "revert" });
   assert.equal(applyDeviceChange(read, { kind: "revert" }), read);
-  assert.deepEqual(deviceSelectionCounts([clip, read], [4]), { withoutBody: 0, revertible: 1 });
-  assert.deepEqual(deviceSelectionCounts([read], [4]), { withoutBody: 0, revertible: 0 });
+  assert.deepEqual(deviceSelectionCounts([clip, read], [4]), {
+    withoutBody: 0,
+    revertible: 1,
+    relabelable: 0,
+  });
+  assert.deepEqual(deviceSelectionCounts([read], [4]), {
+    withoutBody: 0,
+    revertible: 0,
+    relabelable: 0,
+  });
+});
+
+test("a name or 'not a camera' lands on holes and attributions, never on a file's body", () => {
+  const named = applyDeviceChange(holeRow, { kind: "name", device: "Appareil d'Emeric" });
+  assert.deepEqual(named, {
+    ...holeRow,
+    device: "Appareil d'Emeric",
+    camera_model: null,
+    device_source: "named",
+  });
+  // The screenshot once assigned to the iPhone by hand: relabelled.
+  assert.deepEqual(applyDeviceChange(filledRow, { kind: "none" }), {
+    ...filledRow,
+    device: null,
+    camera_model: null,
+    device_source: "none",
+  });
+  // A body the file declares is never touched by either.
+  assert.equal(applyDeviceChange(exifRow, { kind: "none" }), exifRow);
+  assert.equal(applyDeviceChange(exifRow, { kind: "name", device: "X" }), exifRow);
+  // And both go back to the file — here, to no body at all.
+  assert.deepEqual(applyDeviceChange(named, { kind: "revert" }), holeRow);
+});
+
+test("filling with a camera named by hand records it as named", () => {
+  const out = applyDeviceChange(holeRow, {
+    kind: "fill",
+    body: { device: "Appareil d'Emeric", camera_model: null, named: true },
+  });
+  assert.equal(out.device_source, "named");
 });
