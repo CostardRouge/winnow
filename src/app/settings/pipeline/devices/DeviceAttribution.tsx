@@ -26,7 +26,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActionMenu, { type MenuItem } from "../../../ActionMenu";
 import MediaViewer from "../../../MediaViewer";
-import BodyChooserModal from "../../../BodyChooserModal";
+import BodyChooserModal, { type ChooserAction } from "../../../BodyChooserModal";
 import NameCameraModal from "../../../NameCameraModal";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
@@ -145,6 +145,13 @@ function mediaMix(f: DeviceFolder): string {
   return parts.join(" · ");
 }
 
+// The menu answers the body sheet repeats under its list, in the short form.
+const SHEET_LABEL: Record<string, string> = {
+  name: "Name a camera…",
+  none: "Not a camera",
+  review: "Review one by one",
+};
+
 export default function DeviceAttribution() {
   const { reload } = useStats();
   const router = useRouter();
@@ -214,14 +221,41 @@ export default function DeviceAttribution() {
   // card, a row or the viewer. `onPick` is the write it stands for.
   const [choosing, setChoosing] = useState<{
     title: string;
+    confirmPrefix: string;
     pinned: string | null;
     onPick: (b: KnownBody) => void;
+    actions: ChooserAction[];
   } | null>(null);
+  // `items` are the menu entries of the same answers: the sheet repeats the
+  // ones it pins under its list (name / not a camera / review) in short form.
   const chooseBody = (
     title: string,
+    confirmPrefix: string,
     pinned: string | null,
     onPick: (b: KnownBody) => void,
-  ) => setChoosing({ title, pinned, onPick });
+    items: MenuItem[] = [],
+  ) =>
+    setChoosing({
+      title,
+      confirmPrefix,
+      pinned,
+      onPick,
+      actions: items.flatMap((it) => {
+        const label = SHEET_LABEL[it.key];
+        return label
+          ? [
+              {
+                key: it.key,
+                label,
+                onSelect: () => {
+                  setChoosing(null);
+                  it.onSelect();
+                },
+              },
+            ]
+          : [];
+      }),
+    });
   // The full-screen preview, as an index into the opened folder's media. The
   // viewer is the app's own: a medium waiting for a body is looked AT before it
   // is decided, and a triage page that cannot show the frame is a spreadsheet.
@@ -791,8 +825,10 @@ export default function DeviceAttribution() {
               onSelect: () =>
                 chooseBody(
                   `Assign the ${f.total} media of ${f.name}`,
+                  `Assign ${f.total}`,
                   f.suggested_device,
                   (b) => void applyFolder(f, { device: b }),
+                  menu,
                 ),
             },
             ...handItems(
@@ -994,8 +1030,10 @@ export default function DeviceAttribution() {
                     onSelect: () =>
                       chooseBody(
                         `Assign ${it.filename}`,
+                        "Assign",
                         it.suggested_device,
                         (b) => void assignOne(open.sessionId, it.id, b),
+                        handItems(open.sessionId, { ids: [it.id] }, it.filename, 1),
                       ),
                   },
                   ...handItems(open.sessionId, { ids: [it.id] }, it.filename, 1),
@@ -1009,6 +1047,8 @@ export default function DeviceAttribution() {
       {choosing && (
         <BodyChooserModal
           title={choosing.title}
+          confirmPrefix={choosing.confirmPrefix}
+          actions={choosing.actions}
           bodies={data.bodies}
           pinned={choosing.pinned}
           onClose={() => setChoosing(null)}
@@ -1063,8 +1103,10 @@ function FolderMedia({
   /** Opens the searchable list of bodies; `onPick` is the write. */
   chooseBody: (
     title: string,
+    confirmPrefix: string,
     pinned: string | null,
     onPick: (b: KnownBody) => void,
+    items?: MenuItem[],
   ) => void;
   picked: Record<number, boolean>;
   onToggle: (id: number, on: boolean) => void;
@@ -1107,8 +1149,10 @@ function FolderMedia({
       onSelect: () =>
         chooseBody(
           `Assign ${c.filename}`,
+          "Assign",
           c.suggested_device,
           (b) => onAssignOne(c.id, b),
+          handItems([c.id], c.filename),
         ),
     },
     ...handItems([c.id], c.filename),
@@ -1163,8 +1207,10 @@ function FolderMedia({
                 onSelect: () =>
                   chooseBody(
                     `Assign the ${ids.length} ticked`,
+                    `Assign ${ids.length}`,
                     folder.suggested_device,
                     (b) => onApply(ids, b),
+                    handItems(ids, `the ${ids.length} ticked`),
                   ),
               },
               ...handItems(ids, `the ${ids.length} ticked`),
