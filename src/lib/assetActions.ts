@@ -274,6 +274,32 @@ export async function geotagAssets(
   return body.updated;
 }
 
+// Places each frame at its OWN point (api/assets/geotag/points): the Unplaced
+// view's "Follow a track…", where frames land where the track was at their
+// minute. Never 'manual', never an overwrite. Returns how many were written.
+export async function geotagPoints(
+  points: {
+    id: number;
+    lat: number;
+    lon: number;
+    source: "track" | "inferred";
+    import_id: number | null;
+  }[],
+): Promise<number> {
+  if (!points.length) return 0;
+  const res = await fetch("/api/assets/geotag/points", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ points }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Geotag failed (${res.status})`);
+  }
+  const body = (await res.json()) as { updated: number };
+  return body.updated;
+}
+
 // Marks these assets as never needing a position (exempt=true) or returns
 // them to the geotag backlog (cf. api/assets/geo-exempt). Returns how many
 // rows changed.
@@ -323,13 +349,15 @@ export type GeotagAsset = {
   geo_exempt_at?: string | null;
   camera_model?: string | null;
   lens?: string | null;
+  /** The capture instant — how the stops dialog sorts a frame into its stop. */
+  captured_at?: string | null;
 };
 
 // Every live, non-exempt media of these sessions, in the recap shape — the
 // entry points that have no asset grid loaded start here: the Geotag action on
 // a session card and on the session page's header (one session), and the
 // Unplaced view's Place (a folder group, several). ONE unpaged request to
-// api/assets/geotag/targets, which returns exactly these ten columns; it used
+// api/assets/geotag/targets, which returns exactly these eleven columns; it used
 // to page through the session assets route for the full grid projection, eight
 // requests for a large folder.
 //
@@ -349,7 +377,9 @@ export async function geotagTargets(
   const sp = new URLSearchParams({ session_ids: sessionIds.join(",") });
   if (window) {
     sp.set("captured_from", new Date(window.from).toISOString());
-    sp.set("captured_to", new Date(window.to).toISOString());
+    // Rounded UP by a millisecond: pg's instants carry microseconds, an ISO
+    // string milliseconds, and the window's last frame must stay inside it.
+    sp.set("captured_to", new Date(Date.parse(window.to) + 1).toISOString());
   }
   const res = await fetch(`/api/assets/geotag/targets?${sp}`);
   if (!res.ok) {

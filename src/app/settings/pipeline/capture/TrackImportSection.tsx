@@ -272,6 +272,15 @@ export default function TrackImportSection({
                 <tr key={t.id}>
                   <td>
                     {t.name} <span className="hint">· {t.kind}</span>
+                    {t.kept === 0 && (
+                      <span
+                        className="hint"
+                        title="Applied before the fixes were kept. Undo and import the same file again to follow it from Unplaced."
+                      >
+                        {" "}
+                        · fixes not kept
+                      </span>
+                    )}
                   </td>
                   <td>
                     {date(t.span_start)} → {date(t.span_end)}

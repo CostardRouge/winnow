@@ -272,6 +272,17 @@ export async function runTrackImport(
         [b.map((p) => p.id), b.map((p) => p.lat), b.map((p) => p.lon), b.map((p) => p.offset), importId],
       );
     }
+    // Keep the fixes themselves (0052): the Unplaced view's "Follow a
+    // track…" matches frames against them long after this apply.
+    for (let i = 0; i < track.points.length; i += UNNEST_BATCH) {
+      const b = track.points.slice(i, i + UNNEST_BATCH);
+      await client.query(
+        `INSERT INTO track_points (import_id, t, lat, lon)
+         SELECT $1, to_timestamp(u.t / 1000.0), u.lat, u.lon
+         FROM unnest($2::float8[], $3::float8[], $4::float8[]) AS u(t, lat, lon)`,
+        [importId, b.map((p) => p.t), b.map((p) => p.lat), b.map((p) => p.lon)],
+      );
+    }
     for (let i = 0; i < zoned.length; i += UNNEST_BATCH) {
       const b = zoned.slice(i, i + UNNEST_BATCH);
       await client.query(
@@ -311,6 +322,9 @@ export type TrackImportRow = {
   created_at: string;
   placed: number;
   zoned: number;
+  /** Fixes kept for "Follow a track…" (0052) — 0 for an import applied
+   *  before they were stored. */
+  kept: number;
 };
 
 /** Applied imports, newest first, with what each still holds. */
@@ -318,7 +332,8 @@ export async function listTrackImports(): Promise<TrackImportRow[]> {
   const { rows } = await pool.query<TrackImportRow>(
     `SELECT t.id, t.name, t.kind, t.span_start, t.span_end, t.point_count, t.created_at,
             count(a.id) FILTER (WHERE a.gps_source = 'track')::int AS placed,
-            count(a.id) FILTER (WHERE a.capture_offset_source = 'track')::int AS zoned
+            count(a.id) FILTER (WHERE a.capture_offset_source = 'track')::int AS zoned,
+            (SELECT count(*)::int FROM track_points p WHERE p.import_id = t.id) AS kept
        FROM track_imports t
        LEFT JOIN assets a ON a.track_import_id = t.id
       GROUP BY t.id

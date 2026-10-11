@@ -160,6 +160,8 @@ test("undo takes back exactly what the import wrote", { skip: skipWithoutDb }, a
   const mine = listed.find((t) => t.id === Number(r.importId))!;
   assert.equal(mine.placed, 1);
   assert.equal(mine.zoned, 2);
+  // The fixes are kept for "Follow a track…" (0052)…
+  assert.equal(mine.kept, TRACK.points.length);
   // What the geocoder would have named it by the time Undo is pressed.
   await db.q("UPDATE assets SET place_country = 'Australia', place_city = 'Rainbow Beach' WHERE id = $1", [sony]);
 
@@ -174,5 +176,11 @@ test("undo takes back exactly what the import wrote", { skip: skipWithoutDb }, a
     [sony],
   );
   assert.deepEqual(names, { country: null, city: null });
+  // …and go with the import.
+  const kept = await db.one<{ n: number }>(
+    "SELECT count(*)::int AS n FROM track_points WHERE import_id = $1",
+    [Number(r.importId)],
+  );
+  assert.equal(kept!.n, 0);
   assert.deepEqual(await ti.revertTrackImport(Number(r.importId)), { found: false, unplaced: 0, unzoned: 0 });
 });

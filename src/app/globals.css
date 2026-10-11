@@ -1247,6 +1247,10 @@ html[data-theme="dark"] .btn-primary:hover {
   .unplaced-tools {
     @apply flex flex-wrap items-start justify-between gap-x-4 gap-y-2;
   }
+  /* Which cards (triage) and in what order (sort), side by side. */
+  .unplaced-pickers {
+    @apply flex flex-wrap items-center gap-2;
+  }
   /* One 256px tile, cropped to a square and shifted so the point sits under
      the pin (the inline left/top come from the point's fraction of the
      tile). Isolated + clipped so nothing paints outside the box. It is a
@@ -1301,7 +1305,8 @@ html[data-theme="dark"] .btn-primary:hover {
      instead of taking a 72px row of its own, and the actions go full width
      under both, as the session card's own phone rule does. */
   @media (max-width: 640px) {
-    .unplaced-tools {
+    .unplaced-tools,
+    .unplaced-pickers {
       @apply flex-col items-stretch;
     }
     .unplaced-tools .view-toggle {
@@ -6012,6 +6017,15 @@ html[data-theme="dark"] .btn-primary:hover {
   .recap-record .hint {
     @apply mt-1 block;
   }
+  /* Positions already used near the card's dates, as chips under the record:
+     one click puts the pin there. The shared .chip, quiet until pressed. */
+  .recap-places {
+    @apply mt-3 text-[12px];
+  }
+  .recap-places-head {
+    @apply mb-1.5 mt-0;
+    color: var(--color-muted);
+  }
   /* A multi-folder apply, one row per folder, above the per-media table: the
      count that matters on a folder-sized write is per folder, and it is the
      one the folded table cannot show. A row is a <label> so the whole line
@@ -9133,5 +9147,375 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   html[data-theme="dark"] .inst-default {
     color: var(--color-star);
+  }
+}
+
+/* =========================================================================
+   Unplaced — stops, "Follow a track…", the keyboard review
+   (docs/UNPLACED.md §11). Ink and paper only: a stop is told by its number,
+   never by a colour, and vermillion stays the brand's (UI review H4).
+   ========================================================================= */
+@layer components {
+  /* ---- Stops on a card ---------------------------------------------------- */
+  .card-stops {
+    @apply m-0 mt-2 grid list-none gap-1.5 p-0;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  }
+  .card-stop {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-[var(--radius)] border px-2.5 py-2 text-left;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+    font: inherit;
+  }
+  .card-stop:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+  }
+  .card-stop .conf {
+    @apply ml-auto shrink-0;
+  }
+  .card-stop-text {
+    @apply flex min-w-0 flex-col text-[13px];
+  }
+  .card-stop-text strong {
+    @apply truncate font-semibold;
+  }
+  .card-stop-thumbs {
+    @apply flex shrink-0 gap-0.5;
+  }
+  .card-stop-thumbs img {
+    @apply h-7 w-10 rounded-[var(--radius-sm)] object-cover;
+    background: var(--color-surface-2);
+  }
+  @media (max-width: 640px) {
+    .card-stop-thumbs {
+      display: none;
+    }
+  }
+
+  /* The stop's number: the one mark that ties a row, its pin and the
+     viewer's keys together. */
+  .stop-num {
+    @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-0 p-0 text-xs font-bold;
+    background: var(--color-text);
+    color: var(--color-surface);
+    font-variant-numeric: tabular-nums;
+  }
+  .stop-num.is-moving {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: inset 0 0 0 2px var(--color-text);
+  }
+  button.stop-num:not(:disabled) {
+    @apply cursor-pointer;
+  }
+
+  /* ---- The stops dialog --------------------------------------------------- */
+  .stops-modal {
+    max-width: 1280px;
+  }
+  .stops-head {
+    @apply shrink-0 px-5 pt-5;
+  }
+  .stops-head .hint {
+    @apply m-0;
+  }
+  .stops-body {
+    @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pt-3;
+    overscroll-behavior: contain;
+  }
+  .stops-map-col {
+    @apply shrink-0;
+  }
+  .stops-map {
+    @apply w-full overflow-hidden rounded-[var(--radius)] border;
+    height: 38vh;
+    min-height: 220px;
+    border-color: var(--color-border-strong);
+    isolation: isolate;
+  }
+  .stops-list {
+    @apply flex flex-col gap-2 pb-2;
+  }
+  /* A wide screen: the map holds the left at full height, the stops scroll
+     on the right, the buttons never leave the bottom. */
+  @media (min-width: 1024px) {
+    .stops-modal {
+      height: calc(100dvh - 2rem);
+      max-height: 920px;
+    }
+    .stops-body {
+      @apply grid overflow-hidden;
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    }
+    .stops-map-col,
+    .stops-map {
+      @apply h-full;
+    }
+    .stops-list {
+      @apply min-h-0 overflow-y-auto pr-1;
+    }
+  }
+
+  .stop-card {
+    @apply flex flex-col gap-2 rounded-[var(--radius)] border p-3;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+  .stop-card.is-active {
+    border-color: var(--color-text);
+  }
+  .stop-card.is-off {
+    opacity: 0.6;
+  }
+  .stop-card.is-out {
+    border-style: dashed;
+    background: transparent;
+  }
+  .stop-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .stop-head input[type="checkbox"] {
+    accent-color: var(--color-text);
+  }
+  .stop-out-mark {
+    @apply w-[13px] text-center;
+    color: var(--color-muted);
+  }
+  .stop-title {
+    @apply flex min-w-0 flex-1 flex-col text-[13px];
+  }
+  .stop-title strong {
+    @apply truncate text-[14px] font-semibold;
+  }
+  .stop-head .conf {
+    @apply ml-0;
+  }
+  .stop-note {
+    @apply m-0 text-xs;
+    color: var(--color-muted);
+  }
+  .stop-place {
+    @apply flex flex-col gap-2;
+  }
+  .stop-place .hint {
+    @apply m-0;
+  }
+  /* The contact sheet: thumbnails at the file's ratio in square cells,
+     selection drawn as an ink ring — a frame, not a colour. */
+  .stop-sheet {
+    @apply grid gap-1;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  }
+  .stop-thumb {
+    @apply relative block aspect-square cursor-pointer overflow-hidden rounded-[var(--radius-sm)] border-0 p-0;
+    background: var(--color-surface-2);
+  }
+  .stop-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .stop-thumb.is-selected {
+    box-shadow:
+      0 0 0 2px var(--color-surface),
+      0 0 0 4px var(--color-text);
+  }
+  .stop-thumb.is-selected::after {
+    content: "✓";
+    @apply absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold;
+    background: var(--color-text);
+    color: var(--color-surface);
+  }
+  .stop-selbar {
+    @apply sticky bottom-0 flex flex-wrap items-center gap-1.5 rounded-[var(--radius)] px-2.5 py-2 text-[13px];
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-strong);
+  }
+  .stop-selbar .spacer {
+    @apply flex-1;
+  }
+  .stop-help {
+    @apply m-0 text-xs;
+  }
+  .stop-help a {
+    color: inherit;
+    text-decoration: underline;
+  }
+  .stop-viewer-actions {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  /* Pins on the stops map: numbered discs, the active one heavier. */
+  .stop-pin-wrap {
+    background: transparent;
+    border: 0;
+  }
+  .stop-pin {
+    @apply flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-bold;
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow:
+      0 0 0 2px var(--color-text),
+      var(--shadow-pop);
+  }
+  .stop-pin.is-active {
+    background: var(--color-text);
+    color: var(--color-surface);
+    box-shadow:
+      0 0 0 2px var(--color-surface),
+      0 0 0 4px var(--color-text),
+      var(--shadow-pop);
+  }
+  .stop-track {
+    stroke: var(--color-text);
+    stroke-opacity: 0.55;
+  }
+  .stop-dot {
+    stroke: var(--color-surface);
+    stroke-width: 1;
+    fill: var(--color-text);
+    fill-opacity: 0.7;
+  }
+
+  /* ---- Follow a track: the sources ------------------------------------------ */
+  .trace-modal {
+    max-width: 34rem;
+  }
+  .trace-group {
+    @apply m-0 mt-3 border-0 p-0;
+  }
+  .trace-group > .export-check {
+    @apply mt-1.5;
+  }
+  /* The note takes its own line on a phone, the two buttons stay a pair. */
+  .trace-modal .modal-actions {
+    @apply flex-wrap items-center;
+  }
+  .trace-source strong {
+    @apply font-semibold;
+  }
+  .trace-import-note {
+    @apply mt-4 rounded-[var(--radius)] px-3 py-2.5 text-[13px];
+    background: var(--color-surface-2);
+  }
+  .trace-import-note a {
+    color: inherit;
+    text-decoration: underline;
+  }
+
+  /* ---- Review ready: one card after another --------------------------------- */
+  .review-modal {
+    @apply flex flex-col overflow-hidden p-0;
+    max-width: 1280px;
+  }
+  @media (min-width: 1024px) {
+    .review-modal {
+      height: calc(100dvh - 2rem);
+      max-height: 900px;
+    }
+    .review-body .picker-split.has-aside {
+      @apply h-full;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "map side" "map aside";
+    }
+    .review-body .picker-map {
+      @apply mt-0 h-full;
+    }
+  }
+  .review-head {
+    @apply flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-5 py-3;
+    border-color: var(--color-border);
+  }
+  .review-head .modal-title {
+    @apply m-0;
+  }
+  .review-count {
+    @apply ml-auto;
+  }
+  .review-bar {
+    @apply block h-1.5 w-40 overflow-hidden rounded-full;
+    background: var(--color-surface-2);
+  }
+  .review-bar > span {
+    @apply block h-full;
+    background: var(--color-text);
+    opacity: 0.55;
+  }
+  .review-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-5 py-3;
+  }
+  .review-aside {
+    @apply flex flex-col gap-2 text-[13px];
+  }
+  .review-aside p {
+    @apply m-0;
+  }
+  .review-title {
+    @apply m-0 text-lg font-semibold;
+  }
+  .review-thumbs {
+    @apply grid gap-1;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .review-thumbs img {
+    @apply aspect-[3/2] w-full rounded-[var(--radius-sm)] object-cover;
+    background: var(--color-surface-2);
+  }
+  .review-actions {
+    @apply mt-2 flex flex-wrap gap-2;
+  }
+  .review-actions kbd,
+  .review-keys kbd {
+    @apply ml-1.5 rounded-[var(--radius-sm)] border px-1 text-[11px];
+    font-family: var(--font-mono);
+    border-color: currentColor;
+    opacity: 0.75;
+  }
+  .review-keys {
+    @apply flex shrink-0 flex-wrap gap-x-4 gap-y-1 border-t px-5 py-2.5 text-xs;
+    border-color: var(--color-border);
+  }
+  .review-keys kbd {
+    @apply ml-0 mr-1;
+  }
+  /* Keys mean nothing to a touch screen: the buttons carry the verbs there. */
+  @media (pointer: coarse) {
+    .review-keys,
+    .review-actions kbd {
+      display: none;
+    }
+  }
+  .review-end {
+    @apply flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center;
+  }
+}
+@layer components {
+  /* The viewer's info panel over the stops dialog: where this frame sits. */
+  .stop-viewer-info p {
+    @apply m-0 mb-1;
+  }
+  .stop-viewer-info ol {
+    @apply m-0 list-none p-0 text-xs;
+    color: var(--color-muted);
+  }
+  .stop-viewer-info li.is-here {
+    color: inherit;
+    font-weight: 600;
+  }
+  .stop-viewer-actions .btn[aria-pressed="true"] {
+    font-weight: 700;
+    box-shadow: inset 0 0 0 2px currentColor;
+  }
+}
+@layer components {
+  /* A phone: the stop's name and times take the first line whole; its
+     controls wrap under them instead of squeezing the name to "43.6…". */
+  @media (max-width: 640px) {
+    .stop-title {
+      flex: 1 1 calc(100% - 64px);
+    }
+    .stop-head .conf {
+      @apply ml-9;
+    }
   }
 }
