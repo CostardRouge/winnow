@@ -49,6 +49,22 @@ export const UNPLACED_RULES = {
   /** Accepting the offered pin within this many metres records 'inferred';
    * moving it further records 'manual' — the human placed it. */
   move_m: 100,
+  /** A card's located frames, read in time order, that move further than
+   * this from where a run of them started have changed PLACE: the card is cut
+   * there, one card per place, each with its own suggestion. A shoot is not
+   * one place just because it is one folder — a day out that visits two towns
+   * put the second town's frames at the first one's median (docs/UNPLACED.md
+   * §10). The geocoding cell's own default size, so "another place" means
+   * what the cells already mean. */
+  split_km: 5,
+  /** A place needs at least this many located frames to cut a card: one
+   * phone frame with a wild fix, or a friend's photo from elsewhere, must not
+   * split a folder in two. */
+  split_min: 2,
+  /** The Place dialog lists the positions already applied by hand or by an
+   * accepted suggestion within this many days of the card — "same place as
+   * the folder I did yesterday" as one click. Offered, never pre-filled. */
+  reuse_d: 30,
 } as const;
 
 export type UnplacedConfidence = "high" | "medium" | "low";
@@ -144,6 +160,11 @@ export type UnplacedGroup = {
   suggestion: UnplacedSuggestion | null;
   /** On a part: which one of how many, 1-based, in time order. */
   part: { index: number; count: number } | null;
+  /** On a card cut by place (split_km): which place of how many, 1-based, in
+   * time order. Such a card is a `part` — a time window into its folder — and
+   * carries no siblings: the other body's folder spans the same places, and
+   * offering it whole would put both towns at one point again. */
+  place: { index: number; count: number } | null;
   /** On a span that was NOT cut: how many separate moments (gap_h apart) its
    * unplaced camera media fall into — set only when that is above parts_max,
    * the reason it stayed one card. */
@@ -169,6 +190,170 @@ export type UnplacedResponse = {
   totals: UnplacedTotals;
   rules: typeof UNPLACED_RULES;
 };
+
+/** A position already applied by a human near a card's dates (reuse_d) —
+ *  GET /api/assets/unplaced/places. One spot = one coordinate to 4 decimals
+ *  (~10 m): a bulk placement writes ONE coordinate for a whole folder. */
+export type UnplacedPlace = {
+  lat: number;
+  lon: number;
+  /** "Pérols, France", from the geocoded media at that spot; null until the
+   *  geocoder has reached them. */
+  name: string | null;
+  /** Media placed at that spot. */
+  count: number;
+  /** Hours between the card's window and the nearest media placed there —
+   *  0 when one falls inside it; negative before the window, positive after. */
+  gap_h: number;
+  /** Any of them hand-placed ('manual'), rather than all accepted suggestions. */
+  verified: boolean;
+};
+
+// How the list of cards is ordered — a URL parameter (`?sort=`), so a reload
+// keeps it. `size` is the default: the maintainer works the biggest folders
+// first, and a folder cut into parts keeps its parts together, in time order.
+export type UnplacedSort = "size" | "ready" | "newest" | "oldest";
+
+export function parseUnplacedSort(v: string | null | undefined): UnplacedSort {
+  return v === "ready" || v === "newest" || v === "oldest" ? v : "size";
+}
+
+export function sortGroups(
+  groups: readonly UnplacedGroup[],
+  sort: UnplacedSort,
+): UnplacedGroup[] {
+  const t = (g: UnplacedGroup) => Date.parse(g.t0);
+  const out = [...groups];
+  switch (sort) {
+    case "ready":
+      return out.sort(
+        (a, b) =>
+          groupTier(a) - groupTier(b) || b.unplaced - a.unplaced || t(a) - t(b),
+      );
+    case "newest":
+      return out.sort((a, b) => t(b) - t(a));
+    case "oldest":
+      return out.sort((a, b) => t(a) - t(b));
+    case "size":
+      // The FOLDER's unplaced count — a session's tallies are the whole
+      // folder's on every card it appears on — so the parts of the biggest
+      // folder come first and stay together, then the next folder.
+      return out.sort(
+        (a, b) =>
+          b.sessions[0].unplaced - a.sessions[0].unplaced ||
+          a.sessions[0].id - b.sessions[0].id ||
+          t(a) - t(b),
+      );
+  }
+}
+
+// One trustworthy located frame near a card, as the place split reads it.
+export type UnplacedDonor = {
+  /** Capture instant, epoch ms. */
+  at: number;
+  lat: number;
+  lon: number;
+  /** Geocoding cell (place_id); null when not geocoded yet. */
+  cell: number | null;
+  /** The cell's name, when resolved. */
+  name: string | null;
+  model: string | null;
+};
+
+/** A stretch of a card's located frames that stays in one place. */
+export type PlaceRun = { first: number; last: number; donors: UnplacedDonor[] };
+
+// Read the located frames in time order and cut wherever one lands further
+// than `splitM` from the frame that opened the current run. Then the noise
+// goes: a run of fewer than `minDonors` frames is dropped (a wild fix, a
+// stray frame from someone else's phone), and two runs left side by side in
+// the same place are joined back (the stray had cut one stay in two). Pure.
+export function placeRuns(
+  donors: readonly UnplacedDonor[],
+  splitM: number,
+  minDonors: number,
+): PlaceRun[] {
+  const sorted = [...donors].sort((a, b) => a.at - b.at);
+  const raw: PlaceRun[] = [];
+  for (const d of sorted) {
+    const cur = raw[raw.length - 1];
+    if (cur && distanceM(cur.donors[0], d) <= splitM) {
+      cur.donors.push(d);
+      cur.last = d.at;
+    } else {
+      raw.push({ first: d.at, last: d.at, donors: [d] });
+    }
+  }
+  const out: PlaceRun[] = [];
+  for (const r of raw) {
+    if (r.donors.length < minDonors) continue;
+    const prev = out[out.length - 1];
+    if (prev && distanceM(prev.donors[0], r.donors[0]) <= splitM) {
+      prev.donors.push(...r.donors);
+      prev.last = r.last;
+    } else {
+      out.push({ ...r, donors: [...r.donors] });
+    }
+  }
+  return out;
+}
+
+// Where to cut between two consecutive places: in the longest silence of the
+// card's own media between the last frame of one place and the first of the
+// next — the drive happened while the camera was down. With no media in
+// between, the midpoint. `media` is the card's unplaced camera media, epoch
+// ms, ascending. Returns one instant per boundary, ascending. Pure.
+export function placeCuts(runs: readonly PlaceRun[], media: readonly number[]): number[] {
+  const cuts: number[] = [];
+  for (let k = 0; k + 1 < runs.length; k++) {
+    const a = runs[k].last;
+    const b = runs[k + 1].first;
+    const pts = [a, ...media.filter((t) => t > a && t < b), b];
+    let best = 0;
+    for (let i = 1; i + 1 < pts.length; i++) {
+      if (pts[i + 1] - pts[i] > pts[best + 1] - pts[best]) best = i;
+    }
+    cuts.push((pts[best] + pts[best + 1]) / 2);
+  }
+  return cuts;
+}
+
+// The interpolated median, as percentile_cont(0.5) computes it.
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = (s.length - 1) / 2;
+  return (s[Math.floor(m)] + s[Math.ceil(m)]) / 2;
+}
+
+// A place's suggestion, by the same rule the server applies to a whole card:
+// the dominant geocoding cell's median point, its share of the donors, and
+// the confidence those two give. Pure, so the split cards and the whole cards
+// cannot disagree on what a suggestion is.
+export function runSuggestion(donors: readonly UnplacedDonor[]): UnplacedSuggestion {
+  const byCell = new Map<number | null, UnplacedDonor[]>();
+  for (const d of donors) {
+    const list = byCell.get(d.cell);
+    if (list) list.push(d);
+    else byCell.set(d.cell, [d]);
+  }
+  let dom: UnplacedDonor[] = [];
+  for (const list of byCell.values()) if (list.length > dom.length) dom = list;
+  const models = new Map<string, number>();
+  for (const d of dom) if (d.model) models.set(d.model, (models.get(d.model) ?? 0) + 1);
+  let model: string | null = null;
+  for (const [m, n] of models) if (model == null || n > models.get(model)!) model = m;
+  const share = donors.length ? dom.length / donors.length : 0;
+  return {
+    lat: median(dom.map((d) => d.lat)),
+    lon: median(dom.map((d) => d.lon)),
+    name: dom.find((d) => d.name)?.name ?? null,
+    located: donors.length,
+    share,
+    confidence: suggestionConfidence(donors.length, share),
+    window: "near",
+    donor_model: model,
+  };
+}
 
 // Sort folders into the two families: a SHOOT (its own window at most
 // `maxSpanMs`) or a SPAN (a container — a month, a year). No merging: every

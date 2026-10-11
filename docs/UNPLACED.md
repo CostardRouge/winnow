@@ -456,3 +456,75 @@ once, the card windows passed as `unnest` arrays.
 
 §8's six donor rules are unchanged; the two new numbers joined the printed
 sentence, which now has eight.
+
+---
+
+## 10. The second round: order, places, decisions already taken
+
+*2026-10-11, asked by the maintainer after working the list for a while:
+"the biggest folders first", "one folder, several places, and some frames
+land in the wrong one", "I keep taking the same decision".*
+
+1. **The order is the user's, in the URL.** `?sort=` on
+   `/library/incoming/unplaced`, four segments beside the triage picker:
+   **Biggest** (the default), *Ready first* (§9.3's order, unchanged),
+   *Newest*, *Oldest* (`sortGroups`, `src/lib/unplacedTypes.ts`). Biggest
+   sorts on the **folder's** unplaced count, not the card's, so the parts of
+   one folder stay together and in time order — "attack the big folders" is
+   about folders. The server still answers in *Ready first* order; the page
+   re-sorts.
+2. **A folder is not a place.** A shoot is up to 72 h of one memory card,
+   and a day out through two towns was one card with one suggestion — the
+   dominant cell's median — so the second town's frames went to the first.
+   The fix is a fifth step in `listUnplaced` and two printed rules
+   (`split_km` 5, `split_min` 2): a card whose near donors spread further
+   than `split_km` is read again frame by frame; its located frames, in time
+   order, make **runs** that stay within `split_km` of the frame that opened
+   them (`placeRuns`); a run of fewer than `split_min` frames is dropped and
+   the two runs either side re-join if they are the same place (one wild fix
+   must not split a folder); the card's own media are cut between two places
+   **in the camera's longest silence** between the last frame of one and the
+   first of the next — the drive — not at the midpoint (`placeCuts`); each
+   place becomes a card, `kind: 'part'` with `place: {index, count}`, its own
+   window and its own suggestion by the same rule as a whole card
+   (`runSuggestion`). Details that are decisions:
+   - the precondition is the donors' **spread** (bounding-box diagonal from
+     the aggregate query), not their cell count: thousands of donors are not
+     geocoded yet and have no cell, and a city walk crosses cells;
+   - day-window donors never split a card — a frame from hours away says
+     nothing about when the card moved;
+   - a place card offers **no folder alongside**: the other body's folder
+     spans both towns too, and offering it whole would put both at one point
+     again. A two-body, two-town day is four one-click cards;
+   - the cut bounds are written as instants; the card's own first and last
+     bounds stay pg's strings (an ISO instant is milliseconds and would drop
+     a last frame stamped in microseconds).
+   **Known limit**: someone else's phone, located in another town at the
+   same hours and imported into the library, alternates runs (A A B B A A)
+   and cuts a folder that was one place. `split_min` absorbs a single stray,
+   not a second photographer. Rejected for now: placing each frame at its
+   nearest donor in time — that is a per-frame write with no one-pin recap,
+   i.e. the fourth path §4.5 refuses (see 3c).
+3. **Decisions already taken, offered back.** The Place dialog lists, under
+   the record, the spots a human already applied (`'manual'` or `'inferred'`)
+   within `reuse_d` (30) days of the card, nearest in time first, six at most
+   — "Pérols, France · 2 days before · 40" — and one click puts the pin there
+   (`placesNear`, `GET /api/assets/unplaced/places`, `GeotagRecapModal`'s
+   `places`). They are **offered, never pre-filled and never donors**: §8.1's
+   "an inferred position never seeds another inference" stands, and a human
+   picking a spot on a map is a human placing a pin — recorded `'manual'`
+   (unless it happens to be within `move_m` of the card's own suggestion),
+   like a place typed in the search box. Proposed and **not built**, each the
+   maintainer's call:
+   - (a) a keyboard review over the Ready cards — Enter applies the
+     suggestion as offered, → skips, the recap still shown — the dedup
+     triage's staged review, applied here;
+   - (b) on a donor-less card, the nearest human placement printed on the
+     card itself, so "same as yesterday" is visible before opening anything;
+   - (c) **follow the phone**: treat the trustworthy located frames as a GPS
+     track and place each camera frame from it, as the track import already
+     does for a Polarsteps/GPX file (`gps_source='track'`, Preview → Apply →
+     Undo). It would make the place split unnecessary for every card with
+     donors, but it decides what `'track'` means (a measured track, or any
+     located frame of anyone) and Atelier trusts `'track'` like a camera fix
+     (§6) — the reason it is not done by default.

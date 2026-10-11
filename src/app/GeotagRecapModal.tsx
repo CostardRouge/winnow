@@ -46,6 +46,11 @@ import type { AssetGridRow } from "@/lib/types";
 //     per-media table folds away, and without these rows a 1 732-media write
 //     read as one number with no folder in it — the maintainer could not tell
 //     that 1 360 of those media lived in a folder he had not opened (§9.8).
+//   - `places`: positions the host offers as one-click choices under the
+//     record — in Unplaced, the spots already placed around the card's dates
+//     ("same place as the folder I did yesterday", §10). A click moves the pin
+//     there through `onTargetChange`, exactly as a search result does, so the
+//     host re-decides `source` the same way; nothing is pre-selected.
 //
 // Its shape, for every host: a column of title, a body that scrolls, and the
 // actions pinned under it — Apply is never below the fold, however long the
@@ -90,6 +95,18 @@ export type RecapFolder = {
   /** One line under the name: the body and the capture window. */
   detail: string;
   primary: boolean;
+};
+
+// One position offered as a choice (`places`): what the chip says and the
+// point it puts the pin on.
+export type RecapPlace = {
+  lat: number;
+  lon: number;
+  label: string;
+  /** The chip's second, quieter half: when, and how many media. */
+  detail: string;
+  /** Hover text: the same, in a sentence. */
+  title?: string;
 };
 
 // A checkbox with the third state the DOM has and React does not expose as a
@@ -145,6 +162,7 @@ export default function GeotagRecapModal({
   sourceNote,
   onTargetChange,
   folders,
+  places,
   withCompanions = false,
   onClose,
   onApplied,
@@ -168,6 +186,8 @@ export default function GeotagRecapModal({
   /** The folders this apply spans, when more than one is on offer — each gets
    *  a row and a checkbox. Media are matched to their folder by session_id. */
   folders?: RecapFolder[];
+  /** Positions offered as one-click choices (needs `onTargetChange`). */
+  places?: RecapPlace[];
   /** The host lists one row per RAW+JPEG pair (a folded grid): the write
    *  then places each pair's other member too when it has no position. */
   withCompanions?: boolean;
@@ -355,12 +375,47 @@ export default function GeotagRecapModal({
     </div>
   );
 
+  // The positions the host offers, as chips: one click moves the pin there.
+  // The chip on the current point reads as pressed.
+  const choices =
+    onTargetChange && places && places.length > 0 ? (
+      <div className="recap-places" role="group" aria-label="Places already used">
+        <p className="recap-places-head">Already used near these dates</p>
+        <div className="chips">
+          {places.map((p) => {
+            const on =
+              target != null &&
+              Math.abs(target.lat - p.lat) < 1e-4 &&
+              Math.abs(target.lon - p.lon) < 1e-4;
+            return (
+              <button
+                key={`${p.lat},${p.lon}`}
+                type="button"
+                className={`chip${on ? " active" : ""}`}
+                aria-pressed={on}
+                disabled={busy}
+                title={p.title}
+                onClick={() =>
+                  onTargetChange({ lat: p.lat, lon: p.lon, label: p.label })
+                }
+              >
+                {on && <span aria-hidden="true">✓</span>}
+                {p.label}
+                <span className="chip-count">{p.detail}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
   // Everything under the position: the folders, the overwrite warning and the
   // per-media table. Beside the map's fields on a wide screen, under them
   // otherwise — the picker's grid decides (see LocationPicker's `aside`).
   const recap = (
     <>
       {record}
+      {choices}
 
       {folderRows && (
         <div className="recap-folders" role="group" aria-label="Folders">

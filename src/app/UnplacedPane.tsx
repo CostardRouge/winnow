@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
 import {
   exemptAssets,
@@ -15,13 +15,17 @@ import {
   distanceM,
   isAllNoExif,
   isReady,
+  parseUnplacedSort,
+  sortGroups,
   tileFor,
   type UnplacedGroup,
+  type UnplacedPlace,
   type UnplacedResponse,
   type UnplacedSibling,
+  type UnplacedSort,
 } from "@/lib/unplacedTypes";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
-import GeotagRecapModal, { type RecapFolder } from "./GeotagRecapModal";
+import GeotagRecapModal, { type RecapFolder, type RecapPlace } from "./GeotagRecapModal";
 import type { PickedLocation } from "./LocationPicker";
 import { OptionPicker, type PickerOption } from "./OptionPicker";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
@@ -45,8 +49,11 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // The page is a work queue, and reads like one: a progress bar over the whole
 // Incoming library at the top; a triage picker — Ready (a suggestion confident
 // enough to pre-fill the map, so one glance and one click), By hand (a weak or
-// missing suggestion, or a container folder), All — with the cards already
-// sorted confident-first so the fast wins come before the archaeology; and on
+// missing suggestion, or a container folder), All — and a sort, in the URL:
+// biggest folders first by default (the maintainer's way in: the big folders
+// are the ones worth the attention, §10), the parts of a folder kept
+// together; Ready first (high, then medium, then the rest) for a quick pass
+// over the one-click wins; or by date. And on
 // every suggestion a one-tile map preview centred on the point, because the
 // fastest check on "Pérols, France" is seeing the coast, and the fastest check
 // on a wrong suggestion is seeing the outback (§9 — the first real run offered
@@ -67,6 +74,11 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 //   - a PART of a container folder (a month, a year), cut at the same two-hour
 //     silence that separates two shoots — "april 2026 · part 3 of 11", its
 //     own window and suggestion, Place N applies inside the window;
+//   - a PLACE: one stop of a card whose located frames move — a day out
+//     through two towns is cut into "place 1 of 2" and "place 2 of 2", each
+//     its own window and suggestion, because one folder is not one place
+//     (§10). It is placed like a part, and offers no folder alongside: the
+//     other body's folder spans both towns too;
 //   - a SPAN: what a container keeps once its parts are cut out (media with no
 //     camera EXIF, or no capture time), or a container too scattered to cut —
 //     no pin to accept, so its primary verb sends you to the grid, where each
@@ -99,6 +111,8 @@ type Flow = {
   folders: RecapFolder[];
   seed: { lat: number; lon: number } | null;
   loc?: PickedLocation;
+  /** Positions already applied near the card's dates, offered as chips. */
+  places: RecapPlace[];
 };
 
 // One verb: what the button says, what its tooltip explains, what it does.
@@ -206,6 +220,51 @@ function groupTitle(g: UnplacedGroup): string {
   return g.sessions[0].name;
 }
 
+// "part 3 of 11 · place 2 of 3" — what slice of its folder a card is.
+function sliceLabel(g: UnplacedGroup): string | null {
+  const bits: string[] = [];
+  if (g.part) bits.push(`part ${g.part.index} of ${g.part.count}`);
+  if (g.place) bits.push(`place ${g.place.index} of ${g.place.count}`);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+// "same hours", "5 h before", "3 days after" — how far from the card a spot
+// already placed lies.
+function gapLabel(h: number): string {
+  if (h === 0) return "same hours";
+  const side = h < 0 ? "before" : "after";
+  const a = Math.abs(h);
+  if (a < 24) return `${Math.max(1, Math.round(a))} h ${side}`;
+  const d = Math.round(a / 24);
+  return `${d} ${d === 1 ? "day" : "days"} ${side}`;
+}
+
+function placeChip(p: UnplacedPlace): RecapPlace {
+  const label = p.name ?? `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
+  return {
+    lat: p.lat,
+    lon: p.lon,
+    label,
+    detail: `${gapLabel(p.gap_h)} · ${fmt(p.count)}`,
+    title: `${fmt(p.count)} media placed here, ${gapLabel(p.gap_h)} this card${p.verified ? " — some placed by hand" : " — accepted suggestions"}`,
+  };
+}
+
+const SORTS: PickerOption<UnplacedSort>[] = [
+  {
+    key: "size",
+    label: "Biggest",
+    hint: "The folders with the most media left to place first — a folder’s parts stay together",
+  },
+  {
+    key: "ready",
+    label: "Ready first",
+    hint: "Confident suggestions first (high, medium), then low, no donor, containers — biggest first within each",
+  },
+  { key: "newest", label: "Newest", hint: "The most recent shoots first" },
+  { key: "oldest", label: "Oldest", hint: "The oldest shoots first" },
+];
+
 function groupDevices(g: UnplacedGroup): string {
   const set = new Set(g.sessions.map((s) => s.device_hint).filter(Boolean));
   return set.size ? [...set].join(" + ") : "unknown device";
@@ -253,6 +312,18 @@ function suggestionLabel(g: UnplacedGroup): string {
 
 export default function UnplacedPane() {
   const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  // The sort lives in the URL, like the Devices tab's: a reload or the back
+  // button keeps the order the queue is being worked in.
+  const sort = parseUnplacedSort(sp?.get("sort"));
+  const setSort = (next: UnplacedSort) => {
+    const q = new URLSearchParams(sp?.toString() ?? "");
+    if (next === "size") q.delete("sort");
+    else q.set("sort", next);
+    const qs = q.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+  };
   const [data, setData] = useState<UnplacedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -284,11 +355,11 @@ export default function UnplacedPane() {
   }, [notice]);
 
   const shown = useMemo(() => {
-    const all = data?.groups ?? [];
+    const all = sortGroups(data?.groups ?? [], sort);
     if (triage === "ready") return all.filter(isReady);
     if (triage === "hand") return all.filter((g) => !isReady(g));
     return all;
-  }, [data, triage]);
+  }, [data, triage, sort]);
 
   // Every live media the card covers, in one request: the folders' for a
   // shoot or a span, the folder's inside the card's window for a part. The
@@ -315,11 +386,21 @@ export default function UnplacedPane() {
         // of the folders shot alongside it, which the dialog offers unticked.
         // Two requests only because a part's media are a window into its
         // folder while a sibling is always the whole folder.
-        const [own, alongside] = await Promise.all([
+        // The places already used around these dates ride along; they are a
+        // convenience, so their failure never blocks the dialog.
+        const [own, alongside, near] = await Promise.all([
           loadGroupAssets(g),
           g.siblings.length
             ? geotagTargets(g.siblings.map((x) => x.id))
             : Promise.resolve([] as GeotagAsset[]),
+          fetchJson<{ places: UnplacedPlace[] }>(
+            `/api/assets/unplaced/places?${new URLSearchParams({
+              from: new Date(g.t0).toISOString(),
+              to: new Date(g.t1).toISOString(),
+            })}`,
+          )
+            .then((r) => r.places)
+            .catch(() => [] as UnplacedPlace[]),
         ]);
         if (!own.length) {
           setNotice("Nothing left to place here.");
@@ -334,8 +415,8 @@ export default function UnplacedPane() {
           folders: [
             {
               id: g.sessions[0].id,
-              name: g.part
-                ? `${groupTitle(g)} · part ${g.part.index} of ${g.part.count}`
+              name: sliceLabel(g)
+                ? `${groupTitle(g)} · ${sliceLabel(g)}`
                 : groupTitle(g),
               detail: `${g.sessions[0].device_hint ?? "unknown device"} · ${formatWindow(g)}`,
               primary: true,
@@ -344,6 +425,7 @@ export default function UnplacedPane() {
           ],
           seed: s ? { lat: s.lat, lon: s.lon } : null,
           loc: s ? { lat: s.lat, lon: s.lon, label: s.name } : undefined,
+          places: near.map(placeChip),
         });
       } catch (e) {
         setNotice((e as Error).message);
@@ -594,13 +676,22 @@ export default function UnplacedPane() {
               )}
             </div>
             <div className="unplaced-tools">
-              <OptionPicker
-                size="sm"
-                ariaLabel="Which cards to show"
-                options={triageOptions}
-                value={triage}
-                onChange={setTriage}
-              />
+              <div className="unplaced-pickers">
+                <OptionPicker
+                  size="sm"
+                  ariaLabel="Which cards to show"
+                  options={triageOptions}
+                  value={triage}
+                  onChange={setTriage}
+                />
+                <OptionPicker
+                  size="sm"
+                  ariaLabel="Order the cards"
+                  options={SORTS}
+                  value={sort}
+                  onChange={setSort}
+                />
+              </div>
               {rules && (
                 <details className="card-rules">
                   <summary>How the cards and their suggestions are made</summary>
@@ -614,7 +705,11 @@ export default function UnplacedPane() {
                     its own card, up to {rules.parts_max} parts — past that the
                     folder stays one card that opens in the grid. Media with no
                     camera EXIF (screenshots, scans) never take part in the cut
-                    and stay behind to be exempted. A suggestion comes from the
+                    and stay behind to be exempted. When the located frames
+                    shot with a card move more than {rules.split_km} km (at
+                    least {rules.split_min} frames in each place), the card is
+                    cut into one card per place, in the longest pause of the
+                    camera between two places. A suggestion comes from the
                     located frames within ±{rules.near_h} h of the card’s window
                     (±{rules.day_h} h failing that), camera fixes and hand-placed
                     pins only. It pre-fills the map from {pct(rules.medium)} of
@@ -622,7 +717,9 @@ export default function UnplacedPane() {
                     confidence — and never under {rules.floor} frames. Accepting
                     the pin as offered records a suggested position, not written
                     into the originals; moving it more than {rules.move_m} m
-                    records a verified one.
+                    records a verified one. The Place dialog also lists the
+                    positions already applied within {rules.reuse_d} days of
+                    the card — one click puts the pin there.
                   </p>
                 </details>
               )}
@@ -665,10 +762,17 @@ export default function UnplacedPane() {
                       <div className="card-info">
                         <h3>
                           <Link href={`/sessions/${first.id}`}>{groupTitle(g)}</Link>
-                          {g.part && (
-                            <span className="hint">
+                          {sliceLabel(g) && (
+                            <span
+                              className="hint"
+                              title={
+                                g.place
+                                  ? `The located frames shot with this folder move more than ${rules?.split_km ?? 5} km: one card per place`
+                                  : undefined
+                              }
+                            >
                               {" "}
-                              · part {g.part.index} of {g.part.count}
+                              · {sliceLabel(g)}
                             </span>
                           )}
                           {g.siblings.length > 0 && (
@@ -766,6 +870,7 @@ export default function UnplacedPane() {
           }
           onTargetChange={(loc) => setFlow({ ...flow, loc })}
           folders={flow.folders}
+          places={flow.places}
           onClose={() => setFlow(null)}
           onApplied={(message) => {
             setFlow(null);
