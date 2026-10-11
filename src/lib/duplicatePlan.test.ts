@@ -132,7 +132,8 @@ test("a card's run touches its own groups and says why it left one behind", { sk
   const h = await seed();
   const r = await list.resolveDuplicatesAuto({ q: base, rule: "library" });
 
-  assert.equal(r.resolved, 2);
+  // The refused group is not "resolved": its copy is still there.
+  assert.equal(r.resolved, 1);
   assert.equal(r.deleted, 1);
   assert.equal(await exists(path.join(incoming, "L.jpg")), false);
   // The refused copy stays, with its reason counted rather than lost.

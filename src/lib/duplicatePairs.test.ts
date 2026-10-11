@@ -8,9 +8,11 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { skipWithoutDb, useTestDatabase } from "../test/db";
 
 const base = await mkdtemp(path.join(os.tmpdir(), "winnow-dedup-pairs-"));
@@ -62,6 +64,7 @@ after(async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+const execFileAsync = promisify(execFile);
 const exists = (p: string) => stat(p).then(() => true, () => false);
 const HASH = () => `test-${randomBytes(8).toString("hex")}`;
 
@@ -162,4 +165,33 @@ test("a pair never keeps a trashed library entry as the last copy", { skip: skip
   assert.equal(r.resolved, 0);
   assert.equal(await exists(path.join(backup, "z.jpg")), true, "the live copy stays");
   assert.match(r.skipped[0].reason, /trash/);
+});
+
+// A refused unlink (the NAS's permissions, in production) must read as a
+// refusal: no group counted as resolved, and ONE reason for the whole folder —
+// not one per file with its path in it, folded shut in the report. The
+// immutable flag makes even root's unlink fail; where chattr is unavailable
+// (macOS, an unprivileged container) the test says so and skips.
+const immutable = (p: string, on: boolean) =>
+  execFileAsync("chattr", [on ? "+i" : "-i", p]).then(() => true, () => false);
+
+test("a refused unlink is reported once, and nothing counts as resolved", { skip: skipWithoutDb }, async (t) => {
+  await twin(library, backup, "p.jpg");
+  await twin(library, backup, "q.jpg");
+  const locked = [path.join(backup, "p.jpg"), path.join(backup, "q.jpg")];
+  if (!(await immutable(locked[0], true))) return t.skip("chattr +i unavailable here");
+  await immutable(locked[1], true);
+  try {
+    const r = await pairs.resolveDuplicatePair({ q: base, keepDir: library, dropDir: backup });
+    assert.equal(r.resolved, 0);
+    assert.equal(r.deleted, 0);
+    assert.equal(r.skipped.length, 1, "one reason, not one per file");
+    assert.equal(r.skipped[0].count, 2);
+    assert.match(r.skipped[0].reason, /permission denied/);
+    assert.doesNotMatch(r.skipped[0].reason, /p\.jpg|q\.jpg/);
+    assert.equal(r.retry.length, 2);
+    for (const p of locked) assert.equal(await exists(p), true);
+  } finally {
+    for (const p of locked) await immutable(p, false);
+  }
 });

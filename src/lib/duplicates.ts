@@ -6,7 +6,7 @@
 //
 // Upsert by abs_path (like scan_failures): a path re-seen on each incremental
 // scan updates its row + a hits counter instead of accumulating.
-import { rm, stat } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
 import { q, one, many } from "./db";
 import { config } from "./config";
 import { isWithinBrowseRoots } from "./fsbrowse";
@@ -130,6 +130,39 @@ async function confirmSameBytes(goes: Copy, stays: Copy): Promise<string | null>
 }
 
 const onDisk = (p: string) => stat(p).then(() => true, () => false);
+
+// Remove one file; one already gone is success (its stale row must still
+// clear). Not `rm(p, { force: true })`: on a refused unlink (EPERM) Node's rm
+// retries the path as a DIRECTORY and throws "ENOTDIR … scandir" instead,
+// burying the one error that says what is wrong.
+async function unlinkIfThere(p: string): Promise<void> {
+  try {
+    await unlink(p);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
+// Why the filesystem refused to unlink a copy, in words and WITHOUT its path.
+// Node's message names the file ("EACCES: permission denied, unlink
+// '/nas-incoming/…/DSC01170.ARW'"), so a folder of 133 refusals became 133
+// distinct reasons in a run report: folded shut, unread, and the run looked
+// like it had silently done nothing. The cause is one sentence, said once.
+export function unlinkRefusal(err: unknown): string {
+  const e = err as NodeJS.ErrnoException;
+  switch (e.code) {
+    case "EACCES":
+    case "EPERM":
+      return "the NAS refused the deletion (permission denied): Winnow's user may not remove files in this folder — check its owner and permissions on the NAS";
+    case "EROFS":
+      return "the folder is mounted read-only in the container — not deleted";
+    case "EBUSY":
+      return "the file is in use — not deleted";
+  }
+  // Any other error: its own words, minus the trailing ", unlink '<path>'".
+  const msg = (e.message ?? String(err)).replace(/,\s*\w+\s+'.*'$/, "");
+  return `could not be deleted (${msg})`;
+}
 
 // One roots lookup, then a synchronous predicate — for listing a whole page of
 // duplicates (cf. /api/failures) so the UI can mark the protected copies and
@@ -300,7 +333,7 @@ async function survivorFor(
 //   4. containment — the path must sit inside the browsable area (incoming/NAS),
 //   5. a survivor  — another copy of the same content is on disk now
 //      (confirmSameBytes; the row alone is not proof — BE-02).
-// `rm(..., force)` treats an already-gone file as success so a stale row still
+// `unlinkIfThere` treats an already-gone file as success so a stale row still
 // gets cleaned. Resolved rows are dropped (the duplicate no longer exists).
 export async function deleteDuplicateFiles(
   paths: string[],
@@ -368,10 +401,10 @@ export async function deleteDuplicateFiles(
       }
     }
     try {
-      await rm(p, { force: true });
+      await unlinkIfThere(p);
       result.deleted.push(p);
     } catch (err) {
-      result.skipped.push({ path: p, reason: (err as Error).message });
+      result.skipped.push({ path: p, reason: unlinkRefusal(err) });
     }
   }
 
@@ -558,10 +591,10 @@ export async function keepOneCopy(args: {
       }
     }
     try {
-      await rm(p, { force: true });
+      await unlinkIfThere(p);
       result.deleted.push(p);
     } catch (err) {
-      result.skipped.push({ path: p, reason: (err as Error).message });
+      result.skipped.push({ path: p, reason: unlinkRefusal(err) });
     }
   }
 
@@ -657,7 +690,7 @@ export async function discardTrashedCopy(
 
   let deleted = false;
   if (!asset.purged) {
-    await rm(asset.abs_path, { force: true });
+    await unlinkIfThere(asset.abs_path);
     deleted = true;
   }
   await reclaimTrashedAsset(asset.id);
