@@ -516,6 +516,15 @@ html[data-theme="dark"] .btn-primary:hover {
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
+  /* The session page's band stays pinned under the header: the verdict
+     filters, the triage bar and Select are reachable from the bottom of a long
+     folder, so a multi-selection can start (or be dismissed with Done) without
+     scrolling back up. --page-head-h is the header's measured height (set by
+     SessionGrid; the header wraps on a phone, so a constant would drift). */
+  .session-tools {
+    @apply sticky z-[19];
+    top: var(--page-head-h, 64px);
+  }
   .page-tools-row {
     @apply flex min-w-0 flex-wrap items-center gap-2;
     flex-basis: 100%;
