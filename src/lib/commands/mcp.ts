@@ -1,0 +1,254 @@
+// The MCP half of the command registry: JSON-RPC messages in, JSON-RPC
+// answers out, over whatever transport the caller wires (`src/scripts/mcp.ts`
+// wires stdio). Pure — no I/O, no environment — so the protocol is tested
+// without a process.
+//
+// Three generic tools, the same three Atelier's bridge offers
+// (`atelier_status`, `atelier_commands`, `atelier_run`), so an agent driving
+// both meets one vocabulary:
+//   winnow_status   → the `app.status` command (who, which role, what is on);
+//   winnow_commands → every command with its JSON Schema and availability;
+//   winnow_run      → { command, params } through the registry's one door.
+// Generic rather than one MCP tool per command because that is the shared
+// convention, and because a command's availability (a read-only token, the
+// Timeline off) is part of its listing, which a static tool list cannot say.
+//
+// A command's JSON answer becomes a text block; an `ImageResult` becomes an
+// MCP image block (the agent SEES it) followed by its note. A `CommandError`
+// is a tool result with `isError` and its code, never a JSON-RPC error: the
+// agent must read "unavailable: this token reads only…" and adapt, which a
+// protocol error would hide from it.
+import {
+  CommandError,
+  isImageResult,
+  paramsJsonSchema,
+  type CommandRegistry,
+} from "./registry";
+
+// Versions this server speaks; it answers the client's when it is one of
+// them, else the newest (the spec's negotiation rule).
+export const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
+
+export type JsonRpcMessage = {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+};
+
+export type JsonRpcAnswer =
+  | { jsonrpc: "2.0"; id: string | number | null; result: unknown }
+  | { jsonrpc: "2.0"; id: string | number | null; error: { code: number; message: string } };
+
+type Content =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
+const INSTRUCTIONS = `Winnow is a photographer's ingest → cull → export library (RAW photos and videos on a home NAS). You act as one account through an app token: call winnow_status first, then winnow_commands for what you may do, and winnow_run to do it. Days are the place's local capture days. Culling is a verdict (pick / reject / skip / unrated), 0–5 stars and a colour label; a RAW+JPEG pair is rated as one. A cull usually goes: library.folders (progress: incomplete) or library.days → assets.list for a folder or a day → assets.lookMany to compare a burst or a run of frames (assets.look with detail for focus) → cull.set / cull.setMany (wholePile for a burst) → trash.move for rejects you are sure of. Never judge a picture you have not looked at. Writes need an editor token and are marked as an agent's when the token was minted for one; the originals are never touched.`;
+
+export function mcpTools() {
+  return [
+    {
+      name: "winnow_status",
+      description:
+        "Who you are on this Winnow instance: the account the token acts as, the role it runs as (viewer reads, editor may also cull), whether your writes are marked as an agent's, and which optional readings (the Timeline) are on. Call it first.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    {
+      name: "winnow_commands",
+      description:
+        "Every Winnow command: its id, what it does, its parameters as JSON Schema, and whether it can run now (with the reason when it cannot). Read it before winnow_run.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    {
+      name: "winnow_run",
+      description:
+        "Run one Winnow command by id with its parameters, e.g. {\"command\": \"assets.list\", \"params\": {\"day\": \"2025-01-04\"}}. Parameters are checked: an out-of-range value or an unknown key is refused with the field named, never clamped or ignored. A picture comes back as an image.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "A command id from winnow_commands, e.g. cull.set" },
+          params: { type: "object", description: "The command's parameters (its JSON Schema in winnow_commands)" },
+        },
+        required: ["command"],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
+function toContent(value: unknown): Content[] {
+  // A list holding pictures (assets.lookMany): each picture its own image
+  // block with its note, anything else in the list a text line.
+  if (Array.isArray(value) && value.some(isImageResult)) {
+    return value.flatMap((v) =>
+      isImageResult(v) ? toContent(v) : [{ type: "text" as const, text: JSON.stringify(v) }],
+    );
+  }
+  if (isImageResult(value)) {
+    return [
+      { type: "image", data: value.data, mimeType: value.mimeType },
+      {
+        type: "text",
+        text: `${value.note ? `${value.note} — ` : ""}${value.width}×${value.height} ${value.mimeType}`,
+      },
+    ];
+  }
+  return [{ type: "text", text: JSON.stringify(value ?? null, null, 2) }];
+}
+
+async function callTool(
+  registry: CommandRegistry,
+  name: unknown,
+  args: Record<string, unknown>,
+): Promise<{ content: Content[]; isError?: true }> {
+  try {
+    switch (name) {
+      case "winnow_status":
+        return { content: toContent(await registry.execute("app.status")) };
+      case "winnow_commands": {
+        const list = await registry.list();
+        return {
+          content: toContent(
+            list.map((c) => ({
+              id: c.id,
+              title: c.title,
+              description: c.description,
+              params: paramsJsonSchema(c.params),
+              available: c.available,
+              ...(c.reason ? { reason: c.reason } : {}),
+            })),
+          ),
+        };
+      }
+      case "winnow_run": {
+        const command = args.command;
+        if (typeof command !== "string")
+          throw new CommandError("invalid", `"command" must be a command id, e.g. "assets.list"`);
+        for (const key of Object.keys(args))
+          if (key !== "command" && key !== "params")
+            throw new CommandError("invalid", `unknown argument "${key}" — winnow_run takes command, params`);
+        return { content: toContent(await registry.execute(command, args.params)) };
+      }
+      default:
+        throw new CommandError("unknown", `no tool "${String(name)}" — winnow_status, winnow_commands, winnow_run`);
+    }
+  } catch (err) {
+    const msg =
+      err instanceof CommandError
+        ? `${err.code}: ${err.message}`
+        : `failed: ${err instanceof Error ? err.message : String(err)}`;
+    return { content: [{ type: "text", text: msg }], isError: true };
+  }
+}
+
+/**
+ * One incoming message → its answer, or null for a notification (no id).
+ * Never throws: whatever goes wrong becomes a JSON-RPC error or a tool error.
+ */
+export async function handleMessage(
+  registry: CommandRegistry,
+  msg: JsonRpcMessage,
+  server: { name: string; version: string },
+): Promise<JsonRpcAnswer | null> {
+  const isRequest = msg.id !== undefined && msg.id !== null;
+  const id = isRequest ? (msg.id as string | number) : null;
+  const ok = (result: unknown): JsonRpcAnswer => ({ jsonrpc: "2.0", id, result });
+  const fail = (code: number, message: string): JsonRpcAnswer => ({
+    jsonrpc: "2.0",
+    id,
+    error: { code, message },
+  });
+
+  if (typeof msg.method !== "string") return isRequest ? fail(-32600, "invalid request") : null;
+  // Notifications (initialized, cancelled…) need no answer, and none is sent.
+  if (!isRequest) return null;
+
+  switch (msg.method) {
+    case "initialize": {
+      const asked = msg.params?.protocolVersion;
+      const version = PROTOCOL_VERSIONS.includes(asked as (typeof PROTOCOL_VERSIONS)[number])
+        ? asked
+        : PROTOCOL_VERSIONS[0];
+      return ok({
+        protocolVersion: version,
+        capabilities: { tools: {} },
+        serverInfo: server,
+        instructions: INSTRUCTIONS,
+      });
+    }
+    case "ping":
+      return ok({});
+    case "tools/list":
+      return ok({ tools: mcpTools() });
+    case "tools/call": {
+      const p = msg.params ?? {};
+      const args = p.arguments;
+      if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args)))
+        return fail(-32602, "arguments must be an object");
+      return ok(await callTool(registry, p.name, (args as Record<string, unknown>) ?? {}));
+    }
+    default:
+      return fail(-32601, `method not found: ${msg.method}`);
+  }
+}
+
+// --- The same bridge as a Claude Desktop extension -------------------------
+//
+// `scripts/build-agent-bridge.ts` bundles `src/scripts/mcp.ts` into ONE plain
+// JavaScript file the instance serves (`/agent/winnow-mcp.mjs`), and wraps it
+// with this manifest as `winnow.mcpb` — an MCP bundle, a ZIP Claude Desktop
+// installs from a dialog. Atelier ships its bridge the same two ways
+// (`mcpbManifest` in its `mcp-protocol.ts`). Winnow's differs in one thing:
+// its bridge needs a credential, so the manifest declares `user_config` and
+// Claude Desktop asks for the address and the token at install, keeping the
+// token in the OS keychain (`sensitive`) rather than in a file.
+
+/** Where the bridge sits inside the bundle. */
+export const MCPB_ENTRY = "server/winnow-mcp.mjs";
+
+export function mcpbManifest(version: string): Record<string, unknown> {
+  const homepage = "https://github.com/CostardRouge/winnow";
+  return {
+    manifest_version: "0.3",
+    name: "winnow",
+    display_name: "Winnow",
+    version,
+    description:
+      "Cull your Winnow library from Claude: find what is left to sort, look at the pictures, pick, reject, rate and tag.",
+    long_description:
+      "Winnow indexes and culls the photos and videos on your NAS. This extension is a small client of your Winnow instance's API: it holds one app token minted for an agent on Users › App tokens, and every command is the request the web app itself makes — the token's access (read only, or read & write), the role checks and the feature flags apply unchanged, and the ratings it writes are marked as an agent's. It never touches the originals.",
+    author: { name: "Steeve Pommier", url: homepage },
+    homepage,
+    server: {
+      type: "node",
+      entry_point: MCPB_ENTRY,
+      mcp_config: {
+        command: "node",
+        args: [`\${__dirname}/${MCPB_ENTRY}`],
+        env: {
+          WINNOW_HOST: "${user_config.winnow_host}",
+          WINNOW_TOKEN: "${user_config.winnow_token}",
+        },
+      },
+    },
+    user_config: {
+      winnow_host: {
+        type: "string",
+        title: "Winnow address",
+        description: "The instance's address, e.g. https://winnow.example (https; plain http only to localhost).",
+        required: true,
+      },
+      winnow_token: {
+        type: "string",
+        title: "Agent token",
+        description: "An app token minted on Users › App tokens with “Used by: An agent” (starts with wnw_).",
+        sensitive: true,
+        required: true,
+      },
+    },
+    tools: mcpTools().map((t) => ({ name: t.name, description: t.description })),
+    keywords: ["photo", "cull", "raw", "library", "winnow"],
+  };
+}
+

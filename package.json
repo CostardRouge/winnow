@@ -9,8 +9,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "tsx scripts/build-agent-bridge.ts && next dev",
+    "build": "tsx scripts/build-agent-bridge.ts && next build",
+    "agent-bridge": "tsx scripts/build-agent-bridge.ts",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/**/*.test.ts\"",

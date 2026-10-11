@@ -51,6 +51,10 @@ export async function GET(req: NextRequest) {
           // Minted by an admin on Users › App tokens; a token never reaches a
           // page, nor /api/auth/* beyond GET /api/auth/me.
           roles: ["viewer", "editor"],
+          // A token may be minted FOR AN AGENT (migration 0050): same caps,
+          // reported as `viewer.via: "agent"`, and what it writes is stamped
+          // as an agent's (`ratings.rated_via`).
+          agent: true,
         },
       },
       media: {

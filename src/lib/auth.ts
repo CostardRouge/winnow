@@ -44,6 +44,8 @@ export type SessionUser = {
   username: string;
   displayName: string | null;
   role: UserRole;
+  /** Set by validateAccessToken: the token was minted for an agent (0050). */
+  agent?: boolean;
 };
 
 export type UserRow = {
@@ -70,16 +72,24 @@ export const SESSION_COOKIE = "winnow_session";
 export const HDR_USER_ID = "x-winnow-user-id";
 export const HDR_USER_NAME = "x-winnow-user-name";
 export const HDR_USER_ROLE = "x-winnow-user-role";
-// "session" or "token": which credential proved the identity above. The role
-// header is already the capped one for a token; this says why it may be lower
-// than the account's own.
+// "session", "token" or "agent": which credential proved the identity above.
+// The role header is already the capped one for a token; this says why it
+// may be lower than the account's own. "agent" is a token minted for an agent
+// (migration 0050) — capped exactly like any token, and stamped on what it
+// writes (`ratings.rated_via`).
 export const HDR_AUTH_VIA = "x-winnow-auth-via";
 
-export type AuthVia = "session" | "token";
+export type AuthVia = "session" | "token" | "agent";
 
 export function authViaFromHeaders(headers: Headers): AuthVia | null {
   const v = headers.get(HDR_AUTH_VIA);
-  return v === "session" || v === "token" ? v : null;
+  return v === "session" || v === "token" || v === "agent" ? v : null;
+}
+
+// Whether the identity came from an app token (an agent's included): the
+// caps of lib/authz.ts apply, and the role header is the capped one.
+export function viaToken(via: AuthVia | null): boolean {
+  return via === "token" || via === "agent";
 }
 
 // Reads the proxy-injected identity from a request/headers object. Returns
@@ -296,6 +306,7 @@ export type AccessTokenRow = {
   name: string;
   hint: string;
   role: TokenRole;
+  agent: boolean;
   user_id: number;
   created_at: string;
   expires_at: string | null;
@@ -306,14 +317,15 @@ export async function createAccessToken(opts: {
   userId: number;
   name: string;
   role: TokenRole;
+  agent: boolean;
   expiresAt: Date | null;
   createdBy: number | null;
 }): Promise<{ token: string; row: AccessTokenRow }> {
   const token = TOKEN_PREFIX + randomBytes(32).toString("base64url");
   const row = await one<AccessTokenRow>(
-    `INSERT INTO access_tokens (token_hash, hint, user_id, name, role, created_by, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, name, hint, role, user_id, created_at, expires_at, last_used_at`,
+    `INSERT INTO access_tokens (token_hash, hint, user_id, name, role, created_by, expires_at, agent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, name, hint, role, agent, user_id, created_at, expires_at, last_used_at`,
     [
       sha256hex(token),
       token.slice(-4),
@@ -322,6 +334,7 @@ export async function createAccessToken(opts: {
       opts.role,
       opts.createdBy,
       opts.expiresAt?.toISOString() ?? null,
+      opts.agent,
     ],
   );
   if (!row) throw new Error("token creation failed");
@@ -357,9 +370,10 @@ export async function validateAccessToken(
     display_name: string | null;
     owner_role: UserRole;
     token_role: TokenRole;
+    agent: boolean;
   }>(
     `SELECT u.id, u.username, u.display_name,
-            u.role AS owner_role, t.role AS token_role
+            u.role AS owner_role, t.role AS token_role, t.agent
        FROM access_tokens t
        JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = $1
@@ -374,6 +388,7 @@ export async function validateAccessToken(
         username: row.username,
         displayName: row.display_name,
         role: cappedRole(row.owner_role, row.token_role),
+        agent: row.agent,
       }
     : null;
 

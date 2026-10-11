@@ -10,6 +10,7 @@ import { one, q } from "@/lib/db";
 import {
   SESSION_COOKIE,
   authViaFromHeaders,
+  viaToken,
   createSession,
   destroyUserSessions,
   hashPassword,
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
         // Through an app token, what THIS request may do (capped below the
         // account's own role, cf. lib/authz.ts) — an app that read "admin"
         // here would offer verbs its token is refused.
-        role: via === "token" ? who.role : row.role,
+        role: viaToken(via) ? who.role : row.role,
         via,
       },
     });

@@ -3,7 +3,7 @@
 //   GET  /api/auth/tokens → every token on the instance, never the secret:
 //        its name, owner, ceiling, the role it runs as today, dates, and the
 //        last four characters that let a person match it to what they pasted.
-//   POST /api/auth/tokens { userId, name, role, expiresInDays } → mint one
+//   POST /api/auth/tokens { userId, name, role, agent?, expiresInDays } → mint one
 //        and return the clear token ONCE (only its SHA-256 is stored).
 //
 // A token acts as its owner (see migration 0045 for why it is not an account
@@ -25,6 +25,7 @@ type ListRow = {
   name: string;
   hint: string;
   role: TokenRole;
+  agent: boolean;
   user_id: number;
   owner_username: string;
   owner_display_name: string | null;
@@ -43,6 +44,9 @@ function publicToken(t: ListRow) {
     name: t.name,
     hint: t.hint,
     role: t.role,
+    // Minted for an agent (an MCP client, migration 0050): its writes are
+    // stamped as an agent's.
+    agent: t.agent,
     // What a request with it runs as TODAY — lower than `role` when the owner
     // was demoted after minting.
     effectiveRole: cappedRole(t.owner_role, t.role),
@@ -63,7 +67,7 @@ function publicToken(t: ListRow) {
 }
 
 const LIST_SQL = `
-  SELECT t.id, t.name, t.hint, t.role, t.user_id,
+  SELECT t.id, t.name, t.hint, t.role, t.agent, t.user_id,
          u.username AS owner_username, u.display_name AS owner_display_name,
          u.role AS owner_role, u.disabled AS owner_disabled,
          c.username AS created_by_username,
@@ -88,6 +92,8 @@ const Body = z.object({
   userId: z.number().int().positive(),
   name: z.string().trim().min(1).max(80),
   role: z.enum(["viewer", "editor"]),
+  // For an agent (an MCP client): same caps, its writes marked as an agent's.
+  agent: z.boolean().default(false),
   // null = no expiry. Ten years is "never" said with a date; past that, say
   // null.
   expiresInDays: z.number().int().min(1).max(3650).nullable(),
@@ -97,7 +103,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return badRequest("Invalid parameters", parsed.error.issues);
-    const { userId, name, role, expiresInDays } = parsed.data;
+    const { userId, name, role, agent, expiresInDays } = parsed.data;
 
     const owner = await one<UserRow>(
       `SELECT id, username, display_name, role, disabled, created_at, last_login_at
@@ -117,6 +123,7 @@ export async function POST(req: NextRequest) {
       // Never above the owner: a viewer's token asked as read-write is born
       // read-only rather than stored as a promise the lookup would break.
       role: cappedRole(owner.role, role) as TokenRole,
+      agent,
       expiresAt:
         expiresInDays == null
           ? null

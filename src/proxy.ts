@@ -22,7 +22,9 @@
 //      client with no access to the cookie, e.g. a home-screen web app in its
 //      own cookie jar. The token is tried INSTEAD of the cookie, never after
 //      it: a bad token is a 401, not a silent fallback to whoever else is
-//      signed in in that browser. lib/authz.ts caps what it reaches.
+//      signed in in that browser. lib/authz.ts caps what it reaches. A token
+//      minted for an agent (an MCP client) is the same key, reported as
+//      via "agent" so what it writes is marked (`ratings.rated_via`).
 import { NextResponse, type NextRequest } from "next/server";
 import {
   SESSION_COOKIE,
@@ -54,10 +56,12 @@ import {
 import { config as appConfig } from "@/lib/config";
 
 export const config = {
-  // Everything except Next internals and the PWA static files. Keep in sync
-  // with the public files under /public (sw.js, offline.html, icons).
+  // Everything except Next internals and the public files under /public: the
+  // PWA's (sw.js, offline.html, icons) and the agent bridge (/agent/, built by
+  // scripts/build-agent-bridge.ts — this repository's code, no secret, and
+  // fetched by `curl` or Claude Desktop, which hold no session). Keep in sync.
   matcher: [
-    "/((?!_next/|icons/|sw\\.js$|offline\\.html$|manifest\\.webmanifest$|favicon\\.ico$).*)",
+    "/((?!_next/|icons/|agent/|sw\\.js$|offline\\.html$|manifest\\.webmanifest$|favicon\\.ico$).*)",
   ],
 };
 
@@ -107,8 +111,10 @@ export default async function proxy(req: NextRequest) {
   let via: AuthVia = "session";
   let user: SessionUser | null;
   if (appToken) {
-    via = "token";
     user = await validateAccessToken(appToken);
+    // A token minted for an agent (migration 0050) is capped exactly like
+    // any other; the distinct `via` is what stamps its writes as an agent's.
+    via = user?.agent ? "agent" : "token";
   } else {
     const token = req.cookies.get(SESSION_COOKIE)?.value ?? null;
     user = token ? await validateSession(token) : null;
@@ -129,7 +135,7 @@ export default async function proxy(req: NextRequest) {
     if (isApi)
       return withCors(
         unauthorized(
-          via === "token"
+          via !== "session"
             ? "app token invalid, expired or revoked"
             : "authentication required",
           401,
@@ -143,7 +149,7 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  if (via === "token" && !tokenMayReach(req.method, pathname))
+  if (via !== "session" && !tokenMayReach(req.method, pathname))
     return withCors(unauthorized("an app token cannot reach this endpoint", 403));
 
   const needed = requiredRole(req.method, pathname);

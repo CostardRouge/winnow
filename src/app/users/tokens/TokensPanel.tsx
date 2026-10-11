@@ -24,6 +24,7 @@ type TokenItem = {
   name: string;
   hint: string;
   role: TokenRole;
+  agent: boolean;
   effectiveRole: UserRole;
   owner: {
     id: number;
@@ -38,7 +39,7 @@ type TokenItem = {
   expired: boolean;
 };
 
-type Account = {
+export type Account = {
   id: number;
   username: string;
   displayName: string | null;
@@ -56,6 +57,24 @@ const ACCESS: PickerOption<TokenRole>[] = [
     key: "editor",
     label: "Read & write",
     hint: "Also rate, tag, trash, upload, import and export",
+  },
+];
+
+// Who holds it. An agent's token is capped exactly like an app's; the only
+// difference is that what it writes is stamped as an agent's (migration 0050),
+// so a pick Claude made can be told from one made by hand.
+export type Holder = "app" | "agent";
+
+const HOLDERS: PickerOption<Holder>[] = [
+  {
+    key: "app",
+    label: "An app",
+    hint: "A client such as Atelier, acting as the account",
+  },
+  {
+    key: "agent",
+    label: "An agent",
+    hint: "An MCP client such as Claude — its ratings are marked as an agent’s",
   },
 ];
 
@@ -83,7 +102,7 @@ export default function TokensPanel() {
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<TokenItem | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [minted, setMinted] = useState<{ name: string; secret: string } | null>(
+  const [minted, setMinted] = useState<Minted | null>(
     null,
   );
 
@@ -162,8 +181,8 @@ export default function TokensPanel() {
                     <td>
                       <div className="vol-path">{t.name}</div>
                       <div className="hint">
-                        as @{t.owner.username} · ends in{" "}
-                        <span className="token-hint">{t.hint}</span>
+                        {t.agent ? "agent " : ""}as @{t.owner.username} · ends
+                        in <span className="token-hint">{t.hint}</span>
                       </div>
                     </td>
                     <td data-th="Access">
@@ -257,23 +276,29 @@ export default function TokensPanel() {
   );
 }
 
-function CreateTokenModal({
+export function CreateTokenModal({
   accounts,
   defaultOwner,
+  defaultHolder,
+  defaultName,
   onClose,
   onCreated,
 }: {
   accounts: Account[];
   defaultOwner: number | null;
+  /** Users › Agents opens it already set for an agent. */
+  defaultHolder?: Holder;
+  defaultName?: string;
   onClose: () => void;
-  onCreated: (m: { name: string; secret: string }) => Promise<void>;
+  onCreated: (m: Minted) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(defaultName ?? "");
   const [ownerId, setOwnerId] = useState<number | null>(
     accounts.some((a) => a.id === defaultOwner)
       ? defaultOwner
       : (accounts[0]?.id ?? null),
   );
+  const [holder, setHolder] = useState<Holder>(defaultHolder ?? "app");
   const [access, setAccess] = useState<TokenRole>("viewer");
   const [lifetime, setLifetime] = useState<Lifetime>("365");
   const [busy, setBusy] = useState(false);
@@ -302,11 +327,12 @@ function CreateTokenModal({
             userId: ownerId,
             name: name.trim(),
             role: access,
+            agent: holder === "agent",
             expiresInDays: lifetime === "never" ? null : Number(lifetime),
           }),
         },
       );
-      await onCreated({ name: r.token.name, secret: r.secret });
+      await onCreated({ name: r.token.name, secret: r.secret, agent: holder === "agent" });
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -324,8 +350,8 @@ function CreateTokenModal({
       >
         <h2 className="modal-title">New app token</h2>
         <p className="hint">
-          For an app that cannot use this browser’s sign-in. It acts as the
-          account you pick, within the access you give it.
+          For an app that cannot use this browser’s sign-in, or an agent. It
+          acts as the account you pick, within the access you give it.
         </p>
 
         <label className="modal-label" htmlFor="tk-name">
@@ -356,6 +382,15 @@ function CreateTokenModal({
             </option>
           ))}
         </select>
+
+        <span className="modal-label">Used by</span>
+        <OptionPicker
+          options={HOLDERS}
+          value={holder}
+          onChange={setHolder}
+          ariaLabel="Used by"
+        />
+        <p className="hint">{HOLDERS.find((o) => o.key === holder)?.hint}</p>
 
         <span className="modal-label">Access</span>
         <OptionPicker
@@ -397,13 +432,24 @@ function CreateTokenModal({
   );
 }
 
+export type Minted = { name: string; secret: string; agent: boolean };
+
+// The agent bridge (src/scripts/mcp.ts) is served by this instance as one
+// plain-JS file and as a Claude Desktop extension (scripts/build-agent-bridge.ts,
+// /agent/ is outside the session check), so connecting Claude needs no
+// checkout. Claude Code: download it, then register it at user scope so the
+// token never lands in a project's committed .mcp.json.
+export function claudeCodeSetup(origin: string, secret: string): string {
+  return `mkdir -p ~/.winnow && curl -fsSL ${origin}/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs && claude mcp add winnow --scope user -e WINNOW_HOST=${origin} -e WINNOW_TOKEN=${secret} -- node ~/.winnow/winnow-mcp.mjs`;
+}
+
 // The ONE time the clear token is visible. The instance address rides along
 // because the app's connect screen asks for both.
 function SecretModal({
   minted,
   onClose,
 }: {
-  minted: { name: string; secret: string };
+  minted: Minted;
   onClose: () => void;
 }) {
   const backdrop = useOverlayDismiss<HTMLDivElement>(onClose);
@@ -419,13 +465,38 @@ function SecretModal({
       >
         <h2 className="modal-title">{minted.name}</h2>
         <p className="hint">
-          Paste it into the app’s token field now: it is shown only once, and
-          Winnow keeps no copy it could show you again. Lost it? Revoke it and
-          create another.
+          {minted.agent
+            ? "Give it to the agent now"
+            : "Paste it into the app’s token field now"}
+          : it is shown only once, and Winnow keeps no copy it could show you
+          again. Lost it? Revoke it and create another.
         </p>
 
         <CopyRow label="Token" value={minted.secret} />
         <CopyRow label="Winnow address" value={origin} />
+        {minted.agent && (
+          <>
+            <CopyRow
+              label="Claude Code"
+              value={claudeCodeSetup(origin, minted.secret)}
+            />
+            <p className="hint">
+              One line in a terminal (Node 18 or later): it downloads the
+              bridge and keeps the token in your Claude Code settings on that
+              machine.
+            </p>
+            <span className="modal-label">Claude Desktop</span>
+            <p className="hint">
+              <a href="/agent/winnow.mcpb" download>
+                Download the Winnow extension
+              </a>
+              , open it, and paste the address and the token above when Claude
+              asks — it keeps the token in your system’s keychain. The whole
+              walk-through, with prompts to try:{" "}
+              <a href="/users/agents">Users › Agents</a>.
+            </p>
+          </>
+        )}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-primary" onClick={onClose}>
@@ -437,7 +508,16 @@ function SecretModal({
   );
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+export function CopyRow({
+  label,
+  value,
+  bare,
+}: {
+  label: string;
+  value: string;
+  /** No visible label (it still names the field for a screen reader). */
+  bare?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -455,7 +535,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 
   return (
     <>
-      <span className="modal-label">{label}</span>
+      {!bare && <span className="modal-label">{label}</span>}
       <div className="invite-link-row">
         <input
           ref={inputRef}

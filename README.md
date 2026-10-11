@@ -84,6 +84,9 @@ How it works:
   element not being able to send a header. Shown once, stored as a SHA-256,
   revocable one by one; disabling the account kills its tokens, a password
   change does not. `GET /api/capabilities` (`auth.token`) states the contract.
+  A token may be minted **for an agent** (*Used by › An agent*): same caps,
+  and every rating it writes is stamped `ratings.rated_via = 'agent'` — see
+  [Driving Winnow from Claude](#driving-winnow-from-claude-mcp).
 
 The network posture is unchanged: **Traefik** + **Cloudflare Tunnel** expose
 the app behind a domain; do not publish ports `3000`/`5432`/`6379` directly on
@@ -283,6 +286,80 @@ offending variable — instead of silently degrading in production.
 
 **Cursor-based** pagination on `(captured_at, id)` — never an `OFFSET`. The
 front-end grid infinite-scroll-loads the thumbnails as they come.
+
+### Driving Winnow from Claude (MCP)
+
+Claude Code, Claude Desktop — or any MCP client — can read the library, look
+at the pictures and cull, through a small bridge (`src/scripts/mcp.ts`). It is
+a **client of this API**, run on the agent's machine: every command is an
+ordinary request with an app token, so the token's ceiling, the role policy,
+the feature flags and the routes' validation apply exactly as for Atelier or a
+browser. It adds no endpoint to the instance. The instance serves the bridge
+itself, bundled into one plain-JS file (`/agent/winnow-mcp.mjs`, Node ≥ 18, no
+dependency) and as a Claude Desktop extension (`/agent/winnow.mcpb`), both
+built from `src/` at every `npm run build` by `scripts/build-agent-bridge.ts` —
+no checkout of this repository is needed. `/agent/` is the one path outside the
+session check besides the PWA files: it holds this public code and no secret.
+
+The steps below are also an in-app guide, **Users › Agents**: pick your app,
+mint the token from there, and it fills the setup in and offers prompts to try.
+
+1. **Mint a token for the agent** — Users › App tokens › *New token*, *Used
+   by: An agent*. *Read only* lets it browse and look; *Read & write* also lets
+   it cull. Its ratings are marked as an agent's (`rated_via = 'agent'`, `by:
+   agent` in its listings), so a pick it made can be told from yours. The
+   modal that shows the token once also prints the two setups below, filled in.
+2. **Claude Code** — one line in a terminal:
+
+   ```bash
+   mkdir -p ~/.winnow && curl -fsSL https://winnow.steeve.website/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs \
+     && claude mcp add winnow --scope user \
+       -e WINNOW_HOST=https://winnow.steeve.website -e WINNOW_TOKEN=wnw_… \
+       -- node ~/.winnow/winnow-mcp.mjs
+   ```
+
+   `--scope user` keeps the token in your own Claude Code settings
+   (`~/.claude.json`), never in a project's committed `.mcp.json`. Re-run the
+   `curl` after a deploy to pick up new commands (`winnow_status` names the
+   bridge's version in its `serverInfo`).
+3. **Claude Desktop** — download `https://winnow.steeve.website/agent/winnow.mcpb`
+   and open it: Claude installs the extension and asks for the address and the
+   token, which it keeps in the system keychain.
+
+`WINNOW_HOST` must be `https://` (plain http only to localhost). From a
+checkout the bridge also runs unbundled — `node_modules/.bin/tsx
+src/scripts/mcp.ts` — but never through `npm run`, whose banner would land on
+stdout, the protocol channel. Several apps may run the bridge at once (Claude
+Code and Claude Desktop side by side): each is its own process holding no
+port, unlike Atelier's, which listens for its browser tab.
+
+The server offers three tools — the same three Atelier's does:
+`winnow_status` (who it acts as, its role, whether it may write),
+`winnow_commands` (every command with its JSON Schema and, when it cannot run,
+why) and `winnow_run` (`{ command, params }`). Commands today:
+
+| Command | What it does (route behind it) |
+|---|---|
+| `app.status` | Account, role (capped), `via`, whether writes are allowed, whether the Timeline is on |
+| `library.days` `{ from, to, kind? }` | Capture days with counts and a cover, ≤ 366 days a call (`/api/assets/calendar`) |
+| `library.chapters` `{ from?, to?, mode? }` | The Timeline's chapters — only while that section is on (`/api/assets/timeline`) |
+| `assets.list` `{ day \| from/to, verdict?, star_min?, type?, kind?, search?, burst?, folder?, tag?, person?, camera?, city?, fold?, order?, limit?, cursor? }` | Media with their culling, one line per pair/pile unless `fold: pairs` (`/api/assets`) |
+| `library.folders` `{ kind?, progress?, sort?, order?, limit? }` | Folders with their triage counts and status — what is still to sort (`/api/sessions`) |
+| `library.facets` `{ kind? }` | The values the filters take, with counts — cameras, places, people, tags… (`/api/facets`) |
+| `people.list` `{ named?, limit? }` | The people face analysis grouped, with their media counts (`/api/people`) |
+| `assets.search` `{ text, source?, limit? }` | Media ranked by a plain-words description (CLIP, `/api/search`); says so when the index is off |
+| `assets.similar` `{ id, maxDistance?, limit? }` | Near-duplicates by perceptual hash (`/api/assets/:id/similar`) |
+| `assets.get` `{ id }` | The full row (`/api/assets/:id`) |
+| `assets.look` `{ id, detail? }` | The thumbnail (~400 px) or, with `detail`, the 2048 px proxy, as an image the agent sees (`/thumb`, `/proxy`) |
+| `assets.lookMany` `{ ids }` | Up to 12 thumbnails side by side, one image each — a burst's frames, to choose the keeper |
+| `cull.set` `{ id, verdict?, star?, color? }` | Verdict, stars, colour label — the grid's own write, pair companion included (`PATCH /api/assets/:id/rating`) |
+| `trash.move` `{ ids }` · `trash.restore` `{ ids }` | Soft-delete media **already rejected** (any other id refuses the whole call), or bring them back; the original is untouched and purge stays an admin's step (`POST /api/assets/delete`). `assets.list { trash: true }` lists the bin |
+| `tags.list` · `tags.assign` `{ ids, add?, remove? }` | The tags with their counts; add/remove by name, creating a new tag on first use (`/api/tags`, `POST /api/tags/assign`) |
+| `cull.setMany` `{ ids, verdict?, star?, wholePile? }` | The grid's bulk rating, ≤ 500 ids a call; `wholePile` rates every frame of each id's burst too (`POST /api/ratings/bulk`) |
+
+Parameters are checked before anything is sent: an out-of-range value or a
+misspelt key is refused with the field named, never clamped or ignored.
+Geotag and export are deliberately not commands yet.
 
 ### Culling shortcuts (viewer)
 
