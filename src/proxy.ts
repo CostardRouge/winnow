@@ -56,10 +56,12 @@ import {
 import { config as appConfig } from "@/lib/config";
 
 export const config = {
-  // Everything except Next internals and the PWA static files. Keep in sync
-  // with the public files under /public (sw.js, offline.html, icons).
+  // Everything except Next internals and the public files under /public: the
+  // PWA's (sw.js, offline.html, icons) and the agent bridge (/agent/, built by
+  // scripts/build-agent-bridge.ts — this repository's code, no secret, and
+  // fetched by `curl` or Claude Desktop, which hold no session). Keep in sync.
   matcher: [
-    "/((?!_next/|icons/|sw\\.js$|offline\\.html$|manifest\\.webmanifest$|favicon\\.ico$).*)",
+    "/((?!_next/|icons/|agent/|sw\\.js$|offline\\.html$|manifest\\.webmanifest$|favicon\\.ico$).*)",
   ],
 };
 

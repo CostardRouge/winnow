@@ -192,3 +192,63 @@ export async function handleMessage(
       return fail(-32601, `method not found: ${msg.method}`);
   }
 }
+
+// --- The same bridge as a Claude Desktop extension -------------------------
+//
+// `scripts/build-agent-bridge.ts` bundles `src/scripts/mcp.ts` into ONE plain
+// JavaScript file the instance serves (`/agent/winnow-mcp.mjs`), and wraps it
+// with this manifest as `winnow.mcpb` — an MCP bundle, a ZIP Claude Desktop
+// installs from a dialog. Atelier ships its bridge the same two ways
+// (`mcpbManifest` in its `mcp-protocol.ts`). Winnow's differs in one thing:
+// its bridge needs a credential, so the manifest declares `user_config` and
+// Claude Desktop asks for the address and the token at install, keeping the
+// token in the OS keychain (`sensitive`) rather than in a file.
+
+/** Where the bridge sits inside the bundle. */
+export const MCPB_ENTRY = "server/winnow-mcp.mjs";
+
+export function mcpbManifest(version: string): Record<string, unknown> {
+  const homepage = "https://github.com/CostardRouge/winnow";
+  return {
+    manifest_version: "0.3",
+    name: "winnow",
+    display_name: "Winnow",
+    version,
+    description:
+      "Cull your Winnow library from Claude: find what is left to sort, look at the pictures, pick, reject, rate and tag.",
+    long_description:
+      "Winnow indexes and culls the photos and videos on your NAS. This extension is a small client of your Winnow instance's API: it holds one app token minted for an agent on Users › App tokens, and every command is the request the web app itself makes — the token's access (read only, or read & write), the role checks and the feature flags apply unchanged, and the ratings it writes are marked as an agent's. It never touches the originals.",
+    author: { name: "Steeve Pommier", url: homepage },
+    homepage,
+    server: {
+      type: "node",
+      entry_point: MCPB_ENTRY,
+      mcp_config: {
+        command: "node",
+        args: [`\${__dirname}/${MCPB_ENTRY}`],
+        env: {
+          WINNOW_HOST: "${user_config.winnow_host}",
+          WINNOW_TOKEN: "${user_config.winnow_token}",
+        },
+      },
+    },
+    user_config: {
+      winnow_host: {
+        type: "string",
+        title: "Winnow address",
+        description: "The instance's address, e.g. https://winnow.example (https; plain http only to localhost).",
+        required: true,
+      },
+      winnow_token: {
+        type: "string",
+        title: "Agent token",
+        description: "An app token minted on Users › App tokens with “Used by: An agent” (starts with wnw_).",
+        sensitive: true,
+        required: true,
+      },
+    },
+    tools: mcpTools().map((t) => ({ name: t.name, description: t.description })),
+    keywords: ["photo", "cull", "raw", "library", "winnow"],
+  };
+}
+

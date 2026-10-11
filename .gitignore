@@ -30,3 +30,7 @@ backups/
 dump.rdb
 /nas-final
 /nas-incoming
+
+# The agent bridge the instance serves (scripts/build-agent-bridge.ts):
+# generated at every build from src/, never committed so it cannot drift.
+public/agent/

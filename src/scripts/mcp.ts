@@ -1,9 +1,15 @@
 // Winnow's MCP server: lets Claude Code (or any MCP client) drive the library
 // through the agent commands (src/lib/commands/), over stdio.
 //
+//   curl -fsSL https://winnow.example/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs
 //   claude mcp add winnow --scope user \
 //     -e WINNOW_HOST=https://winnow.example -e WINNOW_TOKEN=wnw_… \
-//     -- /path/to/winnow/node_modules/.bin/tsx /path/to/winnow/src/scripts/mcp.ts
+//     -- node ~/.winnow/winnow-mcp.mjs
+//
+// The instance serves this file bundled into one plain-JS file (and as a
+// Claude Desktop extension, /agent/winnow.mcpb) — scripts/build-agent-bridge.ts
+// — so no checkout is needed. From a checkout it also runs as is:
+// `node_modules/.bin/tsx src/scripts/mcp.ts`.
 //
 // It is a CLIENT of the instance's API, not part of the instance: it runs on
 // the agent's machine, holds one app token, and every command it runs is an
@@ -16,14 +22,20 @@
 // agent" so its writes are marked as an agent's).
 //
 // stdout carries the protocol and nothing else (one JSON-RPC message per
-// line); anything for a person goes to stderr. Run it with tsx directly, not
-// through `npm run`, which prints its banner to stdout.
+// line); anything for a person goes to stderr. Never start it through
+// `npm run`, which prints its banner to stdout.
 import { createInterface } from "node:readline";
 import { createCommandRegistry } from "../lib/commands/registry";
 import { httpClient, winnowCommands } from "../lib/commands/winnow";
 import { handleMessage, type JsonRpcMessage } from "../lib/commands/mcp";
 
-const SERVER = { name: "winnow", version: "1.0.0" };
+// Stamped by scripts/build-agent-bridge.ts into the served single file
+// (package version + commit); "dev" when run from a checkout through tsx.
+declare const WINNOW_BRIDGE_VERSION: string | undefined;
+const SERVER = {
+  name: "winnow",
+  version: typeof WINNOW_BRIDGE_VERSION === "string" ? WINNOW_BRIDGE_VERSION : "dev",
+};
 
 function die(message: string): never {
   process.stderr.write(`winnow-mcp: ${message}\n`);

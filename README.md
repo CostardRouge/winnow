@@ -289,31 +289,46 @@ front-end grid infinite-scroll-loads the thumbnails as they come.
 
 ### Driving Winnow from Claude (MCP)
 
-Claude Code — or any MCP client — can read the library, look at the pictures
-and cull, through `src/scripts/mcp.ts`. It is a **client of this API**, run on
-the agent's machine from a checkout: every command is an ordinary request with
-an app token, so the token's ceiling, the role policy, the feature flags and
-the routes' validation apply exactly as for Atelier or a browser. It adds no
-endpoint to the instance.
+Claude Code, Claude Desktop — or any MCP client — can read the library, look
+at the pictures and cull, through a small bridge (`src/scripts/mcp.ts`). It is
+a **client of this API**, run on the agent's machine: every command is an
+ordinary request with an app token, so the token's ceiling, the role policy,
+the feature flags and the routes' validation apply exactly as for Atelier or a
+browser. It adds no endpoint to the instance. The instance serves the bridge
+itself, bundled into one plain-JS file (`/agent/winnow-mcp.mjs`, Node ≥ 18, no
+dependency) and as a Claude Desktop extension (`/agent/winnow.mcpb`), both
+built from `src/` at every `npm run build` by `scripts/build-agent-bridge.ts` —
+no checkout of this repository is needed. `/agent/` is the one path outside the
+session check besides the PWA files: it holds this public code and no secret.
 
 1. **Mint a token for the agent** — Users › App tokens › *New token*, *Used
    by: An agent*. *Read only* lets it browse and look; *Read & write* also lets
    it cull. Its ratings are marked as an agent's (`rated_via = 'agent'`, `by:
-   agent` in its listings), so a pick it made can be told from yours.
-2. **Register the server with Claude Code**, from a checkout with
-   `npm install` done (the modal prints this line with the token filled in):
+   agent` in its listings), so a pick it made can be told from yours. The
+   modal that shows the token once also prints the two setups below, filled in.
+2. **Claude Code** — one line in a terminal:
 
    ```bash
-   claude mcp add winnow --scope user \
-     -e WINNOW_HOST=https://winnow.steeve.website -e WINNOW_TOKEN=wnw_… \
-     -- ~/winnow/node_modules/.bin/tsx ~/winnow/src/scripts/mcp.ts
+   mkdir -p ~/.winnow && curl -fsSL https://winnow.steeve.website/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs \
+     && claude mcp add winnow --scope user \
+       -e WINNOW_HOST=https://winnow.steeve.website -e WINNOW_TOKEN=wnw_… \
+       -- node ~/.winnow/winnow-mcp.mjs
    ```
 
    `--scope user` keeps the token in your own Claude Code settings
-   (`~/.claude.json`), never in a project's committed `.mcp.json`.
-   `WINNOW_HOST` must be `https://` (plain http only to localhost). Run the
-   script with `tsx` directly: `npm run` would print its banner on stdout,
-   which is the protocol channel.
+   (`~/.claude.json`), never in a project's committed `.mcp.json`. Re-run the
+   `curl` after a deploy to pick up new commands (`winnow_status` names the
+   bridge's version in its `serverInfo`).
+3. **Claude Desktop** — download `https://winnow.steeve.website/agent/winnow.mcpb`
+   and open it: Claude installs the extension and asks for the address and the
+   token, which it keeps in the system keychain.
+
+`WINNOW_HOST` must be `https://` (plain http only to localhost). From a
+checkout the bridge also runs unbundled — `node_modules/.bin/tsx
+src/scripts/mcp.ts` — but never through `npm run`, whose banner would land on
+stdout, the protocol channel. Several apps may run the bridge at once (Claude
+Code and Claude Desktop side by side): each is its own process holding no
+port, unlike Atelier's, which listens for its browser tab.
 
 The server offers three tools — the same three Atelier's does:
 `winnow_status` (who it acts as, its role, whether it may write),

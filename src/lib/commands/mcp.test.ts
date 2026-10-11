@@ -107,3 +107,23 @@ test("a list of pictures becomes one image block per picture, a skipped one a te
     { type: "text", text: '{"skipped":2,"why":"no picture yet"}' },
   ]);
 });
+
+test("the Claude Desktop manifest asks for the address and a sensitive token, and starts the bundled bridge", async () => {
+  const { mcpbManifest, MCPB_ENTRY } = await import("./mcp");
+  const m = mcpbManifest("0.1.0") as {
+    version: string;
+    server: { entry_point: string; mcp_config: { command: string; args: string[]; env: Record<string, string> } };
+    user_config: Record<string, { sensitive?: boolean; required?: boolean }>;
+    tools: { name: string }[];
+  };
+  assert.equal(m.version, "0.1.0");
+  assert.equal(m.server.entry_point, MCPB_ENTRY);
+  assert.deepEqual(m.server.mcp_config.args, ["${__dirname}/server/winnow-mcp.mjs"]);
+  assert.deepEqual(m.server.mcp_config.env, {
+    WINNOW_HOST: "${user_config.winnow_host}",
+    WINNOW_TOKEN: "${user_config.winnow_token}",
+  });
+  assert.equal(m.user_config.winnow_token.sensitive, true);
+  assert.equal(m.user_config.winnow_host.required, true);
+  assert.deepEqual(m.tools.map((t) => t.name), ["winnow_status", "winnow_commands", "winnow_run"]);
+});

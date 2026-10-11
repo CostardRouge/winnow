@@ -429,11 +429,13 @@ function CreateTokenModal({
 
 type Minted = { name: string; secret: string; agent: boolean };
 
-// The line that registers the MCP server (src/scripts/mcp.ts) with Claude
-// Code, user scope so it is not committed with a project's .mcp.json. The
-// server is a client of this API run from a checkout, hence the path.
-function claudeMcpAdd(origin: string, secret: string): string {
-  return `claude mcp add winnow --scope user -e WINNOW_HOST=${origin} -e WINNOW_TOKEN=${secret} -- ~/winnow/node_modules/.bin/tsx ~/winnow/src/scripts/mcp.ts`;
+// The agent bridge (src/scripts/mcp.ts) is served by this instance as one
+// plain-JS file and as a Claude Desktop extension (scripts/build-agent-bridge.ts,
+// /agent/ is outside the session check), so connecting Claude needs no
+// checkout. Claude Code: download it, then register it at user scope so the
+// token never lands in a project's committed .mcp.json.
+function claudeCodeSetup(origin: string, secret: string): string {
+  return `mkdir -p ~/.winnow && curl -fsSL ${origin}/agent/winnow-mcp.mjs -o ~/.winnow/winnow-mcp.mjs && claude mcp add winnow --scope user -e WINNOW_HOST=${origin} -e WINNOW_TOKEN=${secret} -- node ~/.winnow/winnow-mcp.mjs`;
 }
 
 // The ONE time the clear token is visible. The instance address rides along
@@ -471,13 +473,21 @@ function SecretModal({
           <>
             <CopyRow
               label="Claude Code"
-              value={claudeMcpAdd(origin, minted.secret)}
+              value={claudeCodeSetup(origin, minted.secret)}
             />
             <p className="hint">
-              Run it where your Winnow checkout is (after{" "}
-              <code>npm install</code>), with <code>~/winnow</code> replaced by
-              its path. The token is then kept in your Claude Code settings on
-              that machine — README › “Driving Winnow from Claude”.
+              One line in a terminal (Node 18 or later): it downloads the
+              bridge and keeps the token in your Claude Code settings on that
+              machine.
+            </p>
+            <span className="modal-label">Claude Desktop</span>
+            <p className="hint">
+              <a href="/agent/winnow.mcpb" download>
+                Download the Winnow extension
+              </a>
+              , open it, and paste the address and the token above when Claude
+              asks — it keeps the token in your system’s keychain. README ›
+              “Driving Winnow from Claude”.
             </p>
           </>
         )}
