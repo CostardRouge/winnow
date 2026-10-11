@@ -1294,7 +1294,10 @@ menu. iOS Safari → Share → "Add to Home Screen".
 sidecar/junk folders** (Synology `@eaDir` thumbnail trees and the `#recycle`
 bin — see [`isIgnoredEntry`](src/lib/config.ts), shared by the indexer, the
 import feeder and the folder picker), EXIF + hash + dedup,
-RAW preview extraction (ARW/DNG…) without demosaicing, **HEIF/HEVC decode**
+RAW preview extraction (ARW/DNG…) without demosaicing — except for a RAW that
+embeds no preview at all, which LibRaw's `dcraw_emu` renders at half size —,
+a content sniff that sends a JPEG saved under a RAW/HEIF name straight to sharp,
+**HEIF/HEVC decode**
 (`.heic`/`.heif`/`.hif` — iPhone & Sony A7C II/Canon — embedded preview first,
 otherwise libheif, since sharp's prebuilt libvips only ships the AVIF decoder;
 the decoder is lazy-loaded and serialized so it can never crash the worker),

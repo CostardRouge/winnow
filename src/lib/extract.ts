@@ -1,10 +1,11 @@
 // EXIF reading + extraction of the embedded preview (cf. §4 - THE critical point).
-// We NEVER decode the RAW sensor: we extract the embedded JPEG preview.
+// We do not decode the RAW sensor: we extract the embedded JPEG preview. The one
+// exception is a RAW that embeds none at all (see extractSourceJpeg).
 import { exiftool, type Tags } from "exiftool-vendored";
 import sharp from "sharp";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, open, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config, HEIC_EXTS, PHOTO_DIRECT_EXTS } from "./config";
@@ -274,7 +275,11 @@ export async function readShutterCount(absPath: string): Promise<number | null> 
  *  - RAW: we extract the embedded JPEG preview (JpgFromRaw, otherwise PreviewImage,
  *    otherwise ThumbnailImage) - near-instant extraction, zero demosaicing.
  *    This preview often does NOT carry the Orientation tag: so we return
- *    the orientation read on the RAW so the worker can reapply it.
+ *    the orientation read on the RAW so the worker can reapply it. A RAW with
+ *    no embedded image at all is demosaiced at half size by LibRaw's
+ *    `dcraw_emu`, out-of-process and serialized — the last resort, not a path.
+ *  - Whatever the extension says, a file whose bytes are a JPEG/PNG/WebP goes
+ *    straight to sharp (an edit exported as JPEG under a `.HEIC` name).
  */
 export async function extractSourceJpeg(
   absPath: string,
@@ -288,6 +293,13 @@ export async function extractSourceJpeg(
 
   // Raster formats sharp decodes natively (JPEG/PNG/TIFF/WebP/AVIF): pass through.
   if (PHOTO_DIRECT_EXTS.has(e) && !HEIC_EXTS.has(e)) {
+    return { jpegPath: absPath, cleanupDir: null };
+  }
+
+  // An extension that lies: Apple Photos / Photomator write an edit's rendition
+  // (`IMG_E….HEIC`) as a plain JPEG under the original's extension, and libheif
+  // then refuses it as "not a HEIC image". The bytes decide, not the name.
+  if (await isDirectRaster(absPath)) {
     return { jpegPath: absPath, cleanupDir: null };
   }
 
@@ -336,8 +348,115 @@ export async function extractSourceJpeg(
   const preview = await extractEmbeddedPreview(absPath, dir);
   if (preview) return { jpegPath: preview, cleanupDir: dir, orientation };
 
-  await rm(dir, { recursive: true, force: true });
-  throw new Error(`No extractable preview from ${absPath}`);
+  // No embedded image at all — the one case where we do decode the sensor.
+  // Adobe's iOS camera SDK (Project Indigo, Lightroom's camera: XMP says
+  // `cr_sdk (iOS)`) writes iPhone DNGs whose only IFDs are the raw CFA and a
+  // semantic mask, so the cheap path above has nothing to copy. LibRaw already
+  // applies the orientation, hence none is handed back to the worker.
+  try {
+    const dest = path.join(dir, "demosaic.tiff");
+    await demosaicRaw(absPath, dest);
+    return { jpegPath: dest, cleanupDir: dir };
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true });
+    throw new Error(
+      `No extractable preview from ${absPath}, and the RAW decode failed: ${(err as Error).message}`,
+    );
+  }
+}
+
+// Leading bytes of the rasters sharp decodes natively. TIFF is left out on
+// purpose: DNG, ARW, NEF… are TIFF containers too, and must take the RAW path.
+// Exported for the tests.
+export function sniffDirectRaster(head: Buffer): "jpeg" | "png" | "webp" | null {
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff)
+    return "jpeg";
+  if (head.length >= 8 && head.subarray(0, 8).equals(PNG_MAGIC)) return "png";
+  if (
+    head.length >= 12 &&
+    head.toString("latin1", 0, 4) === "RIFF" &&
+    head.toString("latin1", 8, 12) === "WEBP"
+  )
+    return "webp";
+  return null;
+}
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+// Twelve bytes of a file the worker is about to read in full anyway.
+async function isDirectRaster(absPath: string): Promise<boolean> {
+  const fh = await open(absPath, "r");
+  try {
+    const head = Buffer.alloc(12);
+    const { bytesRead } = await fh.read(head, 0, 12, 0);
+    return sniffDirectRaster(head.subarray(0, bytesRead)) != null;
+  } finally {
+    await fh.close();
+  }
+}
+
+// dcraw_emu arguments for a preview-sized render: half-size (a 2×2 bin, no
+// interpolation, so it costs ~0.5 s on a 12 MP iPhone DNG and the result still
+// covers PROXY_SIZE), the camera's white balance, sRGB, an 8-bit TIFF sharp
+// reads. `baselineEv` is the DNG's BaselineExposure (+ BaselineExposureOffset):
+// the brightening the file asks every renderer to apply and that LibRaw
+// ignores — without it an iPhone DNG lands about 1¼ stop darker than macOS
+// shows it. Exported for the tests.
+export function demosaicArgs(src: string, dest: string, baselineEv: number): string[] {
+  const args = ["-w", "-h", "-o", "1", "-T"];
+  if (Math.abs(baselineEv) >= 0.05) {
+    // LibRaw's exposure shift is linear and bounded to [0.25, 8] (−2…+3 EV);
+    // 0.8 keeps most of the highlights a positive shift would clip.
+    const shift = Math.min(8, Math.max(0.25, 2 ** baselineEv));
+    args.push("-aexpo", shift.toFixed(3), "0.8");
+  }
+  return [...args, "-Z", dest, src];
+}
+
+const DEMOSAIC_TIMEOUT_MS = 120_000;
+
+// Serialized like the HEIF decode: a 60 MP sensor at half size is still a few
+// hundred MB in the child, and it counts against the worker's memory limit.
+let rawGate: Promise<unknown> = Promise.resolve();
+function demosaicRaw(absPath: string, destPath: string): Promise<void> {
+  const run = rawGate.then(() => demosaicChild(absPath, destPath));
+  rawGate = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function demosaicChild(absPath: string, destPath: string): Promise<void> {
+  const tags = await exiftool.read(absPath, ["-n"]).catch(() => ({}) as Tags);
+  const ev =
+    (num((tags as any).BaselineExposure) ?? 0) +
+    (num((tags as any).BaselineExposureOffset) ?? 0);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("dcraw_emu", demosaicArgs(absPath, destPath, ev), {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (d) => {
+      stderr = (stderr + d.toString()).slice(-2000);
+    });
+    const timer = setTimeout(() => child.kill("SIGKILL"), DEMOSAIC_TIMEOUT_MS);
+    timer.unref();
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      reject(
+        err.code === "ENOENT"
+          ? new Error("dcraw_emu not found - rebuild the worker image (libraw-bin, see Dockerfile)")
+          : err,
+      );
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else if (signal === "SIGKILL")
+        reject(new Error(`dcraw_emu timed out after ${DEMOSAIC_TIMEOUT_MS} ms`));
+      else reject(new Error(`dcraw_emu code ${code}: ${stderr.trim()}`));
+    });
+  });
 }
 
 // Extract the largest embedded JPEG preview an asset carries (RAW JpgFromRaw,
