@@ -971,6 +971,23 @@ export default function SessionGrid({
     />
   );
 
+  // Publish the header's height so the sticky toolbar band (.session-tools)
+  // parks right under it, whatever the header wraps to on a phone.
+  useEffect(() => {
+    const head = document.querySelector<HTMLElement>(".page-head");
+    if (!head) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty("--page-head-h", `${head.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(head);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--page-head-h");
+    };
+  }, []);
+
   return (
     <>
       <PageHeader
