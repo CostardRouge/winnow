@@ -1,10 +1,11 @@
 "use client";
 
-// Library › Duplicates: the duplicate-triage surface, on its own URL so a
-// review session ("here, sort these out") can be linked to directly. It lived
-// under Settings › Pipeline › Failures until 2026-10-11: a duplicate is not a
-// pipeline failure but a cleanup with a measurable win, and nobody looks for a
-// cleanup inside a failures tab (the old URL redirects here).
+// Settings › Pipeline › Duplicates: the duplicate-triage surface, on its own
+// URL so a review session ("here, sort these out") can be linked to directly.
+// A pipeline stage beside Devices and Dates & places — the other backlogs
+// cleared in bulk — rather than a Failures family (a duplicate is a cleanup
+// with a measurable win, not a failure) or a Library tab (tried for a day: it
+// crowded the header every photographer opens). Both old URLs redirect here.
 //
 // The list this page draws is the biggest in the app — a real library carries
 // thousands of recorded duplicate hits — so it is built around finding the ones
@@ -31,15 +32,15 @@
 // Every destructive action still goes through the same lib/duplicates guards it
 // always did; nothing here reaches around them.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icons } from "../../ui";
-import PullToRefresh from "../../PullToRefresh";
+import { Icons } from "../../../ui";
+import PullToRefresh from "../../../PullToRefresh";
 import { formatBytes } from "@/lib/format";
 import DupGroupCard, { FalseCollisionRow } from "./DupGroupCard";
 import DedupPlan, { PLAN_CARDS, type RunReport } from "./DedupPlan";
 import DedupPairs from "./DedupPairs";
 import DedupReview from "./DedupReview";
 import DedupStrategy from "./DedupStrategy";
-import { OptionPicker, type PickerOption } from "../../OptionPicker";
+import { OptionPicker, type PickerOption } from "../../../OptionPicker";
 import {
   ConfirmAutoModal,
   ConfirmDeleteModal,
@@ -118,7 +119,8 @@ const VIEWS: PickerOption<DedupView>[] = [
 const VIEW_KEY = "winnow.dedup.view";
 
 // The page's frame: pull-to-refresh, the load error, the last action's
-// message. (Under Failures this was that section's FamilyShell.)
+// message. (Under Failures this was that section's FamilyShell.) The pipeline
+// layout already pads and scrolls its body, so this only stacks.
 function Shell({
   onRefresh,
   error,
@@ -131,7 +133,7 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <PullToRefresh className="tab-pane sessions-pane" onRefresh={onRefresh}>
+    <PullToRefresh className="pl-section" onRefresh={onRefresh}>
       {error && (
         <div className="error-box">
           <span>Couldn’t load the duplicates: {error}</span>
@@ -460,7 +462,7 @@ export default function DuplicatesPanel() {
     <Shell onRefresh={load} error={error} msg={msg}>
       <section style={{ marginBottom: 28 }}>
         <div className="filterbar" style={{ marginBottom: 6 }}>
-          {/* No title or count here: the Library tab above says "Duplicates"
+          {/* No title or count here: the Pipeline tab above says "Duplicates"
               and carries the count (a count is drawn once). */}
           {view === "groups" && selectable.length > 0 && (
             <label className="dup-check-label">

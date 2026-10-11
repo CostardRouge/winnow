@@ -9,7 +9,7 @@
 //
 // The cards are also the list's filter ("Show"): the plan is counted before
 // that filter, so every card keeps its number while the list shows one of them.
-import { Icons } from "../../ui";
+import { Icons } from "../../../ui";
 import { formatBytes } from "@/lib/format";
 import type {
   DuplicateAutoRule,

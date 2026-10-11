@@ -80,9 +80,9 @@ export function active(c: QueueCounts | undefined): number {
 
 // Sum of the failure families surfaced by /api/stats, mirroring the tabs on
 // /settings/pipeline/failures. Duplicates are NOT counted since they moved to
-// Library › Duplicates (2026-10-11): a backlog of copies to clear is not a
+// Settings › Pipeline › Duplicates (2026-10-11): a backlog of copies to clear is not a
 // failure, and counting it here kept the Failures badge red for weeks of
-// ordinary cleanup. Their own count rides the Library tab.
+// ordinary cleanup. Their own count rides the Pipeline › Duplicates tab.
 export function totalFailures(s: Stats | null): number {
   const f = s?.failures;
   return (

@@ -4,7 +4,7 @@
 // GET /api/failures payload, typed here. Deduplication, whose listing is far
 // too large to ride that poll, has its own endpoint + types
 // (GET /api/failures/duplicates, src/lib/duplicateList.ts) and its own page,
-// Library › Duplicates.
+// Settings › Pipeline › Duplicates.
 
 export type DerivItem = {
   asset_id: number;

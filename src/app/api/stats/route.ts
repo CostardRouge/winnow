@@ -121,7 +121,7 @@ export async function GET() {
       // null when CLIP is off (tile hidden), {indexed, library} otherwise.
       clip,
       // Same source as the /pipeline/failures tabs (lib/failures.failureCounts).
-      // `duplicates` is no longer a failure family (Library › Duplicates since
+      // `duplicates` is no longer a failure family (Pipeline › Duplicates since
       // 2026-10-11): it feeds that tab's badge, not the "Failures" total.
       failures: {
         derivative: fails.derivative,

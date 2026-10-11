@@ -14,7 +14,7 @@
 // simply absent and the side says why. Keeping the side WITHOUT the library
 // entries relinks them; the button says so before the modal does.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Icons } from "../../ui";
+import { Icons } from "../../../ui";
 import { fetchJson } from "@/lib/fetchJson";
 import { splitPaths } from "@/lib/pathDiff";
 import { formatBytes } from "@/lib/format";
