@@ -2,10 +2,11 @@
 
 // Sub-route tab bar for the failure families. Each family is a real URL
 // (/settings/pipeline/failures/analyze, /scan, …) so a specific list can be
-// linked to directly. Deduplication used to be one of them; it is Library ›
-// Duplicates since 2026-10-11 (the old URL redirects there). The per-family counts ride
-// the shared /api/stats poll (stats.failures mirrors the /api/failures
-// families), so the badges stay live without loading the full listings.
+// linked to directly. Deduplication used to be one of them; it is its own
+// Pipeline stage, Duplicates, since 2026-10-11 (the old URL redirects there).
+// The per-family counts ride the shared /api/stats poll (stats.failures
+// mirrors the /api/failures families), so the badges stay live without
+// loading the full listings.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStats, type Stats } from "../../../useStats";

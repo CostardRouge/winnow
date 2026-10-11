@@ -1,10 +1,8 @@
-import type { Metadata } from "next";
-import DuplicatesPanel from "./DuplicatesPanel";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Duplicates · Library" };
-
-// /library/duplicates — clear the copies a scan found twice: the plan by rule,
-// the folder pairs, the review queue and your own rule (DuplicatesPanel).
-export default function DuplicatesPage() {
-  return <DuplicatesPanel />;
+// The duplicate triage lived here for a day (2026-10-11) and moved to
+// Settings › Pipeline › Duplicates: a Library tab crowded the header every
+// photographer opens. Links made meanwhile land on the page's home.
+export default function DuplicatesMovedFromLibrary() {
+  redirect("/settings/pipeline/duplicates");
 }

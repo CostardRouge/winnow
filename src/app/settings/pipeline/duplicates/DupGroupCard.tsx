@@ -15,8 +15,8 @@
 // Final/Export one — so it is drawn locked, and it is then the only survivor
 // the group can collapse onto.
 import { useState } from "react";
-import { Icons, LazyImage } from "../../ui";
-import MediaViewer from "../../MediaViewer";
+import { Icons, LazyImage } from "../../../ui";
+import MediaViewer from "../../../MediaViewer";
 import { formatBytes } from "@/lib/format";
 import { splitPaths, type PathParts } from "@/lib/pathDiff";
 import type {

@@ -71,6 +71,19 @@ export default function PipelineNav() {
           },
         ]
       : []),
+    // Copies a scan found twice, awaiting triage (Duplicates page). Same rule
+    // as Devices: only shown while there is something to clear, so a clean
+    // library is not handed a permanent extra tab.
+    ...(stats?.failures?.duplicates
+      ? [
+          {
+            href: "/settings/pipeline/duplicates",
+            label: "Duplicates",
+            count: stats.failures.duplicates,
+            tone: "warn" as const,
+          },
+        ]
+      : []),
     // When and where each frame was taken, past what its file says: the local
     // capture day (migration 0046) and imported GPS tracks.
     { href: "/settings/pipeline/capture", label: "Dates & places" },
