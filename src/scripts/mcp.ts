@@ -28,14 +28,18 @@ import { createInterface } from "node:readline";
 import { createCommandRegistry } from "../lib/commands/registry";
 import { httpClient, winnowCommands } from "../lib/commands/winnow";
 import { handleMessage, type JsonRpcMessage } from "../lib/commands/mcp";
+import { BRIDGE_VERSION, bridgeLabel, bridgeSemver } from "../lib/commands/bridgeVersion";
 
-// Stamped by scripts/build-agent-bridge.ts into the served single file
-// (package version + commit); "dev" when run from a checkout through tsx.
-declare const WINNOW_BRIDGE_VERSION: string | undefined;
-const SERVER = {
-  name: "winnow",
-  version: typeof WINNOW_BRIDGE_VERSION === "string" ? WINNOW_BRIDGE_VERSION : "dev",
-};
+// The bridge's OWN number (lib/commands/bridgeVersion), as semver so Claude
+// Desktop orders updates — not the site's version, which moves for changes no
+// one needs to reinstall for.
+const SERVER = { name: "winnow", version: bridgeSemver(BRIDGE_VERSION) };
+
+// `node winnow-mcp.mjs --version` prints which bridge a file is.
+if (process.argv.includes("--version")) {
+  process.stdout.write(`winnow-mcp ${bridgeLabel(BRIDGE_VERSION)}\n`);
+  process.exit(0);
+}
 
 function die(message: string): never {
   process.stderr.write(`winnow-mcp: ${message}\n`);

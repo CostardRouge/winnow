@@ -22,6 +22,7 @@ import {
   type ImageResult,
 } from "./registry";
 import { imageSize } from "./imageSize";
+import { BRIDGE_VERSION, bridgeLabel, extensionFileName } from "./bridgeVersion";
 
 // ---------------------------------------------------------------------------
 // The HTTP client the commands call through.
@@ -92,7 +93,28 @@ export function httpClient(
 // (a role change applies on the server at once; here it shows within the TTL).
 
 type Me = { user: { id: number; username: string; displayName: string | null; role: string; via: string | null } };
-type Capabilities = { api: { version: number }; media: { timeline?: boolean } };
+// Which bridge answers (this file's own number, bundled into it) and whether
+// the instance serves a newer one — so an agent can tell its person to update
+// (Atelier's `bridgeStatus`, same words).
+export function bridgeStatus(latest: number | undefined): Record<string, string> {
+  const mine = BRIDGE_VERSION;
+  return {
+    bridge: bridgeLabel(mine),
+    ...(typeof latest === "number" ? { latestBridge: bridgeLabel(latest) } : {}),
+    ...(typeof latest === "number" && latest > mine
+      ? {
+          update: `This instance serves bridge ${bridgeLabel(latest)} and ${bridgeLabel(mine)} is running here — get the new one from Users › Agents (Claude Desktop: open the downloaded ${extensionFileName(latest)} and choose Update; Claude Code: download winnow-mcp.mjs over the old file), then restart the app.`,
+        }
+      : {}),
+  };
+}
+
+type Capabilities = {
+  api: { version: number };
+  media: { timeline?: boolean };
+  /** The bridge number the instance serves (absent before bridge numbering). */
+  agentBridge?: { version?: number };
+};
 type Features = { features: Record<string, boolean> };
 
 const STATUS_TTL_MS = 30_000;
@@ -432,6 +454,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
           writes: role === "editor" || role === "admin",
           markedAsAgent: me.user.via === "agent",
           timeline: caps.media.timeline === true,
+          ...bridgeStatus(caps.agentBridge?.version),
         };
       },
     },

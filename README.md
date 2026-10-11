@@ -319,12 +319,21 @@ mint the token from there, and it fills the setup in and offers prompts to try.
    ```
 
    `--scope user` keeps the token in your own Claude Code settings
-   (`~/.claude.json`), never in a project's committed `.mcp.json`. Re-run the
-   `curl` after a deploy to pick up new commands (`winnow_status` names the
-   bridge's version in its `serverInfo`).
+   (`~/.claude.json`), never in a project's committed `.mcp.json`.
 3. **Claude Desktop** — download `https://winnow.steeve.website/agent/winnow.mcpb`
    and open it: Claude installs the extension and asks for the address and the
    token, which it keeps in the system keychain.
+
+The bridge has **its own number, v1, v2…** (`src/lib/commands/bridgeVersion.ts`,
+as Atelier's): it moves only when what is installed moves — the bridge and the
+commands it bundles — so a new number is worth installing, and the extension's
+manifest says `N.0.0`, which is what makes Claude Desktop offer *Update*
+instead of *Uninstall*. `winnow_status` says which bridge runs and, from
+`/api/capabilities`, whether the instance serves a newer one;
+`node ~/.winnow/winnow-mcp.mjs --version` prints a file's number. To update,
+re-run the `curl` (Claude Code) or download and open the extension again
+(Claude Desktop). A change to the bridge without a new number fails
+`npm run build` in CI and `npm test`, naming the number and hash to write.
 
 `WINNOW_HOST` must be `https://` (plain http only to localhost). From a
 checkout the bridge also runs unbundled — `node_modules/.bin/tsx
