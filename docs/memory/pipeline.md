@@ -28,6 +28,12 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **How to apply**: anything you add per-file goes *after* the stat gate, or a rescan stops being free. The corollary is a real trap and is commented in the code: a fix that needs to reprocess already-indexed files cannot rely on a rescan, because the incremental scan will never revisit them — it needs an explicit re-enqueue or backfill (`src/scripts/*-backfill.ts` exist for exactly this) — and that backfill has to be reachable from the UI, not only from a shell (see MEMORY.md, working preferences).
 
+## A scan failure is a file's fault, or the scan stops (2026-10-11)
+
+**Decision**: the indexer's per-file `catch` records a `scan_failures` row only for a file's own fault; a Postgres error of class `42` (`isSchemaError` in `lib/failures.ts`: undefined column/table, syntax, privilege) rethrows and fails the whole index job, before the missing-file reconciliation. And a scan resolves the open failures it walks through cleanly: they are read ONCE per scan by path prefix (`openScanFailures`), and the per-file `finally` resolves a hit — `resolveScanFailure` had existed since 0006 and nothing called it, so only a Retry ever closed a row.
+
+**Why**: 0048/0049 shipped unapplied and the indexer logged 9 124 "failures" that were one missing column; each failed file has no row, so every rescan re-hashed and re-exiftooled its original again (65 attempts in a day) — the "originals read once" rule broken by a logging path. **How to apply**: a new per-file error that means "the code is wrong" (not "the file is") belongs in `isSchemaError`'s family, not in the table. Failures › Scan should now empty itself on the next rescan after a cause is fixed; a row that stays open is a file still failing.
+
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
 **Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder

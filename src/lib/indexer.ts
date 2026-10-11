@@ -10,7 +10,12 @@ import { partialHash, sameContent } from "./hash";
 import { readMetadata } from "./extract";
 import { probeIndexedClip } from "./deviceProbe";
 import { enqueueDerivative, enqueueGeocode, PRIORITY } from "./queue";
-import { recordScanFailure } from "./failures";
+import {
+  isSchemaError,
+  openScanFailures,
+  recordScanFailure,
+  resolveScanFailure,
+} from "./failures";
 import { recordDuplicateHit } from "./duplicates";
 import {
   reconcileGroupsForSession,
@@ -167,6 +172,10 @@ export async function indexRoot(
   // walk did NOT visit is a deletion candidate; a file that merely failed
   // indexing is still "seen" and never mistaken for one). Cf. lib/integrity.ts.
   const visited = new Set<string>();
+  // Files that failed on an earlier scan: one that gets through this one has
+  // its failure resolved, so Failures › Scan empties itself once the cause is
+  // gone (a fixed bug, an applied migration) instead of waiting for a Retry.
+  const openFailures = await openScanFailures(root.path);
 
   for await (const absPath of walk(root.path)) {
     // Suspension/preemption: we stop cleanly between two files.
@@ -185,6 +194,7 @@ export async function indexRoot(
 
     // Per-file isolation: an unreadable/corrupt file (stat, hash, metadata)
     // must not fail the entire indexing job.
+    let fileFailed = false;
     try {
     const st = await stat(absPath);
     const size = st.size;
@@ -540,11 +550,22 @@ export async function indexRoot(
       }
     }
     } catch (err) {
+      fileFailed = true;
+      // Not this file's fault: the whole scan stops, once, on a clear error
+      // (cf. isSchemaError) — and before the missing-file reconciliation below,
+      // which must never run on a walk that did not finish.
+      if (isSchemaError(err)) throw err;
       res.failed++;
       const msg = (err as Error).message;
       console.warn(`Unable to index ${absPath}:`, msg);
       // Persist the failure so it can be listed/retried from the UI.
       await recordScanFailure(absPath, root.id, msg);
+    } finally {
+      // Runs on every `continue` above too: skipped as unchanged, folded as a
+      // duplicate, or indexed — each means the file no longer fails.
+      if (!fileFailed && openFailures.delete(absPath)) {
+        await resolveScanFailure(absPath);
+      }
     }
 
     if (hooks.onProgress && res.scanned % PROGRESS_EVERY === 0) {

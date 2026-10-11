@@ -5,7 +5,7 @@
 // The other failure families are already persisted elsewhere and read as-is
 // by /api/failures: derivatives -> assets.derivative_status='error', import
 // -> import_batches.result. So we only duplicate what was missing.
-import { q, one } from "./db";
+import { q, one, many } from "./db";
 import { config } from "./config";
 
 // The six failure families surfaced as tabs on /pipeline/failures.
@@ -137,6 +137,37 @@ export async function recordScanFailure(
     // Never let a scan fail because of the logging itself.
     console.warn("recordScanFailure:", (err as Error).message);
   }
+}
+
+/**
+ * The open scan failures under a root's tree, read ONCE per scan so the walk can
+ * resolve the ones that now index without a query per file (a library is ~10⁵
+ * files; the open failures are the handful worth a lookup). By path prefix
+ * rather than root_id: overlapping roots re-walk each other's files.
+ */
+export async function openScanFailures(rootPath: string): Promise<Set<string>> {
+  try {
+    const rows = await many<{ abs_path: string }>(
+      `SELECT abs_path FROM scan_failures
+        WHERE resolved_at IS NULL AND starts_with(abs_path, $1)`,
+      [rootPath.endsWith("/") ? rootPath : `${rootPath}/`],
+    );
+    return new Set(rows.map((r) => r.abs_path));
+  } catch {
+    return new Set(); // best-effort, like the rest of this file
+  }
+}
+
+/**
+ * A Postgres error of class 42 (undefined column/table/function, syntax,
+ * privilege) says the CODE and the SCHEMA disagree, never that a file is bad.
+ * The indexer aborts the scan on one instead of recording it against every file
+ * it walks: 0048/0049 once shipped unapplied and logged 9 124 "failures" that
+ * were one missing column, each re-reading its original on every rescan.
+ */
+export function isSchemaError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.startsWith("42");
 }
 
 export async function resolveScanFailure(absPath: string): Promise<void> {
