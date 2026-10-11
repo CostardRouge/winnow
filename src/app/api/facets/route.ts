@@ -4,7 +4,11 @@
 // results side.
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
-import { buildFilter, filterFromSearchParams } from "@/lib/filter";
+import {
+  buildFilter,
+  DEVICE_SOURCE_SQL,
+  filterFromSearchParams,
+} from "@/lib/filter";
 import { kindsForRole } from "@/lib/roles";
 import { json, serverError } from "@/lib/api";
 
@@ -65,6 +69,7 @@ export async function GET(req: NextRequest) {
       months,
       days,
       devices,
+      deviceSources,
       cameras,
       lenses,
       countries,
@@ -133,6 +138,8 @@ export async function GET(req: NextRequest) {
       settledArray(facet("capture_month", scope, params, "value ASC")),
       settledArray(facet("capture_day", scope, params, "value ASC")),
       settledArray(facet("device", scope, params)),
+      // Where each body came from — the file, a vote, a hand (lib/filter.ts).
+      settledArray(facet(DEVICE_SOURCE_SQL, scope, params)),
       settledArray(facet("camera_model", scope, params)),
       settledArray(facet("lens", scope, params)),
       // Reverse-geocoded place facets (cf. lib/geocode.ts).
@@ -286,6 +293,7 @@ export async function GET(req: NextRequest) {
       months,
       days,
       devices,
+      device_sources: deviceSources,
       camera_models: cameras,
       lenses,
       place_countries: countries,

@@ -17,10 +17,15 @@
 //                            fill     (default) only media with no body;
 //                            override replace whatever the ids carry, the
 //                                     file's own value included (ids + device);
-//                            revert   put the ids back to what their files say.
+//                            revert   put the ids back to what their files say;
+//                            name     a camera no file names, typed by hand
+//                                     (`device` is the name) — 'named';
+//                            none     not a camera at all — 'none', no body.
 //                          The two that can change an existing body are
 //                          separate modes on purpose: nothing reaches them by
-//                          leaving a field out.
+//                          leaving a field out. name / none work by folder (its
+//                          backlog) or by ids (holes and earlier attributions
+//                          only — never a body a file declared).
 //
 // Runs INLINE, like the .SRT backfill and unlike the ML one: every signal it
 // weighs is already in Postgres, so the whole pass is a couple of queries and
@@ -32,11 +37,14 @@ import {
   applyFolder,
   overrideDevice,
   revertDevice,
+  labelDevice,
+  DeviceNameTaken,
   CONFIDENT_SCORE,
   listCandidates,
   listFolders,
   listKnownBodies,
   countUnattributedBySource,
+  countLabelled,
   SIGNAL_WEIGHTS,
   type DeviceSource,
 } from "@/lib/deviceAttribution";
@@ -72,10 +80,11 @@ export async function GET(req: NextRequest) {
     const sourceParam = sp.get("source");
     const source: DeviceSource =
       sourceParam === "gallery" || sourceParam === "all" ? sourceParam : "incoming";
-    const [folders, bodies, counts] = await Promise.all([
+    const [folders, bodies, counts, labelled] = await Promise.all([
       listFolders({ sort, source }),
       listKnownBodies(),
       countUnattributedBySource(),
+      countLabelled(source),
     ]);
     const total =
       source === "all"
@@ -87,6 +96,7 @@ export async function GET(req: NextRequest) {
       source,
       total,
       counts,
+      labelled,
       // Printed above the list, the way Unplaced prints its donor rules and the
       // Heatmap its keeper-rate floor: the numbers that decided what you see
       // are on screen, not only in the source.
@@ -107,22 +117,31 @@ const Body = z
     ids: z.array(z.number().int()).min(1).max(5000).optional(),
     // The body to write, as the gear dimension already spells it (the raw EXIF
     // string — `DJI FC8482`, not "DJI Mini 4 Pro"). Omitted = apply each
-    // target's own proposal instead.
+    // target's own proposal instead. In `name` mode, the name typed.
     device: z.string().trim().min(1).max(200).optional(),
     camera_model: z.string().trim().min(1).max(200).nullish(),
-    // How far the write may go (see the header). Only `fill` works by folder:
-    // replacing or reverting a body is a decision about media you have looked
-    // at, never a predicate over a folder.
-    mode: z.enum(["fill", "override", "revert"]).default("fill"),
+    // How far the write may go (see the header). Replacing or reverting a
+    // body is a decision about media you have looked at, never a predicate
+    // over a folder; filling, naming and "not a camera" can be either.
+    mode: z.enum(["fill", "override", "revert", "name", "none"]).default("fill"),
   })
   .refine((b) => b.session_id != null || b.ids != null, {
     message: "session_id or ids required",
   })
-  .refine((b) => b.mode === "fill" || (b.ids != null && b.session_id == null), {
-    message: "override and revert take explicit ids, never a folder",
-  })
+  .refine(
+    (b) =>
+      (b.mode !== "override" && b.mode !== "revert") ||
+      (b.ids != null && b.session_id == null),
+    { message: "override and revert take explicit ids, never a folder" },
+  )
   .refine((b) => b.mode !== "override" || b.device != null, {
     message: "override needs the body to write",
+  })
+  .refine((b) => b.mode !== "name" || b.device != null, {
+    message: "name needs the camera’s name",
+  })
+  .refine((b) => b.mode !== "none" || b.device == null, {
+    message: "none writes no body",
   });
 
 export async function POST(req: NextRequest) {
@@ -145,6 +164,20 @@ export async function POST(req: NextRequest) {
         }),
       );
     if (mode === "revert") return json(await revertDevice(ids ?? []));
+    if (mode === "name" || mode === "none") {
+      try {
+        return json(
+          await labelDevice({
+            ids,
+            sessionId: session_id,
+            name: mode === "name" ? device! : null,
+          }),
+        );
+      } catch (err) {
+        if (err instanceof DeviceNameTaken) return badRequest(err.message);
+        throw err;
+      }
+    }
 
     const result =
       session_id != null

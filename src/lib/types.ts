@@ -67,8 +67,18 @@ export type Asset = {
   // picked the body for a file that named none; 'embedded' = read from a
   // container's timed-metadata track; 'override' = a human REPLACED what the
   // file declares (migration 0048) — the only one that beats the file at
-  // re-index. The others are kept only while the file names nothing.
-  device_source: "exif" | "derived" | "manual" | "embedded" | "override" | null;
+  // re-index; 'named' = a camera with no file, named by hand ("Emeric's
+  // camera"), and 'none' = not a camera at all, `device` NULL (both 0051). The
+  // others are kept only while the file names nothing.
+  device_source:
+    | "exif"
+    | "derived"
+    | "manual"
+    | "embedded"
+    | "override"
+    | "named"
+    | "none"
+    | null;
   // What the file itself declares, refreshed on every index whatever won above
   // (migration 0048). NULL where it names nothing. Printed beside an override,
   // and what "Revert to the file" restores.

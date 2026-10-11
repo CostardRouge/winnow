@@ -142,12 +142,14 @@ export function scoreCandidate(row: CandidateRow): {
 // same reason every other counter skips it (cf. lib/pairing.ts): it is one half
 // of a logical medium, and attributing it separately would double-count the
 // pair on the gear card. Purged rows are skipped because there is nothing left
-// to attribute.
+// to attribute. A medium a human called "not a camera" (`'none'`, 0051) has no
+// body either, on purpose, and is no longer a question.
 const CANDIDATE_SCOPE = `
     a.deleted_at IS NULL
     AND a.purged_at IS NULL
     AND a.group_role IS DISTINCT FROM 'companion'
-    AND (a.device IS NULL OR a.device = '')`;
+    AND (a.device IS NULL OR a.device = '')
+    AND a.device_source IS DISTINCT FROM 'none'`;
 
 // Which folders the BACKLOG reads — the listing and the counts, never a write.
 // Two rules, both about what a human asked not to be bothered with:
@@ -188,6 +190,24 @@ export async function countUnattributed(
   return row?.count ?? 0;
 }
 
+/** The media already answered by hand in this half — a camera named
+ *  ('named') or none at all ('none') — so the page can point at them in a grid
+ *  instead of letting them vanish from view once they leave the backlog. */
+export async function countLabelled(
+  source: DeviceSource,
+): Promise<{ named: number; none: number }> {
+  const row = await one<{ named: number; none: number }>(
+    `SELECT count(*) FILTER (WHERE a.device_source = 'named')::int AS named,
+            count(*) FILTER (WHERE a.device_source = 'none')::int  AS none
+       FROM assets a
+      WHERE a.deleted_at IS NULL AND a.purged_at IS NULL
+        AND a.group_role IS DISTINCT FROM 'companion'
+        AND a.device_source IN ('named', 'none')
+        AND ${backlogScopeSql(source)}`,
+  );
+  return row ?? { named: 0, none: 0 };
+}
+
 /** The backlog in each half at once — one scan, for the page's header. */
 export async function countUnattributedBySource(): Promise<DeviceSourceCounts> {
   const row = await one<DeviceSourceCounts>(
@@ -210,10 +230,13 @@ export async function countUnattributedBySource(): Promise<DeviceSourceCounts> {
 export async function listKnownBodies(): Promise<KnownBody[]> {
   // A GROUP BY over every live medium: JIT off, the rule for any whole-library
   // aggregate (docs/memory/database.md).
+  // `named`: every medium carrying it was named by hand — no file of the
+  // library spells that string. One file that does makes it a real body.
   return manyWithoutJit<KnownBody>(
     `SELECT a.device                                        AS device,
             mode() WITHIN GROUP (ORDER BY a.camera_model)   AS camera_model,
-            count(*)::int                                   AS count
+            count(*)::int                                   AS count,
+            bool_and(a.device_source IS NOT DISTINCT FROM 'named') AS named
        FROM assets a
       WHERE a.deleted_at IS NULL
         AND a.device IS NOT NULL AND a.device <> ''
@@ -525,6 +548,25 @@ function toCandidate(r: CandidateRow): DeviceCandidate {
 }
 
 /**
+ * Which of these bodies were named by hand — no file of the library spells
+ * them. A medium given one of them is recorded `'named'` whichever verb wrote
+ * it (a pick, a folder's proposal, the vote), so `?device_source=named` keeps
+ * meaning "shot by a camera I have no file for" however the label spread.
+ */
+async function namedAmong(devices: (string | null)[]): Promise<Set<string>> {
+  const list = [...new Set(devices.filter((d): d is string => !!d))];
+  if (!list.length) return new Set();
+  const rows = await many<{ device: string }>(
+    `SELECT device FROM assets
+      WHERE device = ANY($1) AND deleted_at IS NULL
+      GROUP BY device
+     HAVING bool_and(device_source IS NOT DISTINCT FROM 'named')`,
+    [list],
+  );
+  return new Set(rows.map((r) => r.device));
+}
+
+/**
  * Write a body onto the given media.
  *
  * Two modes, one endpoint:
@@ -549,13 +591,14 @@ export async function applyAttribution(opts: {
   if (!ids.length) return { updated: 0, skipped: 0 };
 
   if (opts.device) {
+    const named = (await namedAmong([opts.device])).has(opts.device);
     const rows = await many<{ id: number }>(
       `UPDATE assets SET device = $2, camera_model = COALESCE(camera_model, $3),
-              device_source = 'manual', updated_at = now()
+              device_source = $4, updated_at = now()
         WHERE id = ANY($1) AND (device IS NULL OR device = '')
           AND deleted_at IS NULL AND purged_at IS NULL
         RETURNING id`,
-      [ids, opts.device, opts.cameraModel ?? null],
+      [ids, opts.device, opts.cameraModel ?? null, named ? "named" : "manual"],
     );
     return { updated: rows.length, skipped: ids.length - rows.length };
   }
@@ -566,6 +609,7 @@ export async function applyAttribution(opts: {
   // library as it is now, not as it was rendered.
   const hits = (await candidatesByIds(ids)).filter((c) => c.suggested_device);
   if (!hits.length) return { updated: 0, skipped: ids.length };
+  const named = await namedAmong(hits.map((h) => h.suggested_device));
   // One statement for the whole selection, each id paired with its own
   // proposal — not one UPDATE per id, which was 5 000 round trips for the
   // largest selection the route accepts.
@@ -573,7 +617,9 @@ export async function applyAttribution(opts: {
     `UPDATE assets a
         SET device = v.device,
             camera_model = COALESCE(a.camera_model, v.camera_model),
-            device_source = 'derived', updated_at = now()
+            device_source = CASE WHEN v.device = ANY($4::text[]) THEN 'named'
+                                 ELSE 'derived' END,
+            updated_at = now()
        FROM unnest($1::bigint[], $2::text[], $3::text[]) AS v(id, device, camera_model)
       WHERE a.id = v.id AND (a.device IS NULL OR a.device = '')
         AND a.deleted_at IS NULL AND a.purged_at IS NULL
@@ -582,6 +628,7 @@ export async function applyAttribution(opts: {
       hits.map((h) => h.id),
       hits.map((h) => h.suggested_device),
       hits.map((h) => h.suggested_camera_model),
+      [...named],
     ],
   );
   return { updated: rows.length, skipped: ids.length - rows.length };
@@ -649,13 +696,103 @@ export async function applyFolder(opts: {
       opts.sessionId,
       device,
       cameraModel,
-      opts.device ? "manual" : "derived",
+      (await namedAmong([device])).has(device)
+        ? "named"
+        : opts.device
+          ? "manual"
+          : "derived",
       opts.minScore ?? 0,
       sib != null,
     ],
   );
   const updated = res.rowCount ?? 0;
   return { updated, skipped: Math.max(0, pending - updated) };
+}
+
+// -------------------------------------------------------------- naming ----
+//
+// The two answers for a medium no file and no known body can account for
+// (migration 0051). Before them the backlog had no way out but a wrong pick:
+// a friend's Sony shots attributed to the maintainer's own A7C II because the
+// folder's busiest body was his, a screenshot "assigned to the iPhone".
+
+/** A name that is already a body a FILE declares — refused rather than
+ *  silently mixed into the dimension under a provenance that says "typed". */
+export class DeviceNameTaken extends Error {
+  constructor(readonly device: string) {
+    super(
+      `“${device}” is a camera the library’s own files name — assign it instead of naming it`,
+    );
+  }
+}
+
+/**
+ * Name the camera (`name` given → `device_source = 'named'`) or say there is
+ * none (`name` null → `'none'`, `device` NULL) for a folder's backlog or an
+ * explicit selection.
+ *
+ * Never contradicts a file: by ids it touches only media whose body did not
+ * come off their own file — a hole, or an earlier attribution or label (the
+ * screenshot once assigned to the iPhone by hand). A body the EXIF, the clip's
+ * track or a human correction put there is left alone and counted as skipped;
+ * that is `overrideDevice`'s job, behind its own confirmation. By folder it
+ * touches exactly the folder's backlog, as the card's count says.
+ *
+ * A name is reused rather than duplicated: one already given by hand, in any
+ * case or spacing, is written with its first spelling, so "appareil d'Emeric"
+ * lands on the card "Appareil d'Emeric" already built.
+ */
+export async function labelDevice(opts: {
+  ids?: number[];
+  sessionId?: number;
+  name: string | null;
+}): Promise<ApplyResult> {
+  let name = opts.name?.trim().replace(/\s+/g, " ") || null;
+  if (name) {
+    const known = await one<{ device: string; named: boolean }>(
+      `SELECT device,
+              bool_and(device_source IS NOT DISTINCT FROM 'named') AS named
+         FROM assets
+        WHERE lower(device) = lower($1) AND deleted_at IS NULL
+        GROUP BY device
+        ORDER BY count(*) DESC
+        LIMIT 1`,
+      [name],
+    );
+    if (known && !known.named) throw new DeviceNameTaken(known.device);
+    if (known) name = known.device;
+  }
+  const source = name ? "named" : "none";
+
+  if (opts.sessionId != null) {
+    const pending = await countUnattributed({ sessionId: opts.sessionId });
+    const res = await q(
+      `UPDATE assets a
+          SET device = $2, camera_model = a.camera_model_exif,
+              device_source = $3, updated_at = now()
+        WHERE a.session_id = $1 AND ${CANDIDATE_SCOPE}`,
+      [opts.sessionId, name, source],
+    );
+    const updated = res.rowCount ?? 0;
+    return { updated, skipped: Math.max(0, pending - updated) };
+  }
+
+  const ids = [...new Set(opts.ids ?? [])];
+  if (!ids.length) return { updated: 0, skipped: 0 };
+  const rows = await many<{ id: number }>(
+    `UPDATE assets
+        SET device = $2, camera_model = camera_model_exif,
+            device_source = $3, updated_at = now()
+      WHERE id = ANY($1)
+        AND deleted_at IS NULL AND purged_at IS NULL
+        AND (device IS NULL OR device = ''
+             OR device_source IN ('derived', 'manual', 'named', 'none'))
+        AND NOT (device_source IS NOT DISTINCT FROM $3
+                 AND device IS NOT DISTINCT FROM $2)
+      RETURNING id`,
+    [ids, name, source],
+  );
+  return { updated: rows.length, skipped: ids.length - rows.length };
 }
 
 // ------------------------------------------------------------ correcting ----
@@ -724,7 +861,8 @@ export async function revertDevice(ids: number[]): Promise<ApplyResult> {
          FROM assets
         WHERE id = ANY($1)
           AND deleted_at IS NULL AND purged_at IS NULL
-          AND device_source IN ('derived', 'manual', 'embedded', 'override')
+          AND device_source IN ('derived', 'manual', 'embedded', 'override',
+                                'named', 'none')
      )
      UPDATE assets a
         SET device = t.device,

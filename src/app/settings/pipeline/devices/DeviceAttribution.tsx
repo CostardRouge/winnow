@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActionMenu, { type MenuItem } from "../../../ActionMenu";
 import MediaViewer from "../../../MediaViewer";
+import NameCameraModal from "../../../NameCameraModal";
 import ThumbStrip, { type StripItem } from "../../../ThumbStrip";
 import { OptionPicker, type PickerOption } from "../../../OptionPicker";
 import { LibrarySourceTabs } from "../../../LibrarySourceTabs";
@@ -89,6 +90,8 @@ type Payload = {
   total: number;
   /** Both halves, whichever one is shown. */
   counts: DeviceSourceCounts;
+  /** Media of this half already answered by hand (migration 0051). */
+  labelled: { named: number; none: number };
   rules: { weights: Record<DeviceSignal, number>; confident: number };
 };
 
@@ -199,6 +202,13 @@ export default function DeviceAttribution() {
   // Per-medium overrides inside an opened card: id → included in the next
   // apply. Unset means "follow the vote", which is what the row shows.
   const [picked, setPicked] = useState<Record<number, boolean>>({});
+  // "Name the camera…" open on a folder or a selection: what it lands on, as
+  // the write's target and as the phrase the dialog prints.
+  const [naming, setNaming] = useState<{
+    key: number;
+    target: Record<string, unknown>;
+    what: string;
+  } | null>(null);
   // The full-screen preview, as an index into the opened folder's media. The
   // viewer is the app's own: a medium waiting for a body is looked AT before it
   // is decided, and a triage page that cannot show the frame is a spreadsheet.
@@ -409,6 +419,90 @@ export default function DeviceAttribution() {
           : "Nothing written — that medium has no proposal of its own.",
     );
 
+  // The two hand answers of migration 0051, by folder (`session_id`) or by
+  // ids. "Not a camera" writes at once — it hides nothing and reverts from any
+  // grid; a name goes through the dialog, which shows the server's refusal
+  // (a name that is really a body a file declares) instead of closing.
+  const setAside = (key: number, target: Record<string, unknown>) =>
+    apply(key, { ...target, mode: "none" }, (r) =>
+      r.updated
+        ? `${r.updated.toLocaleString()} media marked as not a camera — still in every grid, out of this list.`
+        : "Nothing to set aside — those media carry a body their files declare.",
+    );
+  async function submitName(name: string): Promise<string | null> {
+    if (!naming) return null;
+    try {
+      const r = await fetchJson<ApplyResult>("/api/pipeline/device-attribution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...naming.target, mode: "name", device: name }),
+      });
+      setNaming(null);
+      setMsg(
+        r.updated
+          ? `${r.updated.toLocaleString()} media named “${name}”${r.skipped ? `, ${r.skipped.toLocaleString()} left as they were` : ""}.`
+          : "Nothing written — those media already carry a body their files declare.",
+      );
+      setBusy(naming.key);
+      await refresh();
+      setBusy(null);
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }
+  // The menu entries both answers take, wherever a body can be picked.
+  const handItems = (
+    key: number,
+    target: Record<string, unknown>,
+    what: string,
+    count: number,
+  ): MenuItem[] => [
+    {
+      key: "name",
+      label: count === 1 ? "Name the camera…" : `Name the camera of these ${count}…`,
+      hint: "A camera no file names — a friend’s, a photographer’s",
+      icon: "✎",
+      sep: true,
+      onSelect: () => setNaming({ key, target, what }),
+    },
+    {
+      key: "none",
+      label: count === 1 ? "Not a camera" : `Not a camera — set ${count} aside`,
+      hint: "A screenshot, a webcam frame, a saved image",
+      icon: "∅",
+      onSelect: () => void setAside(key, target),
+    },
+  ];
+  const namedBodies = data?.bodies.filter((b) => b.named) ?? [];
+
+  // The media already answered by hand in this half, linked to a grid of
+  // them: out of this list once answered, they must not drop out of reach.
+  // The grid is the half shown (All → Incoming, the half the backlog is for).
+  const answered = (d: Payload) => {
+    const { named, none } = d.labelled;
+    if (!named && !none) return null;
+    const grid =
+      d.source === "gallery" ? "/library/gallery" : "/library/incoming/grid";
+    return (
+      <p className="hint">
+        Answered by hand, out of this list but in every grid:{" "}
+        {named > 0 && (
+          <Link href={`${grid}?device_source=named`}>
+            {named.toLocaleString()} named
+          </Link>
+        )}
+        {named > 0 && none > 0 && " · "}
+        {none > 0 && (
+          <Link href={`${grid}?device_source=none`}>
+            {none.toLocaleString()} not a camera
+          </Link>
+        )}
+        .
+      </p>
+    );
+  };
+
   // Step 1, on every state of the page — including "every medium has a body",
   // since the clips a vote or a hand-pick filled are exactly the ones whose
   // own track may say otherwise. A finished pass re-reads the list below.
@@ -488,6 +582,7 @@ export default function DeviceAttribution() {
             hint="Nothing in the live library is missing its camera, so the gear shelf accounts for all of it. 🎉"
           />
         )}
+        {data && answered(data)}
       </div>
     );
   }
@@ -564,6 +659,7 @@ export default function DeviceAttribution() {
           gear shelf and from every <code>?device=</code> grid until a body is
           written. {elsewhere(data)}
         </p>
+        {answered(data)}
         <div className="hint card-rules">
           Nothing here was read from a file. A folder is proposed the body its
           own attributed media already carry, weighed per medium on five signals
@@ -574,8 +670,10 @@ export default function DeviceAttribution() {
           {data.rules.weights.folder} — and a medium is confident at{" "}
           {data.rules.confident}. A card lists the signals more than half its
           media carry. A folder with no attributed sibling gets no proposal:
-          pick its body from the card’s menu. A folder you set to Ignore is not
-          listed.
+          pick its body from the card’s menu — or, when no camera of yours
+          shot it, name the camera (a friend’s, a photographer’s) or set it
+          aside as not a camera (screenshots, saved images). A folder you set
+          to Ignore is not listed.
         </div>
       </div>
 
@@ -660,10 +758,16 @@ export default function DeviceAttribution() {
               (b): MenuItem => ({
                 key: `body-${b.device}`,
                 label: `Assign ${f.total} to ${friendlyCameraName(b.device)}`,
-                hint: b.device,
+                hint: b.named ? "named by hand" : b.device,
                 icon: "→",
                 onSelect: () => void applyFolder(f, { device: b }),
               }),
+            ),
+            ...handItems(
+              f.session_id,
+              { session_id: f.session_id },
+              `the ${f.total} media of ${f.name}`,
+              f.total,
             ),
             {
               key: "review",
@@ -758,6 +862,9 @@ export default function DeviceAttribution() {
                   onAssignOne={(id, body) =>
                     void assignOne(f.session_id, id, body)
                   }
+                  handItems={(ids, what) =>
+                    handItems(f.session_id, { ids }, what, ids.length)
+                  }
                   onPreview={(i) => setViewer(i)}
                   busy={busy != null}
                 />
@@ -809,20 +916,32 @@ export default function DeviceAttribution() {
                   icon: "",
                   className: "btn",
                 }}
-                items={data.bodies
-                  .filter((b) => b.device !== it.suggested_device)
-                  .map(
-                    (b): MenuItem => ({
-                      key: b.device,
-                      label: friendlyCameraName(b.device),
-                      hint: b.device,
-                      icon: "→",
-                      onSelect: () => void assignOne(open.sessionId, it.id, b),
-                    }),
-                  )}
+                items={[
+                  ...data.bodies
+                    .filter((b) => b.device !== it.suggested_device)
+                    .map(
+                      (b): MenuItem => ({
+                        key: b.device,
+                        label: friendlyCameraName(b.device),
+                        hint: b.named ? "named by hand" : b.device,
+                        icon: "→",
+                        onSelect: () => void assignOne(open.sessionId, it.id, b),
+                      }),
+                    ),
+                  ...handItems(open.sessionId, { ids: [it.id] }, it.filename, 1),
+                ]}
               />
             </>
           )}
+        />
+      )}
+
+      {naming && (
+        <NameCameraModal
+          what={naming.what}
+          named={namedBodies}
+          onClose={() => setNaming(null)}
+          onSubmit={submitName}
         />
       )}
     </div>
@@ -848,6 +967,7 @@ function FolderMedia({
   onMore,
   onApply,
   onAssignOne,
+  handItems,
   onPreview,
   busy,
 }: {
@@ -860,6 +980,8 @@ function FolderMedia({
   /** The ticked ids — to each one's own proposal, or all to `to`. */
   onApply: (ids: number[], to?: KnownBody) => void;
   onAssignOne: (id: number, body: KnownBody | null) => void;
+  /** "Name the camera…" / "Not a camera" for these ids, as menu entries. */
+  handItems: (ids: number[], what: string) => MenuItem[];
   onPreview: (index: number) => void;
   busy: boolean;
 }) {
@@ -891,11 +1013,12 @@ function FolderMedia({
         (b): MenuItem => ({
           key: `body-${b.device}`,
           label: `Assign to ${friendlyCameraName(b.device)}`,
-          hint: b.device,
+          hint: b.named ? "named by hand" : b.device,
           icon: "→",
           onSelect: () => onAssignOne(c.id, b),
         }),
       ),
+    ...handItems([c.id], c.filename),
     {
       key: "download",
       label: "Download",
@@ -938,17 +1061,20 @@ function FolderMedia({
             ariaLabel={`Assign the ${ids.length} ticked to another body`}
             label={`Assign the ${ids.length} ticked to`}
             disabled={busy || !ids.length}
-            items={bodies
-              .filter((b) => b.device !== folder.suggested_device)
-              .map(
-                (b): MenuItem => ({
-                  key: b.device,
-                  label: friendlyCameraName(b.device),
-                  hint: b.device,
-                  icon: "→",
-                  onSelect: () => onApply(ids, b),
-                }),
-              )}
+            items={[
+              ...bodies
+                .filter((b) => b.device !== folder.suggested_device)
+                .map(
+                  (b): MenuItem => ({
+                    key: b.device,
+                    label: friendlyCameraName(b.device),
+                    hint: b.named ? "named by hand" : b.device,
+                    icon: "→",
+                    onSelect: () => onApply(ids, b),
+                  }),
+                ),
+              ...handItems(ids, `the ${ids.length} ticked`),
+            ]}
           />
         </div>
       </div>

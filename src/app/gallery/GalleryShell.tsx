@@ -184,6 +184,7 @@ function toQuery(
   arr("derivative_status", f.derivative_status);
   arr("not_derivative_status", f.not_derivative_status);
   arr("device", f.device);
+  arr("device_source", f.device_source);
   arr("camera_model", f.camera_model);
   arr("lens", f.lens);
   arr("place_country", f.place_country);
@@ -242,7 +243,7 @@ function toQuery(
 // `show_ignored` widens the Sessions grid rather than narrowing it — excluded.
 const FILTER_ARRAY_KEYS = [
   "media_type", "ext", "derivative_status", "not_derivative_status",
-  "device", "camera_model", "lens",
+  "device", "device_source", "camera_model", "lens",
   "place_country", "place_region", "place_county", "place_city", "place_poi",
   "person", "tags", "year", "month", "day",
 ] as const;
@@ -811,6 +812,7 @@ export default function GalleryShell({
     ids: number[];
     withoutBody: number;
     revertible: number;
+    relabelable: number;
   } | null>(null);
 
   const setDeviceSelection = useCallback(
@@ -1303,6 +1305,7 @@ export default function GalleryShell({
           ids={deviceFlow.ids}
           withoutBody={deviceFlow.withoutBody}
           revertible={deviceFlow.revertible}
+          relabelable={deviceFlow.relabelable}
           onClose={() => setDeviceFlow(null)}
           onApplied={(message, ids, change) => {
             // Reflect it in the rows without a refetch, like every other bulk

@@ -4626,7 +4626,9 @@ html[data-theme="dark"] .btn-primary:hover {
 
   /* "Set camera body…", the grid-side bulk attribution (DevicePickerModal).
      One row per body the library already holds — never a free-text field: the
-     value written has to be one the gear dimension is already grouping on. */
+     value written has to be one the gear dimension is already grouping on.
+     The one typed name ("Name another camera", migration 0051) sits in
+     its own list below, recorded as named by hand. */
   .dev-pick-list {
     @apply mt-2 flex max-h-[42vh] flex-col overflow-y-auto rounded-[var(--radius)] border;
     border-color: var(--color-border);
@@ -4686,6 +4688,28 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-pick-replace .dev-pick-note {
     @apply mt-1 block;
+  }
+  /* "Name the camera…" (NameCameraModal) — the one free-text body, offered
+     with the names already given so the same camera is not typed twice. */
+  .dev-name-input {
+    @apply mt-3 w-full;
+  }
+  .dev-name-chips {
+    @apply mt-1.5;
+  }
+  /* The grid dialog's "Not one of these" pair, under the bodies. */
+  .dev-pick-hand {
+    @apply mt-3 max-h-none;
+  }
+  .dev-pick-typed {
+    @apply cursor-default;
+  }
+  /* `.dev-pick-row input` sizes the radios to 16 px; the text field is not one. */
+  .dev-pick-typed .input {
+    @apply h-auto w-full shrink cursor-text;
+  }
+  .dev-pick-typed:hover {
+    background: transparent;
   }
   /* Revert sits apart from Cancel / confirm: it is a different verb, not a
      softer version of the primary one. */

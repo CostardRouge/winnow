@@ -22,6 +22,10 @@ export type KnownBody = {
   camera_model: string | null;
   /** How many live media already carry it (busiest first in the picker). */
   count: number;
+  /** True for a camera named by hand (`device_source = 'named'`, migration
+   *  0051) — no file of the library names it. The picker files these apart,
+   *  and a medium assigned to one is recorded as named too. */
+  named: boolean;
 };
 
 /** A medium carrying no body, with the evidence gathered about it — plus the
@@ -130,4 +134,16 @@ export type ProbeReport = {
   corrections: { id: number; filename: string; from: string | null; to: string }[];
   /** Clips per camera the tracks named — WHICH body, not only how many. */
   cameras: Record<string, number>;
+};
+
+/** Where a body came from, in the words the filter panel and the Devices page
+ *  print (the `device_source` values, migrations 0043 → 0051). */
+export const DEVICE_SOURCE_LABEL: Record<string, string> = {
+  exif: "From the file",
+  embedded: "From the clip’s track",
+  derived: "Inferred from its folder",
+  manual: "Assigned by hand",
+  override: "Corrected by hand",
+  named: "Named by hand",
+  none: "Not a camera",
 };
