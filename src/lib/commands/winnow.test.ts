@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { createCommandRegistry, type CommandError } from "./registry";
-import { HttpError, httpClient, winnowCommands, type WinnowClient } from "./winnow";
+import { HttpError, facesFilter, httpClient, resolvePeople, winnowCommands, type PersonRow, type WinnowClient } from "./winnow";
 import { imageSize } from "./imageSize";
 
 type Call = { method: string; path: string; body?: unknown };
 
-function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object; search?: object; rejected?: number[] } = {}) {
+function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; bytes?: Uint8Array; asset?: object; search?: object; rejected?: number[]; peopleOff?: boolean } = {}) {
   const calls: Call[] = [];
   const client: WinnowClient = {
     base: "https://winnow.test",
@@ -23,10 +23,17 @@ function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; byt
       if (path.endsWith("/rating")) return { rating: { asset_id: 7, ...(body as object) } } as never;
       if (path.startsWith("/api/sessions"))
         return { sessions: [1, 2, 3].map((id) => ({ id, name: `f${id}`, asset_count: 10, pick_count: 1, reject_count: 2, skip_count: 0, unrated_count: 7, status: "to_sort", captured_at_min: null, captured_at_max: null, ignored: false, last_reviewed_at: null, device_hint: null })) } as never;
+      if (path === "/api/features") return { features: { people: opts.peopleOff ? false : true } } as never;
+      if (path === "/api/people/suggestions") return { suggestions: [{ a: 1, b: 2, similarity: 0.81234 }], more: false } as never;
+      if (path.startsWith("/api/people/") && method === "GET")
+        return { person: { id: 1, name: "Vanessa" }, faces: [{ id: 10, asset_id: 7, score: 0.93859 }, { id: 11, asset_id: 8, score: 0.5 }] } as never;
+      if (path.startsWith("/api/people/")) return { ok: true } as never;
+      if (path.endsWith("/faces"))
+        return { faces: [{ id: 5, person_id: 1, person_name: "Vanessa", score: 0.85629, x1: 1, y1: 2, x2: 3, y2: 4, img_width: 2048, img_height: 1365 }] } as never;
       if (path === "/api/people")
         return { people: [
-          { id: 1, name: "Vanessa", hidden: false, asset_count: 9, incoming_asset_count: 8, gallery_asset_count: 1 },
-          { id: 2, name: null, hidden: false, asset_count: 5, incoming_asset_count: 5, gallery_asset_count: 0 },
+          { id: 1, name: "Vanessa", hidden: false, asset_count: 9, incoming_asset_count: 8, gallery_asset_count: 1, cover_face_id: 10 },
+          { id: 2, name: null, hidden: false, asset_count: 5, incoming_asset_count: 5, gallery_asset_count: 0, cover_face_id: null },
           { id: 3, name: "Hidden", hidden: true, asset_count: 4, incoming_asset_count: 4, gallery_asset_count: 0 },
         ] } as never;
       if (path.startsWith("/api/search")) return (opts.search ?? { items: [{ ...ROW, distance: 0.21234 }], enabled: true, indexed: 10 }) as never;
@@ -269,9 +276,9 @@ test("assets.search summarises hits and reports an index that is off", async () 
   assert.match((await failure(reg.execute("assets.search", { text: "   " })))!, /1–300/);
 });
 
-test("assets.list maps folder, tag, person, camera and city onto the filter", async () => {
+test("assets.list maps folder, tag, people, camera and city onto the filter", async () => {
   const { reg, calls } = fakeClient();
-  await reg.execute("assets.list", { folder: 12, tag: "keeper", person: 515, camera: "ILCE-7CM2", city: "Ubud" });
+  await reg.execute("assets.list", { folder: 12, tag: "keeper", people: [515], camera: "ILCE-7CM2", city: "Ubud" });
   const sp = new URL(`https://x${calls.at(-1)!.path}`).searchParams;
   assert.deepEqual(
     ["session_id", "tags", "person", "camera_model", "place_city"].map((k) => sp.get(k)),
@@ -317,4 +324,88 @@ test("assets.lookMany answers one picture per id, skipping one without a derivat
   assert.equal(out[2].width, 40);
   assert.match(String(out[1].why), /no picture yet/);
   assert.match((await failure(reg.execute("assets.lookMany", { ids: Array.from({ length: 13 }, (_, i) => i + 1) })))!, /12 at most/);
+});
+
+const PEOPLE: PersonRow[] = [
+  { id: 1, name: "Vanessa", hidden: false, asset_count: 9, incoming_asset_count: 8, gallery_asset_count: 1 },
+  { id: 2, name: "Élio", hidden: false, asset_count: 5, incoming_asset_count: 5, gallery_asset_count: 0 },
+  { id: 3, name: "Sam", hidden: false, asset_count: 3, incoming_asset_count: 3, gallery_asset_count: 0 },
+  { id: 4, name: "Sam", hidden: false, asset_count: 2, incoming_asset_count: 2, gallery_asset_count: 0 },
+  { id: 5, name: null, hidden: false, asset_count: 2, incoming_asset_count: 2, gallery_asset_count: 0 },
+];
+
+test("resolvePeople matches whole names regardless of case and accents, and refuses guesses", () => {
+  assert.deepEqual(resolvePeople(["vanessa", " ELIO "], PEOPLE), [1, 2]);
+  assert.throws(() => resolvePeople(["Sam"], PEOPLE), /names 2 people: #3, #4/);
+  assert.throws(() => resolvePeople(["Van"], PEOPLE), /nobody is named "Van" — close: Vanessa \(#1\)/);
+  assert.throws(() => resolvePeople(["Zoé"], PEOPLE), /nobody is named "Zoé" — people.list/);
+});
+
+test("facesFilter maps none, any, solo and group onto the face filters", () => {
+  assert.deepEqual(facesFilter("none"), { has_faces: "false" });
+  assert.deepEqual(facesFilter("any"), { has_faces: "true" });
+  assert.deepEqual(facesFilter("solo"), { face_count: "1" });
+  assert.equal(facesFilter("group").face_count.split(",")[0], "2");
+  assert.equal(facesFilter("group").face_count.split(",").at(-1), "30");
+  assert.deepEqual(facesFilter(undefined), {});
+});
+
+test("assets.list resolves who, people and together into person + person_mode", async () => {
+  const { reg, calls } = fakeClient();
+  await reg.execute("assets.list", { who: ["vanessa"], people: [2], together: true, faces: "group" });
+  const sp = new URL(`https://x${calls.at(-1)!.path}`).searchParams;
+  assert.equal(sp.get("person"), "2,1");
+  assert.equal(sp.get("person_mode"), "all");
+  assert.ok(sp.get("face_count")?.startsWith("2,3"));
+  await reg.execute("assets.list", { people: [2] });
+  assert.equal(new URL(`https://x${calls.at(-1)!.path}`).searchParams.get("person_mode"), null);
+  assert.match((await failure(reg.execute("assets.list", { people: [2], together: true })))!, /two people or more/);
+  assert.match((await failure(reg.execute("assets.list", { who: ["nobody"] })))!, /^invalid: nobody is named/);
+});
+
+test("people.sheet answers one labelled face per person and names the ones it skips", async () => {
+  const webp = new Uint8Array(
+    await sharp({ create: { width: 256, height: 256, channels: 3, background: "#888" } }).webp().toBuffer(),
+  );
+  const { reg, calls } = fakeClient({ bytes: webp });
+  const out = (await reg.execute("people.sheet", { ids: [1, 2] })) as Record<string, unknown>[];
+  assert.equal(out[0].kind, "image");
+  assert.equal(out[0].note, "#1 Vanessa — 9 media");
+  assert.equal(calls.at(-1)!.path, "/api/faces/10/thumb");
+  assert.match(String(out[1].why), /#2 \(unnamed\) — 5 media: no face to show/);
+  assert.match((await failure(reg.execute("people.sheet", { ids: [99] })))!, /no such person: 99/);
+});
+
+test("people writes go through the People page's routes and wait for the section and an editor", async () => {
+  const { reg, calls } = fakeClient();
+  await reg.execute("people.name", { id: 5, name: "  Lou " });
+  assert.deepEqual(calls.at(-1), { method: "PATCH", path: "/api/people/5", body: { name: "Lou" } });
+  await reg.execute("people.name", { id: 5, name: "" });
+  assert.deepEqual(calls.at(-1)!.body, { name: null });
+  await reg.execute("people.hide", { id: 5, hidden: true });
+  assert.deepEqual(calls.at(-1)!.body, { hidden: true });
+  await reg.execute("people.merge", { from: 4, into: 3 });
+  assert.deepEqual(calls.at(-1), { method: "POST", path: "/api/people/3/merge", body: { source_id: 4 } });
+  await reg.execute("people.reassign", { person: 3, assets: [7, 8] });
+  assert.deepEqual(calls.at(-1), { method: "POST", path: "/api/people/3/reassign", body: { asset_ids: [7, 8] } });
+  assert.match((await failure(reg.execute("people.merge", { from: 3, into: 3 })))!, /same person/);
+
+  const ro = fakeClient({ role: "viewer" });
+  assert.match((await failure(ro.reg.execute("people.name", { id: 5, name: "x" })))!, /^unavailable: this token reads only/);
+  const off = fakeClient({ peopleOff: true });
+  assert.match((await failure(off.reg.execute("people.merge", { from: 4, into: 3 })))!, /People section is turned off/);
+  assert.match((await failure(off.reg.execute("people.get", { id: 1 })))!, /People section is turned off/);
+});
+
+test("people.get, people.suggestions and assets.faces summarise their routes", async () => {
+  const { reg } = fakeClient();
+  const g = (await reg.execute("people.get", { id: 1, faces: 1 })) as { facesTotal: number; faces: unknown[] };
+  assert.equal(g.facesTotal, 2);
+  assert.deepEqual(g.faces, [{ face: 10, asset: 7, score: 0.939 }]);
+  const s = (await reg.execute("people.suggestions")) as { pairs: { a: { name: string }; similarity: number }[] };
+  assert.equal(s.pairs[0].a.name, "Vanessa");
+  assert.equal(s.pairs[0].similarity, 0.812);
+  const f = (await reg.execute("assets.faces", { id: 7 })) as { faces: { name: string; box: number[] }[] };
+  assert.deepEqual(f.faces[0].box, [1, 2, 3, 4]);
+  assert.equal(f.faces[0].name, "Vanessa");
 });

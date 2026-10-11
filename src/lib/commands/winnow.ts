@@ -93,19 +93,23 @@ export function httpClient(
 
 type Me = { user: { id: number; username: string; displayName: string | null; role: string; via: string | null } };
 type Capabilities = { api: { version: number }; media: { timeline?: boolean } };
+type Features = { features: Record<string, boolean> };
 
 const STATUS_TTL_MS = 30_000;
 
 function statusCache(client: WinnowClient) {
   let at = 0;
-  let value: Promise<{ me: Me; caps: Capabilities }> | null = null;
+  let value: Promise<{ me: Me; caps: Capabilities; features: Record<string, boolean> }> | null = null;
   return () => {
     if (!value || Date.now() - at > STATUS_TTL_MS) {
       at = Date.now();
       value = Promise.all([
         client.json<Me>("GET", "/api/auth/me"),
         client.json<Capabilities>("GET", "/api/capabilities"),
-      ]).then(([me, caps]) => ({ me, caps }));
+        // Which optional sections are on (viewer-visible): the People
+        // section gates its own routes (a person's page, rename, merge…).
+        client.json<Features>("GET", "/api/features"),
+      ]).then(([me, caps, f]) => ({ me, caps, features: f.features ?? {} }));
       value.catch(() => {
         value = null; // never cache a failure
       });
@@ -257,15 +261,6 @@ export function summarizeFolder(f: Folder) {
   };
 }
 
-type Person = {
-  id: number;
-  name: string | null;
-  hidden: boolean;
-  asset_count: number;
-  incoming_asset_count: number;
-  gallery_asset_count: number;
-};
-
 type Chapter = {
   key: string;
   name: string;
@@ -298,6 +293,81 @@ export const MAX_LOOK = 12;
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// People: names an agent types resolved to the ids the filter takes, and the
+// face filters a person would click. Pure, tested.
+
+export type PersonRow = {
+  id: number;
+  name: string | null;
+  hidden: boolean;
+  asset_count: number;
+  incoming_asset_count: number;
+  gallery_asset_count: number;
+  cover_face_id?: number | null;
+};
+
+/**
+ * Names → person ids, case- and accent-insensitive on the whole name. A name
+ * nobody has, or that two people share, is REFUSED with what would have
+ * matched — an agent that filtered on the wrong Vanessa would cull the wrong
+ * pictures without ever knowing.
+ */
+export function resolvePeople(names: readonly string[], people: readonly PersonRow[]): number[] {
+  const fold = (x: string) =>
+    x
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  const ids: number[] = [];
+  for (const raw of names) {
+    const want = fold(raw);
+    if (!want) throw new CommandError("invalid", `"who" holds an empty name`);
+    const exact = people.filter((x) => x.name && fold(x.name) === want);
+    if (exact.length === 1) {
+      ids.push(exact[0].id);
+      continue;
+    }
+    if (exact.length > 1) {
+      throw new CommandError(
+        "invalid",
+        `"${raw}" names ${exact.length} people: ${exact.map((x) => `#${x.id}`).join(", ")} — pass "people" with the one you mean`,
+      );
+    }
+    const close = people
+      .filter((x) => x.name && (fold(x.name).includes(want) || want.includes(fold(x.name))))
+      .slice(0, 5)
+      .map((x) => `${x.name} (#${x.id})`);
+    throw new CommandError(
+      "invalid",
+      `nobody is named "${raw}"${close.length ? ` — close: ${close.join(", ")}` : " — people.list or people.sheet shows who is named"}`,
+    );
+  }
+  return ids;
+}
+
+export const FACE_FILTERS = ["none", "any", "solo", "group"] as const;
+
+/** The filter keys a face filter maps to (`filterFromSearchParams`). */
+export function facesFilter(kind: string | undefined): Record<string, string> {
+  switch (kind) {
+    case "none":
+      return { has_faces: "false" };
+    case "any":
+      return { has_faces: "true" };
+    case "solo":
+      return { face_count: "1" };
+    case "group":
+      // face_count takes exact counts; 2–30 covers every real group photo.
+      return { face_count: Array.from({ length: 29 }, (_, i) => i + 2).join(",") };
+    default:
+      return {};
+  }
+}
+
+const MAX_SHEET = 24;
+
 export function winnowCommands(client: WinnowClient): CommandSpec[] {
   const status = statusCache(client);
 
@@ -305,6 +375,36 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
     const { me } = await status();
     if (me.user.role === "editor" || me.user.role === "admin") return true;
     return `this token reads only (it runs as ${me.user.role}): an admin mints an editor token on Users › App tokens for an agent that may cull`;
+  };
+
+  const peopleOn = async (): Promise<Availability> => {
+    const { features } = await status();
+    return features.people === false
+      ? "the People section is turned off on this instance (Settings › Features)"
+      : true;
+  };
+
+  const canEditPeople = async (): Promise<Availability> => {
+    const on = await peopleOn();
+    return on === true ? canWrite() : on;
+  };
+
+  // /api/people answers every stack (≈1 MB on the instance): asked once a
+  // minute at most, and forgotten after a write that renames, hides or merges.
+  let peopleAt = 0;
+  let peopleList: Promise<PersonRow[]> | null = null;
+  const people = () => {
+    if (!peopleList || Date.now() - peopleAt > 60_000) {
+      peopleAt = Date.now();
+      peopleList = client.json<{ people: PersonRow[] }>("GET", "/api/people").then((r) => r.people);
+      peopleList.catch(() => {
+        peopleList = null;
+      });
+    }
+    return peopleList;
+  };
+  const forgetPeople = () => {
+    peopleList = null;
   };
 
   const timelineOn = async (): Promise<Availability> => {
@@ -411,7 +511,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
       id: "assets.list",
       title: "List media",
       description:
-        "Media in capture order with their culling (verdict, stars, colour, and `by: agent` when an agent set it), newest first unless `order` says otherwise. Filter by a day or a span, a verdict, a minimum star count, a type, a folder, a tag, a person, a camera, a city or words. One line per RAW+JPEG pair and per burst pile by default (`fold: all`); `fold: pairs` lists every frame of a pile, and `burst` lists one pile's frames. Pages with `cursor` (the `next_cursor` of the previous page).",
+        "Media in capture order with their culling (verdict, stars, colour, and `by: agent` when an agent set it), newest first unless `order` says otherwise. Filter by a day or a span, a verdict, a minimum star count, a type, a folder, a tag, people (by id or by name, any or together), faces (none, solo, group), a camera, a city or words. One line per RAW+JPEG pair and per burst pile by default (`fold: all`); `fold: pairs` lists every frame of a pile, and `burst` lists one pile's frames. Pages with `cursor` (the `next_cursor` of the previous page).",
       params: {
         day: { type: "string", optional: true, description: "One capture day, YYYY-MM-DD (or use from/to)" },
         from: { type: "string", optional: true, description: "First day, YYYY-MM-DD" },
@@ -424,7 +524,10 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         burst: { type: "number", integer: true, min: 1, optional: true, description: "One burst pile's id: every frame of it" },
         folder: { type: "number", integer: true, min: 1, optional: true, description: "One folder's id (library.folders)" },
         tag: { type: "string", optional: true, description: "Only media carrying this tag" },
-        person: { type: "number", integer: true, min: 1, optional: true, description: "Only media showing this person (people.list)" },
+        people: { type: "numbers", integer: true, min: 1, maxItems: 20, optional: true, description: "Person ids (people.list): media showing any of them, or all of them with together" },
+        who: { type: "strings", optional: true, description: "People by NAME, resolved like people: an unknown or shared name is refused with the close ones" },
+        together: { type: "boolean", optional: true, description: "With people/who: only media where ALL of them appear (default: any)" },
+        faces: { type: "string", enum: FACE_FILTERS, optional: true, description: "none (no face found), any, solo (exactly one face), group (two or more)" },
         camera: { type: "string", optional: true, description: "Camera model, as library.facets names it" },
         city: { type: "string", optional: true, description: "City, as library.facets names it" },
         fold: { type: "string", enum: ["all", "pairs"], optional: true, description: "all (default): a pair or a pile is one line; pairs: every frame of a pile" },
@@ -437,6 +540,15 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         const day = date(p, "day");
         if (day && (p.from !== undefined || p.to !== undefined))
           throw new CommandError("invalid", `"day" or "from"/"to", not both`);
+        const who = (p.who as string[] | undefined) ?? [];
+        const personIds = [
+          ...new Set([
+            ...((p.people as number[] | undefined) ?? []),
+            ...(who.length ? resolvePeople(who, await people()) : []),
+          ]),
+        ];
+        if (p.together === true && personIds.length < 2)
+          throw new CommandError("invalid", `"together" needs two people or more`);
         const r = await client.json<{ assets: GridRow[]; next_cursor: string | null }>(
           "GET",
           `/api/assets${query({
@@ -450,7 +562,9 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
             burst_id: p.burst as number | undefined,
             session_id: p.folder as number | undefined,
             tags: p.tag as string | undefined,
-            person: p.person as number | undefined,
+            person: personIds.length ? personIds.join(",") : undefined,
+            person_mode: personIds.length > 1 ? (p.together === true ? "all" : "any") : undefined,
+            ...facesFilter(p.faces as string | undefined),
             camera_model: p.camera as string | undefined,
             place_city: p.city as string | undefined,
             collapse: p.fold === "pairs" ? "pairs" : "1",
@@ -512,19 +626,31 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
       id: "people.list",
       title: "People",
       description:
-        "The people the face analysis has grouped — named ones first, then busiest — with how many media show them. Their ids filter assets.list (`person`). Answers `total` and the first `limit`.",
+        "The people the face analysis has grouped — named ones first, then busiest — with how many media show them. Their ids (or names, as `who`) filter assets.list; people.sheet shows their faces. Answers `total` and the first `limit` from `offset`.",
       params: {
         named: { type: "boolean", optional: true, description: "Only people who have a name" },
+        unnamed: { type: "boolean", optional: true, description: "Only people with no name yet — the ones to name" },
+        hidden: { type: "boolean", optional: true, description: "List the hidden stacks instead" },
+        offset: { type: "number", integer: true, min: 0, optional: true, description: "Skip this many (paging)" },
         limit: { type: "number", integer: true, min: 1, max: 500, optional: true, description: "How many, 50 by default" },
       },
       async run(p) {
-        const r = await client.json<{ people: Person[] }>("GET", "/api/people");
-        const people = r.people.filter((x) => !x.hidden && (p.named !== true || !!x.name));
+        if (p.named === true && p.unnamed === true)
+          throw new CommandError("invalid", `"named" or "unnamed", not both`);
+        const all = (await people()).filter(
+          (x) =>
+            x.hidden === (p.hidden === true) &&
+            (p.named !== true || !!x.name) &&
+            (p.unnamed !== true || !x.name),
+        );
+        const offset = (p.offset as number | undefined) ?? 0;
         const limit = (p.limit as number | undefined) ?? 50;
+        const page = all.slice(offset, offset + limit);
         return {
-          total: people.length,
-          shown: Math.min(limit, people.length),
-          people: people.slice(0, limit).map((x) => ({
+          total: all.length,
+          shown: page.length,
+          offset,
+          people: page.map((x) => ({
             id: x.id,
             name: x.name,
             media: x.asset_count,
@@ -532,6 +658,225 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
             gallery: x.gallery_asset_count,
           })),
         };
+      },
+    },
+
+    {
+      id: "people.get",
+      title: "One person",
+      description:
+        "One person: name, hidden, how many faces and media in each half of the library, the cover face, and their faces (face id, asset id, detection score, best first — 200 at most).",
+      available: peopleOn,
+      params: {
+        id: { type: "number", integer: true, min: 1, description: "The person id" },
+        faces: { type: "number", integer: true, min: 0, max: 200, optional: true, description: "How many faces to list, 50 by default" },
+      },
+      async run(p) {
+        const r = await client.json<{
+          person: PersonRow & { face_count: number; incoming_face_count: number; gallery_face_count: number };
+          faces: { id: number; asset_id: number; score: number }[];
+        }>("GET", `/api/people/${p.id}`);
+        const n = (p.faces as number | undefined) ?? 50;
+        return {
+          person: r.person,
+          facesTotal: r.faces.length,
+          faces: r.faces.slice(0, n).map((f) => ({ face: f.id, asset: f.asset_id, score: Math.round(f.score * 1000) / 1000 })),
+        };
+      },
+    },
+
+    {
+      id: "people.sheet",
+      title: "Who is who",
+      description: `The cover face of several people, one picture each labelled "#id name" — to SEE who a stack is before naming, merging or filtering on it. Pick them by ids, or page through named / unnamed people (${MAX_SHEET} at most a call). A person with no usable face is named and skipped.`,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_SHEET, optional: true, description: "Person ids (else the list's order)" },
+        unnamed: { type: "boolean", optional: true, description: "Only people with no name yet" },
+        named: { type: "boolean", optional: true, description: "Only named people" },
+        offset: { type: "number", integer: true, min: 0, optional: true, description: "Skip this many (paging)" },
+        limit: { type: "number", integer: true, min: 1, max: MAX_SHEET, optional: true, description: `How many, 12 by default (${MAX_SHEET} at most)` },
+      },
+      async run(p): Promise<unknown[]> {
+        if (p.named === true && p.unnamed === true)
+          throw new CommandError("invalid", `"named" or "unnamed", not both`);
+        const all = await people();
+        let chosen: PersonRow[];
+        if (p.ids) {
+          const byId = new Map(all.map((x) => [x.id, x]));
+          const ids = p.ids as number[];
+          const missing = ids.filter((id) => !byId.has(id));
+          if (missing.length) throw new CommandError("invalid", `no such person: ${missing.join(", ")}`);
+          chosen = ids.map((id) => byId.get(id)!);
+        } else {
+          const offset = (p.offset as number | undefined) ?? 0;
+          const limit = (p.limit as number | undefined) ?? 12;
+          chosen = all
+            .filter((x) => !x.hidden && (p.named !== true || !!x.name) && (p.unnamed !== true || !x.name))
+            .slice(offset, offset + limit);
+        }
+        return Promise.all(
+          chosen.map(async (x): Promise<unknown> => {
+            const label = `#${x.id} ${x.name ?? "(unnamed)"} — ${x.asset_count} media`;
+            if (!x.cover_face_id) return { skipped: x.id, why: `${label}: no face to show` };
+            try {
+              const bytes = await client.bytes(`/api/faces/${x.cover_face_id}/thumb`);
+              const size = imageSize(bytes);
+              if (!size) return { skipped: x.id, why: `${label}: unreadable face crop` };
+              const img: ImageResult = {
+                kind: "image",
+                mimeType: size.mimeType,
+                data: Buffer.from(bytes).toString("base64"),
+                width: size.width,
+                height: size.height,
+                note: label,
+              };
+              return img;
+            } catch (err) {
+              return { skipped: x.id, why: `${label}: ${err instanceof Error ? err.message : String(err)}` };
+            }
+          }),
+        );
+      },
+    },
+
+    {
+      id: "people.suggestions",
+      title: "Probably the same person",
+      description:
+        "Pairs of stacks the face model thinks are one person (most alike first), with their names and counts — what to check with people.sheet and then people.merge. Nothing is merged by asking.",
+      available: peopleOn,
+      params: {
+        limit: { type: "number", integer: true, min: 1, max: 100, optional: true, description: "How many pairs, 20 by default" },
+      },
+      async run(p) {
+        const [r, all] = await Promise.all([
+          client.json<{ suggestions: { a: number; b: number; similarity: number }[]; more: boolean }>("GET", "/api/people/suggestions"),
+          people(),
+        ]);
+        const byId = new Map(all.map((x) => [x.id, x]));
+        const who = (id: number) => {
+          const x = byId.get(id);
+          return { id, name: x?.name ?? null, media: x?.asset_count ?? null };
+        };
+        const limit = (p.limit as number | undefined) ?? 20;
+        return {
+          more: r.more || r.suggestions.length > limit,
+          pairs: r.suggestions.slice(0, limit).map((s) => ({
+            a: who(s.a),
+            b: who(s.b),
+            similarity: Math.round(s.similarity * 1000) / 1000,
+          })),
+        };
+      },
+    },
+
+    {
+      id: "assets.faces",
+      title: "Who is in it",
+      description:
+        "The faces found in one medium: face id, person id and name (null when the face matched nobody yet), detection score, and the box in the analysed image's pixels with that image's size.",
+      params: { id: { type: "number", integer: true, min: 1, description: "The asset id" } },
+      async run(p) {
+        const r = await client.json<{
+          faces: {
+            id: number;
+            person_id: number | null;
+            person_name: string | null;
+            score: number;
+            x1: number;
+            y1: number;
+            x2: number;
+            y2: number;
+            img_width: number;
+            img_height: number;
+          }[];
+        }>("GET", `/api/assets/${p.id}/faces`);
+        return {
+          faces: r.faces.map((f) => ({
+            face: f.id,
+            person: f.person_id,
+            name: f.person_name,
+            score: Math.round(f.score * 1000) / 1000,
+            box: [f.x1, f.y1, f.x2, f.y2],
+            image: [f.img_width, f.img_height],
+          })),
+        };
+      },
+    },
+
+    {
+      id: "people.name",
+      title: "Name a person",
+      description:
+        "Give a person a name, or clear it with an empty string (PATCH /api/people/:id, the People page's rename). Look at them first (people.sheet).",
+      available: canEditPeople,
+      params: {
+        id: { type: "number", integer: true, min: 1, description: "The person id" },
+        name: { type: "string", description: "The name, 120 characters at most; \"\" clears it" },
+      },
+      async run(p) {
+        const name = (p.name as string).trim();
+        if (name.length > 120) throw new CommandError("invalid", `"name" is ${name.length} characters — 120 at most`);
+        await client.json("PATCH", `/api/people/${p.id}`, { name: name || null });
+        forgetPeople();
+        return { id: p.id, name: name || null };
+      },
+    },
+
+    {
+      id: "people.hide",
+      title: "Hide a person",
+      description:
+        "Hide a stack from every default list and picker (strangers, posters, statues), or show it again. Reversible; nothing is deleted.",
+      available: canEditPeople,
+      params: {
+        id: { type: "number", integer: true, min: 1, description: "The person id" },
+        hidden: { type: "boolean", description: "true hides, false shows again" },
+      },
+      async run(p) {
+        await client.json("PATCH", `/api/people/${p.id}`, { hidden: p.hidden });
+        forgetPeople();
+        return { id: p.id, hidden: p.hidden };
+      },
+    },
+
+    {
+      id: "people.merge",
+      title: "Merge two people",
+      description:
+        "Fold one stack into another that is the same person (POST /api/people/:into/merge): `into` keeps its name and cover and takes every face; `from` disappears. Hard to undo — only people.reassign moves faces back, photo by photo — so look at both with people.sheet first.",
+      available: canEditPeople,
+      params: {
+        from: { type: "number", integer: true, min: 1, description: "The person to fold in (it disappears)" },
+        into: { type: "number", integer: true, min: 1, description: "The person who stays" },
+      },
+      async run(p) {
+        if (p.from === p.into) throw new CommandError("invalid", `"from" and "into" are the same person`);
+        await client.json("POST", `/api/people/${p.into}/merge`, { source_id: p.from });
+        forgetPeople();
+        return { merged: p.from, into: p.into };
+      },
+    },
+
+    {
+      id: "people.reassign",
+      title: "Move faces to another person",
+      description:
+        "Move this person's faces in some photos to another person — or, without `to`, into a new unnamed stack (POST /api/people/:id/reassign, the person page's fix for a wrong match). Only THIS person's face in each photo moves; others in frame stay.",
+      available: canEditPeople,
+      params: {
+        person: { type: "number", integer: true, min: 1, description: "The person whose faces move" },
+        assets: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `The photos (asset ids, ${MAX_BULK} at most a call)` },
+        to: { type: "number", integer: true, min: 1, optional: true, description: "The person they move to; absent = a new unnamed stack" },
+      },
+      async run(p) {
+        if (p.to === p.person) throw new CommandError("invalid", `"to" is the same person`);
+        const r = await client.json("POST", `/api/people/${p.person}/reassign`, {
+          asset_ids: p.assets,
+          ...(p.to !== undefined ? { target_person_id: p.to } : {}),
+        });
+        forgetPeople();
+        return r;
       },
     },
 
