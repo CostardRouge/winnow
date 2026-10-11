@@ -2,6 +2,16 @@
 // (thanks to the zero-padded NNNN_ prefix) is also numeric order. Idempotent:
 // each applied file is recorded by filename in schema_migrations and skipped on
 // the next run. Naming/ordering convention: db/migrations/README.md.
+//
+// Two callers, possibly at the same moment: the compose one-shot `migrate`
+// service (`npm run migrate`), and the WORKER at boot (src/worker.ts). The
+// worker is the one that matters in production: Watchtower recreates the
+// labelled app and worker on a new image but never re-runs the exited
+// one-shot, so before the worker migrated, every merge carrying a migration
+// went live against the old schema — 0048 and 0049 did, and the indexer
+// failed on every new file for a day (docs/CODEBASE-AUDIT.md SCL-01). The two
+// are serialised by a session-level advisory lock: the second caller waits,
+// then finds everything applied.
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -65,9 +75,19 @@ async function reconcileRenumbered(client: PoolClient): Promise<void> {
   }
 }
 
-export async function migrate(): Promise<void> {
+// Any constant both callers agree on; it names this lock in pg_locks.
+const MIGRATE_LOCK = 0x77696e6e; // "winn"
+
+export async function migrate(
+  /** Test-only: a migrations directory other than db/migrations. */
+  opts: { dir?: string } = {},
+): Promise<void> {
+  const dir = opts.dir ?? MIGRATIONS_DIR;
   const client = await pool.connect();
   try {
+    // Held for the whole run, released by the unlock below — or by Postgres
+    // itself if this process dies holding it, since it belongs to the session.
+    await client.query("SELECT pg_advisory_lock($1)", [MIGRATE_LOCK]);
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         name TEXT PRIMARY KEY,
@@ -76,7 +96,7 @@ export async function migrate(): Promise<void> {
 
     await reconcileRenumbered(client);
 
-    const files = (await readdir(MIGRATIONS_DIR))
+    const files = (await readdir(dir))
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
@@ -85,11 +105,10 @@ export async function migrate(): Promise<void> {
         "SELECT 1 FROM schema_migrations WHERE name = $1",
         [file],
       );
-      if (done.rowCount) {
-        console.log(`= ${file} (already applied)`);
-        continue;
-      }
-      const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
+      // Silent when already applied: the worker runs this on every boot, and
+      // fifty "already applied" lines would bury the one that is not.
+      if (done.rowCount) continue;
+      const sql = await readFile(path.join(dir, file), "utf8");
       console.log(`▶ applying ${file}...`);
       await client.query("BEGIN");
       try {
@@ -106,6 +125,9 @@ export async function migrate(): Promise<void> {
       }
     }
   } finally {
+    await client
+      .query("SELECT pg_advisory_unlock($1)", [MIGRATE_LOCK])
+      .catch(() => {});
     client.release();
   }
 }
