@@ -118,6 +118,14 @@ export type CaptureDaysJob = {
   from?: string | null;
   to?: string | null;
 };
+// Read the camera DJI clips name in their own metadata track (cf.
+// lib/deviceProbe.ts, migration 0049). Same queue as relink and capture-days
+// and for the same reason: it opens originals one by one, the scan's I/O
+// profile, and concurrency 1 keeps it from ganging up with a sweep. A few KB
+// per clip (lib/djiTrack.ts), never exiftool `-ee`. No parameters: it always
+// works through whatever is still unread, so every job is the same job.
+export const DEVICE_PROBE_JOB = "device-probe";
+export type DeviceProbeJob = Record<string, never>;
 export type ImportJob = {
   sourceDir: string;
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
@@ -615,6 +623,40 @@ export async function getCaptureDaysJob(jobId: string): Promise<{
     id: String(job.id),
     state: await job.getState(),
     data: (job.data ?? null) as CaptureDaysJob | null,
+    progress: job.progress ?? null,
+    result: job.returnvalue ?? null,
+    failedReason: job.failedReason ?? null,
+  };
+}
+
+// Enqueue the clip probe. Coalesced on ANY pending or running probe: it has no
+// parameters and is resumable, so a second click while one runs is that one.
+export async function enqueueDeviceProbe(): Promise<Job> {
+  const queue = getQueues().integrity;
+  const jobs = await queue.getJobs([...PENDING_INDEX_STATES, "active"], 0, 99);
+  const running = jobs.find((j) => j?.name === DEVICE_PROBE_JOB);
+  if (running) return running;
+  return queue.add(DEVICE_PROBE_JOB, {} satisfies DeviceProbeJob, {
+    ...defaultJobOpts,
+    // Resumable (it only reads clips still unread): a failure needs no retry
+    // storm, the next click picks up the rest.
+    attempts: 1,
+  });
+}
+
+/** One probe job's state, its progress and, once finished, its report. */
+export async function getDeviceProbeJob(jobId: string): Promise<{
+  id: string;
+  state: string;
+  progress: unknown;
+  result: unknown;
+  failedReason: string | null;
+} | null> {
+  const job = await getQueues().integrity.getJob(jobId);
+  if (!job || job.name !== DEVICE_PROBE_JOB) return null;
+  return {
+    id: String(job.id),
+    state: await job.getState(),
     progress: job.progress ?? null,
     result: job.returnvalue ?? null,
     failedReason: job.failedReason ?? null,

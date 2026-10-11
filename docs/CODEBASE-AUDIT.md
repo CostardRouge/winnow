@@ -825,7 +825,7 @@ without a confirm) are not repeated.
 - **Fix:** the worker runs `migrate()` before creating its Workers, under a `pg_advisory_lock` (closing review D8 too); the app's health answers "schema behind" until `schema_migrations` is current.
 - **Effort:** S · **Risk of fixing:** medium (deploy path)
 - **Verification:** deploy an image carrying a no-op migration through Watchtower: `schema_migrations` gains the row without a manual step.
-- *Evidence:* read (Watchtower flags unverified) · *Status:* Decision D6 → Batch 4
+- *Evidence:* read (Watchtower flags unverified) — **confirmed in production 2026-10-11**: 0048 and 0049 shipped through Watchtower and were never applied, and the indexer failed on 9 124 files with `column "device_exif" … does not exist` · *Status:* **Fixed** 2026-10-11 (D6 answered (a)): `src/worker.ts` runs `migrate()` before creating its Workers, under `pg_advisory_lock` in `src/lib/migrate.ts`, so it coexists with the compose one-shot; a failed migration stops the worker. The app's "schema behind" health answer is not done.
 
 **SCL-02** — **Severity:** medium
 - **Location:** `.github/workflows/docker-build.yml:3-6` (`on: push: main`, no `needs`, no `concurrency`, no `paths-ignore`).
@@ -1033,7 +1033,7 @@ with two moves argued below.
 | D3 | SEC-04 session hard-delete | (a) admin-only and through the purge guards; (b) keep editor, add `PURGE_ENABLED` + `purge_log` | **(a)** — it is the purge verb under another name |
 | D4 | SEC-05 login brake | key on `CF-Connecting-IP` vs last trusted hop; per-account cap: slow vs lock | `CF-Connecting-IP`, per-account **slow-down** (no lock-out). Needs Traefik's forwarded-headers config to confirm |
 | D5 | BE-04 upload | (a) per-file streamed `PUT` (no dependency); (b) `busboy` streaming of the current multipart | **(a)** — no dependency, and each request stays under Cloudflare's body cap for photos (videos > 100 MB still need the LAN or a bigger plan) |
-| D6 | SCL-01 migrations on deploy | (a) worker migrates at boot under an advisory lock; (b) label `migrate` + Watchtower `--revive-stopped` | **(a)** — survives any deploy tool |
+| D6 | SCL-01 migrations on deploy | (a) worker migrates at boot under an advisory lock; (b) label `migrate` + Watchtower `--revive-stopped` | **(a)** — survives any deploy tool · **answered (a), shipped 2026-10-11** |
 | D7 | SCL-02 image build | (a) `workflow_run` after CI; (b) one workflow with `needs:` | **(a)** — smallest diff |
 | D8 | DX-01 CI job | add `npm test` to the `build` job (it has Postgres) | **yes** |
 | D9 | DX-02 linting | adopt ESLint for hooks + a11y only, or not | **yes**, dev-only, findings fixed in batch 7–8 |

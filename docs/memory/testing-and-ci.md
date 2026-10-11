@@ -53,3 +53,5 @@ column it must keep) gets a test in that shape, not a hand-copied SQL fragment �
 a copy proves nothing about the statement that ships. Check that it FAILS with
 the change removed: for the camera-body guard it did. Keep `GEOCODE_ENABLED=false`
 and fixtures without GPS, or the geocode enqueue reaches for Redis after all.
+
+- 2026-10-10 — **Test files run in parallel against ONE scratch database**, so a test of a library-wide pass (the clip probe, a backfill) must not assert library-wide counts nor "clear the field" by stamping other rows — both broke here (`captureDays.test.ts` counted 88 seed rows; a `beforeEach` that stamped everyone else's rows would race the other files). Give the pass a scope (`runDeviceProbe({ sessionId })`) and assert inside it. A test writing identical files into one folder also meets the indexer's dedup: give each fixture distinct bytes.

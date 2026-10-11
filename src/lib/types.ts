@@ -74,6 +74,13 @@ export type Asset = {
   // and what "Revert to the file" restores.
   device_exif: string | null;
   camera_model_exif: string | null;
+  // What the clip's own metadata track names (migration 0049,
+  // lib/deviceProbe.ts): the camera as its stills spell it, the product, the
+  // aircraft's serial. NULL until probed, and on anything but a DJI clip.
+  embedded_device: string | null;
+  embedded_camera_model: string | null;
+  embedded_model: string | null;
+  embedded_serial: string | null;
   file_size: number | null;
   file_mtime: string | null;
   content_hash: string | null;

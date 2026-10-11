@@ -663,24 +663,37 @@ export async function overrideDevice(opts: {
 
 /**
  * Put these media back to what their own files say — the undo for an
- * override, and for any attribution. A file that declares a body gets it back
- * as 'exif'; a file that declares nothing (a DJI MP4) goes back to having no
- * body at all, which returns it to the Devices backlog rather than leaving a
- * guess in place. Rows already matching their file are skipped.
+ * override, and for any attribution. What the file says is, in order: the
+ * body its EXIF declares ('exif'), else the camera its own metadata track
+ * names ('embedded', migration 0049), else nothing at all — which returns a
+ * clip to the Devices backlog rather than leaving a guess in place. Rows
+ * already matching their file are skipped.
  */
 export async function revertDevice(ids: number[]): Promise<ApplyResult> {
   const unique = [...new Set(ids)];
   if (!unique.length) return { updated: 0, skipped: 0 };
   const rows = await many<{ id: number }>(
-    `UPDATE assets
-        SET device = device_exif,
-            camera_model = camera_model_exif,
-            device_source = CASE WHEN device_exif IS NOT NULL THEN 'exif' END,
+    `WITH target AS (
+       SELECT id,
+              COALESCE(device_exif, embedded_device) AS device,
+              CASE WHEN device_exif IS NOT NULL THEN camera_model_exif
+                   ELSE embedded_camera_model END AS camera_model,
+              CASE WHEN device_exif IS NOT NULL THEN 'exif'
+                   WHEN embedded_device IS NOT NULL THEN 'embedded' END AS source
+         FROM assets
+        WHERE id = ANY($1)
+          AND deleted_at IS NULL AND purged_at IS NULL
+          AND device_source IN ('derived', 'manual', 'embedded', 'override')
+     )
+     UPDATE assets a
+        SET device = t.device,
+            camera_model = t.camera_model,
+            device_source = t.source,
             updated_at = now()
-      WHERE id = ANY($1)
-        AND deleted_at IS NULL AND purged_at IS NULL
-        AND device_source IN ('derived', 'manual', 'embedded', 'override')
-      RETURNING id`,
+       FROM target t
+      WHERE a.id = t.id
+        AND (a.device, a.device_source) IS DISTINCT FROM (t.device, t.source)
+      RETURNING a.id`,
     [unique],
   );
   return { updated: rows.length, skipped: unique.length - rows.length };
