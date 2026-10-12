@@ -38,6 +38,14 @@ Seeded 2026-08-20 from `README.md`, `docs/ARCHITECTURE-REVIEW.md`, `src/lib/` an
 
 **How to apply**: any new state that removes an asset's bytes must release its `content_hash`, or it silently makes the surviving file unindexable forever. The sweep only ever removes audit rows and a dead hash — never a file — and drops a row on a missing file only for ENOENT, never on an ambiguous stat error (a flaky NAS mount must not erase the audit trail).
 
+## A refused deletion is reported as a refusal, once, in words (2026-10-11)
+
+**Decision**: dedup removes a file with `unlinkIfThere()` (`unlink`, ENOENT = success), never `rm(p, { force: true })`; a refused unlink becomes `unlinkRefusal(err)` — a path-free sentence keyed on the errno; and `keepEach` counts a group as `resolved` only when none of its copies was left behind.
+
+**Why**: "Keep left" on a 133-group folder pair (`…/Elio's birthday`) deleted nothing on the instance, and the report read "kept one copy in 133 groups, deleting 0 files" with 133 reasons folded shut, because each carried Node's message with the file's path in it. Worse, on EPERM Node's `rm` retries the path as a directory and throws `ENOTDIR … scandir`, burying the real error. The request, the apostrophe and the server logic were all ruled out (local repro passes; the route answers); the cause on the NAS is whatever the new report names — most likely the NFS export's permissions on a folder created over SMB.
+
+**How to apply**: any new removal path uses `unlinkIfThere` + `unlinkRefusal`; a skip reason never embeds a path (reasons are aggregated by text); a bulk loop on the client catches a non-JSON answer and a failed fetch so a run never ends on an empty report.
+
 ## Only Incoming copies are ever deletable, and that decides the whole triage UI (2026-09-02)
 
 **Decision**: `view_only` (Final/Export volumes) and the Incoming/Gallery *zone* of a copy are the same fact seen twice — a Gallery or Export copy is always protected, an Incoming one never is. `zoneChecker()` in `src/lib/duplicates.ts` classifies a path (`incoming` / `gallery` / `export` / `other`) against the registered roots, longest prefix first, because a finals folder nested inside an incoming root must read as gallery.

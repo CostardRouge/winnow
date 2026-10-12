@@ -532,13 +532,15 @@ export async function keepEach(
   for (const t of targets) {
     try {
       const r = await keepOneCopy({ contentHash: t.hash, keepPath: t.keepPath });
-      result.resolved++;
       result.deleted += r.deleted.length;
       if (r.relinked) result.relinked++;
       // A copy keepOneCopy refused keeps its row, so the group stays listed:
-      // say why, and do not pick it again in this run.
+      // say why, and do not pick it again in this run. Nor is it counted as
+      // resolved — a run whose every unlink was refused used to report "kept
+      // one copy in 133 groups, deleting 0 files", which reads as success.
       for (const sk of r.skipped) note(sk.reason);
       if (r.skipped.length) result.retry.push(t.hash);
+      else result.resolved++;
     } catch (err) {
       // A group that can't be collapsed (a copy vanished under us, a permission
       // error) must not abort the batch: it keeps its rows and stays listed for

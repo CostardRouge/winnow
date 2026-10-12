@@ -159,7 +159,11 @@ export default function DedupStrategy({
             exclude,
           }),
         });
-        const d = await r.json();
+        // A gateway's HTML error page is not JSON: say what answered, rather
+        // than ending the run on an empty report with no reason.
+        const d = await r
+          .json()
+          .catch(() => ({ error: `the server answered ${r.status} ${r.statusText}`.trim() }));
         if (!r.ok) {
           reasons.set(d.error ?? "unknown error", 1);
           break;
@@ -177,6 +181,9 @@ export default function DedupStrategy({
         if (d.remaining === 0 || d.remaining >= before) break;
         before = d.remaining;
       }
+    } catch (e) {
+      // The request itself failed (network, tunnel): a reason, not silence.
+      reasons.set((e as Error).message || "the request failed", 1);
     } finally {
       done.stopped = aborted.current;
       done.skipped = [...reasons]
