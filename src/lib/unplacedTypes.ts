@@ -71,6 +71,13 @@ export const UNPLACED_RULES = {
    * other join into one "on the move" stop instead of a stop every 5 km of a
    * drive. */
   stay_min: 30,
+  /** Two stops of one card that would need travelling faster than this
+   * (an airliner cruises at ~900 km/h) are not two places: the located
+   * frames DISAGREE — one source has a wrong clock or time zone. Such a card
+   * is not split, its suggestion is not offered as a pin, and it says which
+   * places disagree (2026-10-13: a drone folder on the instance was cut into
+   * Porto and Melbourne two hours apart). */
+  max_kmh: 1000,
 } as const;
 
 export type UnplacedConfidence = "high" | "medium" | "low";
@@ -159,6 +166,18 @@ export type UnplacedStop = {
   suggestion: UnplacedSuggestion;
 };
 
+/** Two places a card's located frames put it in, too far apart for the time
+ *  between them (max_kmh). */
+export type UnplacedConflict = {
+  /** Each side's place and the body that shot most of its frames — the
+   *  device whose clock to check. */
+  a: { name: string | null; lat: number; lon: number; model: string | null };
+  b: { name: string | null; lat: number; lon: number; model: string | null };
+  km: number;
+  /** Hours between the last frame at `a` and the first at `b`. */
+  hours: number;
+};
+
 /** The nearest human placement to a card with no suggestion. */
 export type UnplacedNearest = {
   lat: number;
@@ -204,6 +223,10 @@ export type UnplacedGroup = {
    * the other body's folder spans the same places, and offering it whole
    * would put both towns at one point again. */
   stops: UnplacedStop[] | null;
+  /** The located frames around the card put it in two places no one could
+   *  travel between in the time (max_kmh): set instead of `stops`, and the
+   *  card's suggestion is then low and never pre-filled. */
+  conflict: UnplacedConflict | null;
   /** On a card with no suggestion: the nearest position a human already
    * applied, within reuse_d days — "same place as the folder I did
    * yesterday", shown on the card and one click away. */
@@ -340,6 +363,25 @@ export function placeRuns(
     }
   }
   return out;
+}
+
+// The first pair of consecutive places no one could travel between in the
+// time: from the last frame of one to the first of the next, faster than
+// `maxKmh`. Null when every leg is possible. A minute's floor on the time, so
+// two frames at the same instant in two places read as impossible, not as a
+// division by zero. Pure.
+export function impossibleLeg(
+  runs: readonly PlaceRun[],
+  maxKmh: number,
+): { k: number; km: number; hours: number } | null {
+  for (let k = 0; k + 1 < runs.length; k++) {
+    const a = runs[k].donors[runs[k].donors.length - 1];
+    const b = runs[k + 1].donors[0];
+    const km = distanceM(a, b) / 1000;
+    const hours = Math.max(b.at - a.at, 60_000) / 3_600_000;
+    if (km / hours > maxKmh) return { k, km, hours };
+  }
+  return null;
 }
 
 // Where to cut between two consecutive places: in the longest silence of the

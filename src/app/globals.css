@@ -1180,6 +1180,14 @@ html[data-theme="dark"] .btn-primary:hover {
   .card-suggest.is-none {
     color: var(--color-muted);
   }
+  /* The located frames contradict each other (UNPLACED_RULES.max_kmh): not
+     a suggestion but a finding, so it reads as a note on paper, in ink —
+     never a red banner, an evidence problem is not an error. */
+  .card-suggest.is-conflict {
+    @apply rounded-[var(--radius)] px-2.5 py-1.5;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+  }
   /* How sure a proposal is, in one word. Not nested under .card-suggest: the
      geotag recap wears the same pill to say whether the position it is about
      to write is a suggested or a verified one, and one thing gets one name. */

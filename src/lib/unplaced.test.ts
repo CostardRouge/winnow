@@ -16,6 +16,7 @@ let up: typeof import("./unplaced");
 let db: typeof import("./db");
 let rootId: number;
 let camId: number;
+let clashId: number;
 let lonelyId: number;
 let roadId: number;
 let importId: number;
@@ -24,6 +25,8 @@ let seq = 0;
 const MPL = { lat: 43.6108, lon: 3.8767 };
 const SETE = { lat: 43.4028, lon: 3.6928 };
 const PEROLS = { lat: 43.5653, lon: 3.9536 };
+const PORTO = { lat: 41.1496, lon: -8.611 };
+const MELBOURNE = { lat: -37.8136, lon: 144.9631 };
 
 async function session(name: string, from: string, to: string): Promise<number> {
   const s = await db.one<{ id: number }>(
@@ -81,6 +84,16 @@ before(async () => {
     await media(phone, at(h, m), { gps: MPL, model: "iPhone 15 Pro Max" });
   for (const [h, m] of [[13, 45], [14, 15], [14, 50]])
     await media(phone, at(h, m), { gps: SETE, model: "iPhone 15 Pro Max" });
+
+  // A drone folder whose located neighbours disagree: frames in Porto, then
+  // in Melbourne two hours later — one source with a wrong clock.
+  clashId = await session("clash", "1999-06-10T10:00:00Z", "1999-06-10T13:00:00Z");
+  for (const h of [10, 11, 12, 13]) await media(clashId, `1999-06-10T${h}:00:00Z`);
+  const witnesses = await session("witnesses", "1999-06-10T10:00:00Z", "1999-06-10T13:00:00Z");
+  for (const [h, m] of [[10, 0], [10, 20], [10, 40]])
+    await media(witnesses, `1999-06-10T${h}:${String(m).padStart(2, "0")}:00Z`, { gps: PORTO, model: "iPhone" });
+  for (const [h, m] of [[12, 40], [12, 50], [13, 0]])
+    await media(witnesses, `1999-06-10T${h}:${String(m).padStart(2, "0")}:00Z`, { gps: MELBOURNE, model: "OnePlus" });
 
   // A folder the maintainer placed two days earlier, by accepting a suggestion.
   const earlier = await session("earlier", "1999-05-30T09:00:00Z", "1999-05-30T10:00:00Z");
@@ -149,6 +162,23 @@ test("a folder shot in two towns is ONE card with a stop per town", { skip: skip
   assert.ok(Math.abs(sete.suggestion.lat - SETE.lat) < 1e-6);
   assert.equal(mpl.suggestion.located, 3);
   // A card with stops is not a one-key card.
+  const { isReady } = await import("./unplacedTypes");
+  assert.equal(isReady(card), false);
+});
+
+test("frames that would need a plane faster than an airliner are a conflict, not two stops", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  const card = r.groups.find((g) => g.sessions[0].id === clashId)!;
+  assert.ok(card, "the clash folder has a card");
+  assert.equal(card.stops, null, "never cut between two continents");
+  assert.ok(card.conflict, JSON.stringify(card));
+  assert.ok(card.conflict!.km > 17000);
+  assert.ok(Math.abs(card.conflict!.a.lat - PORTO.lat) < 1e-3);
+  assert.ok(Math.abs(card.conflict!.b.lat - MELBOURNE.lat) < 1e-3);
+  // The devices whose clocks to check.
+  assert.equal(card.conflict!.a.model, "iPhone");
+  assert.equal(card.conflict!.b.model, "OnePlus");
+  assert.equal(card.suggestion?.confidence, "low", "never offered as a confident pin");
   const { isReady } = await import("./unplacedTypes");
   assert.equal(isReady(card), false);
 });
