@@ -29,6 +29,7 @@
 // on `lensKey()`, and the card keeps ALL of them so it can still filter on the
 // raw values (`?lens=a,b`) — the count/grid guarantee holds either way.
 import { many } from "./db";
+import { listOwners } from "./gearOwners";
 import { friendlyCameraName } from "./cameraLabels";
 import { friendlyLensName, lensKey } from "./lensLabels";
 import {
@@ -54,6 +55,7 @@ type Row = {
   aperture_min: number | null;
   shutter_count: number | null;
   shutter_count_at: string | null;
+  named: boolean;
 };
 
 // One pass over the live assets, grouped by (body, lens, source). Everything the
@@ -84,7 +86,10 @@ const GEAR_SQL = `
          -- reading is: the newest frame that actually carried the tag.
          max(a.shutter_count)                                AS shutter_count,
          max(a.captured_at)
-           FILTER (WHERE a.shutter_count IS NOT NULL)        AS shutter_count_at
+           FILTER (WHERE a.shutter_count IS NOT NULL)        AS shutter_count_at,
+         -- Named by hand (migration 0051): every medium of the group carries
+         -- a body no file spells. One file that does makes it a real body.
+         bool_and(a.device_source IS NOT DISTINCT FROM 'named') AS named
     FROM assets a
     JOIN sessions s ON s.id = a.session_id
     JOIN roots rt   ON rt.id = s.root_id
@@ -130,7 +135,7 @@ function byUse<T extends { incoming: GearStats; gallery: GearStats; label: strin
 type LensAcc = GearLens & { spellings: Map<string, number> };
 
 export async function listCameras(): Promise<GearCamera[]> {
-  const rows = await many<Row>(GEAR_SQL);
+  const [rows, owners] = await Promise.all([many<Row>(GEAR_SQL), listOwners()]);
 
   const cameras = new Map<string, GearCamera>();
   const lenses = new Map<string, Map<string, LensAcc>>();
@@ -146,11 +151,14 @@ export async function listCameras(): Promise<GearCamera[]> {
         lenses: [],
         shutter_count: null,
         shutter_count_at: null,
+        named: true,
+        owner: owners.get(r.device) ?? null,
       };
       cameras.set(r.device, cam);
       lenses.set(r.device, new Map());
     }
     add(cam[r.source], r);
+    cam.named = cam.named && r.named;
     // The odometer belongs to the BODY, not to a source or a lens: the highest
     // reading across every (lens, source) row is the body's, and the freshest
     // tagged capture dates it.

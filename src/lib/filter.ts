@@ -75,6 +75,38 @@ const NEAR_DUP_MAX_DISTANCE = 10;
 // migration 0043 carries a body and no provenance — it could only have come
 // off the file — so it reads as 'exif' here rather than vanishing from the
 // "From the file" chip.
+// --------------------------------------------------------- "Shot by" ----
+//
+// Whose camera shot a medium (migration 0053, lib/gearOwners.ts), as one SQL
+// expression over `assets a`: which of four buckets it falls in.
+//   me       a 'mine' body, captured inside its span (an open end is open);
+//   others   an 'other' body — or a 'mine' body OUTSIDE its span: the same
+//            camera in someone else's hands, before it was bought or after it
+//            was sold;
+//   unsorted a body with no row yet;
+//   none     a 'none' body ("not a camera"), or a medium with no body at all.
+// The span compares capture DATES, inclusive at both ends, as the dialog
+// states them. A medium with no capture date of its own cannot be placed in a
+// span and is counted as the owner's when the body is 'mine'.
+export const SHOT_BY_SQL = `(
+  CASE
+    WHEN a.device IS NULL OR a.device = '' THEN 'none'
+    ELSE COALESCE((
+      SELECT CASE g.owner
+               WHEN 'none'  THEN 'none'
+               WHEN 'other' THEN 'others'
+               ELSE CASE WHEN a.captured_at IS NULL
+                           OR ((g.owned_from IS NULL OR a.captured_at::date >= g.owned_from)
+                           AND (g.owned_until IS NULL OR a.captured_at::date <= g.owned_until))
+                         THEN 'me' ELSE 'others' END
+             END
+        FROM gear_owners g WHERE g.device = a.device
+    ), 'unsorted')
+  END)`;
+
+export const SHOT_BY_VALUES = ["me", "others", "unsorted", "none"] as const;
+export type ShotBy = (typeof SHOT_BY_VALUES)[number];
+
 export const DEVICE_SOURCE_SQL = `COALESCE(a.device_source,
   CASE WHEN a.device IS NOT NULL AND a.device <> '' THEN 'exif' END)`;
 
@@ -135,6 +167,9 @@ export const FilterSchema = z
     // override | named | none. `named` is "a camera no file names", `none`
     // "not a camera" — the two hand answers of migration 0051.
     device_source: csv,
+    // Whose camera shot it (multi): me | others | unsorted | none — the
+    // ownership of the BODY set on /gear, with its span (SHOT_BY_SQL).
+    shot_by: csv,
     camera_model: csv,
     lens: csv,
 
@@ -389,6 +424,7 @@ export function buildFilter(
 
   if (filter.device) inAny("a.device", filter.device);
   if (filter.device_source) inAny(DEVICE_SOURCE_SQL, filter.device_source);
+  if (filter.shot_by) inAny(SHOT_BY_SQL, filter.shot_by);
   if (filter.camera_model) inAny("a.camera_model", filter.camera_model);
   if (filter.lens) inAny("a.lens", filter.lens);
 
@@ -642,6 +678,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "has_edit",
     "device",
     "device_source",
+    "shot_by",
     "camera_model",
     "lens",
     "place_country",

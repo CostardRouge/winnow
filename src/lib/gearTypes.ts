@@ -58,9 +58,32 @@ export type GearCamera = {
   shutter_count: number | null;
   /** Capture date of the freshest counted frame — how current the reading is. */
   shutter_count_at: string | null;
+  /** Every medium carrying it was named by hand (`device_source = 'named'`,
+   *  migration 0051): no file of the library spells this body. */
+  named: boolean;
+  /** Whose camera it is (migration 0053), or null: not sorted yet. */
+  owner: GearOwner | null;
 };
 
-export type GearResponse = { cameras: GearCamera[] };
+/** Whose a body is (cf. lib/gearOwners.ts). A body with none is "not sorted". */
+export type GearOwnerKind = "mine" | "other" | "none";
+
+export type GearOwner = {
+  owner: GearOwnerKind;
+  /** For 'other': the person of /people, when the row names one that exists. */
+  person_id: number | null;
+  /** For 'other': the person's current name, else the name typed by hand. */
+  owner_name: string | null;
+  /** For 'mine': the span it was the maintainer's, by capture date (YYYY-MM-DD),
+   *  inclusive; null at either end = open. */
+  owned_from: string | null;
+  owned_until: string | null;
+};
+
+/** A named person the "Whose?" menu offers (People's named stacks). */
+export type GearPerson = { id: number; name: string };
+
+export type GearResponse = { cameras: GearCamera[]; people: GearPerson[] };
 
 export const EMPTY_STATS: GearStats = {
   count: 0,

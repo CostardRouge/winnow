@@ -16,7 +16,7 @@ import {
   type CameraKind,
   type LensOptics,
 } from "@/lib/gearSpec";
-import type { GearCamera, GearLens, GearStats } from "@/lib/gearTypes";
+import type { GearCamera, GearLens, GearOwner, GearStats } from "@/lib/gearTypes";
 import {
   effectiveLibrarySource,
   type LibrarySource,
@@ -289,10 +289,18 @@ export type KitBody = {
   tip: string;
   from: number | null;
   to: number | null;
+  /** Whose camera it is (migration 0053), null while not sorted. */
+  owner: GearOwner | null;
+  /** Named by hand — no file of the library spells it (migration 0051). */
+  named: boolean;
 };
 
 export type Kit = {
   bodies: KitBody[];
+  /** What these bodies are, when the shelf is cut into sections ("Mine",
+   *  "Mirrorless"); null for the whole shelf. A layout that names its own
+   *  total ("The whole library, by body") says this instead. */
+  scope: string | null;
   lensCount: number;
   totalFrames: number;
   /** Union of every body's service span, in ms — the timeline's axis. */
@@ -433,6 +441,8 @@ export function buildKit(
       tip: camera.label === camera.name ? camera.name : `${camera.name}\n${camera.label}`,
       from: ms(stats.first_capture),
       to: ms(stats.last_capture),
+      owner: camera.owner,
+      named: camera.named,
     };
   });
 
@@ -448,6 +458,7 @@ export function buildKit(
 
   return {
     bodies,
+    scope: null,
     lensCount: new Set(bodies.flatMap((b) => b.lenses.map((l) => l.key))).size,
     totalFrames: bodies.reduce((s, b) => s + b.stats.count, 0),
     span: dates.length > 0 ? { from: Math.min(...dates), to: Math.max(...dates) } : null,

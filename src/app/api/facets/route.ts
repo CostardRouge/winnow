@@ -8,6 +8,7 @@ import {
   buildFilter,
   DEVICE_SOURCE_SQL,
   filterFromSearchParams,
+  SHOT_BY_SQL,
 } from "@/lib/filter";
 import { kindsForRole } from "@/lib/roles";
 import { json, serverError } from "@/lib/api";
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
       days,
       devices,
       deviceSources,
+      shotBy,
       cameras,
       lenses,
       countries,
@@ -140,6 +142,8 @@ export async function GET(req: NextRequest) {
       settledArray(facet("device", scope, params)),
       // Where each body came from — the file, a vote, a hand (lib/filter.ts).
       settledArray(facet(DEVICE_SOURCE_SQL, scope, params)),
+      // Whose camera shot it (migration 0053): the body's owner and its span.
+      settledArray(facet(SHOT_BY_SQL, scope, params)),
       settledArray(facet("camera_model", scope, params)),
       settledArray(facet("lens", scope, params)),
       // Reverse-geocoded place facets (cf. lib/geocode.ts).
@@ -294,6 +298,7 @@ export async function GET(req: NextRequest) {
       days,
       devices,
       device_sources: deviceSources,
+      shot_by: shotBy,
       camera_models: cameras,
       lenses,
       place_countries: countries,

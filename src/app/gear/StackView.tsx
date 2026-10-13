@@ -14,6 +14,7 @@
 import Link from "next/link";
 import type { Kit, KitBody, KitPart } from "./model";
 import { num, shareInk, shareInkText } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 /** Below this, a segment is too narrow to hold even "34%" without clipping. */
 const LABEL_AT = 0.11;
@@ -74,7 +75,8 @@ function Body({ body }: { body: KitBody }) {
   return (
     <section className="gear-stk-body">
       <div className="gear-stk-head">
-        <Link href={body.href} className="gear-stk-name" title={body.tip}>
+        <OwnerMark body={body} />
+        <Link href={body.href} className={`gear-stk-name${namedClass(body)}`} title={body.tip}>
           {body.label}
         </Link>
         <span className="gear-stk-kind">{body.kindLabel}</span>
@@ -108,7 +110,7 @@ export default function StackView({ kit }: { kit: Kit }) {
       {/* One body is its own whole library; the bar would say nothing twice. */}
       {kit.bodies.length > 1 && (
         <section className="gear-stk-body">
-          <h3 className="gear-stk-lead">The whole library, by body</h3>
+          <h3 className="gear-stk-lead">{kit.scope ?? "The whole library"}, by body</h3>
           <Bar parts={libraryParts} label="Frames by camera body" />
           <Legend parts={libraryParts} />
         </section>
@@ -127,11 +129,16 @@ export default function StackView({ kit }: { kit: Kit }) {
               // is the same ink here as it is up there.
               const s = kit.totalFrames > 0 ? b.stats.count / kit.totalFrames : 0;
               return (
-                <Link key={b.name} href={b.href} className="gear-stk-key" title={b.tip}>
-                  <i style={{ background: shareInk(s) }} aria-hidden="true" />
-                  {b.label}
-                  <b>{num(b.stats.count)}</b>
-                </Link>
+                // The mark sits beside the chip, not in it: the chip is a link,
+                // and a body with no lens must be claimable here too.
+                <span key={b.name} className="gear-stk-chip">
+                  <OwnerMark body={b} />
+                  <Link href={b.href} className="gear-stk-key" title={b.tip}>
+                    <i style={{ background: shareInk(s) }} aria-hidden="true" />
+                    <span className={namedClass(b).trim() || undefined}>{b.label}</span>
+                    <b>{num(b.stats.count)}</b>
+                  </Link>
+                </span>
               );
             })}
           </div>

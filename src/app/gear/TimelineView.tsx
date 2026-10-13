@@ -11,6 +11,7 @@
 import Link from "next/link";
 import type { Kit, KitBody, KitLens } from "./model";
 import { num } from "./model";
+import { namedClass, OwnerMark, ownerWords } from "./ownership";
 
 /** Whole-year bounds around the kit's span: bars then sit inside their axis and
  *  the ticks land on January 1st instead of on an arbitrary first shutter. */
@@ -44,6 +45,18 @@ function pos(axis: { from: number; to: number }, a: number, b: number) {
 
 type Axis = ReturnType<typeof axisFor>;
 
+/** A 'mine' body's ownership span on the axis: an open start is its own first
+ *  frame ("since the start" is the body's start, not the library's), an open
+ *  end is today — "still mine" — both clamped to the axis. */
+function ownedSpan(body: KitBody, axis: Axis) {
+  const o = body.owner;
+  if (o?.owner !== "mine") return null;
+  const day = (d: string) => new Date(`${d}T00:00:00`).getTime();
+  const from = Math.max(axis.from, o.owned_from ? day(o.owned_from) : (body.from ?? axis.from));
+  const to = Math.min(axis.to, o.owned_until ? day(o.owned_until) + 86_400_000 : Date.now());
+  return to > from ? { from, to, title: ownerWords(o) } : null;
+}
+
 function Lane({
   axis,
   href,
@@ -55,6 +68,9 @@ function Lane({
   to,
   share,
   kind,
+  lead,
+  owned,
+  nameClass,
 }: {
   axis: Axis;
   href: string;
@@ -67,11 +83,20 @@ function Lane({
   /** 0–1: darkens the bar, so the busiest gear reads first on a crowded axis. */
   share: number;
   kind: "body" | "lens";
+  /** Drawn before the name — a body's ownership mark. */
+  lead?: React.ReactNode;
+  /** The span it was the maintainer's (ms, clamped to the axis), drawn under
+   *  its service bar: when it was used AND whose it was, on one line. */
+  owned?: { from: number; to: number; title: string } | null;
+  nameClass?: string;
 }) {
   return (
     <Link href={href} className={`gear-tl-lane is-${kind}`} title={title}>
       <span className="gear-tl-label">
-        <span className="gear-tl-name">{name}</span>
+        <span className="gear-tl-namerow">
+          {lead}
+          <span className={`gear-tl-name${nameClass ?? ""}`}>{name}</span>
+        </span>
         {spec && <span className="gear-tl-spec">{spec}</span>}
       </span>
       <span className="gear-tl-track">
@@ -82,6 +107,9 @@ function Lane({
             className="gear-tl-bar"
             style={{ ...pos(axis, from, to), opacity: 0.35 + 0.65 * share }}
           />
+        )}
+        {owned && (
+          <span className="gear-tl-owned" style={pos(axis, owned.from, owned.to)} title={owned.title} />
         )}
       </span>
       <span className="gear-tl-count">{count}</span>
@@ -97,6 +125,9 @@ function Body({ body, axis }: { body: KitBody; axis: Axis }) {
         href={body.href}
         title={body.tip}
         name={body.label}
+        nameClass={namedClass(body)}
+        lead={<OwnerMark body={body} still />}
+        owned={ownedSpan(body, axis)}
         spec={body.kindLabel}
         count={num(body.stats.count)}
         from={body.from}
