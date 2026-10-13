@@ -25,7 +25,8 @@ export type CameraKind =
   | "phone"
   | "drone"
   | "action" // GoPro-shaped cube
-  | "camcorder";
+  | "camcorder"
+  | "unknown"; // a name typed by hand that says nothing about the shape
 
 /** How a kind names itself on the shelf. Deliberately plain, never a model. */
 export const CAMERA_KINDS: Record<CameraKind, string> = {
@@ -37,6 +38,7 @@ export const CAMERA_KINDS: Record<CameraKind, string> = {
   drone: "Drone",
   action: "Action cam",
   camcorder: "Camcorder",
+  unknown: "Unknown type",
 };
 
 // trim + collapse whitespace + lowercase, so the matchers below tolerate the
@@ -89,10 +91,16 @@ const MATCHERS: [CameraKind, RegExp][] = [
  * to "rangefinder style": the most neutral shape of the set, and never wrong in
  * an embarrassing way — an unrecognised body is far likelier to be a flat-top
  * mirrorless than a drone.
+ *
+ * Not for a body NAMED BY HAND (migration 0051): "Salsa dancer" or "Aymeric's
+ * Sony camera" is a person's words, not a model string, and the fallback
+ * guess would be a shape nobody stated. Such a name still gets the matchers —
+ * "Aymeric's iPhone" is a phone because the person said so — and is "unknown"
+ * when none fits.
  */
-export function cameraKind(name: string): CameraKind {
+export function cameraKind(name: string, named = false): CameraKind {
   const s = norm(name);
-  return MATCHERS.find(([, re]) => re.test(s))?.[0] ?? "rangefinder";
+  return MATCHERS.find(([, re]) => re.test(s))?.[0] ?? (named ? "unknown" : "rangefinder");
 }
 
 // ----------------------------------------------------------------- lenses ----

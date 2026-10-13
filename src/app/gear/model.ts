@@ -397,7 +397,7 @@ export function buildKit(
       source === "all" ? null : camera[source === "incoming" ? "gallery" : "incoming"];
     const lensRows = camera.lenses.filter((l) => statsFor(l, source).count > 0).sort(cmp);
     const tagged = lensRows.reduce((s, l) => s + statsFor(l, source).count, 0);
-    const kind = cameraKind(camera.name);
+    const kind = cameraKind(camera.name, camera.named);
     const lenses = lensRows.map((l) => buildLens(l, camera.name, source, tagged));
     const untagged = stats.count - tagged;
     // The slices of this body, always summing to its own total.

@@ -407,9 +407,8 @@ export function SortDeck({
             </div>
             <div className="gear-deck-side">
               <div>
-                {/* The kind is guessed from the name; a name typed by hand
-                    ("QQ Tencent") has none worth printing. */}
-                {!body.named && <div className="hint">{body.kindLabel}</div>}
+                {/* "Unknown type" says nothing a deciding eye needs here. */}
+                {body.kind !== "unknown" && <div className="hint">{body.kindLabel}</div>}
                 <div className={`gear-deck-name${namedClass(body)}`}>{body.label}</div>
                 {body.name !== body.label && <div className="dev-pick-raw">{body.name}</div>}
                 <div className="hint">

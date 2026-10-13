@@ -235,7 +235,7 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **The viewer says it too (2026-10-13, board G)**: the Device row ends with " · ● mine", " · ○ Aymeric’s", " · ⊘ not a camera", or, for a body of mine outside its span, " · ○ after it was yours (until Mar 2016)". `GRID_SELECT` carries `shot_by` (the filter's own `SHOT_BY_SQL`, so the line and the "Shot by" chips can never disagree) and `gear_owner` (the row, for the name and the span) — every viewer shape reads through it. An unsorted body prints nothing: the line would sit on every frame until the shelf is sorted and say nothing about the frame. The words live in `lib/gearOwnerWords.ts`, shared with the shelf's marks; span dates use the app's month table (Chromium's en-GB says "Sept").
 
-**Open**: the Kind label still guesses an archetype for a named body ("Rangefinder style" for "Salsa dancer").
+**A hand-typed name is not a model string (2026-10-13)**: `cameraKind(name, named)` still runs the matchers on a `'named'` body ("Aymeric's iPhone" → Phone, because the person said so) but returns `unknown` ("Unknown type") instead of the rangefinder-style fallback, which is only defensible for an EXIF string. Grouped by kind, "Unknown type" is a leftover, not a kind: its section sorts last whatever its size.
 
 ## One picker for "one of N", and its form follows the count (2026-09-07)
 
