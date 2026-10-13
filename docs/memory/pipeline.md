@@ -121,6 +121,19 @@ lost, reindexed fresh) — precisely the state auto-trashed missing assets are i
 It cannot currently tell "the user culled this" from "we trashed it because we
 could not find it", although `deleted_at = missing_at` says so.
 
+**A moved clip's sidecars follow it, and the old rows go (2026-10-13).** Relink
+re-records a video's sidecars from its new folder, but `asset_sidecars` is keyed
+on `abs_path`, so the rows of the folder it left stayed: on the maintainer's
+instance, 263 `.SRT` rows for 156 drone clips, the 107 extra all dead and listed
+FIRST by the asset query (`ORDER BY sc.id`), so Atelier asked them and got 404s.
+`recordSidecars` now treats the folder's listing as the whole truth and drops
+the asset's rows it does not hold (rows only, never a file; nothing pruned when
+the folder cannot be listed), which covers relink and every re-index; migration
+`0054_sidecars_left_behind` cleared what had accumulated (a row whose directory
+is not its asset's). **How to apply**: anything that re-points an asset's
+`abs_path` must call `recordSidecars` for the new folder, or its sidecars keep
+pointing at the old one.
+
 **Known reporting drift, deliberately not patched**: a purge of an already-absent
 original adds its `file_size` to the job's `freedBytes` and writes a `'purged'`
 `purge_log` row although it unlinked nothing, and `relink-moved` leaves that row

@@ -335,7 +335,10 @@ async function applyOne(
 
   // A purge also deleted the clip's sidecar ROWS while its unlink of their old
   // paths silently no-op'd on ENOENT — the .XML/.THM files travelled with the
-  // clip and are still there, so re-record them from the new folder.
+  // clip and are still there, so re-record them from the new folder. An
+  // unpurged clip still holds the rows of its OLD folder: recordSidecars drops
+  // them, since the new folder's listing is the whole truth (they used to stay,
+  // listed first, and every client asking for the flight log got a 404).
   if (orphan.media_type === "video") {
     const sc = await recordSidecars({
       assetId: orphan.id,

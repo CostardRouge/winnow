@@ -113,6 +113,9 @@ async function siblingNames(
 export type RecordSidecarsResult = {
   // How many sidecars are now tied to the asset.
   recorded: number;
+  // How many of the asset's rows pointed OUTSIDE what its folder holds now —
+  // sidecars it left behind when it moved — and were dropped.
+  pruned: number;
   // The representative GPS fix parsed from a DJI .SRT flight log, if any — the
   // indexer uses it to backfill the clip's location when the MP4 has no EXIF GPS.
   gps: { lat: number; lon: number } | null;
@@ -135,6 +138,17 @@ async function readSrtTelemetry(abs: string): Promise<SrtTelemetry | null> {
 // the same clip never duplicates rows; a renamed/moved sidecar updates in place.
 // Never throws into the indexer — a sidecar is a nicety, never a reason to fail
 // a media file's indexing.
+//
+// The folder's listing is the WHOLE truth about the clip's sidecars, so any row
+// of the asset that is not among the matches just found is dropped: a sidecar
+// is tied to its video by sitting next to it, and a row elsewhere is one the
+// clip left behind. Relink (lib/relink.ts) is the case that made it matter: it
+// moved a clip's row onto its new folder and recorded the sidecars there, but
+// the abs_path key kept the OLD row too — on the maintainer's instance, 263
+// .SRT rows for 156 drone clips, the 107 extra all pointing at the folders the
+// clips had been moved out of, and served first by the asset list (ordered by
+// id), so a client asking for "the" flight log got a 404. Only rows go: no file
+// is ever touched here. Skipped when the folder could not be listed.
 export async function recordSidecars(opts: {
   assetId: number;
   absPath: string;
@@ -144,7 +158,7 @@ export async function recordSidecars(opts: {
   const { assetId, absPath, rootPath, dirCache } = opts;
   const dir = path.dirname(absPath);
   const siblings = await siblingNames(dir, dirCache);
-  if (!siblings) return { recorded: 0, gps: null };
+  if (!siblings) return { recorded: 0, pruned: 0, gps: null };
 
   const matches = findSidecars(path.basename(absPath), siblings);
   let recorded = 0;
@@ -208,5 +222,16 @@ export async function recordSidecars(opts: {
       console.warn(`Unable to record sidecar ${abs}:`, (err as Error).message);
     }
   }
-  return { recorded, gps };
+  let pruned = 0;
+  try {
+    const kept = matches.map((m) => path.join(dir, m.filename));
+    const gone = await q(
+      "DELETE FROM asset_sidecars WHERE asset_id = $1 AND NOT (abs_path = ANY($2::text[]))",
+      [assetId, kept],
+    );
+    pruned = gone.rowCount ?? 0;
+  } catch (err) {
+    console.warn(`Unable to prune the sidecars of asset ${assetId}:`, (err as Error).message);
+  }
+  return { recorded, pruned, gps };
 }
