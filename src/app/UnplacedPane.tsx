@@ -1111,20 +1111,35 @@ export default function UnplacedPane() {
                                   onClick={() => void openStops(g)}
                                   title="Open the stops: one pin each, their frames to check"
                                 >
-                                  <span className="stop-num" aria-hidden="true">{st.index}</span>
-                                  <span className="card-stop-text">
-                                    <strong>{st.suggestion.name ?? `${st.suggestion.lat.toFixed(3)}, ${st.suggestion.lon.toFixed(3)}`}</strong>
-                                    <span className="hint">
-                                      {stopWindow(st)} · {fmt(st.unplaced)} {st.unplaced === 1 ? "frame" : "frames"}
+                                  <span className="card-stop-head">
+                                    <span className="stop-num" aria-hidden="true">{st.index}</span>
+                                    {st.suggestion.name ? (
+                                      // The town, the rest on hover: "Porto", not "Porto, Por…".
+                                      <span className="card-stop-name" title={st.suggestion.name}>
+                                        {st.suggestion.name.split(",")[0]}
+                                      </span>
+                                    ) : (
+                                      // Not geocoded yet: the coordinates, whole and aligned.
+                                      <span className="card-stop-name is-coord" title="Not named yet — the geocoder has not reached this cell">
+                                        {st.suggestion.lat.toFixed(2)}, {st.suggestion.lon.toFixed(2)}
+                                      </span>
+                                    )}
+                                    <span className={`conf is-${st.suggestion.confidence}`}>{st.suggestion.confidence}</span>
+                                  </span>
+                                  <span className="card-stop-meta">
+                                    {stopWindow(st)} · {fmt(st.unplaced)} {st.unplaced === 1 ? "frame" : "frames"}
+                                  </span>
+                                  {st.sample.length > 0 && (
+                                    <span className="card-stop-thumbs" aria-hidden="true">
+                                      {st.sample.slice(0, st.unplaced > 4 ? 3 : 4).map((a) => (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img key={a.id} src={`/api/assets/${a.id}/thumb`} alt="" loading="lazy" />
+                                      ))}
+                                      {st.unplaced > 4 && (
+                                        <span className="is-more">+{fmt(st.unplaced - Math.min(3, st.sample.length))}</span>
+                                      )}
                                     </span>
-                                  </span>
-                                  <span className={`conf is-${st.suggestion.confidence}`}>{st.suggestion.confidence}</span>
-                                  <span className="card-stop-thumbs" aria-hidden="true">
-                                    {st.sample.slice(0, 4).map((a) => (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img key={a.id} src={`/api/assets/${a.id}/thumb`} alt="" loading="lazy" />
-                                    ))}
-                                  </span>
+                                  )}
                                 </button>
                               </li>
                             ))}
