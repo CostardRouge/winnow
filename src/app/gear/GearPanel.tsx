@@ -203,12 +203,17 @@ export default function GearPanel() {
         section(s.key, s.title, shown.filter((c) => ownerOf(c) === s.key)),
       );
     } else if (group === "kind") {
-      const kinds = [...new Set(shown.map((c) => cameraKind(c.name)))];
+      const kinds = [...new Set(shown.map((c) => cameraKind(c.name, c.named)))];
       out = kinds.map((k) =>
-        section(k, CAMERA_KINDS[k], shown.filter((c) => cameraKind(c.name) === k)),
+        section(k, CAMERA_KINDS[k], shown.filter((c) => cameraKind(c.name, c.named) === k)),
       );
-      // Busiest kind first, as the bodies inside it are.
-      out.sort((a, b) => b.kit.totalFrames - a.kit.totalFrames);
+      // Busiest kind first, as the bodies inside it are — but "Unknown type"
+      // is not a kind, it is what is left: it goes last whatever its size.
+      out.sort(
+        (a, b) =>
+          Number(a.key === "unknown") - Number(b.key === "unknown") ||
+          b.kit.totalFrames - a.kit.totalFrames,
+      );
     } else {
       out = [section("all", null, shown)];
     }

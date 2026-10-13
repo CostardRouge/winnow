@@ -42,7 +42,7 @@ function Record({ body }: { body: KitBody }) {
       </header>
 
       <dl className="gear-rec-specs">
-        <Spec term="Type" value={body.kindLabel} />
+        <Spec term="Type" value={body.kind === "unknown" ? "Unknown" : body.kindLabel} />
         <Spec term="In service" value={body.years} />
         <Spec term="Photos" value={num(body.stats.photos)} />
         <Spec term="Videos" value={num(body.stats.videos)} />
