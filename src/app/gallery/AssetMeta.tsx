@@ -7,6 +7,8 @@ import {
   formatDimensions,
   formatDuration,
 } from "@/lib/format";
+import { shotByLine } from "@/lib/gearOwnerWords";
+import type { GearOwner } from "@/lib/gearTypes";
 import type { SidecarBrief } from "@/lib/types";
 
 // Read-only metadata panel shown inside the full-screen viewer (gallery +
@@ -37,6 +39,10 @@ export type AssetMetaInput = {
   embedded_device?: string | null;
   embedded_model?: string | null;
   embedded_serial?: string | null;
+  // Whose camera shot it (migration 0053): the "Shot by" bucket and the body's
+  // owner row, as GRID_SELECT carries them. Absent on other shapes.
+  shot_by?: string | null;
+  gear_owner?: GearOwner | null;
   lens?: string | null;
   iso?: number | null;
   shutter?: string | null;
@@ -169,8 +175,34 @@ function exposureLine(a: AssetMetaInput): string | null {
 
 // The Device row, with its provenance whenever the body did NOT come off the
 // file. A correction is the case that matters most: the panel then prints what
-// the file says beside it, so an override is never a silent rewrite.
+// the file says beside it, so an override is never a silent rewrite. Then whose
+// camera shot THIS frame, when the body is sorted (cf. ownerMark).
 function deviceLine(a: AssetMetaInput): React.ReactNode {
+  return (
+    <>
+      {deviceSource(a)}
+      {ownerMark(a)}
+    </>
+  );
+}
+
+// " · ● mine", " · ○ Aymeric’s", " · ○ after it was yours (until Mar 2016)" —
+// the /gear mark's shapes as glyphs (filled = mine, ring = someone else's,
+// crossed = not a camera). Nothing for a body not sorted yet: the line would
+// be on every frame until the shelf is sorted, and says nothing about the frame.
+function ownerMark(a: AssetMetaInput): React.ReactNode {
+  const line = shotByLine(a.shot_by, a.gear_owner, a.captured_at);
+  if (!line) return null;
+  const glyph = line.kind === "mine" ? "●" : line.kind === "other" ? "○" : "⊘";
+  return (
+    <span className="asset-meta-dim">
+      {" · "}
+      <span aria-hidden="true">{glyph}</span> {line.text}
+    </span>
+  );
+}
+
+function deviceSource(a: AssetMetaInput): React.ReactNode {
   const name = friendlyCameraName(a.device);
   switch (a.device_source) {
     case "override":
