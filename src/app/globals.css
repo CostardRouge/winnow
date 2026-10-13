@@ -6102,6 +6102,30 @@ html[data-theme="dark"] .btn-primary:hover {
   .recap-fold {
     @apply mt-2;
   }
+  /* The folded media as a contact sheet: square cells, the picture opens the
+     viewer, the tick in the corner decides; an unticked one fades like an
+     unticked table row. */
+  .recap-sheet {
+    @apply mt-2 grid gap-1;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  }
+  .recap-sheet-item {
+    @apply relative;
+  }
+  .recap-sheet-item.is-skipped .recap-sheet-thumb {
+    opacity: 0.4;
+  }
+  .recap-sheet-thumb {
+    @apply block aspect-square w-full cursor-pointer overflow-hidden rounded-[var(--radius-sm)] border-0 p-0;
+    background: var(--color-surface-2);
+  }
+  .recap-sheet-thumb img {
+    @apply h-full w-full object-cover;
+  }
+  .recap-sheet-item input[type="checkbox"] {
+    @apply absolute left-1 top-1 m-0;
+    accent-color: var(--color-text);
+  }
   .recap-table-wrap {
     @apply mt-2 max-h-[45vh] overflow-y-auto rounded-[var(--radius)] border;
     border-color: var(--color-border);

@@ -30,7 +30,12 @@ import type { AssetGridRow } from "@/lib/types";
 //     summarised in one line (they all start checked, as always) and the
 //     table keeps only the rows this dialog exists to protect — the ones that
 //     already carry a position and would be overwritten. Check all / Uncheck
-//     all still act on every media, listed or not.
+//     all still act on every media, listed or not. The summary is not a wall,
+//     though: "Show them" opens those media as a CONTACT SHEET in the dialog
+//     (a thumbnail grid, a tick each, the viewer on a click), drawn
+//     SHEET_STEP at a time with a "Show N more" — the maintainer found
+//     252-media folders he could not look at before placing (2026-10-13), and
+//     leaving the dialog to look loses it.
 //   - `onTargetChange`: with it the position is EDITABLE here, through the same
 //     `LocationPicker` the location dialog is built on — map, place search and
 //     coordinate fields. A screen that arrives with a pre-filled point (the
@@ -146,6 +151,9 @@ function TriCheck({
 // listed (see the header). 200 keeps a whole ordinary session readable and
 // folds the folder-sized applies.
 const FULL_LIST_MAX = 200;
+// The contact sheet draws this many thumbnails at a time (lazy images), and
+// says how many remain — never a silent cut.
+const SHEET_STEP = 300;
 
 const fmtCoord = (gps: { lat: number; lon: number }) =>
   `${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
@@ -242,6 +250,12 @@ export default function GeotagRecapModal({
   const [error, setError] = useState<string | null>(null);
   // The listed row open in the viewer stacked over this dialog, if any.
   const [viewing, setViewing] = useState<number | null>(null);
+  // Which list the viewer walks: the table's rows, or the contact sheet of
+  // the folded position-less media.
+  const [viewFrom, setViewFrom] = useState<"table" | "sheet">("table");
+  // Open by default: the media are what the human is about to place.
+  const [sheetOpen, setSheetOpen] = useState(true);
+  const [sheetMax, setSheetMax] = useState(SHEET_STEP);
   // Full rows fetched for the media opened in the viewer, by id, and the ids
   // already asked for (so stepping back and forth asks once).
   const [details, setDetails] = useState<Map<number, AssetGridRow>>(
@@ -499,14 +513,69 @@ export default function GeotagRecapModal({
 
       {folded && (
         <p className="hint recap-fold">
-          {withoutGps.length} media have no position yet and are not listed one
-          by one — {foldedChecked} of them{" "}
-          {foldedChecked === withoutGps.length ? "(all) " : ""}
-          will be written.
+          {withoutGps.length} media have no position yet — {foldedChecked} of
+          them {foldedChecked === withoutGps.length ? "(all) " : ""}will be
+          written.{" "}
+          <button
+            type="button"
+            className="link-btn"
+            aria-expanded={sheetOpen}
+            onClick={() => setSheetOpen((v) => !v)}
+          >
+            {sheetOpen ? "Hide them" : "Show them"}
+          </button>
           {withGps.length > 0
             ? " The rows below are the ones that already carry a position."
             : ""}
         </p>
+      )}
+
+      {folded && sheetOpen && (
+        <>
+          <div className="recap-sheet" role="group" aria-label="Media with no position yet">
+            {withoutGps.slice(0, sheetMax).map((a, i) => {
+              const on = checked.has(a.id);
+              return (
+                <div key={a.id} className={`recap-sheet-item${on ? "" : " is-skipped"}`}>
+                  {/* The picture opens the viewer, the tick decides — the
+                      table's own split, in a grid. */}
+                  <button
+                    type="button"
+                    className="recap-sheet-thumb"
+                    onClick={() => {
+                      setViewFrom("sheet");
+                      setViewing(i);
+                    }}
+                    title={a.filename}
+                    aria-label={`View ${a.filename}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/assets/${a.id}/thumb`} alt="" loading="lazy" />
+                  </button>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={busy}
+                    onChange={() => toggle(a.id)}
+                    aria-label={`Geotag ${a.filename}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {withoutGps.length > sheetMax && (
+            <p className="hint recap-fold">
+              {sheetMax} of {withoutGps.length} shown.{" "}
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => setSheetMax((n) => n + SHEET_STEP)}
+              >
+                Show {Math.min(SHEET_STEP, withoutGps.length - sheetMax)} more
+              </button>
+            </p>
+          )}
+        </>
       )}
 
       {listed.length > 0 && (
@@ -552,6 +621,7 @@ export default function GeotagRecapModal({
                         className="recap-thumb-btn"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setViewFrom("table");
                           setViewing(i);
                         }}
                         aria-label={`View ${a.filename}`}
@@ -597,7 +667,10 @@ export default function GeotagRecapModal({
     </>
   );
 
-  const viewed = viewing != null ? listed[viewing] : undefined;
+  // The viewer walks the list it was opened from: the table's rows, or the
+  // sheet's (as far as the sheet is drawn).
+  const viewList = viewFrom === "sheet" ? withoutGps.slice(0, sheetMax) : listed;
+  const viewed = viewing != null ? viewList[viewing] : undefined;
   const viewedId = viewed?.id;
   useEffect(() => {
     if (viewedId == null || asked.current.has(viewedId)) return;
@@ -609,15 +682,15 @@ export default function GeotagRecapModal({
       // The light row stays on screen; a later open may try again.
       .catch(() => asked.current.delete(viewedId));
   }, [viewedId]);
-  // What the viewer shows: each listed row, replaced by its full row once
-  // fetched. Same ids, same order, so the index stays the table's.
+  // What the viewer shows: each row of its list, replaced by its full row
+  // once fetched. Same ids, same order, so the index stays the list's.
   const viewerItems = useMemo<ViewerItem[]>(
     () =>
-      listed.map((a) => {
+      viewList.map((a) => {
         const d = details.get(a.id);
         return d ? { ...a, ...d } : a;
       }),
-    [listed, details],
+    [viewList, details],
   );
 
   return (
