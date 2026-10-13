@@ -603,3 +603,16 @@ rejected E (a stops list with no map), and asked for the design as drawn.*
    Enter; one with placed media is handed to the full recap, never one key.
 7. **A thumbnail on a card opens the card's dialog**, no longer the session
    page — the same "never leave by accident" rule.
+8. **Frames that would need a plane faster than an airliner disagree**
+   (2026-10-13, `max_kmh` 1000). On the instance a drone folder was cut into
+   two stops, Porto then -37.8, 144.9 (Melbourne) two hours later: the
+   located frames shot in those hours came from two devices, one of them
+   with a wrong clock or zone. Splitting there would have put half the card
+   on the wrong continent. Now two consecutive places that would need more
+   than `max_kmh` between the last frame of one and the first of the next
+   (`impossibleLeg`) are a **conflict**: no stops, the card's suggestion
+   drops to low and is never pre-filled, and the card says which places
+   disagree, how far apart, how long between, and **which device** shot
+   each side — the one whose clock to check. Place by hand, or follow a
+   track. A real flight (Porto → Paris in three hours, 400 km/h) stays a
+   journey.

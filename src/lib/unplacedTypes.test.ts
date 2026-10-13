@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  impossibleLeg,
   placeCuts,
   placeRuns,
   traceStops,
@@ -125,6 +126,7 @@ function card(id: number, folderUnplaced: number, unplaced: number, t0: string, 
     suggestion: null,
     part: null,
     stops: null,
+    conflict: null,
     nearest: null,
     moments: null,
     ...extra,
@@ -188,4 +190,37 @@ test("traceStops: frames shot along a road join one moving stop, not a list of t
   assert.deepEqual(runs[1].frames.map((f) => f.id), [10, 11, 12]);
   assert.equal(runs[0].moving, false);
   assert.equal(runs[2].moving, false);
+});
+
+const PORTO = { lat: 41.1496, lon: -8.611 };
+const MELBOURNE = { lat: -37.8136, lon: 144.9631 };
+
+test("impossibleLeg: Porto then Melbourne two hours later is no journey", () => {
+  const runs = placeRuns(
+    [donor(10, PORTO), donor(10.5, PORTO), donor(12.5, MELBOURNE), donor(13, MELBOURNE)],
+    5000,
+    2,
+  );
+  const leg = impossibleLeg(runs, 1000);
+  assert.ok(leg, "flagged");
+  assert.equal(leg.k, 0);
+  assert.ok(leg.km > 17000 && leg.km < 19000, String(leg.km));
+});
+
+test("impossibleLeg: a drive, and even a flight, are journeys", () => {
+  // Montpellier → Sète in three hours: 10 km/h.
+  const drive = placeRuns(
+    [donor(9, MPL), donor(10, MPL), donor(13, SETE), donor(14, SETE)],
+    5000,
+    2,
+  );
+  assert.equal(impossibleLeg(drive, 1000), null);
+  // Porto → Paris (~1 200 km) in three hours: an airliner's 400 km/h.
+  const PARIS = { lat: 48.8566, lon: 2.3522 };
+  const flight = placeRuns(
+    [donor(8, PORTO), donor(9, PORTO), donor(12, PARIS), donor(13, PARIS)],
+    5000,
+    2,
+  );
+  assert.equal(impossibleLeg(flight, 1000), null);
 });

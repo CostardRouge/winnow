@@ -41,6 +41,7 @@ import { tx } from "./db";
 import {
   UNPLACED_RULES,
   distanceM,
+  impossibleLeg,
   isReady,
   placeCuts,
   placeRuns,
@@ -332,6 +333,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           suggestion: null,
           part: null,
           stops: null,
+          conflict: null,
           nearest: null,
           moments: null,
         });
@@ -358,6 +360,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           suggestion: null,
           part: { index: p.idx, count: parts.length },
           stops: null,
+          conflict: null,
           nearest: null,
           moments: null,
         });
@@ -383,6 +386,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           suggestion: null,
           part: null,
           stops: null,
+          conflict: null,
           nearest: null,
           moments: cuts.length > UNPLACED_RULES.parts_max ? cuts.length : null,
         });
@@ -540,9 +544,28 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           UNPLACED_RULES.split_km * 1000,
           UNPLACED_RULES.split_min,
         );
-        if (runs.length > 1 && runs.length <= UNPLACED_RULES.parts_max) {
-          runsOf.set(idx, runs);
+        if (runs.length < 2) continue;
+        // Two places no one could travel between in the time: the located
+        // frames disagree (a wrong clock or zone on one side). No stops — a
+        // cut between Porto and Melbourne two hours apart would place half
+        // the card on the wrong continent — and no confident pin either.
+        const leg = impossibleLeg(runs, UNPLACED_RULES.max_kmh);
+        if (leg) {
+          const g = groups[idx];
+          const at = (r: PlaceRun) => {
+            const s = runSuggestion(r.donors);
+            return { name: s.name, lat: s.lat, lon: s.lon, model: s.donor_model };
+          };
+          g.conflict = {
+            a: at(runs[leg.k]),
+            b: at(runs[leg.k + 1]),
+            km: Math.round(leg.km),
+            hours: Math.round(leg.hours * 10) / 10,
+          };
+          if (g.suggestion) g.suggestion = { ...g.suggestion, confidence: "low" };
+          continue;
         }
+        if (runs.length <= UNPLACED_RULES.parts_max) runsOf.set(idx, runs);
       }
 
       // The cards' own unplaced camera media, for the silences to cut in.

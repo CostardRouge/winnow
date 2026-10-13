@@ -466,7 +466,7 @@ export default function UnplacedPane() {
         // opened on its nearest placement starts there: taken as offered it
         // records what that placement was — 'manual' when it was placed by
         // hand, 'inferred' when it was itself an accepted suggestion.
-        const s = g.kind === "span" || at ? null : g.suggestion;
+        const s = g.kind === "span" || at || g.conflict ? null : g.suggestion;
         setFlow({
           group: g,
           assets: [...own, ...alongside],
@@ -825,6 +825,26 @@ export default function UnplacedPane() {
         </div>
       );
     }
+    if (g.conflict) {
+      const c = g.conflict;
+      const where = (p: { name: string | null; lat: number; lon: number }) =>
+        p.name?.split(",")[0] ?? `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`;
+      const by = (p: { model: string | null }) => (p.model ? ` (${p.model})` : "");
+      const gap = c.hours < 1 ? `${Math.max(1, Math.round(c.hours * 60))} min` : `${c.hours} h`;
+      return (
+        <div className="card-suggest is-conflict" role="note">
+          <strong>The located frames disagree.</strong> They put these in{" "}
+          <strong>{where(c.a)}</strong>
+          {by(c.a)}, then <strong>{where(c.b)}</strong>
+          {by(c.b)} {fmt(c.km)} km away {gap} later — faster than a plane. One of
+          those devices has a wrong clock or time zone, so nothing is suggested:
+          place by hand, or{" "}
+          <button type="button" className="link-btn" onClick={() => setTraceFor(g)}>
+            follow a track…
+          </button>
+        </div>
+      );
+    }
     if (g.stops) {
       return (
         <div className="card-suggest is-none">
@@ -985,7 +1005,10 @@ export default function UnplacedPane() {
                     shot with a card move more than {rules.split_km} km (at
                     least {rules.split_min} frames in each place), the card
                     gets one stop per place, cut in the longest pause of the
-                    camera between two places, each with its own pin. A
+                    camera between two places, each with its own pin — unless
+                    two places would need travelling faster than{" "}
+                    {rules.max_kmh} km/h: then the frames disagree, and
+                    nothing is suggested. A
                     suggestion comes from the
                     located frames within ±{rules.near_h} h of the card’s window
                     (±{rules.day_h} h failing that), camera fixes and hand-placed
@@ -1032,7 +1055,7 @@ export default function UnplacedPane() {
                     className={`session-card is-stacked unplaced-card is-${g.kind}`}
                   >
                     <div className="card-head">
-                      {s && g.kind !== "span" && !g.stops && (
+                      {s && g.kind !== "span" && !g.stops && !g.conflict && (
                         <MapThumb
                           lat={s.lat}
                           lon={s.lon}
