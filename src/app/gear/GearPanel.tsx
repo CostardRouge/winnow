@@ -41,14 +41,23 @@
 // drives both the counts and where every entry points (cf. lib/gear.ts, which
 // tallies per source). "All" sums both — its entries link to whichever half the
 // piece of gear actually has frames in, Incoming first (effectiveLibrarySource).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+//
+// WHOSE CAMERA (migration 0053, cf. ownership.tsx). The shelf is also where a
+// body is claimed: a mark before every name, Group (by owner, kind, or not at
+// all) and Show in the band, and a sort deck for the bodies nobody answered
+// for yet. Grouping does not teach the eight layouts anything: each section is
+// a Kit of its own bodies, built by the same buildKit and drawn by the same
+// layout — so "Mine" reads exactly as the whole shelf does, only narrower.
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchJson } from "@/lib/fetchJson";
-import type { GearResponse } from "@/lib/gearTypes";
+import type { GearCamera, GearOwner, GearResponse } from "@/lib/gearTypes";
+import { CAMERA_KINDS, cameraKind } from "@/lib/gearSpec";
 import { EmptyState, Icons, LoadingState } from "@/app/ui";
 import PageHeader from "@/app/PageHeader";
 import { LibrarySourceTabs, useStoredLibrarySource } from "@/app/LibrarySourceTabs";
 import { OptionPicker, type PickerOption } from "@/app/OptionPicker";
-import { buildKit, num, SORTS, type Sort } from "./model";
+import { buildKit, num, SORTS, type Kit, type KitBody, type Sort } from "./model";
+import { OwnershipProvider, SortDeck, WhoseDialog } from "./ownership";
 import StackView from "./StackView";
 import IndexView from "./IndexView";
 import CardsView from "./CardsView";
@@ -94,6 +103,50 @@ const SORT_OPTIONS: PickerOption<Sort>[] = SORTS.map((s) => ({
 // not per-visit decisions.
 const SOURCE_KEY = "winnow.gear.source";
 const VIEW_KEY = "winnow.gear.view";
+// Grouping is remembered too — a way of reading the shelf. Show is NOT: a
+// remembered filter is a shelf that silently holds less than it says
+// (docs/SILENT-LIMITS-AUDIT.md), so every visit opens on everything.
+const GROUP_KEY = "winnow.gear.group";
+
+type Group = "owner" | "kind" | "none";
+const GROUPS: PickerOption<Group>[] = [
+  { key: "owner", label: "Owner", hint: "Mine, someone else’s, not a camera, not sorted" },
+  { key: "kind", label: "Kind", hint: "Mirrorless, phones, drones…" },
+  { key: "none", label: "None", hint: "One shelf" },
+];
+const isGroup = (v: string | null): v is Group => GROUPS.some((g) => g.key === v);
+
+type Show = "all" | "mine" | "other" | "unsorted" | "none" | "named";
+const SHOWS: PickerOption<Show>[] = [
+  { key: "all", label: "All", hint: "Every body" },
+  { key: "mine", label: "Mine", hint: "The bodies you own or owned" },
+  { key: "other", label: "Others’", hint: "Friends’ cameras, photographers" },
+  { key: "unsorted", label: "Not sorted", hint: "Nobody answered for them yet" },
+  { key: "none", label: "Not a camera", hint: "Apps, webcams" },
+  { key: "named", label: "Named by hand", hint: "No file names them" },
+];
+
+const ownerOf = (c: GearCamera) => c.owner?.owner ?? "unsorted";
+
+// The sections Group: Owner cuts the shelf into, in this order.
+const OWNER_SECTIONS: { key: string; title: string }[] = [
+  { key: "mine", title: "Mine" },
+  { key: "other", title: "Someone else’s" },
+  { key: "unsorted", title: "Not sorted yet" },
+  { key: "none", title: "Not a camera" },
+];
+
+function useStoredGroup(): [Group, (g: Group) => void] {
+  const [group, setGroup] = useState<Group>("owner");
+  useEffect(() => {
+    const saved = localStorage.getItem(GROUP_KEY);
+    if (isGroup(saved)) setGroup(saved);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(GROUP_KEY, group);
+  }, [group]);
+  return [group, setGroup];
+}
 
 /** Restore / persist the layout. Seeded in an effect, like the source hook, so
  *  the first render matches the server's and nothing flashes. A visitor with a
@@ -116,6 +169,10 @@ export default function GearPanel() {
   const [sort, setSort] = useState<Sort>("used");
   const [source, setSource] = useStoredLibrarySource(SOURCE_KEY);
   const [view, setView] = useStoredView();
+  const [group, setGroup] = useStoredGroup();
+  const [show, setShow] = useState<Show>("all");
+  const [editing, setEditing] = useState<KitBody | null>(null);
+  const [deck, setDeck] = useState<KitBody[] | null>(null);
 
   useEffect(() => {
     fetchJson<GearResponse>("/api/gear")
@@ -129,6 +186,49 @@ export default function GearPanel() {
     () => buildKit(data?.cameras ?? [], source, sort),
     [data, source, sort],
   );
+
+  // The shelf as shown: Show narrows the bodies, Group cuts them into
+  // sections, and each section is a Kit of its own (see the header).
+  const sections = useMemo(() => {
+    const shown = (data?.cameras ?? []).filter((c) =>
+      show === "all" ? true : show === "named" ? c.named : ownerOf(c) === show,
+    );
+    const section = (key: string, title: string | null, cams: GearCamera[]) => {
+      const k: Kit = { ...buildKit(cams, source, sort), scope: title };
+      return { key, title, kit: k };
+    };
+    let out: { key: string; title: string | null; kit: Kit }[];
+    if (group === "owner") {
+      out = OWNER_SECTIONS.map((s) =>
+        section(s.key, s.title, shown.filter((c) => ownerOf(c) === s.key)),
+      );
+    } else if (group === "kind") {
+      const kinds = [...new Set(shown.map((c) => cameraKind(c.name)))];
+      out = kinds.map((k) =>
+        section(k, CAMERA_KINDS[k], shown.filter((c) => cameraKind(c.name) === k)),
+      );
+      // Busiest kind first, as the bodies inside it are.
+      out.sort((a, b) => b.kit.totalFrames - a.kit.totalFrames);
+    } else {
+      out = [section("all", null, shown)];
+    }
+    return out.filter((s) => s.kit.bodies.length > 0);
+  }, [data, show, group, source, sort]);
+
+  // A write answered: the row the server returned replaces the body's owner in
+  // place, so the shelf re-groups without re-reading the EXIF aggregate.
+  const applyOwner = useCallback((device: string, owner: GearOwner | null) => {
+    setData((d) =>
+      d && { ...d, cameras: d.cameras.map((c) => (c.name === device ? { ...c, owner } : c)) },
+    );
+  }, []);
+  const ownership = useMemo(
+    () => ({ people: data?.people ?? [], edit: (b: KitBody) => setEditing(b) }),
+    [data?.people],
+  );
+  // The deck's queue: the unsorted bodies of the half being looked at.
+  const unsorted = kit.bodies.filter((b) => !b.owner);
+  const mine = kit.bodies.filter((b) => b.owner?.owner === "mine");
 
   // The header is the PANEL's, not the page's: its tabs are the library-source
   // picker, and that state lives here. Every return goes through this so the
@@ -177,8 +277,19 @@ export default function GearPanel() {
         {kit.bodies.length} {kit.bodies.length === 1 ? "body" : "bodies"} ·{" "}
         {kit.lensCount} {kit.lensCount === 1 ? "lens" : "lenses"} ·{" "}
         {num(kit.totalFrames)} media
+        {mine.length > 0 && <> · {mine.length} yours</>}
+        {unsorted.length > 0 && (
+          <>
+            {" · "}
+            <button type="button" className="link-btn" onClick={() => setDeck(unsorted)}>
+              {unsorted.length} not sorted
+            </button>
+          </>
+        )}
       </span>
       <span className="spacer" />
+      <OptionPicker options={GROUPS} value={group} onChange={setGroup} ariaLabel="Group" />
+      <OptionPicker options={SHOWS} value={show} onChange={setShow} ariaLabel="Show" />
       {/* Eight options: the picker draws itself as a menu (cf. OptionPicker),
           which is also where each layout's sentence finally becomes readable on
           a touch screen. Two options: it stays a segmented row. */}
@@ -216,17 +327,68 @@ export default function GearPanel() {
   }
 
   return shell(
-    <>
+    <OwnershipProvider value={ownership}>
       {head}
       <div className="pipeline-body">
         <div className="gear-shelf">
           {/* The layouts are different enough that the toggle alone doesn't say
               what it just did — one line does. */}
           <p className="gear-caption">{current.hint}</p>
-          <Layout view={view} kit={kit} />
+          {sections.length === 0 ? (
+            <EmptyState
+              icon={Icons.photos}
+              title="No body here"
+              hint="Nothing on this tab matches what Show is set to."
+            />
+          ) : (
+            sections.map((s) =>
+              s.title == null ? (
+                <Layout key={s.key} view={view} kit={s.kit} />
+              ) : (
+                <section key={s.key} className="gear-section" aria-label={s.title}>
+                  <header className="gear-section-head">
+                    <h2>{s.title}</h2>
+                    <span className="hint">
+                      {s.kit.bodies.length} {s.kit.bodies.length === 1 ? "body" : "bodies"} ·{" "}
+                      {num(s.kit.totalFrames)} media
+                    </span>
+                    {s.key === "unsorted" && group === "owner" && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => setDeck(s.kit.bodies)}
+                      >
+                        Sort them one by one
+                      </button>
+                    )}
+                  </header>
+                  <Layout view={view} kit={s.kit} />
+                </section>
+              ),
+            )
+          )}
         </div>
       </div>
-    </>,
+      {editing && (
+        <WhoseDialog
+          body={editing}
+          people={data.people ?? []}
+          onClose={() => setEditing(null)}
+          onSaved={(device, owner) => {
+            applyOwner(device, owner);
+            setEditing(null);
+          }}
+        />
+      )}
+      {deck && (
+        <SortDeck
+          queue={deck}
+          people={data.people ?? []}
+          onClose={() => setDeck(null)}
+          onSaved={applyOwner}
+        />
+      )}
+    </OwnershipProvider>,
   );
 }
 

@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { DEVICE_SOURCE_LABEL } from "@/lib/deviceTypes";
+
+// The Shot by facet's values, as the panel prints them (lib/filter.ts).
+const SHOT_BY_LABEL: Record<string, string> = {
+  me: "Me",
+  others: "Others",
+  unsorted: "Not sorted",
+  none: "No camera",
+};
 import { Icons } from "../ui";
 import RangeSlider from "./RangeSlider";
 
@@ -30,6 +38,8 @@ export type Facets = {
   devices: VC[];
   /** Absent from an older server's answer — the section then stays hidden. */
   device_sources?: VC[];
+  /** Absent from an older server's answer — the section then stays hidden. */
+  shot_by?: VC[];
   camera_models: VC[];
   lenses: VC[];
   // Reverse-geocoded place facets (cf. lib/geocode.ts). Optional so a facets
@@ -132,6 +142,9 @@ export type Filters = {
   // Where the body came from (lib/filter.ts DEVICE_SOURCE_SQL): the file, a
   // vote, a hand — `named` / `none` are the hand answers of migration 0051.
   device_source: string[];
+  // Whose camera shot it — me / others / unsorted / none (lib/filter.ts
+  // SHOT_BY_SQL), from the ownership set on /gear.
+  shot_by: string[];
   camera_model: string[];
   lens: string[];
   // Reverse-geocoded place (cf. lib/geocode.ts): filter by where a photo was taken.
@@ -209,6 +222,7 @@ export const EMPTY_FILTERS: Filters = {
   not_derivative_status: [],
   device: [],
   device_source: [],
+  shot_by: [],
   camera_model: [],
   lens: [],
   place_country: [],
@@ -664,6 +678,17 @@ export default function FilterPanel({
         onToggle={(v) => u({ device: toggle(filters.device, String(v)) })}
         label={(v) => friendlyCameraName(String(v))}
       />
+      {/* Whose camera shot it: the ownership claimed on /gear. "Not sorted"
+          is a body nobody has answered for yet — never folded into either. */}
+      {(facets.shot_by?.length ?? 0) > 0 && (
+        <Chips
+          title="Shot by"
+          options={facets.shot_by ?? []}
+          selected={filters.shot_by}
+          onToggle={(v) => u({ shot_by: toggle(filters.shot_by, String(v)) })}
+          label={(v) => SHOT_BY_LABEL[String(v)] ?? String(v)}
+        />
+      )}
       {/* Where the body came from: "Named by hand" is every medium shot by a
           camera no file names (a friend's, the wedding photographer's), "Not a
           camera" the screenshots and saved images set aside on Devices. */}

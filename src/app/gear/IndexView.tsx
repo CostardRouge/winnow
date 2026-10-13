@@ -11,6 +11,7 @@
 import Link from "next/link";
 import type { Kit, KitBody, KitLens } from "./model";
 import { countLabel, countParts, num } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 /** Share of its body's frames, drawn as a bar. Purely relative — the number is
  *  right there in the next column, this is only for the eye scanning down. */
@@ -42,15 +43,18 @@ function Body({ body }: { body: KitBody }) {
   const meta = [body.shutter, body.split, body.elsewhere].filter(Boolean) as string[];
   return (
     <section className="gear-ix-body">
+      <div className="gear-owned">
+      <OwnerMark body={body} />
       <Link href={body.href} className="gear-ix-head" title={body.tip}>
         <span className="gear-ix-head-main">
-          <span className="gear-ix-head-name">{body.label}</span>
+          <span className={`gear-ix-head-name${namedClass(body)}`}>{body.label}</span>
           <span className="gear-ix-kind">{body.kindLabel}</span>
         </span>
         {meta.length > 0 && <span className="gear-ix-head-meta">{meta.join(" · ")}</span>}
         <span className="gear-ix-head-years">{body.years ?? ""}</span>
         <span className="gear-ix-head-count">{countLabel(body.stats)}</span>
       </Link>
+      </div>
 
       <div className="gear-ix-rows">
         {body.lenses.map((l) => (

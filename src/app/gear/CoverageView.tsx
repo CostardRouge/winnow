@@ -15,6 +15,7 @@
 import Link from "next/link";
 import type { FocalAxis, Kit, KitBody, KitLens } from "./model";
 import { focalAxis, num } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 type Axis = FocalAxis;
 
@@ -55,8 +56,10 @@ function LensLane({ lens, axis }: { lens: KitLens; axis: Axis }) {
 function Body({ body, axis }: { body: KitBody; axis: Axis }) {
   return (
     <section className="gear-cv-body">
+      <div className="gear-owned">
+      <OwnerMark body={body} />
       <Link href={body.href} className="gear-cv-head" title={body.tip}>
-        <span className="gear-cv-head-name">{body.label}</span>
+        <span className={`gear-cv-head-name${namedClass(body)}`}>{body.label}</span>
         <span className="gear-cv-kind">{body.kindLabel}</span>
         <span className="gear-cv-head-count">
           {body.lenses.length > 0
@@ -64,6 +67,7 @@ function Body({ body, axis }: { body: KitBody; axis: Axis }) {
             : "fixed or unrecorded lens"}
         </span>
       </Link>
+      </div>
       {body.lenses.map((l) => (
         <LensLane key={l.key} lens={l} axis={axis} />
       ))}

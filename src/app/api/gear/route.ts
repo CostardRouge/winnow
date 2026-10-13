@@ -1,8 +1,10 @@
 // GET /api/gear -> the shelf: every camera body the library was shot with, each
 // with the lenses used on it, and both tallied separately for Incoming and the
 // Gallery (the two grids a card can link to). Single source for the /gear page
-// (cf. lib/gear.ts for the scope rules).
+// (cf. lib/gear.ts for the scope rules). Each body carries its owner (migration
+// 0053), and `people` lists the named people the "Whose?" menu offers.
 import { listCameras } from "@/lib/gear";
+import { listNamedPeople } from "@/lib/gearOwners";
 import { json, serverError } from "@/lib/api";
 import { featureOff } from "@/lib/featureGate";
 
@@ -18,7 +20,8 @@ export async function GET() {
   if (off) return off;
 
   try {
-    return json({ cameras: await listCameras() });
+    const [cameras, people] = await Promise.all([listCameras(), listNamedPeople()]);
+    return json({ cameras, people });
   } catch (err) {
     return serverError(err);
   }

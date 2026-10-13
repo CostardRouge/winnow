@@ -12,6 +12,7 @@
 import Link from "next/link";
 import type { Kit, KitBody } from "./model";
 import { num } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 /** A cell of the spec table. Absent readings print an em dash rather than
  *  vanishing — a missing shutter count is itself worth seeing. */
@@ -29,7 +30,10 @@ function Record({ body }: { body: KitBody }) {
     <article className="gear-rec">
       <header className="gear-rec-top">
         <h3 className="gear-rec-title">
-          <Link href={body.href}>{body.label}</Link>
+          <OwnerMark body={body} />
+          <Link href={body.href} className={namedClass(body).trim() || undefined}>
+            {body.label}
+          </Link>
         </h3>
         {/* The filter value, and the only unambiguous name a body has. It is a
             detail of the sheet here, not something a tooltip has to reveal. */}

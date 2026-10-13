@@ -11,6 +11,7 @@
 import Link from "next/link";
 import type { Kit, KitBody } from "./model";
 import { countParts, num } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 function Card({ body }: { body: KitBody }) {
   const { n, unit } = countParts(body.stats);
@@ -18,6 +19,7 @@ function Card({ body }: { body: KitBody }) {
   return (
     <article className="gear-plate">
       <header className="gear-plate-head">
+        <OwnerMark body={body} />
         <span className="gear-plate-kind">{body.kindLabel}</span>
         {body.years && <span className="gear-plate-years">{body.years}</span>}
       </header>
@@ -25,7 +27,7 @@ function Card({ body }: { body: KitBody }) {
       <Link href={body.href} className="gear-plate-figure" title={body.tip}>
         <span className="gear-plate-n">{n}</span>
         <span className="gear-plate-unit">{unit}</span>
-        <span className="gear-plate-name">{body.label}</span>
+        <span className={`gear-plate-name${namedClass(body)}`}>{body.label}</span>
       </Link>
 
       {meta.length > 0 && (

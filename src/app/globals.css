@@ -7843,6 +7843,187 @@ html[data-theme="dark"] .btn-primary:hover {
   .gear-stk-head {
     @apply flex flex-wrap items-baseline gap-x-3 gap-y-1;
   }
+
+  /* ---- Whose camera (migration 0053, gear/ownership.tsx) --------------- */
+  /* The mark's SHAPE is the answer, so it reads without colour — vermillion
+     stays the brand's (docs/UI-REVIEW.md): filled = mine, ring with initials
+     = someone else's, crossed ring = not a camera, dashed ring = not sorted. */
+  .gear-owner {
+    @apply inline-flex shrink-0 items-center justify-center;
+    align-self: center;
+  }
+  .gear-owner.is-control {
+    @apply -m-1 rounded-full border-0 bg-transparent p-1;
+    min-width: 28px;
+    min-height: 28px;
+    cursor: pointer;
+  }
+  .gear-owner.is-control:hover {
+    background: var(--color-surface-2);
+  }
+  .gear-owner.is-control:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  .gear-mark {
+    @apply inline-grid shrink-0 place-items-center rounded-full;
+    width: 12px;
+    height: 12px;
+    box-sizing: border-box;
+  }
+  .gear-mark.is-mine {
+    background: var(--color-text);
+  }
+  .gear-mark.is-other {
+    width: 20px;
+    height: 20px;
+    border: 1.5px solid var(--color-text);
+    color: var(--color-text);
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+  .gear-mark.is-none {
+    border: 1.5px solid var(--color-muted);
+    background: linear-gradient(
+      135deg,
+      transparent calc(50% - 0.75px),
+      var(--color-muted) calc(50% - 0.75px),
+      var(--color-muted) calc(50% + 0.75px),
+      transparent calc(50% + 0.75px)
+    );
+  }
+  .gear-mark.is-unsorted {
+    border: 1.5px dashed var(--color-faint);
+  }
+  /* The mark beside a header that is itself a link (Index, Coverage): the
+     link keeps the row, the mark sits outside it — a control inside an <a>
+     is not one anybody can reach. */
+  .gear-owned {
+    @apply flex items-center gap-2;
+  }
+  .gear-owned > a {
+    @apply min-w-0 flex-1;
+  }
+  .gear-stk-chip {
+    @apply inline-flex items-center gap-1;
+  }
+  .gear-blk-label .gear-owner {
+    @apply mr-1.5;
+    vertical-align: -1px;
+  }
+  .gear-rec-title {
+    @apply flex items-center gap-3;
+  }
+  .gear-tl-namerow {
+    @apply flex min-w-0 items-center gap-2;
+  }
+  /* A body no file names: the display serif, in italic — the same tell the
+     Devices page and the viewer give it. */
+  .gear-named {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+  .gear-stk-key .gear-named,
+  .gear-blk-label .gear-named {
+    font-size: 1.25em;
+  }
+  .gear-ix-head-name.gear-named,
+  .gear-stk-name.gear-named,
+  .gear-cv-head-name.gear-named {
+    font-size: 1.2em;
+  }
+  /* Its ownership span under the service bar: when it was used AND whose it
+     was, on one lane. */
+  .gear-tl-owned {
+    @apply absolute block rounded-full;
+    top: calc(50% + 7px);
+    height: 3px;
+    min-width: 3px;
+    background: var(--color-text);
+  }
+  /* Group: one section per owner / kind, each a whole layout of its own. */
+  .gear-section {
+    @apply mb-8;
+  }
+  .gear-section-head {
+    @apply mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-1.5;
+    border-bottom: 1px solid var(--color-border-strong);
+  }
+  .gear-section-head h2 {
+    @apply m-0 text-[24px] font-normal leading-tight;
+    font-family: var(--font-serif);
+  }
+  .gear-section-head .btn {
+    @apply ml-auto;
+  }
+  /* The "Whose?" dialog and the sort deck. */
+  .gear-whose-more {
+    @apply mt-3 flex flex-col gap-2;
+  }
+  .gear-whose-more .input {
+    @apply w-full;
+  }
+  .gear-whose-dates {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gear-whose-dates label {
+    @apply flex flex-col gap-1 text-[12px];
+    color: var(--color-muted);
+  }
+  .modal.gear-deck {
+    max-width: 760px;
+  }
+  .gear-deck-head {
+    @apply flex items-center gap-3;
+  }
+  .gear-deck-progress {
+    @apply ml-auto block h-1.5 w-40 overflow-hidden rounded-full;
+    background: var(--color-surface-3);
+  }
+  .gear-deck-progress i {
+    @apply block h-full;
+    background: var(--color-text);
+  }
+  .gear-deck-body {
+    @apply mt-4 grid gap-5;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+  .gear-deck-thumbs {
+    @apply grid content-start gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gear-deck-thumbs img {
+    @apply block w-full rounded-[var(--radius)] object-cover;
+    aspect-ratio: 4 / 3;
+    background: var(--color-surface-3);
+  }
+  .gear-deck-side {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+  .gear-deck-name {
+    @apply text-[30px] leading-tight;
+    font-family: var(--font-serif);
+  }
+  .gear-deck-answers {
+    @apply grid gap-2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gear-deck-answers .btn {
+    min-height: 44px;
+  }
+  .gear-deck-name-form {
+    @apply flex gap-2;
+  }
+  @media (max-width: 640px) {
+    .gear-deck-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
   .gear-stk-name {
     @apply min-w-0 truncate text-[13px] font-medium;
     font-family: var(--font-mono);

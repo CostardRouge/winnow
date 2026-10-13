@@ -14,6 +14,7 @@
 import Link from "next/link";
 import type { Kit, KitPart } from "./model";
 import { num, shareInk, shareInkText } from "./model";
+import { namedClass, OwnerMark } from "./ownership";
 
 /**
  * A row's height floor, in PIXELS — the unit the text is actually drawn in. A
@@ -88,7 +89,10 @@ export default function BlocksView({ kit }: { kit: Kit }) {
         return (
           <div key={b.name} className="gear-blk-row" style={{ height: `${heights[i]}px` }}>
             <Link href={b.href} className="gear-blk-label" title={tip}>
-              <b>{b.label}</b>
+              <b>
+                <OwnerMark body={b} still />
+                <span className={namedClass(b).trim() || undefined}>{b.label}</span>
+              </b>
               {twoLines ? <small>{num(b.stats.count)} media</small> : null}
             </Link>
             {b.parts.map((p) => (
