@@ -183,3 +183,20 @@ test("the route checks its shape", { skip: skipWithoutDb }, async () => {
   assert.equal(ok.status, 200);
   assert.equal(((await ok.json()) as { owner: { owner_name: string } }).owner.owner_name, "Salsa");
 });
+
+test("the viewer's row carries the filter's bucket and the body's owner", { skip: skipWithoutDb }, async () => {
+  const route = await import("../app/api/assets/[id]/route");
+  const cam = body("FUJIFILM GFX100RF");
+  const id = await shot(cam, "2025-07-01");
+  const read = async () => {
+    const res = await route.GET(new Request("http://x"), { params: Promise.resolve({ id: String(id) }) });
+    return ((await res.json()) as { asset: { shot_by: string; gear_owner: unknown } }).asset;
+  };
+  assert.deepEqual(await read().then((a) => [a.shot_by, a.gear_owner]), ["unsorted", null]);
+  await go.setOwner({ device: cam, owner: "other", name: "Emeric" });
+  const a = await read();
+  assert.equal(a.shot_by, "others");
+  assert.deepEqual(a.gear_owner, {
+    owner: "other", person_id: null, owner_name: "Emeric", owned_from: null, owned_until: null,
+  });
+});

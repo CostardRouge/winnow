@@ -11,7 +11,8 @@
 import Link from "next/link";
 import type { Kit, KitBody, KitLens } from "./model";
 import { num } from "./model";
-import { namedClass, OwnerMark, ownerWords } from "./ownership";
+import { namedClass, OwnerMark } from "./ownership";
+import { ownerWords } from "@/lib/gearOwnerWords";
 
 /** Whole-year bounds around the kit's span: bars then sit inside their axis and
  *  the ticks land on January 1st instead of on an arbitrary first shutter. */

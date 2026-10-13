@@ -16,6 +16,8 @@
 // (`first_edit_*`). These feed the viewer's before/after toggle and are
 // NULL/0 when the asset has no counterpart.
 
+import { SHOT_BY_SQL } from "./filter";
+
 // SELECT projection (assumes `assets a` + the joins in GRID_FROM are in scope).
 export const GRID_SELECT = `a.*,
         COALESCE(r.verdict, 'unrated') AS verdict,
@@ -67,7 +69,19 @@ export const GRID_SELECT = `a.*,
         ed.ext          AS first_edit_ext,
         (SELECT COALESCE(array_agg(t.name ORDER BY t.name), '{}')
            FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-          WHERE at.asset_id = a.id) AS tags`;
+          WHERE at.asset_id = a.id) AS tags,
+        -- Whose camera shot it (migration 0053): the "Shot by" filter's own
+        -- bucket, so the viewer's Device row and the filter cannot disagree,
+        -- and the body's owner row for the name and the span. One primary-key
+        -- probe each into a table of a few dozen rows; NULL owner = not sorted.
+        ${SHOT_BY_SQL} AS shot_by,
+        (SELECT json_build_object(
+                  'owner', go.owner, 'person_id', go.person_id,
+                  'owner_name', COALESCE(gp.name, go.owner_name),
+                  'owned_from', to_char(go.owned_from, 'YYYY-MM-DD'),
+                  'owned_until', to_char(go.owned_until, 'YYYY-MM-DD'))
+           FROM gear_owners go LEFT JOIN people gp ON gp.id = go.person_id
+          WHERE go.device = a.device) AS gear_owner`;
 
 // FROM + joins. The LATERAL pulls the OTHER (non-deleted) member of the group;
 // a group holds exactly two members, so LIMIT 1 is exact. `g` carries the group

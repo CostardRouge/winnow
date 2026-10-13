@@ -23,6 +23,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { Spinner } from "../ui";
 import { fetchJson } from "@/lib/fetchJson";
 import type { GearOwner, GearOwnerKind, GearPerson } from "@/lib/gearTypes";
+import { initials, ownerWords } from "@/lib/gearOwnerWords";
 import type { KitBody } from "./model";
 
 type Ctx = {
@@ -34,34 +35,6 @@ type Ctx = {
 const OwnershipContext = createContext<Ctx>({ people: [], edit: null });
 export const OwnershipProvider = OwnershipContext.Provider;
 export const useOwnership = () => useContext(OwnershipContext);
-
-/** "AY" for Aymeric, "WP" for the wedding photographer, "··" for no one named. */
-export function initials(name: string | null): string {
-  if (!name) return "··";
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const letters = words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "";
-  return letters.toUpperCase() || "··";
-}
-
-/** The answer in words — the mark's accessible name and its tooltip. */
-export function ownerWords(owner: GearOwner | null): string {
-  if (!owner) return "Not sorted";
-  if (owner.owner === "none") return "Not a camera";
-  if (owner.owner === "other")
-    return owner.owner_name ? `${owner.owner_name}’s` : "Someone else’s";
-  const from = owner.owned_from ? spanDate(owner.owned_from) : null;
-  const until = owner.owned_until ? spanDate(owner.owned_until) : null;
-  if (from && until) return `Mine, ${from} – ${until}`;
-  if (from) return `Mine since ${from}`;
-  if (until) return `Mine until ${until}`;
-  return "Mine";
-}
-
-/** "Mar 2016" — the span's granularity on the shelf. */
-function spanDate(day: string): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  return d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
-}
 
 function MarkShape({ owner }: { owner: GearOwner | null }) {
   const kind = owner?.owner ?? "unsorted";

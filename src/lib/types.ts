@@ -1,5 +1,7 @@
 // Types of the Postgres rows (mirror of the §5 schema).
 
+import type { GearOwner } from "./gearTypes";
+
 export type Root = {
   id: number;
   path: string;
@@ -91,6 +93,11 @@ export type Asset = {
   embedded_camera_model: string | null;
   embedded_model: string | null;
   embedded_serial: string | null;
+  // Whose camera shot it (migration 0053, GRID_SELECT): the "Shot by" bucket
+  // (me | others | unsorted | none) and the body's owner row, null when the
+  // body is not sorted. Only on rows read through GRID_SELECT.
+  shot_by?: string | null;
+  gear_owner?: GearOwner | null;
   file_size: number | null;
   file_mtime: string | null;
   content_hash: string | null;
