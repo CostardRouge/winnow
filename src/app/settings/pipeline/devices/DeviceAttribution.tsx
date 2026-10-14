@@ -34,6 +34,7 @@ import { LibrarySourceTabs } from "../../../LibrarySourceTabs";
 import { EmptyState, Icons, LazyImage, Spinner } from "../../../ui";
 import { useStats } from "../../../useStats";
 import DeviceProbeSection from "./DeviceProbeSection";
+import DeviceMakesSection from "./DeviceMakesSection";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import {
   formatBitrate,
@@ -554,11 +555,20 @@ export default function DeviceAttribution() {
   // since the clips a vote or a hand-pick filled are exactly the ones whose
   // own track may say otherwise. A finished pass re-reads the list below.
   const probe = (
-    <DeviceProbeSection
-      onChanged={async () => {
-        await refresh();
-      }}
-    />
+    <>
+      <DeviceProbeSection
+        onChanged={async () => {
+          await refresh();
+        }}
+      />
+      {/* One camera, two names (lib/deviceMakes.ts): only while there is
+          something to join, so it costs the page nothing once it is done. */}
+      <DeviceMakesSection
+        onChanged={async () => {
+          await refresh();
+        }}
+      />
+    </>
   );
   // Step 2's title: what the vote below is for once the files have spoken —
   // with the Incoming/Gallery/All picker beside it, the same control /gear,

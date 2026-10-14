@@ -155,3 +155,35 @@ export const DEVICE_SOURCE_LABEL: Record<string, string> = {
   named: "Named by hand",
   none: "Not a camera",
 };
+
+// One camera, two names (lib/deviceMakes.ts): what GET/POST
+// /api/pipeline/device-makes answer with.
+export type MakelessPair = {
+  /** The name the make-less files carry — the model alone. */
+  model: string;
+  /** The one full name the model's other files declare. */
+  full: string;
+  /** Live media currently carrying the make-less name. */
+  media: number;
+};
+
+export type MakelessQuestion = {
+  model: string;
+  /** Every full name some file declares for this model: more than one. */
+  fulls: string[];
+  media: number;
+};
+
+export type MakelessReport = {
+  pairs: MakelessPair[];
+  /** Models two makers claim: left as they are, for a human. */
+  ambiguous: MakelessQuestion[];
+};
+
+export type JoinReport = MakelessReport & {
+  /** Rows whose body moved to the full name. */
+  moved: number;
+  /** Ownership answers carried to the full name / dropped for its own. */
+  ownersMoved: number;
+  ownersDropped: number;
+};
