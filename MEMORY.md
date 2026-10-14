@@ -36,7 +36,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 - Originals are read-only and read once; deletes are soft → `docs/memory/architecture.md`
 - Derivatives sit on disk behind an S3-shaped driver, so MinIO is one env flip away → `docs/memory/architecture.md`
-- Dedup is a partial hash arbitrated by a full-content compare, every decision logged → `docs/memory/architecture.md`
+- Dedup is a partial hash arbitrated by a full-content compare, every decision logged; every statement that writes `content_hash` — the re-index UPDATE too — needs that branch, and Sony clips of one length collide once the same pin is written into them → `docs/memory/architecture.md`
 - Only Incoming copies are ever deletable, so "no RAW in the Gallery" is reported, not fixed, by dedup → `docs/memory/architecture.md`
 - Removing an asset's bytes must release its `content_hash`, or the surviving file is unindexable forever → `docs/memory/architecture.md`
 - Logic lives in `src/lib/`; worker, API routes and CLI scripts are thin wrappers → `docs/memory/architecture.md`
@@ -89,6 +89,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - A session that changes code reports this project's state to its fiche, project `winnow` in the private `second-brain` repo — the register is that repo, never Claude's memory nor `git log`. No session touches `second-brain` (since 2026-10-02): the session writes a Registry block — hidden in an HTML comment in its PR description (cloud), after a `Registry:` line in its commit body (local), and in a public repo nothing but the `Project:` line, ticked boxes and a `Log:` line, checked on the PR by `registry.yml`'s `check` job —, and `.github/workflows/registry.yml` sends it on every push to `main` to `second-brain`, which applies it mechanically and regenerates `PROJECTS.md`. **2026-10-04: everything a machine parses is English** (the block's `Project:` / `Last point:` / `Log:` labels, the workflow and its jobs, the register's paths), what a person reads stays French; a fiche is found by its slug because the register files it by group and domain (`create/apps/…`), which may move. The write token for `second-brain` lives in an environment still named `registre` that only `main` can read — renaming it needs `bin/registry-setup.sh` on the maintainer's machine. The workflow file is identical across the portfolio; C10 in `second-brain`'s `COMMON-PROJECT-SPEC.md` is the source. → CLAUDE.md rule 3
 
 ## Open items (dated; remove when done)
+
+- 2026-10-14 — **Failures › Scan should read 0 after the deploy, with no click**: the first complete scan of `/nas-incoming` closes the 113 `ENOENT` rows a dedup run left behind (`…/10350227 campuan and sari organic walk/Selects/`), and indexes the 3 Sony clips that collided after their GPS write-back (`20250301_C0062`, `20260812_C0449`, `20260814_C0462`) with a NULL hash, each listed once as a recovered false collision on the Duplicates page. A row still open after that scan is a file still failing — read its message. `docs/memory/pipeline.md`, `docs/memory/architecture.md`.
 
 - 2026-10-11 — **A folder pair that deleted nothing (`…/Organized/Elio's birthday`, 133 ARWs, 4.5 GB) is still in the backlog.** The run's refusals were hidden by the report (fixed, `docs/memory/architecture.md`); after the deploy, run "Keep left" again: the report now names the cause in one line. If it says *permission denied*, the fix is on the NAS (that folder's owner/ACL for the NFS client), not in Winnow.
 
