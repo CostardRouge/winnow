@@ -21,8 +21,13 @@ export type GpsPoint = { lat: number; lon: number };
 //     exiftool's composite GPSLatitude/GPSLongitude read back).
 // Flags: -overwrite_original_in_place edits the file without leaving exiftool's
 // `basename_original` backup next to it (it would be indexed as a duplicate);
-// -P preserves the file's mtime so the watcher/indexer doesn't see a "changed"
-// file and re-walk the session for a tag-only edit.
+// -P preserves the file's mtime (the capture-time fallback of a file that
+// carries no date, and what a file browser sorts on). It does NOT hide the
+// edit from the indexer: the stat gate compares size AND mtime, the new tag
+// grows the file (~106 bytes on a Sony clip), so the next scan re-reads it
+// once — which is also how the database reads the written value back. Two
+// clips of the same length given the same pin then share their partial hash;
+// lib/indexer.ts's re-index handles that collision.
 export async function writeGps(
   absPath: string,
   ext: string,

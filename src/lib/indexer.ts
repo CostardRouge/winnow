@@ -15,6 +15,7 @@ import {
   openScanFailures,
   recordScanFailure,
   resolveScanFailure,
+  resolveVanishedScanFailures,
 } from "./failures";
 import { recordDuplicateHit } from "./duplicates";
 import {
@@ -108,7 +109,7 @@ export type IndexResult = {
   skipped: number;
   duplicates: number;
   // False partial-hash collisions: distinct files recovered and indexed instead
-  // of being silently dropped (review §4). Subset of `inserted`.
+  // of being silently dropped (review §4). Subset of `inserted` + `updated`.
   recovered: number;
   enqueued: number;
   failed: number;
@@ -127,9 +128,19 @@ export type IndexResult = {
   missingTrashed: number;
   missingFlagged: number;
   missingRestored: number;
+  // Open scan failures closed because their file is gone from disk (cf.
+  // resolveVanishedScanFailures in lib/failures.ts).
+  vanishedFailures: number;
   // true if the scan was interrupted (pause or preemption) before the end.
   stopped: boolean;
 };
+
+// The one unique violation the re-index UPDATE can meet on legitimate input: a
+// changed file whose new partial hash another asset already holds.
+function isHashCollision(err: unknown): boolean {
+  const e = err as { code?: unknown; constraint?: unknown } | null;
+  return e?.code === "23505" && e.constraint === "assets_content_hash_uniq";
+}
 
 export async function indexRoot(
   rootId: number,
@@ -158,6 +169,7 @@ export async function indexRoot(
     missingTrashed: 0,
     missingFlagged: 0,
     missingRestored: 0,
+    vanishedFailures: 0,
     stopped: false,
   };
   const touchedSessions = new Set<number>();
@@ -268,7 +280,7 @@ export async function indexRoot(
       // Modified file: we update and re-enqueue the derivative (photo or
       // video) unless the session is ignored.
       const willDerive = !ignored;
-      await q(
+      const updateAsset = (hashValue: string | null) => q(
         `UPDATE assets SET
            rel_path=$2, filename=$3, ext=$4, media_type=$5,
            -- The camera body (cf. lib/deviceAttribution.ts). Three rules, in
@@ -334,7 +346,7 @@ export async function indexRoot(
           meta.device,
           size,
           mtime,
-          hash,
+          hashValue,
           capturedAt,
           meta.camera_model,
           meta.lens,
@@ -362,6 +374,45 @@ export async function indexRoot(
           zone.offsetSource,
         ],
       );
+      try {
+        await updateAsset(hash);
+      } catch (err) {
+        if (!isHashCollision(err)) throw err;
+        // The file changed into content whose PARTIAL hash another asset
+        // already holds. A new file meets that collision below, through ON
+        // CONFLICT and a full compare; this UPDATE had no such branch, so the
+        // unique index refused it on every rescan — the row kept its old size,
+        // the stat gate never matched again, and each scan re-hashed and
+        // re-read the original for nothing (2026-10-14, the instance: three
+        // Sony clips, 19–22 times, after the same GPS pin was written into
+        // clips of the same length, which then share their size, their first
+        // 128 KiB and their last 64 KiB). Same answer as a new file's false
+        // collision: the row leaves the unique index with a NULL hash and the
+        // collision is audited. Unlike a new file, an indexed row is never
+        // dropped, whatever the compare says — it carries ratings and history,
+        // so a genuine copy goes to the duplicates triage, not to the bin.
+        const match = await one<{ id: number; abs_path: string }>(
+          "SELECT id, abs_path FROM assets WHERE content_hash = $1 AND id <> $2",
+          [hash, existing.id],
+        );
+        if (!match) {
+          // The holder released it in between (a dedup reclaim, a "Clear
+          // resolved" sweep): the hash is free, take it.
+          await updateAsset(hash);
+        } else {
+          const same = await sameContent(absPath, match.abs_path);
+          await updateAsset(null);
+          await recordDuplicateHit({
+            absPath,
+            contentHash: hash,
+            existingAssetId: match.id,
+            source: "index",
+            verified: same,
+            fileSize: size,
+          });
+          if (same === false) res.recovered++;
+        }
+      }
       res.updated++;
       touchedAssets.push(existing.id);
       if (willDerive) {
@@ -668,6 +719,17 @@ export async function indexRoot(
         (err as Error).message,
       );
     }
+  }
+
+  // Failures of files that are gone: the per-file resolve above only reaches a
+  // path the walk goes through, and nothing walks through a deleted one again.
+  // Same preconditions as the missing-file pass — a COMPLETE walk — plus one of
+  // its own: the walk met at least one media file, because an unmounted share
+  // is an empty mount point where every path answers ENOENT and proves nothing.
+  if (!res.stopped && visited.size > 0) {
+    res.vanishedFailures = await resolveVanishedScanFailures(
+      [...openFailures].filter((p) => !visited.has(p)),
+    );
   }
 
   return res;

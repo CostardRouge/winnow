@@ -5,6 +5,7 @@
 // The other failure families are already persisted elsewhere and read as-is
 // by /api/failures: derivatives -> assets.derivative_status='error', import
 // -> import_batches.result. So we only duplicate what was missing.
+import { stat } from "node:fs/promises";
 import { q, one, many } from "./db";
 import { config } from "./config";
 
@@ -179,4 +180,30 @@ export async function resolveScanFailure(absPath: string): Promise<void> {
   } catch {
     /* best-effort */
   }
+}
+
+/**
+ * Closes the open failures of files that are GONE — deleted by hand, removed by
+ * deduplication, moved away. A scan resolves a failure only when it walks
+ * through the path again, and nothing ever walks through a deleted one: a
+ * single dedup run left 113 such rows open for good (2026-10-14). The caller
+ * passes the paths a COMPLETE walk did not meet; each is closed only on its own
+ * ENOENT — the evidence reconcileMissingForRoot trashes an asset on — and any
+ * other answer (EACCES, EIO, a share timing out) leaves the row open. Cheap to
+ * get wrong anyway: a file that still fails reopens its row on the next scan.
+ */
+export async function resolveVanishedScanFailures(
+  paths: Iterable<string>,
+): Promise<number> {
+  let closed = 0;
+  for (const p of paths) {
+    const gone = await stat(p).then(
+      () => false,
+      (err: NodeJS.ErrnoException) => err.code === "ENOENT",
+    );
+    if (!gone) continue;
+    await resolveScanFailure(p);
+    closed++;
+  }
+  return closed;
 }

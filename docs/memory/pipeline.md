@@ -34,6 +34,8 @@ Seeded 2026-08-20 from `docs/ARCHITECTURE-REVIEW.md`, `Dockerfile`, `src/lib/{in
 
 **Why**: 0048/0049 shipped unapplied and the indexer logged 9 124 "failures" that were one missing column; each failed file has no row, so every rescan re-hashed and re-exiftooled its original again (65 attempts in a day) — the "originals read once" rule broken by a logging path. **How to apply**: a new per-file error that means "the code is wrong" (not "the file is") belongs in `isSchemaError`'s family, not in the table. Failures › Scan should now empty itself on the next rescan after a cause is fixed; a row that stays open is a file still failing.
 
+**A file that is gone closes its failure too (2026-10-14).** Resolving on the walk could never reach a deleted path: one dedup run (folder `…/Selects`, deleted while a scan was walking it) left 113 `ENOENT` rows open for good, and the dedup's unlink does not touch `scan_failures`. The end of a COMPLETE walk now closes the open failures under the root it did not meet, each on its OWN `ENOENT` (`resolveVanishedScanFailures`, `IndexResult.vanishedFailures`), and only when the walk met at least one media file — an unmounted share is an empty mount point where every path is ENOENT. Any other stat error leaves the row open. The attempts counter is cumulative and `error` keeps only the LAST message, so a row reading "47× ENOENT" had mostly failed on something else (here, the 0048/0049 column).
+
 ## Derivative sources: the preview first, the sensor only when there is none (2026-10-11)
 
 **Decision**: `extractSourceJpeg` keeps the embedded preview as THE path, and
