@@ -54,12 +54,29 @@ or summer 2026): five iPhone 15 Pro Max DNGs whose XMP says `cr_sdk (iOS)` and
 `Indigo Embedded Camera Profile` (Adobe's camera SDK, not Photomator) with only
 the raw CFA + a sky semantic mask — no preview of any size; two `IMG_E….HEIC`
 that are baseline JPEGs (an edit's rendition exported under the original's
-extension); six `.MOV` with no readable `moov` — five cut at exact MiB sizes
-(`mdat` declares 786 MB, the file holds 654 MB: an interrupted copy), one whose
-first bytes are garbage. The videos are not Winnow's to fix: the error now
-says "Damaged file … copy it again from the source" ahead of ffmpeg's tail
-(`ffmpegHint`, and `-hide_banner` so the 400-char tail is the cause, not the
-build banner).
+extension); and `.MOV`s with no readable `moov`. The videos are not Winnow's to
+fix: the error now says "Damaged file … copy it again from the source" ahead
+of ffmpeg's tail (`ffmpegHint`, and `-hide_banner` so the 400-char tail is the
+cause, not the build banner). The DNGs and HEICs turned ready on Retry.
+
+**The 7 damaged iPhone `.MOV` (June–July 2026), classified 2026-10-14 from
+their first 40 bytes and their sizes.** None is half of a Live Photo, so each
+is a whole video lost or saved. Four are cut copies: AIMO8349, JGKH8799,
+AZTM5279 and ULZF3415. Each starts with a valid `ftyp qt`/`wide`/`mdat`, and
+the `mdat` header declares more than the file holds (42–83 % present). Their
+sizes are exact multiples of 16 MiB (624, 240, 336 MiB): a transfer that
+writes 16 MiB blocks and stopped. Two hold no QuickTime header at all, only
+random bytes (RGBT5166, IMG_7889). One is 0 bytes (AEKT1116). **How to
+apply**: a cut copy keeps its frames in order. `untrunc` (anthwlock, built
+from its git repo with `docker build`) rebuilds the `moov` from a healthy clip
+of the same iPhone and mode, working on copies outside `/nas-incoming`. Two
+traps when doing so: the rebuilt `CreateDate` can be the reference clip's,
+which Winnow would read as the capture time, and the clip's GPS is lost. A
+rescued file goes back with `cat > original` inside the worker plus
+`touch -d @mtime`, so it keeps its inode, owner and mode on the NAS. The
+headerless and empty ones are only recoverable from the phone. A file that
+cannot be saved leaves the Failures list by going to the trash, which is a
+soft delete; it is never purged before the phone has been checked.
 
 **Traps**: LibRaw refuses a frame under 22 px a side (the synthetic DNG in
 `extract.test.ts` is 64×32 for that reason); sharp's prebuilt libvips reads
