@@ -87,7 +87,7 @@ every link `ON DELETE CASCADE`** (BE-09).
 ### 1.4 External dependencies, integrations, secrets
 
 - **Services**: Postgres 16 (+pgvector), Redis 7 (BullMQ, rate buckets, scan locks), `immich-machine-learning` (`POST /predict`, internal API), Immich server (public REST, export target, off by default), Nominatim (reverse geocode + place search), optional MinIO/S3, map tiles (client-side, `NEXT_PUBLIC_MAP_TILE_*`, inlined at build).
-- **Binaries**: exiftool (perl), ffmpeg (+VAAPI on amd64), `pg_dump` 16, libheif via `heic-convert` (out of process), sharp/libvips.
+- **Binaries**: exiftool (perl), ffmpeg (+VAAPI on amd64), `pg_dump` 16, libheif via `heic-decode` (out of process; `heic-convert` until 2026-10-14), sharp/libvips.
 - **Secrets**: read only from the environment through `src/lib/config.ts` (`DATABASE_URL`, `REDIS_URL`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `IMMICH_API_KEY`); production values come from compose's `x-winnow-env` + the host `.env` (gitignored). CI secrets: `DEPLOY_WEBHOOK_URL`/`_TOKEN`. No secret is committed (`.env.dist` holds documented loopback placeholders); `/settings/instance` redacts credentials. The only `process.env` reads outside `config.ts` are `NODE_ENV`, `WINNOW_PROCESS`, `NEXT_PUBLIC_*` and `instance.ts`'s source check — all legitimate.
 - **Dependencies**: 18 runtime, 9 dev; lockfile v3 in sync with `package.json`. `npm audit --omit=dev` on this tree: **1 critical, 2 high** (SEC-02). `geist` is listed and imported nowhere (FE-10).
 

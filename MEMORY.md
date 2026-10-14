@@ -44,7 +44,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - One worker process, nine BullMQ queues, chained manually rather than by BullMQ flows → `docs/memory/pipeline.md`
 - Worker memory hygiene (jemalloc, out-of-process HEIF decode, `sharp.cache(false)`) is load-bearing → `docs/memory/pipeline.md`
 - ML is a remote HTTP call to Immich's internal `/predict`; Winnow embeds no model → `docs/memory/pipeline.md`
-- A derivative comes from the embedded preview; the RAW sensor is decoded (LibRaw `dcraw_emu`, half size, out-of-process) only when the file embeds no image at all, and the file's bytes — not its extension — pick the decoder → `docs/memory/pipeline.md`
+- A derivative comes from the embedded preview; the RAW sensor is decoded (LibRaw `dcraw_emu`, half size, out-of-process) only when the file embeds no image at all, and the file's bytes — not its extension — pick the decoder. A Sony .hif embeds no preview, so every one is a full-size libheif decode in a child (heic-decode WASM, then a sharp JPEG) → `docs/memory/pipeline.md`
 - Migrations are append-only and uniquely numbered; a rename costs a `RENUMBERED` shim → `docs/memory/database.md`
 - All configuration passes one Zod schema that fail-fasts at boot → `docs/memory/configuration.md`
 - Rates live in the database (tunable live), concurrency in the environment (needs a restart) → `docs/memory/configuration.md`

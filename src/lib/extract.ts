@@ -267,8 +267,11 @@ export async function readShutterCount(absPath: string): Promise<number | null> 
  *    the original (sharp handles it, `orientation` not needed).
  *  - HEIF/HEVC stills (.heic/.heif/.hif): sharp's prebuilt libvips ships the
  *    AVIF decoder but NOT the HEVC one. We prefer the embedded JPEG preview when
- *    the file carries a full-size one (Sony .hif), and otherwise decode the real
- *    pixels with libheif (heic-convert, lazy-loaded + serialized) to a temp JPEG.
+ *    the file carries a full-size one, and otherwise decode the real pixels with
+ *    libheif (heic-decode, out of process + serialized) to a temp JPEG. A Sony
+ *    A7C II .hif carries none — an 8 KB EXIF thumbnail only, measured on the
+ *    instance 2026-10-14 — so every one takes the decode: 4.4 s there, of which
+ *    1.4 s was heic-convert's pure-JS JPEG encoder, now sharp's.
  *    libheif applies the container transform (irot/imir) on its own, so for that
  *    decode path we only carry the EXIF orientation when the file has no such
  *    transform (cf. readHeicOrientation) - re-applying it otherwise rotates twice.
@@ -312,7 +315,8 @@ export async function extractSourceJpeg(
     const dir = await mkdtemp(path.join(tmpdir(), "winnow-"));
     try {
       // 1) A full-size embedded preview is ideal: instant, no pixel decode at
-      //    all (Sony .hif and most camera HEIFs ship one).
+      //    all. A Sony A7C II .hif does NOT ship one (measured): an 8 KB EXIF
+      //    thumbnail is all exiftool finds, so step 2 is its normal path.
       const preview = await extractEmbeddedPreview(absPath, dir);
       if (preview && (await longestEdge(preview)) >= config.proxySize) {
         return { jpegPath: preview, cleanupDir: dir, orientation: exif };
@@ -512,7 +516,7 @@ const HEIC_DECODER = path.join(
 );
 
 // Full libheif decode of a HEIF/HEVC still to a JPEG file on disk. The decoder is:
-//   - out-of-process: heic-convert pulls in a libheif WASM bundle whose linear
+//   - out-of-process: heic-decode pulls in a libheif WASM bundle whose linear
 //     heap only ever GROWS (never returned to the OS), and libheif-js leaks
 //     decoder handles across conversions — so decoding it in the long-lived
 //     worker walks RSS up into multiple GB and never releases it. We run each
@@ -521,7 +525,7 @@ const HEIC_DECODER = path.join(
 //     This also keeps any load hiccup or hard crash inside libheif a per-asset
 //     error instead of taking down extract.ts and the whole worker.
 //   - serialized: a 33–61 MP HEIF decodes to a full width*height*4 RGBA bitmap
-//     re-encoded by a pure-JS JPEG encoder, so several at once can exhaust
+//     (130–245 MB) before sharp encodes it, so several at once can exhaust
 //     memory even across processes. We cap it to one in-flight decode regardless
 //     of DERIVATIVE_CONCURRENCY; the cheap preview path is never gated.
 //   - file-out: the child writes the JPEG directly to `destPath`, so the decoded
@@ -543,7 +547,7 @@ function decodeHeicToJpegFile(absPath: string, destPath: string): Promise<void> 
 // One decode, run strictly one-at-a-time (serialized by heicGate) in a throwaway
 // child process. Running it out-of-process is what subsumes libheif's two real
 // failure modes that previously needed in-process guard rails:
-//   1. a normal heic-convert rejection, and
+//   1. a normal heic-decode rejection, and
 //   2. an ASYNCHRONOUS throw from inside the WASM ("RangeError: offset is out of
 //      bounds" on a malformed HEIF) that escapes the await — in-process this left
 //      the decode dangling and jammed the serialized gate for every later HEIF.
@@ -559,7 +563,16 @@ function decodeHeicChild(absPath: string, destPath: string): Promise<void> {
     // in dev and in the production image.
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", HEIC_DECODER, absPath, destPath],
+      [
+        "--import",
+        "tsx",
+        HEIC_DECODER,
+        absPath,
+        destPath,
+        // The child encodes with sharp: the same libvips thread budget as the
+        // worker's own sharp (derivatives.ts), not one thread per core.
+        String(config.sharpConcurrency),
+      ],
       { stdio: ["ignore", "ignore", "pipe"] },
     );
     let stderr = "";
