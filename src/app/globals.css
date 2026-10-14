@@ -4402,6 +4402,14 @@ html[data-theme="dark"] .btn-primary:hover {
   .dev-step-head h2 {
     flex: 1 1 14rem;
   }
+  /* Settings › Pipeline › Devices, "one camera, two names": one line per join,
+     the two raw names as the files write them. A long model wraps rather
+     than widening the card. */
+  .dev-makes {
+    @apply m-0 mb-3 flex flex-col gap-1 pl-0 text-sm;
+    list-style: none;
+    overflow-wrap: anywhere;
+  }
   .flow-warn {
     @apply m-0 rounded-[var(--radius)] px-3 py-2 text-sm;
     background: var(--color-accent-wash);

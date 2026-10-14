@@ -415,9 +415,8 @@ keeps its sibling proposal on screen but not as the button nor in "Apply every
 proposal shown" — WhatsApp strips EXIF, so the folder's body is the
 maintainer's, not the sender's (the farewell-party case). A card with no
 proposal opens its menu from the primary button ("Decide N"), never a dead
-"No proposal". What is still NOT modelled: "my own cameras" —
-a friend's Sony with intact EXIF is a real body, so "everything not shot by me"
-needs an ownership mark on /gear, a separate decision.
+"No proposal". "My own cameras" is a separate dimension, not a provenance:
+whose body it is lives in `gear_owners` (0053, `docs/memory/frontend.md`).
 
 **The indexer guard is the load-bearing part**, three rules in order:
 `device_source = 'override'` keeps the human's body whatever the file says;
@@ -433,6 +432,32 @@ override survives an mtime bump AND a genuine change of the file's Model, while
 `device_exif` follows the file. Re-run that lifecycle if you touch the UPDATE.
 Not written into originals: Make/Model are a camera's identity inside RAW maker
 notes and MP4 atoms — unlike a GPS pin, nothing outside Winnow needs them fixed.
+
+## One camera, two names: a Make left out of the clips (2026-10-14)
+
+**Fact** (measured on the instance): the Ray-Ban Meta glasses write `Make =
+Meta AI` + `Model = Ray-Ban Meta Smart Glasses 2` in a HEIC photo and only the
+Model in a MOV clip, so `device` (Make + Model) gave two bodies: 254 photos on
+one card, 301 clips on the other. Other cameras may do it; this one showed it.
+
+**Decision** → `lib/deviceMakes.ts`: a body whose name IS its model (no Make,
+not `'named'`) joins the ONE full spelling `<Make> <Model>` that the model's
+files declare (`device_exif`, never a hand-given body). Two makers for one model
+is reported, never merged; a model no file gives a Make for stays as it is —
+nothing is guessed. It moves `device` on every row carrying the short name
+(any provenance: a hand-pick of it meant that camera), rewrites `device_exif`
+to the full spelling too (so revert lands on the joined body instead of
+splitting it again — `device_exif` is "the file's body in the spelling its
+model's files agree on"), and carries the `gear_owners` row (the full name's
+own answer wins). **Where it runs**: the indexer at the END of every scan for
+the models that scan read (the per-file UPDATE still writes the raw name; the
+join right after makes it stable), which covers both orders — a new clip joins
+the stills, a first still with a Make pulls in the clips before it; and
+Settings › Pipeline › Devices "One camera, two names" (shown only while a pair
+exists) for the backlog. Not the merge of differently-named bodies the
+maintainer deferred (2026-10-13): it only joins names that differ by a missing
+Make. Postgres trap met on the way: `full` is reserved (`FULL JOIN`) — it
+cannot be a column alias in `unnest(...) AS p(model, full)`.
 
 **Still open**: the serial is recorded (`embedded_serial`, the viewer's
 "Unit" row) but nothing groups on it — two identical aircraft still share one

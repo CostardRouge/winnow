@@ -28,6 +28,7 @@ import { recordSidecars } from "./sidecars";
 import { reconcileMissingForRoot } from "./integrity";
 import { decideOwnZone, type OffsetSource } from "./captureZone";
 import { applyOwnZones, inheritNeighbourZones } from "./captureDays";
+import { joinMakelessBodies } from "./deviceMakes";
 import type { Root, Session } from "./types";
 
 // Optional hooks injected by the worker: allow suspending/preempting
@@ -176,6 +177,9 @@ export async function indexRoot(
   // Rows written this scan: the end-of-scan neighbour pass gives a capture-day
   // offset to those whose own file could not place them (lib/captureDays.ts).
   const touchedAssets: number[] = [];
+  // Every camera model this scan read off a file: the end of the scan joins a
+  // make-less spelling of one of them to its full name (lib/deviceMakes.ts).
+  const seenModels = new Set<string>();
   // Memoize per-directory file listings so a clip-heavy session reads each
   // folder at most once while detecting video sidecars.
   const dirCache = new Map<string, string[]>();
@@ -249,6 +253,7 @@ export async function indexRoot(
 
     const hash = await partialHash(absPath, size);
     const meta = await readMetadata(absPath);
+    if (meta.camera_model) seenModels.add(meta.camera_model);
     const capturedAt = meta.captured_at ?? mtime; // always populated → useful index
     const capturedAtSource = meta.captured_at ? meta.captured_at_source : "file";
     // The capture DAY's offset (migration 0046, lib/captureZone.ts): the
@@ -698,6 +703,20 @@ export async function indexRoot(
     } catch (err) {
       console.warn(
         `Capture-day neighbour pass failed for root ${root.id}:`,
+        (err as Error).message,
+      );
+    }
+  }
+
+  // One camera, two names: a clip that gave its Model without the Make its
+  // stills declare joins their body — and a first still with a Make pulls in
+  // the clips indexed before it. Only the models this scan read; never fatal.
+  if (seenModels.size) {
+    try {
+      await joinMakelessBodies([...seenModels]);
+    } catch (err) {
+      console.warn(
+        `Make-less body join failed for root ${root.id}:`,
         (err as Error).message,
       );
     }
