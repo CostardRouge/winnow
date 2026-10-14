@@ -1,6 +1,6 @@
 // EXIF / HEIF orientation readers, isolated from the rest of extract.ts so the
 // web process can reuse them (the HEIC-rotation diagnostic) without pulling in
-// sharp / heic-convert. Only depends on exiftool-vendored (a server external).
+// sharp / heic-decode. Only depends on exiftool-vendored (a server external).
 import { exiftool } from "exiftool-vendored";
 
 // Numeric EXIF orientation (1-8) of the original. `-n` disables exiftool's
@@ -18,7 +18,7 @@ export async function readOrientation(
 }
 
 // HEIF orientation can live in two places: the container transformative property
-// (`irot`/`imir`) and the EXIF `Orientation` tag. libheif (heic-convert) applies
+// (`irot`/`imir`) and the EXIF `Orientation` tag. libheif (heic-decode) applies
 // the container transform when decoding but ignores EXIF — and per the HEIF spec
 // the container transform supersedes EXIF anyway. exiftool surfaces the container
 // rotation as the `Rotation` tag, present iff the file carries an `irot` box, so

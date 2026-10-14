@@ -135,6 +135,30 @@ test("a JPEG saved under a .HEIC name goes straight to sharp", async () => {
   }
 });
 
+// A Sony A7C II .HIF embeds an 8 KB EXIF thumbnail and nothing larger, so every
+// one goes through the full libheif decode (measured on the instance: 4.4 s, of
+// which 1.4 s was a pure-JS JPEG encoder until 2026-10-14). The fixture is the
+// same kind of file, 96×64: HEVC 10-bit 4:2:2, no preview, left half red and
+// right half blue — encoded with libheif's heif-enc (x265).
+test("a HIF with no usable preview is decoded out of process, full size, colours intact", async () => {
+  const src = await extractSourceJpeg(path.join(fixtures, "sony-like-10bit-422.hif"), ".hif");
+  try {
+    const img = sharp(src.jpegPath);
+    const meta = await img.metadata();
+    assert.equal(meta.format, "jpeg");
+    // Full size: derivatives.ts fills a row's missing width/height from it.
+    assert.deepEqual([meta.width, meta.height], [96, 64]);
+    const { data, info } = await img.removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const px = (x: number, y: number) => [...data.subarray((y * info.width + x) * 3, (y * info.width + x) * 3 + 3)];
+    const [lr, , lb] = px(10, 32);
+    const [rr, , rb] = px(86, 32);
+    assert.ok(lr > 150 && lb < 100, `left is red: ${px(10, 32)}`);
+    assert.ok(rb > 150 && rr < 100, `right is blue: ${px(86, 32)}`);
+  } finally {
+    if (src.cleanupDir) await rm(src.cleanupDir, { recursive: true, force: true });
+  }
+});
+
 test("the sniffer never takes a TIFF-based RAW for a direct raster", () => {
   assert.equal(sniffDirectRaster(previewlessDng().subarray(0, 12)), null);
   assert.equal(sniffDirectRaster(Buffer.from([0x4d, 0x4d, 0, 42, 0, 0, 0, 8])), null);

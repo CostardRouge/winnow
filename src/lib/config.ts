@@ -444,7 +444,7 @@ const EnvSchema = z
     // --- HEIF/HEVC decode (libheif) --------------------------------------
     // A malformed HEIF can make libheif throw ASYNCHRONOUSLY from inside its
     // WASM (seen in the wild: "RangeError: offset is out of bounds" on a timer
-    // callback) — the throw escapes the await, so heic-convert's promise never
+    // callback) — the throw escapes the await, so heic-decode's promise never
     // settles. Decodes are serialized through a single gate, so one dangling
     // decode would jam EVERY later HEIF forever. We bound each decode: past this
     // many ms it is abandoned (the asset falls back to its embedded preview, or
@@ -639,7 +639,8 @@ export const PHOTO_RAW_EXTS = new Set([
 
 // HEIF/HEVC stills: iPhone (.heic/.heif), Sony A7C II / Canon (.hif).
 // sharp's prebuilt libvips ships the AVIF decoder but NOT the HEVC one, so these
-// are decoded via libheif (heic-convert) before sharp builds the derivatives.
+// are decoded via libheif (heic-decode, src/scripts/heicDecode.ts) before sharp
+// builds the derivatives.
 export const HEIC_EXTS = new Set([".heic", ".heif", ".hif"]);
 
 export const PHOTO_DIRECT_EXTS = new Set([

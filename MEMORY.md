@@ -35,6 +35,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 ## Decisions at a glance (details in the topic files)
 
 - Originals are read-only and read once; deletes are soft → `docs/memory/architecture.md`
+- The one write into an original (a manual GPS pin) is never killed halfway: it has its own exiftool with no 30 s limit and one attempt. The next write settles what a killed one left: scratch tmp removed, an interrupted copy-back finished from the tmp only when the tmp provably holds this write → `docs/memory/architecture.md`
 - Derivatives sit on disk behind an S3-shaped driver, so MinIO is one env flip away → `docs/memory/architecture.md`
 - Dedup is a partial hash arbitrated by a full-content compare, every decision logged; every statement that writes `content_hash` — the re-index UPDATE too — needs that branch, and Sony clips of one length collide once the same pin is written into them → `docs/memory/architecture.md`
 - Only Incoming copies are ever deletable, so "no RAW in the Gallery" is reported, not fixed, by dedup → `docs/memory/architecture.md`
@@ -43,7 +44,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - One worker process, nine BullMQ queues, chained manually rather than by BullMQ flows → `docs/memory/pipeline.md`
 - Worker memory hygiene (jemalloc, out-of-process HEIF decode, `sharp.cache(false)`) is load-bearing → `docs/memory/pipeline.md`
 - ML is a remote HTTP call to Immich's internal `/predict`; Winnow embeds no model → `docs/memory/pipeline.md`
-- A derivative comes from the embedded preview; the RAW sensor is decoded (LibRaw `dcraw_emu`, half size, out-of-process) only when the file embeds no image at all, and the file's bytes — not its extension — pick the decoder → `docs/memory/pipeline.md`
+- A derivative comes from the embedded preview; the RAW sensor is decoded (LibRaw `dcraw_emu`, half size, out-of-process) only when the file embeds no image at all, and the file's bytes — not its extension — pick the decoder. A Sony .hif embeds no preview, so every one is a full-size libheif decode in a child (heic-decode WASM, then a sharp JPEG) → `docs/memory/pipeline.md`
 - Migrations are append-only and uniquely numbered; a rename costs a `RENUMBERED` shim → `docs/memory/database.md`
 - All configuration passes one Zod schema that fail-fasts at boot → `docs/memory/configuration.md`
 - Rates live in the database (tunable live), concurrency in the environment (needs a restart) → `docs/memory/configuration.md`
@@ -91,13 +92,15 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 ## Open items (dated; remove when done)
 
+- 2026-10-14 — **Failures › GPS write: Retry the 7 once this deploy is live.** Six had been killed at 30 s, plus DSC02169. Their `_exiftool_tmp` files were removed and two originals rebuilt by hand (`docs/memory/architecture.md`). Large clips now take minutes each (the writer has no 30 s limit). The two cut ARWs in `Sony/Organized/1er janvier 2025` (DSC02106/07) stay red until copied again from the card, if it still has them.
+
 - 2026-10-14 — **Failures › Scan should read 0 after the deploy, with no click**: the first complete scan of `/nas-incoming` closes the 113 `ENOENT` rows a dedup run left behind (`…/10350227 campuan and sari organic walk/Selects/`), and indexes the 3 Sony clips that collided after their GPS write-back (`20250301_C0062`, `20260812_C0449`, `20260814_C0462`) with a NULL hash, each listed once as a recovered false collision on the Duplicates page. A row still open after that scan is a file still failing — read its message. `docs/memory/pipeline.md`, `docs/memory/architecture.md`.
 
 - 2026-10-14 — **The Ray-Ban Meta glasses are two bodies on the instance until the join is run**: after the deploy, Settings › Pipeline › Devices › "One camera, two names" → Join (≈303 clips named `Ray-Ban Meta Smart Glasses 2` → the photos' `Meta AI Ray-Ban Meta Smart Glasses 2`). The next scan reading either name would also do it. Check the section's "two makers" list: anything there is a human call.
 
 - 2026-10-11 — **A folder pair that deleted nothing (`…/Organized/Elio's birthday`, 133 ARWs, 4.5 GB) is still in the backlog.** The run's refusals were hidden by the report (fixed, `docs/memory/architecture.md`); after the deploy, run "Keep left" again: the report now names the cause in one line. If it says *permission denied*, the fix is on the NAS (that folder's owner/ACL for the NFS client), not in Winnow.
 
-- 2026-10-11 — **The derivative fallbacks are built, not yet retried on the instance**: after the deploy, Failures › Derivatives › Retry should turn 5 DNGs + 2 `IMG_E` HEICs ready; the 6 damaged `.MOV` stay red until re-copied from the phone. Read at the same time, not fixed: the "51 not in the search index" are those 13 plus 38 ARWs of an ignored session, all left at `ml_status='pending'` because nothing marks an asset that can never get a proxy — `/api/stats` `ml_pending` and `clipCoverage().library` count them as owed work (a counter decision, not a bug in ML); the one GPS write error is a stale `DSC02169.ARW_exiftool_tmp` beside its original (exiftool killed mid-write) that only removing the tmp file clears. `docs/memory/pipeline.md` carries the diagnosis.
+- 2026-10-11 — **The derivative fallbacks are built, not yet retried on the instance**: after the deploy, Failures › Derivatives › Retry should turn 5 DNGs + 2 `IMG_E` HEICs ready; the 6 damaged `.MOV` stay red until re-copied from the phone. Read at the same time, not fixed: the "51 not in the search index" are those 13 plus 38 ARWs of an ignored session, all left at `ml_status='pending'` because nothing marks an asset that can never get a proxy — `/api/stats` `ml_pending` and `clipCoverage().library` count them as owed work (a counter decision, not a bug in ML). `docs/memory/pipeline.md` carries the diagnosis.
 
 - 2026-10-10 — **The dedup redesign (PR #294) is built, not yet run on the instance**: steps 1–5 of the "Winnow Dedup Mockups" artifact (suggested survivor, plan by rule, folder pairs, review queue, strategies). The page is Settings › Pipeline › Duplicates (2026-10-11, after a one-day Library tab the maintainer rejected). Three calls are still his and nothing assumes them: an "expected / keep both" marker so intentional Export mirrors leave the backlog (needs a migration — next free number `0055`); new *suggestion* heuristics (" (1)" suffix, dated vs staging folder); a hand-picked group selection (today the filter is the selection).
 

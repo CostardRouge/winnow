@@ -87,7 +87,7 @@ every link `ON DELETE CASCADE`** (BE-09).
 ### 1.4 External dependencies, integrations, secrets
 
 - **Services**: Postgres 16 (+pgvector), Redis 7 (BullMQ, rate buckets, scan locks), `immich-machine-learning` (`POST /predict`, internal API), Immich server (public REST, export target, off by default), Nominatim (reverse geocode + place search), optional MinIO/S3, map tiles (client-side, `NEXT_PUBLIC_MAP_TILE_*`, inlined at build).
-- **Binaries**: exiftool (perl), ffmpeg (+VAAPI on amd64), `pg_dump` 16, libheif via `heic-convert` (out of process), sharp/libvips.
+- **Binaries**: exiftool (perl), ffmpeg (+VAAPI on amd64), `pg_dump` 16, libheif via `heic-decode` (out of process; `heic-convert` until 2026-10-14), sharp/libvips.
 - **Secrets**: read only from the environment through `src/lib/config.ts` (`DATABASE_URL`, `REDIS_URL`, `S3_ACCESS_KEY`/`S3_SECRET_KEY`, `IMMICH_API_KEY`); production values come from compose's `x-winnow-env` + the host `.env` (gitignored). CI secrets: `DEPLOY_WEBHOOK_URL`/`_TOKEN`. No secret is committed (`.env.dist` holds documented loopback placeholders); `/settings/instance` redacts credentials. The only `process.env` reads outside `config.ts` are `NODE_ENV`, `WINNOW_PROCESS`, `NEXT_PUBLIC_*` and `instance.ts`'s source check — all legitimate.
 - **Dependencies**: 18 runtime, 9 dev; lockfile v3 in sync with `package.json`. `npm audit --omit=dev` on this tree: **1 critical, 2 high** (SEC-02). `geist` is listed and imported nowhere (FE-10).
 
@@ -527,7 +527,7 @@ code and React/react-window work, without a frame trace.
 - **Fix:** a dedicated `ExifTool` instance for writes with no task timeout (or one scaled to file size), `attempts: 1` for gpswrite, and a size cap above which video write-back is refused with a readable error.
 - **Effort:** S · **Risk of fixing:** low
 - **Verification:** write GPS into a sample JPEG and MOV through `runGpsWriteJob` with an artificially slow disk (e.g. `tc`/`dm-delay` or a FUSE throttle) past 30 s: the file is intact and tagged.
-- *Evidence:* read (+ library default) · *Status:* Batch 3
+- *Evidence:* read (+ library default), then **reproduced on the instance** 2026-10-13: every clip over ~1 GB was killed at 30 s (the NAS moves about 1 GB per 30 s), which left 7 `_exiftool_tmp` files and 2 originals damaged by a half-finished copy-back. Both originals were repaired from their tmp. · *Status:* **Fixed** 2026-10-14: `exifWriter()` in `src/lib/exifWrite.ts` is a separate `ExifTool` with a 6 h limit (exiftool-vendored 37 refuses `0`), gpswrite runs `attempts: 1`, and a leftover tmp is settled before the next write (scratch removed, an interrupted copy-back finished from it when it provably holds this write). **The size cap was not shipped**: the maintainer's 1–8 GB clips are meant to be written, a slow write only holds the gpswrite queue, and recovery covers the kill that remains (a worker restart). Verified by `exifWrite.test.ts` (leftover tmp, half-overwritten original, foreign tmp), not by a throttled disk.
 
 **BE-06** — **Severity:** medium
 - **Location:** `src/app/api/sessions/route.ts:122-209` (per-session `LEFT JOIN LATERAL` aggregates for **every** session, no LIMIT), polled every 5 s by `SessionsPane.tsx:360`.

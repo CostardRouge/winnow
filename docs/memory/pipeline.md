@@ -70,6 +70,24 @@ genuine night/astro frames, not a rendering bug. **How to apply**: a new
 through `/api/assets/:id/download` (it ignores `Range` and sends the whole
 file — mind the disk) and asking exiftool/`file` what it really is.
 
+**A Sony .hif has no preview: every one is a full libheif decode (2026-10-14).**
+The A7C II embeds an 8 KB EXIF thumbnail and nothing larger, so the "preview
+first" path never applies to its 43 929 HIFs. On the Optiplex one decode took
+4.4 s: 2.8 s of WASM HEVC decode, then 1.4 s of heic-convert's pure-JS JPEG
+encoder. The child (`scripts/heicDecode.ts`) now runs `heic-decode` and encodes
+with sharp instead. That saves an estimated ~1 s per HIF, and nearly half on a
+noisy 33 MP frame here (25.6 → 13.7 s), with no visible change (44.8 dB
+between old and new JPEGs). The output stays full size, because derivatives.ts
+fills a row's missing width/height from it. The 2.8 s decode is the cost left.
+Two ways to cut it were not taken, because there is no backlog and each needs
+an image change: Debian 12's ffmpeg 5.1 cannot read HEIF ("moov atom not
+found"; 7.1 from Debian 13 can), and native libheif (`libheif-examples`) would
+be a new system dependency. **Trap**: `npm install heic-decode` alone
+re-resolves `libheif-js` from 1.19.8 to 1.23.5, which silently swaps the
+decoder. Swap packages by installing the new one BEFORE uninstalling the old.
+The test fixture `sony-like-10bit-422.hif` (HEVC 10-bit 4:2:2) was made with
+`heif-enc` from `libheif-examples` + `libheif-plugin-x265`.
+
 ## A moved original deadlocks the pipeline — there is no move detection (2026-09-02)
 
 **Fact**: asset identity is `abs_path` (UNIQUE). A file moved to another folder
