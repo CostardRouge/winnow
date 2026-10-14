@@ -36,7 +36,7 @@ import { runExportJob } from "./lib/export";
 import { runPurgeJob } from "./lib/purge";
 import { runImport } from "./lib/import";
 import { runGeocodeJob } from "./lib/geocode";
-import { runGpsWriteJob } from "./lib/exifWrite";
+import { closeExifWriter, runGpsWriteJob } from "./lib/exifWrite";
 import { runMlJob } from "./lib/ml";
 import { assignAllPending } from "./lib/people";
 import { bootstrapRoots } from "./lib/bootstrap";
@@ -444,7 +444,7 @@ async function shutdown() {
     mlWorker.close(),
     integrityWorker.close(),
   ]);
-  await closeExiftool();
+  await Promise.allSettled([closeExiftool(), closeExifWriter()]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

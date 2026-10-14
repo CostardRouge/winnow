@@ -666,12 +666,16 @@ export async function getDeviceProbeJob(jobId: string): Promise<{
 // Write a manual GPS position back into the original file (cf. lib/exifWrite.ts).
 // Idempotent: the job re-reads the asset's current coordinates at run time, so
 // re-enqueuing (or geotagging twice before the worker catches up) just writes
-// the latest value.
+// the latest value. ONE attempt (audit BE-05): a write is a full rewrite of an
+// original, and what fails it — a damaged file, an interrupted copy the job
+// will not finish — fails the same way seconds later. The error is shown on
+// Failures › GPS write, whose Retry is the second attempt.
+const gpsWriteJobOpts = { ...defaultJobOpts, attempts: 1 };
 export async function enqueueGpsWrite(assetId: number) {
   return getQueues().gpswrite.add(
     "gpswrite",
     { assetId } satisfies GpsWriteJob,
-    defaultJobOpts,
+    gpsWriteJobOpts,
   );
 }
 
@@ -685,7 +689,7 @@ export async function enqueueGpsWriteBulk(assetIds: number[]): Promise<number> {
       assetIds.slice(i, i + 1000).map((assetId) => ({
         name: "gpswrite",
         data: { assetId } satisfies GpsWriteJob,
-        opts: defaultJobOpts,
+        opts: gpsWriteJobOpts,
       })),
     );
   }
