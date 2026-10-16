@@ -20,6 +20,11 @@ let clashId: number;
 let lonelyId: number;
 let roadId: number;
 let importId: number;
+let mixedId: number;
+let bracketId: number;
+let oneSideId: number;
+let splitId: number;
+let gradedIds: Record<string, number> = {};
 let seq = 0;
 
 const MPL = { lat: 43.6108, lon: 3.8767 };
@@ -58,6 +63,48 @@ async function media(
     ],
   );
 }
+
+// A media written field by field — the set-aside rules read the file name,
+// the extension, the lens and the model the FILE declares.
+async function raw(
+  sid: number,
+  at: string,
+  o: {
+    filename: string;
+    ext: string;
+    lens?: string | null;
+    modelExif?: string | null;
+    model?: string | null;
+    gps?: { lat: number; lon: number };
+    media?: "photo" | "video";
+  },
+): Promise<number> {
+  seq++;
+  const r = await db.one<{ id: string }>(
+    `INSERT INTO assets (session_id, abs_path, rel_path, filename, ext, media_type,
+                         captured_at, gps, camera_model, camera_model_exif, lens)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::jsonb, $9, $10, $11) RETURNING id`,
+    [
+      sid,
+      `/unplaced-test/${seq}/${o.filename}`,
+      `${seq}/${o.filename}`,
+      o.filename,
+      o.ext,
+      o.media ?? "photo",
+      at,
+      o.gps ? JSON.stringify(o.gps) : null,
+      o.model === undefined ? "ILCE-7CM2" : o.model,
+      o.modelExif === undefined ? "ILCE-7CM2" : o.modelExif,
+      o.lens === undefined ? "FE 24-105mm F4 G OSS" : o.lens,
+    ],
+  );
+  return Number(r!.id);
+}
+
+const AMS = { lat: 52.3731, lon: 4.8922 };
+const ZAANDAM = { lat: 52.4389, lon: 4.8262 };
+const KYANCUTTA = { lat: -33.1333, lon: 135.5667 };
+const VENUS = { lat: -33.2333, lon: 134.6667 };
 
 const at = (h: number, m = 0) =>
   `1999-06-01T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
@@ -125,6 +172,56 @@ before(async () => {
   roadId = await session("road", day6(10), day6(15));
   for (const [h, m] of [[10, 0], [10, 30], [11, 0], [14, 0], [14, 30], [15, 0]])
     await media(roadId, day6(h, m));
+
+  // §12. A phone folder of 20 June: two real frames, a screenshot (PNG, no
+  // camera in the file — the attribution filled camera_model beside it) and
+  // a file saved from another app. Only the two frames make the card.
+  mixedId = await session("phone june", "1999-06-20T08:00:00Z", "1999-06-20T08:30:00Z");
+  await raw(mixedId, "1999-06-20T08:00:00Z", { filename: "IMG_0001.HEIC", ext: ".heic", model: "iPhone 15 Pro Max", modelExif: "iPhone 15 Pro Max", lens: "iPhone 15 Pro Max back camera" });
+  await raw(mixedId, "1999-06-20T08:10:00Z", { filename: "IMG_0002.HEIC", ext: ".heic", model: "iPhone 15 Pro Max", modelExif: "iPhone 15 Pro Max", lens: "iPhone 15 Pro Max back camera" });
+  await raw(mixedId, "1999-06-20T08:20:00Z", { filename: "IMG_0003.PNG", ext: ".png", model: "iPhone 15 Pro Max", modelExif: null, lens: null });
+  await raw(mixedId, "1999-06-20T08:30:00Z", { filename: "RSJQ2434.MP4", ext: ".mp4", model: "iPhone 15 Pro Max", modelExif: null, lens: null, media: "video" });
+
+  // §12. Bracketing, on 22 June. One clip shot 90 s between two Sony frames at
+  // the same spot (another folder): two donors only — under `floor`, so the
+  // share rule alone says low.
+  bracketId = await session("one clip", "1999-06-22T12:00:00Z", "1999-06-22T12:00:00Z");
+  await raw(bracketId, "1999-06-22T12:00:00Z", { filename: "C0236.MP4", ext: ".mp4", media: "video" });
+  const sony = await session("sony 22", "1999-06-22T11:58:30Z", "1999-06-22T15:01:00Z");
+  await raw(sony, "1999-06-22T11:58:30Z", { filename: "DSC03550.HIF", ext: ".hif", gps: AMS });
+  await raw(sony, "1999-06-22T12:01:34Z", { filename: "DSC03551.ARW", ext: ".arw", gps: { lat: AMS.lat + 0.0002, lon: AMS.lon } });
+  // One side only, on a day of its own: a clip at 14:00, a frame located 20
+  // min before, nothing after.
+  oneSideId = await session("one side", "1999-06-24T14:00:00Z", "1999-06-24T14:00:00Z");
+  await raw(oneSideId, "1999-06-24T14:00:00Z", { filename: "C0240.MP4", ext: ".mp4", media: "video" });
+  const sony24 = await session("sony 24", "1999-06-24T13:40:00Z", "1999-06-24T13:40:00Z");
+  await raw(sony24, "1999-06-24T13:40:00Z", { filename: "DSC03600.ARW", ext: ".arw", gps: AMS });
+  // Sides 8 km apart decide nothing: a clip at 15:00 between Amsterdam and Zaandam.
+  splitId = await session("split", "1999-06-22T15:00:00Z", "1999-06-22T15:00:00Z");
+  await raw(splitId, "1999-06-22T15:00:00Z", { filename: "C0250.MP4", ext: ".mp4", media: "video" });
+  await raw(sony, "1999-06-22T14:59:00Z", { filename: "DSC03700.ARW", ext: ".arw", gps: AMS });
+  await raw(sony, "1999-06-22T15:01:00Z", { filename: "DSC03701.ARW", ext: ".arw", gps: ZAANDAM });
+
+  // §12. Graded exports, exported 15 July, shot 10 July at Kyancutta. The
+  // export folder is near frames located at Venus Bay — the grading desk —
+  // which a time suggestion would have offered.
+  const originals = await session("drone originals", "1999-07-01T05:00:00Z", "1999-07-10T05:52:00Z");
+  await raw(originals, "1999-07-10T05:52:00Z", { filename: "DJI_19990710055201_0054_D.MP4", ext: ".mp4", media: "video", gps: KYANCUTTA });
+  await raw(originals, "1999-07-10T05:00:00Z", { filename: "C0001.MP4", ext: ".mp4", media: "video", gps: KYANCUTTA });
+  // The same short clip name another day, elsewhere — the card counter restarted.
+  await raw(originals, "1999-07-01T05:00:00Z", { filename: "C0001.MP4", ext: ".mp4", media: "video", gps: VENUS });
+  // Two located clips by one name, far apart: ambiguous.
+  await raw(originals, "1999-07-02T05:00:00Z", { filename: "AMBIG.MP4", ext: ".mp4", media: "video", gps: KYANCUTTA });
+  await raw(originals, "1999-07-03T05:00:00Z", { filename: "AMBIG.MP4", ext: ".mp4", media: "video", gps: VENUS });
+  const desk = await session("venus desk", "1999-07-15T09:00:00Z", "1999-07-15T09:30:00Z");
+  for (const m of [0, 10, 20]) await raw(desk, `1999-07-15T09:${String(m).padStart(2, "0")}:00Z`, { filename: `DESK${m}.HEIC`, ext: ".heic", gps: VENUS });
+  const lut = await session("december lut", "1999-07-15T09:05:00Z", "1999-07-15T09:20:00Z");
+  gradedIds = {
+    dji: await raw(lut, "1999-07-15T09:05:00Z", { filename: "DJI_19990710055201_0054_D_lut_19990715.mp4", ext: ".mp4", media: "video" }),
+    dated: await raw(lut, "1999-07-15T09:10:00Z", { filename: "19990710_C0001_lut_19990715.mp4", ext: ".mp4", media: "video" }),
+    ambiguous: await raw(lut, "1999-07-15T09:15:00Z", { filename: "AMBIG_lut_19990715.mp4", ext: ".mp4", media: "video" }),
+    none: await raw(lut, "1999-07-15T09:20:00Z", { filename: "NOSUCH_lut_19990715.mp4", ext: ".mp4", media: "video" }),
+  };
 });
 
 after(async () => {
@@ -250,4 +347,74 @@ test("the places already used near a card, nearest first", { skip: skipWithoutDb
   assert.ok(perols.gap_h < -48 && perols.gap_h > -49, String(perols.gap_h));
   // Camera fixes are not "places already used": only human placements are.
   assert.ok(!places.some((p) => Math.abs(p.lat - MPL.lat) < 1e-3));
+});
+
+test("screenshots and files saved from another app are on no card, and counted aside", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  const card = r.groups.find((g) => g.sessions[0].id === mixedId)!;
+  assert.ok(card, "the phone folder has a card");
+  assert.equal(card.unplaced, 2, "the two real frames only");
+  assert.ok(r.totals.aside.screenshots >= 1);
+  assert.ok(r.totals.aside.saved >= 1);
+  // The library tally still counts them: they are unplaced, just not a card's.
+  const aside = await import("./unplacedAside");
+  const list = await aside.listAside();
+  const mine = list.not_a_place.filter((a) => a.session_id === mixedId);
+  assert.deepEqual(mine.map((a) => [a.filename, a.kind]).sort(), [
+    ["IMG_0003.PNG", "screenshot"],
+    ["RSJQ2434.MP4", "saved"],
+  ]);
+});
+
+test("a clip between two located frames at one spot is high, pinned on the nearer", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  const card = r.groups.find((g) => g.sessions[0].id === bracketId)!;
+  const s = card.suggestion!;
+  assert.equal(s.located, 2, "under the floor: the share alone said low");
+  assert.equal(s.confidence, "high");
+  assert.equal(s.evidence?.basis, "bracketed");
+  assert.equal(s.evidence?.before?.filename, "DSC03550.HIF");
+  assert.equal(s.evidence?.after?.filename, "DSC03551.ARW");
+  assert.ok(Math.abs(s.lat - AMS.lat) < 1e-6, "90 s before is nearer than 94 s after");
+
+  const one = r.groups.find((g) => g.sessions[0].id === oneSideId)!.suggestion!;
+  assert.equal(one.confidence, "medium");
+  assert.equal(one.evidence?.basis, "one_side");
+
+  const split = r.groups.find((g) => g.sessions[0].id === splitId)!.suggestion!;
+  assert.equal(split.evidence ?? null, null, "8 km apart decides nothing");
+  assert.equal(split.confidence, "low");
+});
+
+test("graded exports are on no card and find their source by name and shoot day", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  assert.ok(!r.groups.some((g) => g.sessions[0].name === "december lut"), "never a card: its hours are the grading desk's");
+  assert.ok(r.totals.aside.graded >= 4);
+  assert.ok(r.totals.aside.graded_matched >= 2);
+
+  const aside = await import("./unplacedAside");
+  const { graded } = await aside.listAside();
+  const by = new Map(graded.map((x) => [x.id, x]));
+  const dji = by.get(gradedIds.dji)!;
+  assert.ok(dji.source, JSON.stringify(dji));
+  assert.ok(Math.abs(dji.source!.lat - KYANCUTTA.lat) < 1e-6);
+  // C0001 was shot twice; the one shot on the name's date (10 July) answers.
+  const dated = by.get(gradedIds.dated)!;
+  assert.ok(dated.source, JSON.stringify(dated));
+  assert.ok(Math.abs(dated.source!.lat - KYANCUTTA.lat) < 1e-6, "not the Venus Bay C0001 of 1 July");
+  assert.equal(by.get(gradedIds.ambiguous)!.reason, "ambiguous");
+  assert.equal(by.get(gradedIds.none)!.reason, "none");
+
+  // Copied as a suggestion, never written into the file, never over a position.
+  const gp = await import("./geotagPoints");
+  const w = await gp.writeGeotagPoints([
+    { id: dji.id, lat: dji.source!.lat, lon: dji.source!.lon, source: "inferred", import_id: null },
+  ]);
+  assert.deepEqual(w, { updated: 1, skipped: 0 });
+  const row = await db.one<{ gps_source: string; gps_write_status: string | null }>(
+    "SELECT gps_source, gps_write_status FROM assets WHERE id = $1",
+    [dji.id],
+  );
+  assert.equal(row!.gps_source, "inferred");
+  assert.notEqual(row!.gps_write_status, "pending");
 });

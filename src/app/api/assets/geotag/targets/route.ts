@@ -8,13 +8,17 @@
 // /api/sessions/:id/assets, which returns the full GRID_SELECT projection
 // (ratings, tags, companions, bursts, sidecars, the per-pair LATERALs) 500 rows
 // at a time. A 3 886-frame folder was eight requests carrying tens of columns
-// each to populate a table of five. This is one request and eleven columns —
+// each to populate a table of five. This is one request and twelve columns —
 // session_id among them, so the recap can group a multi-folder apply by folder.
 //
 // Two rules the shape encodes:
 //   - Pairs are NOT collapsed. Both members of a RAW+JPEG / Live Photo pair are
 //     listed and written: the companion file needs the coordinates in its own
 //     metadata too (the reason the old caller passed `collapse=0`).
+//   - Each row says whether the Unplaced view sets it aside (`aside`,
+//     docs/UNPLACED.md §12): a screenshot, a file saved from another app, a
+//     graded export. The view leaves those out of a card's write; every other
+//     caller ignores the column.
 //   - Exempted media are never targets. A human took them out of the backlog
 //     for good (geo_exempt_at, cf. api/assets/geo-exempt); putting one back is
 //     an explicit un-exempt, not a side effect of geotagging its folder.
@@ -27,6 +31,7 @@ import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { buildFilter, filterFromSearchParams } from "@/lib/filter";
 import { json, badRequest, serverError } from "@/lib/api";
+import { ASIDE_KIND } from "@/lib/unplacedSql";
 
 // DB-backed route: never pre-rendered/cached at build time.
 export const dynamic = "force-dynamic";
@@ -68,9 +73,11 @@ export async function GET(req: NextRequest) {
       camera_model: string | null;
       lens: string | null;
       captured_at: string | null;
+      aside: "screenshot" | "saved" | "graded" | null;
     }>(
       `SELECT a.id, a.session_id, a.filename, a.media_type, a.gps, a.gps_source,
-              a.place_city, a.place_country, a.camera_model, a.lens, a.captured_at
+              a.place_city, a.place_country, a.camera_model, a.lens, a.captured_at,
+              ${ASIDE_KIND} AS aside
        FROM assets a
        LEFT JOIN ratings r ON r.asset_id = a.id
        WHERE ${conditions.join(" AND ")}

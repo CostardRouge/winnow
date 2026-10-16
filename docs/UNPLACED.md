@@ -616,3 +616,78 @@ rejected E (a stops list with no map), and asked for the design as drawn.*
    each side — the one whose clock to check. Place by hand, or follow a
    track. A real flight (Porto → Paris in three hours, 400 km/h) stays a
    journey.
+
+## 12. The fourth round: what is left, measured
+
+*2026-10-16, after the maintainer had worked most groups and asked what else
+could go faster — "beaucoup d'endroits et de fichiers isolés, je fais souvent
+des Place one". Approved from the "Winnow Unplaced — next round" canvas:
+items 1–3 of its plan (the band, the set-aside media, confidence by
+distance); "each frame by its neighbours" and "My places" are drawn there
+and not built.*
+
+**The census of the 820 left** (instance, 2026-10-16; 141 cards, **82 of them
+a single file**), each media counted once, first match wins:
+
+| | media | what it is |
+| --- | ---: | --- |
+| screenshots + files saved from another app | 91 | 51 cards, **41 of the 82 single-file cards** (98 by the rules as built: 45 + 53) |
+| graded exports (`…_lut_YYYYMMDD`) | 108 | dated the EXPORT day; 62 were suggested at Venus Bay, the grading desk |
+| already Ready | 62 | |
+| evidence within 2 km, shown low/medium | 198 | `floor` (< 5 donors) or a cell boundary split the share |
+| the fixes before and after > 2 km apart | 324 | 280 of them *sunrise beach* (see 4 below) |
+| little evidence within 6 h | 38 | the *Home* folders among them |
+
+1. **Some media are on no card.** `lib/unplacedSql.ts` names them and every
+   card scan reads `TODO_CARD` (the backlog without them); a card's write
+   drops them too (`/api/assets/geotag/targets` returns `aside`, the view
+   filters it). Their counts ride along as `totals.aside`, and each kind has
+   its own dialog from the **plan band**:
+   - a **screenshot**: a PNG whose FILE names no camera (`lens` and
+     `camera_model_exif` NULL — the attribution may have filled
+     `camera_model`, which is why the older `NO_EXIF` rule, reading
+     `camera_model`, had caught only 14 of them). 43 of 45 were the iPhone
+     15 Pro Max's own screen size;
+   - **saved from another app**: iOS's import name (`RSJQ2434.MP4`,
+     `EJQME2111.MOV`, `YKSD4842 1.MOV`) and no camera in the file — its time
+     is the save. 11 random-named files that DO carry a lens are real phone
+     photos and stay on cards. Ten such files on the instance are drone clips
+     that went through the phone: the dialog is a contact sheet where they
+     are unticked, every tile starts ticked;
+   - a **graded export**: its position is its SOURCE clip's, found by name —
+     `<stem>_lut_<date>` ← `<stem>.*` (a leading `_` dropped on both sides),
+     or, when the stem starts with a date (`20251024_C0223`), the short
+     camera name (`C0223.MP4`) shot on that day only, since Sony card
+     numbers restart. Several located clips of one name within `move_m`
+     are one answer; further apart, `ambiguous`, nothing copied. 70 of 108
+     matched on the instance; the 38 others are placed by hand from the same
+     dialog, on an empty map — their hours suggest nothing. The copy goes
+     through `geotag/points` as `'inferred'`: never into the file, never
+     over a position. The shoot date in the name is NOT applied (it would
+     change `captured_at`; the maintainer's call).
+2. **Confidence by DISTANCE** (`tight_km` 2, `bracketEvidence`). The
+   located frame just before a card and the one just after (each within
+   `near_h`), and those inside its own hours, all within 2 km of each
+   other: **bracketed → high**; one side, or inside only → medium; the pin
+   moves to the side nearest in time. Applied only when it RAISES the
+   share's confidence, and before the conflict check, which still wins. On
+   the instance the Omeo clip shot 1 min 27 s after and 1 min 34 s before
+   two Sony frames at one spot read *low · 38 %* (394 frames that hour over
+   three cells); an Amsterdam clip was suggested at Zaandam, 8 km off,
+   while the frames 47 s before and 27 min after were in Amsterdam. The
+   card's sentence and the keyboard review's strip name the two frames,
+   the gaps and the distance, so *high* is something to check.
+3. **The plan band** above the cards: *Not a place · Graded exports ·
+   Ready to confirm · By hand*, each a count of MEDIA (a card holds one or a
+   thousand), a sentence, one button; *Review N* moved there from the
+   toolbar. Ink and paper only — the canvas's coloured dots broke UI review
+   H4 (a count is never a colour). A phone gets one row per pile, the
+   sentences dropped (each dialog says it again). An exempt is undone from
+   the notice.
+4. **What the census got wrong, and is not built yet.** *Sunrise beach*
+   looked like a trip (fixes 58 km apart around a 12 h folder) but all 280
+   frames were shot 9–11 h, between two iPhone fixes at one spot; the
+   Tin Can Bay fixes were the folder's own evening frames, already placed.
+   The fix it calls for is **per-frame**: each frame takes the fixes around
+   ITS time, not the card's — the canvas's screen 4a. Until it lands, the
+   card's *Follow a track…* with the iPhone frames does exactly that.

@@ -4,6 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  betterConfidence,
+  bracketEvidence,
+  type EvidenceFix,
   impossibleLeg,
   placeCuts,
   placeRuns,
@@ -223,4 +226,58 @@ test("impossibleLeg: a drive, and even a flight, are journeys", () => {
     2,
   );
   assert.equal(impossibleLeg(flight, 1000), null);
+});
+
+// --- Confidence by distance (tight_km, docs/UNPLACED.md §12) -----------------
+
+const AMS = { lat: 52.3731, lon: 4.8922 };
+const ZAANDAM = { lat: 52.4389, lon: 4.8262 };
+
+function fix(iso: string, at: { lat: number; lon: number }, filename = "DSC.ARW"): EvidenceFix {
+  return { at: iso, filename, model: "ILCE-7CM2", name: null, lat: at.lat, lon: at.lon };
+}
+
+test("bracketEvidence: a frame on each side at the same spot brackets the card — high, pin on the nearer", () => {
+  const t = Date.parse("2025-01-31T14:59:03Z");
+  const before = fix("2025-01-31T14:58:16Z", AMS, "DSC02079.HIF");
+  const after = fix("2025-01-31T15:26:34Z", { lat: AMS.lat + 0.001, lon: AMS.lon }, "DSC02217.ARW");
+  const r = bracketEvidence(t, t, before, after, null, 2000)!;
+  assert.equal(r.confidence, "high");
+  assert.equal(r.evidence.basis, "bracketed");
+  assert.equal(r.pin?.filename, "DSC02079.HIF", "47 s before beats 27 min after");
+  assert.ok(r.evidence.spread_m > 100 && r.evidence.spread_m < 200, String(r.evidence.spread_m));
+});
+
+test("bracketEvidence: one side only is medium; nothing is null", () => {
+  const t = Date.parse("2025-01-31T14:59:03Z");
+  const r = bracketEvidence(t, t, fix("2025-01-31T14:40:00Z", AMS), null, null, 2000)!;
+  assert.equal(r.confidence, "medium");
+  assert.equal(r.evidence.basis, "one_side");
+  assert.equal(bracketEvidence(t, t, null, null, null, 2000), null);
+});
+
+test("bracketEvidence: sides further apart than tight_km decide nothing", () => {
+  const t = Date.parse("2025-01-31T14:59:03Z");
+  // Zaandam is ~8 km from Amsterdam: the card moved, or one side is wrong.
+  assert.equal(bracketEvidence(t, t, fix("2025-01-31T14:58:00Z", ZAANDAM), fix("2025-01-31T15:00:00Z", AMS), null, 2000), null);
+});
+
+test("bracketEvidence: the frames inside the card count too — far ones veto, near ones alone are medium", () => {
+  const t0 = Date.parse("2025-01-31T14:00:00Z");
+  const t1 = Date.parse("2025-01-31T16:00:00Z");
+  const before = fix("2025-01-31T13:58:00Z", AMS);
+  const after = fix("2025-01-31T16:01:00Z", AMS);
+  const far = { n: 3, lat_min: AMS.lat, lat_max: ZAANDAM.lat, lon_min: ZAANDAM.lon, lon_max: AMS.lon };
+  assert.equal(bracketEvidence(t0, t1, before, after, far, 2000), null);
+  const near = { n: 2, lat_min: AMS.lat, lat_max: AMS.lat + 0.002, lon_min: AMS.lon, lon_max: AMS.lon + 0.002 };
+  const only = bracketEvidence(t0, t1, null, null, near, 2000)!;
+  assert.equal(only.confidence, "medium");
+  assert.equal(only.evidence.basis, "inside");
+  assert.equal(only.pin, null, "no side to pin on: the share's median stands");
+});
+
+test("betterConfidence never lowers", () => {
+  assert.equal(betterConfidence("low", "high"), "high");
+  assert.equal(betterConfidence("high", "medium"), "high");
+  assert.equal(betterConfidence("medium", "low"), "medium");
 });

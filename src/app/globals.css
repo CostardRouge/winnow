@@ -9765,3 +9765,198 @@ html[data-theme="dark"] .btn-primary:hover {
     }
   }
 }
+@layer components {
+  /* ---- Unplaced: the plan band (docs/UNPLACED.md §12) ----------------------- */
+  /* What is left, by the one gesture that clears it: a row of cards, each a
+     count, a sentence and one button. Ink and paper only (UI review H4): the
+     card whose button is the page's primary — Ready — is told apart by its
+     border, not by a colour. Four across where they fit, two on a tablet, one
+     on a phone. */
+  .unplaced-plan {
+    @apply mb-4 grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  }
+  .plan-card {
+    @apply flex min-w-0 flex-col gap-1.5 rounded-[var(--radius-lg)] border p-3.5;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .plan-card.is-lead {
+    border-color: var(--color-text);
+  }
+  .plan-title {
+    @apply m-0 text-[13px] font-semibold;
+  }
+  .plan-count {
+    @apply text-[30px] leading-none;
+    font-family: var(--font-serif);
+  }
+  .plan-text {
+    @apply m-0 flex-1 text-[12.5px] leading-snug;
+    color: var(--color-muted);
+  }
+  .plan-card .btn {
+    @apply mt-1 self-start whitespace-nowrap;
+  }
+  /* A phone: one row per pile — the count, what it is, its button — so the
+     first card is still on the first screen. The sentence goes: each dialog
+     says it again, at the moment it matters. */
+  @media (max-width: 640px) {
+    .unplaced-plan {
+      @apply gap-0 overflow-hidden rounded-[var(--radius-lg)] border;
+      grid-template-columns: minmax(0, 1fr);
+      border-color: var(--color-border);
+    }
+    .plan-card {
+      @apply items-center gap-x-3 rounded-none border-0 px-3 py-2.5;
+      display: grid;
+      grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+      grid-template-areas: "count title btn";
+    }
+    .plan-card + .plan-card {
+      border-top: 1px solid var(--color-border);
+    }
+    .plan-card.is-lead {
+      background: var(--color-surface-2);
+    }
+    .plan-title {
+      grid-area: title;
+    }
+    .plan-count {
+      grid-area: count;
+      @apply text-right text-[22px];
+    }
+    .plan-text {
+      display: none;
+    }
+    .plan-card .btn {
+      grid-area: btn;
+      @apply mt-0 max-w-[11rem] overflow-hidden text-ellipsis;
+    }
+  }
+
+  /* ---- The set-aside dialogs ------------------------------------------------ */
+  .aside-modal {
+    @apply flex flex-col;
+    max-width: 56rem;
+    max-height: calc(100dvh - 2rem);
+  }
+  .aside-modal .modal-actions {
+    @apply flex-wrap items-center;
+  }
+  .aside-modal .modal-actions .btn {
+    @apply whitespace-nowrap;
+  }
+  @media (max-width: 640px) {
+    .aside-modal .recap-foot-note {
+      flex-basis: 100%;
+    }
+  }
+  .aside-body {
+    @apply -mx-1 mt-2 min-h-0 flex-1 overflow-y-auto px-1;
+  }
+  .aside-group {
+    @apply mt-3;
+  }
+  .aside-group:first-child {
+    @apply mt-0;
+  }
+  .aside-group > .hint {
+    @apply m-0 mt-0.5 text-[12.5px];
+  }
+  .aside-group-head {
+    @apply flex items-baseline gap-3;
+  }
+  .aside-group-head h3 {
+    @apply m-0 text-sm font-semibold;
+  }
+  .aside-more {
+    @apply mt-2;
+  }
+  .aside-table-wrap {
+    max-height: 40vh;
+  }
+  /* Fixed columns: two long file names side by side must ellipsise inside
+     the dialog, never push the place off its right edge. */
+  .aside-table {
+    table-layout: fixed;
+  }
+  .aside-table th:nth-child(1) {
+    width: 2.5rem;
+  }
+  .aside-table th:nth-child(4) {
+    width: 6.5rem;
+  }
+  .aside-table th:nth-child(5) {
+    width: 8.5rem;
+  }
+  .aside-table td {
+    @apply text-[13px];
+  }
+  .aside-table input[type="checkbox"] {
+    accent-color: var(--color-text);
+  }
+  /* A file name is the row's identity: one line, ellipsised, whole on hover. */
+  .aside-file {
+    @apply block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs;
+    font-family: var(--font-mono);
+  }
+  .aside-sub {
+    @apply block text-[11.5px];
+  }
+  .aside-nowrap {
+    @apply whitespace-nowrap;
+  }
+  .aside-coord {
+    @apply text-xs;
+    font-family: var(--font-mono);
+  }
+  .aside-folders {
+    @apply m-0 mt-2 list-none rounded-[var(--radius)] border p-0;
+    border-color: var(--color-border);
+  }
+  .aside-folders > li {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2;
+  }
+  .aside-folders > li + li {
+    border-top: 1px solid var(--color-border);
+  }
+  .aside-folder-name {
+    @apply min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium;
+  }
+  @media (max-width: 640px) {
+    /* The source column is the one a phone can spare: the export's name and
+       the place carry the row. */
+    .aside-table th:nth-child(3),
+    .aside-table td:nth-child(3),
+    .aside-table th:nth-child(4),
+    .aside-table td:nth-child(4) {
+      display: none;
+    }
+    .aside-table th:nth-child(5) {
+      width: 6.5rem;
+    }
+    .aside-folders > li .btn {
+      @apply w-full justify-center;
+    }
+  }
+
+  /* ---- Review: why a card is confident -------------------------------------- */
+  .review-evidence {
+    @apply flex flex-col gap-1.5 rounded-[var(--radius)] px-3 py-2.5;
+    background: var(--color-surface-2);
+  }
+  .review-evidence ol {
+    @apply m-0 flex list-none flex-col gap-1 p-0;
+  }
+  .review-evidence li {
+    @apply flex flex-wrap items-baseline gap-x-2;
+  }
+  .review-evidence li.is-here {
+    @apply font-semibold;
+  }
+  .review-ev-file {
+    @apply max-w-[16rem] overflow-hidden text-ellipsis whitespace-nowrap text-xs;
+    font-family: var(--font-mono);
+  }
+}

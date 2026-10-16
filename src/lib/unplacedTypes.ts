@@ -78,6 +78,16 @@ export const UNPLACED_RULES = {
    * places disagree (2026-10-13: a drone folder on the instance was cut into
    * Porto and Melbourne two hours apart). */
   max_kmh: 1000,
+  /** Confidence by DISTANCE (docs/UNPLACED.md §12): the located frame just
+   * before a card and the one just after it, each within near_h, that lie
+   * within this many kilometres of each other — and of every located frame
+   * inside the card's hours — BRACKET it: high, whatever the donor count or
+   * the cell share say. One side only, or the card's own hours only: medium.
+   * Measured on the instance (2026-10-16): 198 media whose evidence sat
+   * within 2 km read "low" — under `floor` donors, or donors either side of
+   * a cell boundary 500 m away — among them a clip shot 1 min 30 s between
+   * two Sony frames taken at the same spot. */
+  tight_km: 2,
 } as const;
 
 export type UnplacedConfidence = "high" | "medium" | "low";
@@ -147,6 +157,35 @@ export type UnplacedSuggestion = {
   window: "near" | "day";
   /** The body that shot most of the donors, when known. */
   donor_model: string | null;
+  /** Set when the frames nearest in time decided the confidence (tight_km)
+   *  rather than the cell share — the pin is then the nearest of them. */
+  evidence?: UnplacedEvidence | null;
+};
+
+/** A located frame next to a card, as its evidence names it. */
+export type EvidenceFix = {
+  at: string;
+  filename: string;
+  model: string | null;
+  name: string | null;
+  lat: number;
+  lon: number;
+};
+
+/** Why a card reads high or medium by distance (tight_km):
+ *  - `bracketed`: a located frame within near_h before AND after the card,
+ *    both within tight_km of each other and of any inside it → high;
+ *  - `one_side`: on one side only → medium;
+ *  - `inside`: none around it, but its own hours hold located frames, all
+ *    within tight_km → medium. */
+export type UnplacedEvidence = {
+  basis: "bracketed" | "one_side" | "inside";
+  before: EvidenceFix | null;
+  after: EvidenceFix | null;
+  /** Located frames inside the card's own hours. */
+  inside: number;
+  /** The widest distance between any two of them, metres. */
+  spread_m: number;
 };
 
 /** One stop of a card whose located frames move: a time window into the
@@ -249,6 +288,62 @@ export type UnplacedTotals = {
   ready: number;
   /** Cards that need a hand: low confidence, no donor, or a span. */
   by_hand: number;
+  /** Unplaced media set aside from the cards (§12) — counted in `unplaced`,
+   *  on no card: screenshots, files saved from another app, graded exports. */
+  aside: UnplacedAsideTotals;
+};
+
+export type UnplacedAsideTotals = {
+  screenshots: number;
+  saved: number;
+  graded: number;
+  /** Graded exports whose source clip was found, already placed. */
+  graded_matched: number;
+};
+
+/** Why a media is set aside from the cards (docs/UNPLACED.md §12). */
+export type AsideKind = "screenshot" | "saved" | "graded";
+
+/** One media the "Not a place" dialog lists. */
+export type AsideMedia = {
+  id: number;
+  session_id: number;
+  folder: string;
+  filename: string;
+  media_type: "photo" | "video";
+  captured_at: string | null;
+  kind: "screenshot" | "saved";
+};
+
+/** A graded export and the clip it was exported from. */
+export type GradedExport = {
+  id: number;
+  session_id: number;
+  folder: string;
+  filename: string;
+  media_type: "photo" | "video";
+  /** The export's own date — the grading day, not the shoot's. */
+  captured_at: string | null;
+  /** The source clip, when exactly one position answers for it. */
+  source: {
+    id: number;
+    rel_path: string;
+    captured_at: string | null;
+    lat: number;
+    lon: number;
+    name: string | null;
+  } | null;
+  /** Why there is no source: nothing by that name and day, or several
+   *  located clips that disagree on where. */
+  reason: "none" | "ambiguous" | null;
+};
+
+export type UnplacedAsideResponse = {
+  not_a_place: AsideMedia[];
+  graded: GradedExport[];
+  /** Each list stops at this many rows; `truncated` says one did. */
+  cap: number;
+  truncated: boolean;
 };
 
 export type UnplacedResponse = {
@@ -438,6 +533,7 @@ export function runSuggestion(donors: readonly UnplacedDonor[]): UnplacedSuggest
     confidence: suggestionConfidence(donors.length, share),
     window: "near",
     donor_model: model,
+    evidence: null,
   };
 }
 
@@ -487,6 +583,56 @@ export function suggestionConfidence(
   if (share >= UNPLACED_RULES.high) return "high";
   if (share >= UNPLACED_RULES.medium) return "medium";
   return "low";
+}
+
+// Confidence by DISTANCE (tight_km, docs/UNPLACED.md §12). `before` and
+// `after` are the located frames nearest the card on each side — already
+// within near_h, the caller asks no further — and `inside` the bounding box of
+// the located frames inside its own hours. All of them within `tightM` of
+// each other: bracketed (both sides) → high; one side, or inside only →
+// medium. Anything wider, or nothing at all: null, and the cell-share rule
+// stands. The pin is the side nearest in time — the frame 47 s before a clip,
+// not the median of a cell the next town also falls in. Pure.
+export function bracketEvidence(
+  t0: number,
+  t1: number,
+  before: EvidenceFix | null,
+  after: EvidenceFix | null,
+  inside: { n: number; lat_min: number; lat_max: number; lon_min: number; lon_max: number } | null,
+  tightM: number,
+): { confidence: UnplacedConfidence; evidence: UnplacedEvidence; pin: EvidenceFix | null } | null {
+  const pts: { lat: number; lon: number }[] = [];
+  if (before) pts.push(before);
+  if (after) pts.push(after);
+  const n = inside?.n ?? 0;
+  if (inside && n > 0) {
+    pts.push({ lat: inside.lat_min, lon: inside.lon_min }, { lat: inside.lat_max, lon: inside.lon_max });
+  }
+  if (!pts.length) return null;
+  // The diagonal of their bounding box: never less than the widest pair.
+  const lat = pts.map((p) => p.lat);
+  const lon = pts.map((p) => p.lon);
+  const spread = distanceM(
+    { lat: Math.min(...lat), lon: Math.min(...lon) },
+    { lat: Math.max(...lat), lon: Math.max(...lon) },
+  );
+  if (spread > tightM) return null;
+  const basis = before && after ? "bracketed" : before || after ? "one_side" : "inside";
+  let pin: EvidenceFix | null = null;
+  if (before && after) pin = t0 - Date.parse(before.at) <= Date.parse(after.at) - t1 ? before : after;
+  else pin = before ?? after;
+  return {
+    confidence: basis === "bracketed" ? "high" : "medium",
+    evidence: { basis, before, after, inside: n, spread_m: Math.round(spread) },
+    pin,
+  };
+}
+
+const RANK: Record<UnplacedConfidence, number> = { high: 0, medium: 1, low: 2 };
+
+/** The better of two confidences — evidence never lowers what the share said. */
+export function betterConfidence(a: UnplacedConfidence, b: UnplacedConfidence): UnplacedConfidence {
+  return RANK[a] <= RANK[b] ? a : b;
 }
 
 /** Whether a card's suggestion is good enough to pre-fill the map. */

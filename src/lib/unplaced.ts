@@ -4,6 +4,12 @@
 // frames shot in the same hours, and the folders shot alongside it.
 // Server half — the vocabulary and the rules live in unplacedTypes.ts.
 //
+// Some unplaced media are on NO card (§12): screenshots, files saved from
+// another app, graded exports — lib/unplacedSql.ts names them, and every card
+// scan below reads TODO_CARD, the backlog without them. A time-based
+// suggestion can only get those wrong; they have their own dialogs, and only
+// their counts ride along here (totals.aside).
+//
 // Four scans, all under `SET LOCAL jit = off` (docs/memory/database.md):
 //   1. the whole Incoming library's placed / unplaced / exempt tallies — the
 //      progress bar, one pass over the live rows;
@@ -38,8 +44,22 @@
 // one iPhone frame.
 import type { PoolClient } from "pg";
 import { tx } from "./db";
+import { gradedExports } from "./unplacedAside";
+import {
+  ASIDE,
+  GRADED,
+  INCOMING_FROM,
+  INCOMING_WHERE,
+  NO_EXIF,
+  SAVED,
+  SCREENSHOT,
+  TODO,
+  TODO_CARD,
+} from "./unplacedSql";
 import {
   UNPLACED_RULES,
+  betterConfidence,
+  bracketEvidence,
   distanceM,
   impossibleLeg,
   isReady,
@@ -50,6 +70,7 @@ import {
   sortGroups,
   splitSessions,
   suggestionConfidence,
+  type EvidenceFix,
   type PlaceRun,
   type UnplacedDonor,
   type UnplacedGroup,
@@ -94,11 +115,11 @@ async function tallyWindows(client: PoolClient, ws: WindowSpec[]): Promise<PartR
           AS w(sid, idx, t0, t1)
      JOIN LATERAL (
        SELECT count(*) AS total,
-              count(*) FILTER (WHERE ${TODO}) AS unplaced,
+              count(*) FILTER (WHERE ${TODO_CARD}) AS unplaced,
               count(*) FILTER (WHERE a.geo_exempt_at IS NOT NULL) AS exempt,
-              count(*) FILTER (WHERE ${TODO} AND ${NO_EXIF}) AS no_exif,
-              min(a.captured_at) FILTER (WHERE ${TODO}) AS first,
-              max(a.captured_at) FILTER (WHERE ${TODO}) AS last
+              count(*) FILTER (WHERE ${TODO_CARD} AND ${NO_EXIF}) AS no_exif,
+              min(a.captured_at) FILTER (WHERE ${TODO_CARD}) AS first,
+              max(a.captured_at) FILTER (WHERE ${TODO_CARD}) AS last
        FROM assets a
        WHERE a.session_id = w.sid AND a.deleted_at IS NULL
          AND a.captured_at >= w.t0 AND a.captured_at <= w.t1
@@ -110,7 +131,7 @@ async function tallyWindows(client: PoolClient, ws: WindowSpec[]): Promise<PartR
          FROM assets a
          WHERE a.session_id = w.sid AND a.deleted_at IS NULL
            AND a.captured_at >= w.t0 AND a.captured_at <= w.t1
-           AND a.derivative_status = 'ready'
+           AND a.derivative_status = 'ready' AND NOT ${ASIDE}
          ORDER BY a.captured_at ASC, a.id ASC
          LIMIT 6
        ) x
@@ -158,20 +179,6 @@ function cellName(r: Pick<DonorRow, "city" | "country" | "display_name">): strin
   return r.display_name;
 }
 
-// The Incoming scope, written once: not a finals root, not an ignored folder,
-// a live row. Every scan below joins the same way.
-const INCOMING_FROM = `
-  FROM assets a
-  JOIN sessions s  ON s.id  = a.session_id
-  JOIN roots    rt ON rt.id = s.root_id`;
-const INCOMING_WHERE = `rt.kind <> 'finals' AND s.ignored = false AND a.deleted_at IS NULL`;
-
-// "No position, not exempted" — the backlog predicate, and the one
-// assets_geo_todo_idx (0042) serves.
-const TODO = `a.gps_lat IS NULL AND a.geo_exempt_at IS NULL`;
-// The census's discriminator for screenshots and scans (docs/UNPLACED.md §2).
-const NO_EXIF = `a.camera_model IS NULL AND a.lens IS NULL`;
-
 const H = 3_600_000;
 
 // The window bounds are compared as instants, not as strings: pg hands
@@ -198,10 +205,16 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
       placed: number;
       unplaced: number;
       exempt: number;
+      graded: number;
+      screenshots: number;
+      saved: number;
     }>(
       `SELECT count(*) FILTER (WHERE a.gps_lat IS NOT NULL)::int AS placed,
               count(*) FILTER (WHERE ${TODO})::int AS unplaced,
-              count(*) FILTER (WHERE a.geo_exempt_at IS NOT NULL)::int AS exempt
+              count(*) FILTER (WHERE a.geo_exempt_at IS NOT NULL)::int AS exempt,
+              count(*) FILTER (WHERE ${TODO} AND ${GRADED})::int AS graded,
+              count(*) FILTER (WHERE ${TODO} AND NOT ${GRADED} AND ${SCREENSHOT})::int AS screenshots,
+              count(*) FILTER (WHERE ${TODO} AND NOT ${GRADED} AND NOT ${SCREENSHOT} AND ${SAVED})::int AS saved
        ${INCOMING_FROM}
        WHERE ${INCOMING_WHERE}`,
     );
@@ -220,9 +233,9 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
        JOIN roots rt ON rt.id = s.root_id
        JOIN LATERAL (
          SELECT count(*) AS total,
-                count(*) FILTER (WHERE ${TODO}) AS unplaced,
+                count(*) FILTER (WHERE ${TODO_CARD}) AS unplaced,
                 count(*) FILTER (WHERE a.geo_exempt_at IS NOT NULL) AS exempt,
-                count(*) FILTER (WHERE ${TODO} AND ${NO_EXIF}) AS no_exif
+                count(*) FILTER (WHERE ${TODO_CARD} AND ${NO_EXIF}) AS no_exif
          FROM assets a
          WHERE a.session_id = s.id AND a.deleted_at IS NULL
        ) d ON true
@@ -232,7 +245,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
            SELECT a.id, a.ext, a.media_type
            FROM assets a
            WHERE a.session_id = s.id AND a.deleted_at IS NULL
-             AND a.derivative_status = 'ready'
+             AND a.derivative_status = 'ready' AND NOT ${ASIDE}
            ORDER BY a.captured_at ASC NULLS LAST, a.id ASC
            LIMIT 6
          ) x
@@ -276,7 +289,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
                        THEN 1 ELSE 0 END AS cut
            FROM assets a
            WHERE a.session_id = ANY($1::int[]) AND a.deleted_at IS NULL
-             AND ${TODO} AND NOT (${NO_EXIF})
+             AND ${TODO_CARD} AND NOT (${NO_EXIF})
              AND a.captured_at IS NOT NULL
            WINDOW w AS (PARTITION BY a.session_id ORDER BY a.captured_at, a.id)
          ),
@@ -460,6 +473,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           confidence: suggestionConfidence(located, share),
           window,
           donor_model: dom.donor_model,
+          evidence: null,
         };
         groups[idx].suggestion = suggestion;
         if (window === "near") {
@@ -484,6 +498,120 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
     apply(await donors(askable, `${UNPLACED_RULES.near_h} hours`), "near");
     const missing = askable.filter((i) => groups[i].suggestion == null);
     apply(await donors(missing, `${UNPLACED_RULES.day_h} hours`), "day");
+
+    // 4b. Confidence by distance (tight_km, docs/UNPLACED.md §12). The cell
+    //     share above counts donors over two hours and splits them at cell
+    //     boundaries: a clip shot 90 s between two Sony frames at the same
+    //     spot read "low" because the hour around it held 394 frames over
+    //     three cells. So, for every card the near window found donors for:
+    //     the located frame just before it and the one just after (each
+    //     within near_h — two walks down captured_at's index per card), and
+    //     the box of the located frames inside its own hours. All within
+    //     tight_km of each other: bracketed (high) or one-sided (medium),
+    //     and the pin moves to the nearest of them in time. Applied only
+    //     where it RAISES the confidence — evidence never lowers what the
+    //     share said — and before step 5, whose conflict still overrides it.
+    const nearIdx = askable.filter((i) => groups[i].suggestion?.window === "near");
+    if (nearIdx.length) {
+      const wins = [nearIdx, nearIdx.map((i) => groups[i].t0), nearIdx.map((i) => groups[i].t1)];
+      const { rows: sides } = await client.query<{
+        idx: number;
+        side: "before" | "after";
+        at: string;
+        lat: number;
+        lon: number;
+        filename: string;
+        model: string | null;
+        city: string | null;
+        country: string | null;
+        display_name: string | null;
+      }>(
+        `SELECT w.idx, e.side, e.at, e.lat, e.lon, e.filename, e.model,
+                p.city, p.country, p.display_name
+         FROM unnest($1::int[], $2::timestamptz[], $3::timestamptz[]) AS w(idx, t0, t1)
+         CROSS JOIN LATERAL (
+           (SELECT 'before' AS side, a.captured_at AS at, a.gps_lat AS lat, a.gps_lon AS lon,
+                   a.filename, a.camera_model AS model, a.place_id
+              FROM assets a
+             WHERE a.captured_at < w.t0 AND a.captured_at >= w.t0 - $4::interval
+               AND a.deleted_at IS NULL AND a.gps_lat IS NOT NULL
+               AND (a.gps_source IS NULL OR a.gps_source IN ('manual', 'track'))
+             ORDER BY a.captured_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT 'after' AS side, a.captured_at AS at, a.gps_lat AS lat, a.gps_lon AS lon,
+                   a.filename, a.camera_model AS model, a.place_id
+              FROM assets a
+             WHERE a.captured_at > w.t1 AND a.captured_at <= w.t1 + $4::interval
+               AND a.deleted_at IS NULL AND a.gps_lat IS NOT NULL
+               AND (a.gps_source IS NULL OR a.gps_source IN ('manual', 'track'))
+             ORDER BY a.captured_at ASC LIMIT 1)
+         ) e
+         LEFT JOIN places p ON p.id = e.place_id`,
+        [...wins, `${UNPLACED_RULES.near_h} hours`],
+      );
+      const { rows: inside } = await client.query<{
+        idx: number;
+        n: number;
+        lat_min: number;
+        lat_max: number;
+        lon_min: number;
+        lon_max: number;
+      }>(
+        `SELECT w.idx, count(*)::int AS n,
+                min(a.gps_lat) AS lat_min, max(a.gps_lat) AS lat_max,
+                min(a.gps_lon) AS lon_min, max(a.gps_lon) AS lon_max
+         FROM unnest($1::int[], $2::timestamptz[], $3::timestamptz[]) AS w(idx, t0, t1)
+         JOIN assets a ON a.captured_at >= w.t0 AND a.captured_at <= w.t1
+         WHERE a.deleted_at IS NULL AND a.gps_lat IS NOT NULL
+           AND (a.gps_source IS NULL OR a.gps_source IN ('manual', 'track'))
+         GROUP BY w.idx`,
+        wins,
+      );
+      const fixes = new Map<number, { before: EvidenceFix | null; after: EvidenceFix | null }>();
+      for (const r of sides) {
+        const f: EvidenceFix = {
+          at: r.at,
+          filename: r.filename,
+          model: r.model,
+          name: cellName(r),
+          lat: Number(r.lat),
+          lon: Number(r.lon),
+        };
+        const cur = fixes.get(r.idx) ?? { before: null, after: null };
+        cur[r.side] = f;
+        fixes.set(r.idx, cur);
+      }
+      const insideOf = new Map(inside.map((r) => [r.idx, r]));
+      for (const idx of nearIdx) {
+        const g = groups[idx];
+        const s = g.suggestion!;
+        const f = fixes.get(idx);
+        const ins = insideOf.get(idx);
+        const ev = bracketEvidence(
+          Date.parse(g.t0),
+          Date.parse(g.t1),
+          f?.before ?? null,
+          f?.after ?? null,
+          ins
+            ? {
+                n: ins.n,
+                lat_min: Number(ins.lat_min),
+                lat_max: Number(ins.lat_max),
+                lon_min: Number(ins.lon_min),
+                lon_max: Number(ins.lon_max),
+              }
+            : null,
+          UNPLACED_RULES.tight_km * 1000,
+        );
+        if (!ev || betterConfidence(ev.confidence, s.confidence) === s.confidence) continue;
+        g.suggestion = {
+          ...s,
+          confidence: ev.confidence,
+          evidence: ev.evidence,
+          ...(ev.pin ? { lat: ev.pin.lat, lon: ev.pin.lon, name: ev.pin.name } : {}),
+        };
+      }
+    }
 
     // 5. Cut by place. A card is one folder or one slice of one, and that is
     //    a unit of TIME: a day out that visits two towns is one shoot, and
@@ -562,7 +690,9 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
             km: Math.round(leg.km),
             hours: Math.round(leg.hours * 10) / 10,
           };
-          if (g.suggestion) g.suggestion = { ...g.suggestion, confidence: "low" };
+          // Nor the evidence of step 4b: two frames agreeing next to the card
+          // say nothing once the frames around it disagree.
+          if (g.suggestion) g.suggestion = { ...g.suggestion, confidence: "low", evidence: null };
           continue;
         }
         if (runs.length <= UNPLACED_RULES.parts_max) runsOf.set(idx, runs);
@@ -579,7 +709,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
            JOIN assets a
              ON a.session_id = w.sid AND a.deleted_at IS NULL
             AND a.captured_at >= w.t0 AND a.captured_at <= w.t1
-           WHERE ${TODO} AND NOT (${NO_EXIF})
+           WHERE ${TODO_CARD} AND NOT (${NO_EXIF})
            ORDER BY w.idx, a.captured_at`,
           [
             moving,
@@ -731,6 +861,11 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
     // (sortGroups); this is the order a client that does not gets.
     const ordered = sortGroups(groups, "ready");
 
+    // The set-aside media's own counts (§12): on no card, each its own
+    // dialog. Only the graded exports need a match to count, and that is
+    // one pass over the located media's names (lib/unplacedAside.ts).
+    const graded = Number(tally?.graded ?? 0) > 0 ? await gradedExports(client) : [];
+
     const ready = ordered.filter(isReady).length;
     return {
       groups: ordered,
@@ -742,6 +877,12 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
         no_exif: ordered.reduce((n, g) => n + g.no_exif, 0),
         ready,
         by_hand: ordered.length - ready,
+        aside: {
+          screenshots: Number(tally?.screenshots ?? 0),
+          saved: Number(tally?.saved ?? 0),
+          graded: Number(tally?.graded ?? 0),
+          graded_matched: graded.filter((x) => x.source != null).length,
+        },
       },
       rules: UNPLACED_RULES,
     };

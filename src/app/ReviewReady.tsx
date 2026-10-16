@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { geotagAssets, geotagTargets, type GeotagAsset } from "@/lib/assetActions";
 import { distanceM, type UnplacedGroup } from "@/lib/unplacedTypes";
+import { distText, spanText } from "@/lib/unplacedFormat";
 import type { PickedLocation } from "@/app/LocationPicker";
 
 // Review the Ready cards one after another, from the keyboard
@@ -19,6 +20,12 @@ import type { PickedLocation } from "@/app/LocationPicker";
 // review hands it to the full recap, which lists exactly those rows. What is
 // recorded is decided as everywhere else: the pin as offered records
 // 'inferred', a pin moved past move_m records 'manual'.
+//
+// A card made confident by DISTANCE (tight_km, §12) shows why as a strip: the
+// located frame before it, the card, the frame after — with the gap in time
+// and the distance from the pin — so "high" is something to check, not to
+// trust. The media the view sets aside (screenshots, saved, graded) are left
+// out of the write, as on the cards.
 
 const LocationPicker = dynamic(() => import("@/app/LocationPicker"), { ssr: false });
 
@@ -61,7 +68,10 @@ export default function ReviewReady({
       card.kind === "part"
         ? geotagTargets([card.sessions[0].id], { from: card.t0, to: card.t1 })
         : geotagTargets(card.sessions.map((s) => s.id));
-    p.then((assets) => setLoaded((m) => new Map(m).set(card.key, { assets, error: null }))).catch((e) =>
+    p.then((list) => {
+      const assets = list.filter((a) => !a.aside);
+      setLoaded((m) => new Map(m).set(card.key, { assets, error: null }));
+    }).catch((e) =>
       setLoaded((m) => new Map(m).set(card.key, { assets: [], error: (e as Error).message })),
     );
   }, []);
@@ -176,7 +186,11 @@ export default function ReviewReady({
                       ? "Recorded in Winnow only — never written into the originals."
                       : "You moved the pin: written into each original file’s metadata."}
                   </p>
-                  {d?.note && <p className="hint">{d.note}</p>}
+                  {g.suggestion?.evidence ? (
+                    <Evidence g={g} />
+                  ) : (
+                    d?.note && <p className="hint">{d.note}</p>
+                  )}
                   <div className="review-thumbs">
                     {g.sample.slice(0, 6).map((a) => (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -232,6 +246,40 @@ export default function ReviewReady({
           <span><kbd>Esc</kbd> back to the list</span>
         </footer>
       </div>
+    </div>
+  );
+}
+
+// The located frames that made the card confident, around it in time.
+function Evidence({ g }: { g: UnplacedGroup }) {
+  const s = g.suggestion!;
+  const e = s.evidence!;
+  const pin = { lat: s.lat, lon: s.lon };
+  const side = (f: NonNullable<typeof e.before>, gap: number, word: string) => (
+    <li>
+      <span className="review-ev-file" title={f.filename}>
+        {f.filename}
+      </span>
+      <span className="hint">
+        {spanText(gap)} {word}
+        {f.model ? ` · ${f.model}` : ""} · {distText(distanceM(f, pin))} from the pin
+      </span>
+    </li>
+  );
+  return (
+    <div className="review-evidence">
+      <span className="modal-label">
+        Why {s.confidence}: {e.basis === "bracketed" ? "located on both sides" : e.basis === "one_side" ? "located on one side" : "located among these hours"}
+      </span>
+      <ol>
+        {e.before && side(e.before, Date.parse(g.t0) - Date.parse(e.before.at), "before")}
+        <li className="is-here">
+          <span>{g.unplaced === 1 ? "This one" : `These ${fmt(g.unplaced)}`}</span>
+          {e.inside > 0 && <span className="hint">{fmt(e.inside)} located among them</span>}
+        </li>
+        {e.after && side(e.after, Date.parse(e.after.at) - Date.parse(g.t1), "after")}
+      </ol>
+      <span className="hint">All within {distText(e.spread_m)} of each other.</span>
     </div>
   );
 }
