@@ -7,6 +7,7 @@ import ThemeToggle from "./ThemeToggle";
 import ChangePasswordModal from "./ChangePasswordModal";
 import { useFeatures } from "./FeaturesProvider";
 import type { FeatureId } from "@/lib/features";
+import { APP_VERSION } from "@/lib/version";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 // Persistent navigation rail: vertical on desktop (left edge), a bottom tab bar
@@ -208,6 +209,9 @@ function AccountChip() {
             </span>
             Sign out
           </button>
+          {/* Which build the instance runs, at the foot of the menu: a phone in
+              hand has no other way to tell (CHANGELOG.md says what it brought). */}
+          <div className="account-version">Winnow v{APP_VERSION}</div>
         </div>
       )}
       {changingPassword && (
