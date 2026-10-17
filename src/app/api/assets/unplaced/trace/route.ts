@@ -6,6 +6,9 @@
 //   POST { session_id, from, to, imports[], models[] }
 //                              → the card's frames matched one by one against
 //                                 the chosen sources and grouped in stops.
+//   POST { session_id, from, to, auto: true }
+//                              → the same, the sources chosen for the human:
+//                                 "each frame by its neighbours" (§13).
 // A POST only because the chosen sources are a list; nothing is written. The
 // write is POST /api/assets/geotag/points, once the human has seen the stops.
 // All the logic is in src/lib/unplacedTrace.ts.
@@ -37,6 +40,7 @@ const Body = z.object({
   to: instant,
   imports: z.array(z.number().int()).max(50).default([]),
   models: z.array(z.string().nullable()).max(50).default([]),
+  auto: z.boolean().default(false),
 });
 
 export async function POST(req: NextRequest) {
@@ -51,6 +55,7 @@ export async function POST(req: NextRequest) {
         to: b.to,
         imports: b.imports,
         models: b.models,
+        auto: b.auto,
       }),
     );
   } catch (err) {

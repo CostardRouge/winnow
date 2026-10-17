@@ -1321,6 +1321,11 @@ html[data-theme="dark"] .btn-primary:hover {
       @apply w-full overflow-x-auto;
       scrollbar-width: none;
     }
+    /* Four filters on a phone: each label stays one line and the row
+       scrolls, rather than "By hand" folding over its count. */
+    .unplaced-tools .view-btn {
+      @apply shrink-0 whitespace-nowrap;
+    }
     .unplaced-card .card-head {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr);
@@ -9479,6 +9484,10 @@ html[data-theme="dark"] .btn-primary:hover {
     min-height: 220px;
     border-color: var(--color-border-strong);
     isolation: isolate;
+  }
+  /* The map's own container inside the box (StopsMap: one per mount). */
+  .stops-map-pane {
+    @apply h-full w-full;
   }
   .stops-list {
     @apply flex flex-col gap-2 pb-2;

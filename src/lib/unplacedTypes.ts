@@ -88,6 +88,21 @@ export const UNPLACED_RULES = {
    * a cell boundary 500 m away — among them a clip shot 1 min 30 s between
    * two Sony frames taken at the same spot. */
   tight_km: 2,
+  /** EACH FRAME BY ITS NEIGHBOURS (docs/UNPLACED.md §13): a frame takes the
+   * located frames just before and after ITS OWN minute, not the card's
+   * hours — between two of them at most this many minutes apart
+   * (interpolated, never faster than `frame_kmh`)… */
+  frame_bracket_min: 60,
+  /** …or two at the same spot (within tight_km) up to this many hours apart —
+   * the photographer stayed put in between… */
+  frame_still_h: 12,
+  /** …or the nearest one within this many minutes. Else nothing: a gap is
+   * not a position. The import's own defaults (trackParse.positionAt), the
+   * ones "Follow a track…" already applied to the phone's frames. Measured on
+   * the instance (2026-10-17): 406 of the 691 media on cards that were not
+   * Ready, all 280 of *sunrise beach* among them. */
+  frame_nearest_min: 15,
+  frame_kmh: 200,
 } as const;
 
 export type UnplacedConfidence = "high" | "medium" | "low";
@@ -217,6 +232,20 @@ export type UnplacedConflict = {
   hours: number;
 };
 
+/** What placing a card frame by frame would do (§13). */
+export type UnplacedNeighbours = {
+  /** Frames of the card the located frames around them place. */
+  placed: number;
+  /** Frames of the card (camera media, not set aside). */
+  total: number;
+  /** How many places those positions make (stops, split_km). */
+  places: number;
+  /** Whether every placed frame lies within split_km of the card's own
+   *  suggestion — null when there is none, or the card has stops. False
+   *  takes the card out of Ready: one pin for the folder would be wrong. */
+  agrees: boolean | null;
+};
+
 /** The nearest human placement to a card with no suggestion. */
 export type UnplacedNearest = {
   lat: number;
@@ -270,6 +299,10 @@ export type UnplacedGroup = {
    * applied, within reuse_d days — "same place as the folder I did
    * yesterday", shown on the card and one click away. */
   nearest: UnplacedNearest | null;
+  /** Each frame matched against the located frames around ITS OWN minute
+   * (§13) — set on every shoot and part with no conflict, when at least one
+   * frame finds a position. */
+  neighbours: UnplacedNeighbours | null;
   /** On a span that was NOT cut: how many separate moments (gap_h apart) its
    * unplaced camera media fall into — set only when that is above parts_max,
    * the reason it stayed one card. */
@@ -635,13 +668,30 @@ export function betterConfidence(a: UnplacedConfidence, b: UnplacedConfidence): 
   return RANK[a] <= RANK[b] ? a : b;
 }
 
-/** Whether a card's suggestion is good enough to pre-fill the map. */
+/** Whether a card's suggestion is good enough to pre-fill the map — and
+ *  the frames' own neighbours do not put them elsewhere. */
 export function isReady(g: UnplacedGroup): boolean {
   return (
     g.kind !== "span" &&
     g.stops == null &&
     g.suggestion != null &&
-    g.suggestion.confidence !== "low"
+    g.suggestion.confidence !== "low" &&
+    g.neighbours?.agrees !== false
+  );
+}
+
+/** A card best placed frame by frame (§13): not Ready, no stops of its own,
+ *  no conflict, and the neighbours place at least half its frames. */
+export function isNeighbourly(g: UnplacedGroup): boolean {
+  const n = g.neighbours;
+  return (
+    !isReady(g) &&
+    g.kind !== "span" &&
+    g.stops == null &&
+    g.conflict == null &&
+    n != null &&
+    n.placed > 0 &&
+    n.placed * 2 >= n.total
   );
 }
 
@@ -652,12 +702,14 @@ export function isAllNoExif(g: UnplacedGroup): boolean {
 }
 
 // The order the backlog is worked in: what can be confirmed at a glance
-// first (high, then medium), then what needs a look, then what needs a hand
-// (no donor, or a span). Within a tier, the biggest pile first.
+// first (high, then medium), then what its frames' neighbours place, then
+// what needs a look, then what needs a hand (no donor, or a span). Within a
+// tier, the biggest pile first.
 export function groupTier(g: UnplacedGroup): number {
-  if (g.kind === "span") return 4;
-  const c = g.suggestion?.confidence;
-  return c === "high" ? 0 : c === "medium" ? 1 : c === "low" ? 2 : 3;
+  if (g.kind === "span") return 5;
+  if (isNeighbourly(g)) return 2;
+  const c = isReady(g) ? g.suggestion?.confidence : g.suggestion ? "low" : undefined;
+  return c === "high" ? 0 : c === "medium" ? 1 : c === "low" ? 3 : 4;
 }
 
 // Great-circle distance in metres (haversine) — the page uses it to decide

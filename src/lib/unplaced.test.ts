@@ -25,6 +25,7 @@ let bracketId: number;
 let oneSideId: number;
 let splitId: number;
 let gradedIds: Record<string, number> = {};
+let morningId: number;
 let seq = 0;
 
 const MPL = { lat: 43.6108, lon: 3.8767 };
@@ -104,6 +105,9 @@ async function raw(
 const AMS = { lat: 52.3731, lon: 4.8922 };
 const ZAANDAM = { lat: 52.4389, lon: 4.8262 };
 const KYANCUTTA = { lat: -33.1333, lon: 135.5667 };
+const TEWANTIN = { lat: -26.3911, lon: 153.0347 };
+const TIN_CAN_BAY = { lat: -25.9025, lon: 153.0148 };
+const GYMPIE = { lat: -26.6900, lon: 152.6650 };
 const VENUS = { lat: -33.2333, lon: 134.6667 };
 
 const at = (h: number, m = 0) =>
@@ -222,6 +226,23 @@ before(async () => {
     ambiguous: await raw(lut, "1999-07-15T09:15:00Z", { filename: "AMBIG_lut_19990715.mp4", ext: ".mp4", media: "video" }),
     none: await raw(lut, "1999-07-15T09:20:00Z", { filename: "NOSUCH_lut_19990715.mp4", ext: ".mp4", media: "video" }),
   };
+
+  // §13. *Sunrise beach* in small, on 1 August: six frames 10:00–10:50,
+  // the phone located at one spot (Tewantin) at 08:30 and 12:30 — the
+  // photographer stayed put — and four phone frames that evening 58 km on
+  // (Tin Can Bay). The day's donors say Tin Can Bay; each frame's own
+  // neighbours say Tewantin. A friend's camera, marked as someone else's on
+  // /gear, has a frame at 10:25 a hundred km away: it must pull nothing. A
+  // graded export in the folder is no frame of it.
+  morningId = await session("morning", "1999-08-01T10:00:00Z", "1999-08-01T10:50:00Z");
+  for (let m = 0; m <= 50; m += 10) await raw(morningId, `1999-08-01T10:${String(m).padStart(2, "0")}:00Z`, { filename: `DSC0${5000 + m}.ARW`, ext: ".arw" });
+  await raw(morningId, "1999-08-01T10:30:30Z", { filename: "C0001_lut_19990901.mp4", ext: ".mp4", media: "video" });
+  const phoneAug = await session("phone august", "1999-08-01T08:30:00Z", "1999-08-01T20:30:00Z");
+  for (const h of ["08:30", "12:30"]) await raw(phoneAug, `1999-08-01T${h}:00Z`, { filename: `IMG_${h}.HEIC`, ext: ".heic", gps: TEWANTIN, model: "iPhone 15 Pro Max", modelExif: "iPhone 15 Pro Max" });
+  for (const h of ["20:00", "20:10", "20:20", "20:30"]) await raw(phoneAug, `1999-08-01T${h}:00Z`, { filename: `IMG_${h}.HEIC`, ext: ".heic", gps: TIN_CAN_BAY, model: "iPhone 15 Pro Max", modelExif: "iPhone 15 Pro Max" });
+  const friendId = await raw(phoneAug, "1999-08-01T10:25:00Z", { filename: "FRIEND.JPG", ext: ".jpg", gps: GYMPIE, model: "EOS R", modelExif: "EOS R" });
+  await db.q("UPDATE assets SET device = 'Canon EOS R test' WHERE id = $1", [friendId]);
+  await db.q("INSERT INTO gear_owners (device, owner, owner_name) VALUES ('Canon EOS R test', 'other', 'A friend') ON CONFLICT (device) DO UPDATE SET owner = 'other', owner_name = 'A friend'");
 });
 
 after(async () => {
@@ -231,6 +252,7 @@ after(async () => {
     [rootId],
   );
   await db.q("DELETE FROM track_imports WHERE id = $1", [importId]);
+  await db.q("DELETE FROM gear_owners WHERE device = 'Canon EOS R test'");
   await db.q("DELETE FROM sessions WHERE root_id = $1", [rootId]);
   await db.q("DELETE FROM roots WHERE id = $1", [rootId]);
   await db.pool.end();
@@ -417,4 +439,26 @@ test("graded exports are on no card and find their source by name and shoot day"
   );
   assert.equal(row!.gps_source, "inferred");
   assert.notEqual(row!.gps_write_status, "pending");
+});
+
+test("each frame by its neighbours: a folder whose hours span two places is placed frame by frame", { skip: skipWithoutDb }, async () => {
+  const r = await up.listUnplaced();
+  const card = r.groups.find((g) => g.sessions[0].id === morningId)!;
+  assert.ok(card, "the morning folder has a card");
+  const nb = card.neighbours!;
+  assert.ok(nb, JSON.stringify(card));
+  assert.equal(nb.total, 6, "the graded export is no frame of the folder");
+  assert.equal(nb.placed, 6, "the phone stayed put from 08:30 to 12:30");
+  assert.equal(nb.places, 1, "the friend's camera pulled nothing");
+  const { isReady, isNeighbourly } = await import("./unplacedTypes");
+  assert.equal(isReady(card), false, "never one pin for it");
+  assert.equal(isNeighbourly(card), true);
+
+  // The dialog's own answer, sources chosen for the human: all at Tewantin.
+  const trace = await import("./unplacedTrace");
+  const t = await trace.traceCard({ sessionId: morningId, from: card.t0, to: new Date(Date.parse(card.t1) + 1).toISOString(), imports: [], models: [], auto: true });
+  assert.equal(t.frames.length, 6);
+  assert.equal(t.gaps.length, 0);
+  assert.ok(t.frames.every((f) => f.source === "inferred" && Math.abs(f.pos!.lat - TEWANTIN.lat) < 1e-3), JSON.stringify(t.frames));
+  assert.equal(t.stops.length, 1);
 });

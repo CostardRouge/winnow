@@ -132,6 +132,7 @@ function card(id: number, folderUnplaced: number, unplaced: number, t0: string, 
     conflict: null,
     nearest: null,
     moments: null,
+    neighbours: null,
     ...extra,
   };
 }
