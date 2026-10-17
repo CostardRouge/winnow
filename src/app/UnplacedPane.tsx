@@ -11,6 +11,7 @@ import {
   type GeotagSource,
 } from "@/lib/assetActions";
 import { formatCaptureSpan } from "@/lib/format";
+import { distText, spanText } from "@/lib/unplacedFormat";
 import {
   distanceM,
   isAllNoExif,
@@ -25,12 +26,15 @@ import {
   type UnplacedSort,
   type UnplacedStop,
   type TraceResponse,
+  type GradedExport,
+  type UnplacedAsideResponse,
 } from "@/lib/unplacedTypes";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
 import GeotagRecapModal, { type RecapFolder, type RecapPlace } from "./GeotagRecapModal";
 import StopsDialog, { type DialogStop, type FramePoint } from "./StopsDialog";
 import TraceSourcesModal from "./TraceSourcesModal";
 import ReviewReady from "./ReviewReady";
+import { GradedDialog, NotAPlaceDialog } from "./SetAsideDialogs";
 import type { PickedLocation } from "./LocationPicker";
 import { OptionPicker, type PickerOption } from "./OptionPicker";
 import ThumbStrip, { type StripItem } from "./ThumbStrip";
@@ -102,6 +106,17 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // (TraceSourcesModal, then the stops dialog). None of them leaves the page:
 // leaving lost the list's scroll and the dialog in progress.
 //
+// Above the cards, a PLAN band (§12): what is left, by the one gesture that
+// clears it. Two kinds of media are on no card at all, because a suggestion
+// drawn from the hours they were shot in can only get them wrong —
+// screenshots and files saved from another app ("Not a place", one look and
+// one exempt) and graded exports (dated the day they were exported: their
+// position is their source clip's, copied from the "Graded exports" dialog).
+// Then the cards, in two piles: Ready (Review N, from the keyboard) and By
+// hand. A card's confidence also comes from DISTANCE now: the located frames
+// just before and just after it, within tight_km of each other, make it high
+// whatever the donor count — and the card says so in words.
+//
 // What is recorded depends on what the human did with the pin: accepted as
 // offered (within `move_m` of the suggestion) → 'inferred', shown as such in
 // the recap and never written into the originals; moved further, or placed
@@ -132,7 +147,9 @@ type StopsFlow = {
 };
 
 type Flow = {
-  group: UnplacedGroup;
+  /** The card placed — null for a set-aside pile placed by hand (graded
+   *  exports with no source), which has no suggestion to speak of. */
+  group: UnplacedGroup | null;
   assets: GeotagAsset[];
   /** The card's folder, then the folders shot alongside it — the recap's
    *  per-folder rows (the card's own ticked, the others not). */
@@ -349,9 +366,27 @@ function stripItems(g: UnplacedGroup): StripItem[] {
 function suggestionNote(g: UnplacedGroup): string | null {
   const s = g.suggestion;
   if (!s) return null;
+  const ev = evidenceNote(g);
+  if (ev) return ev;
   const when = s.window === "near" ? "in the same hours" : "within a day";
   const who = s.donor_model ? `, mostly ${s.donor_model}` : "";
   return `From ${fmt(s.located)} located ${s.located === 1 ? "frame" : "frames"} shot ${when} — ${pct(s.share)} of them in one cell${who}.`;
+}
+
+// The sentence a distance-decided suggestion carries (tight_km, §12): which
+// located frames, how far in time, how close together. Exported for the
+// keyboard review, which repeats it through `describe`.
+function evidenceNote(g: UnplacedGroup): string | null {
+  const e = g.suggestion?.evidence;
+  if (!e) return null;
+  const by = (f: { model: string | null }) => (f.model ? ` (${f.model})` : "");
+  const before = e.before ? `${spanText(Date.parse(g.t0) - Date.parse(e.before.at))} before${by(e.before)}` : null;
+  const after = e.after ? `${spanText(Date.parse(e.after.at) - Date.parse(g.t1))} after${by(e.after)}` : null;
+  const within = `all within ${distText(e.spread_m)}`;
+  const inside = e.inside > 0 ? `, ${fmt(e.inside)} more among these hours` : "";
+  if (e.basis === "bracketed") return `A located frame ${before} and one ${after}${inside} — ${within}.`;
+  if (e.basis === "one_side") return `A located frame ${before ?? after}${inside} — ${within}; nothing located on the other side within the hour.`;
+  return `${fmt(e.inside)} located ${e.inside === 1 ? "frame" : "frames"} among these hours, ${within}.`;
 }
 
 function suggestionLabel(g: UnplacedGroup): string {
@@ -386,6 +421,10 @@ export default function UnplacedPane() {
   const [traceFor, setTraceFor] = useState<UnplacedGroup | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [triage, setTriage] = useState<Triage>("all");
+  // The plan band's two dialogs, with what they list; and the last write
+  // that can be undone from the notice (an exempt).
+  const [aside, setAside] = useState<{ kind: "nap" | "graded"; data: UnplacedAsideResponse } | null>(null);
+  const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -405,9 +444,15 @@ export default function UnplacedPane() {
   // Auto-dismiss the notice, like the sessions list.
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => setNotice(null), 6000);
+    const t = setTimeout(
+      () => {
+        setNotice(null);
+        setUndo(null);
+      },
+      undo ? 12000 : 6000,
+    );
     return () => clearTimeout(t);
-  }, [notice]);
+  }, [notice, undo]);
 
   const shown = useMemo(() => {
     const all = sortGroups(data?.groups ?? [], sort);
@@ -420,11 +465,14 @@ export default function UnplacedPane() {
   // shoot or a span, the folder's inside the card's window for a part. The
   // endpoint drops the exempted ones itself — they left the backlog for good
   // and must not come back through a bulk apply.
+  // The set-aside media (§12) are on no card, so never in a card's write:
+  // a screenshot in a folder placed at Omeo stays out of Omeo.
   const loadGroupAssets = useCallback(
     (g: UnplacedGroup): Promise<GeotagAsset[]> =>
-      g.kind === "part"
+      (g.kind === "part"
         ? geotagTargets([g.sessions[0].id], { from: g.t0, to: g.t1 })
-        : geotagTargets(g.sessions.map((s) => s.id)),
+        : geotagTargets(g.sessions.map((s) => s.id))
+      ).then((list) => list.filter((a) => !a.aside)),
     [],
   );
 
@@ -640,6 +688,45 @@ export default function UnplacedPane() {
     [busyKey, loadGroupAssets, load],
   );
 
+  // The plan band's dialogs read their lists when opened — never with the
+  // cards, which only need the counts.
+  const openAside = useCallback(
+    async (kind: "nap" | "graded") => {
+      if (busyKey) return;
+      setBusyKey(`aside:${kind}`);
+      try {
+        setAside({ kind, data: await fetchJson<UnplacedAsideResponse>("/api/assets/unplaced/aside") });
+      } catch (e) {
+        setNotice((e as Error).message);
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [busyKey],
+  );
+
+  // A folder of graded exports that found no source: the ordinary recap on an
+  // empty map. Their own hours are the export's, so nothing is offered —
+  // neither a suggestion nor the places used "around" those dates.
+  const openLoose = useCallback((folder: { id: number; name: string }, rows: GradedExport[]) => {
+    setAside(null);
+    setFlow({
+      group: null,
+      assets: rows.map((x) => ({
+        id: x.id,
+        session_id: x.session_id,
+        filename: x.filename,
+        media_type: x.media_type,
+        gps: null,
+        captured_at: x.captured_at,
+      })),
+      folders: [{ id: folder.id, name: folder.name, detail: "Graded exports with no source clip", primary: true }],
+      seed: null,
+      places: [],
+      unverified: [],
+    });
+  }, []);
+
   // The grid, on the card's first folder and its unplaced media; a part also
   // narrows it to its day(s).
   const openGrid = useCallback(
@@ -687,6 +774,12 @@ export default function UnplacedPane() {
   const totals = data?.totals;
   // The cards the keyboard review walks, in the order on screen.
   const readyList = useMemo(() => sortGroups(data?.groups ?? [], sort).filter(isReady), [data, sort]);
+  // The plan band's counts: media, since a card can hold one or a thousand.
+  const readyMedia = readyList.reduce((n, g) => n + g.unplaced, 0);
+  const handGroups = (data?.groups ?? []).filter((g) => !isReady(g));
+  const handCards = handGroups.length;
+  const handMedia = handGroups.reduce((n, g) => n + g.unplaced, 0);
+  const napCount = totals ? totals.aside.screenshots + totals.aside.saved : 0;
   const anyMap = shown.some((g) => g.kind !== "span" && g.suggestion);
 
   // One primary verb per card (UI review), the rest behind the ⋯. Which verb
@@ -906,7 +999,29 @@ export default function UnplacedPane() {
     <div className="sessions-pane">
       {notice && (
         <div style={{ marginBottom: 12 }}>
-          <span className="notice">{notice}</span>
+          <span className="notice">
+            {notice}
+            {undo && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => {
+                    const u = undo;
+                    setUndo(null);
+                    setNotice(null);
+                    void u
+                      .run()
+                      .then(() => load())
+                      .catch((e) => setNotice((e as Error).message));
+                  }}
+                >
+                  {undo.label}
+                </button>
+              </>
+            )}
+          </span>
         </div>
       )}
       {error && (
@@ -977,16 +1092,6 @@ export default function UnplacedPane() {
                   value={sort}
                   onChange={setSort}
                 />
-                {readyList.length > 0 && (
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => setReviewing(true)}
-                    title="One card after another: Enter applies, → skips"
-                  >
-                    Review {fmt(readyList.length)} ready
-                  </button>
-                )}
               </div>
               {rules && (
                 <details className="card-rules">
@@ -1014,7 +1119,15 @@ export default function UnplacedPane() {
                     (±{rules.day_h} h failing that), camera fixes and hand-placed
                     pins only. It pre-fills the map from {pct(rules.medium)} of
                     those frames in one cell — {pct(rules.high)} for high
-                    confidence — and never under {rules.floor} frames. Accepting
+                    confidence — and never under {rules.floor} frames; or by
+                    distance: the located frame just before the card and the
+                    one just after, each within {rules.near_h} h and within{" "}
+                    {rules.tight_km} km of each other and of those inside it,
+                    make it high (one side only: medium), the pin on the
+                    nearest of them. Screenshots, files saved from another app
+                    and graded exports (<code>…_lut_YYYYMMDD</code>) are on no
+                    card: their hours say nothing about where they were shot.
+                    Accepting
                     the pin as offered records a suggested position, not written
                     into the originals; moving it more than {rules.move_m} m
                     records a verified one. The Place dialog also lists the
@@ -1030,6 +1143,87 @@ export default function UnplacedPane() {
               )}
             </div>
           </div>
+
+          <section className="unplaced-plan" aria-label="Plan: what is left, by the gesture that clears it">
+            {napCount > 0 && (
+              <div className="plan-card">
+                <h3 className="plan-title">Not a place</h3>
+                <span className="plan-count">{fmt(napCount)}</span>
+                <p className="plan-text">
+                  Screenshots and files saved from another app — nothing there was shot anywhere. On no card.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busyKey != null}
+                  onClick={() => void openAside("nap")}
+                >
+                  {busyKey === "aside:nap" ? "Listing…" : "Look, then leave unplaced…"}
+                </button>
+              </div>
+            )}
+            {totals.aside.graded > 0 && (
+              <div className="plan-card">
+                <h3 className="plan-title">Graded exports</h3>
+                <span className="plan-count">{fmt(totals.aside.graded)}</span>
+                <p className="plan-text">
+                  Dated the day they were exported, so their hours point at the grading desk.{" "}
+                  {totals.aside.graded_matched > 0
+                    ? `${fmt(totals.aside.graded_matched)} found their source clip, already placed.`
+                    : "None found its source clip yet."}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busyKey != null}
+                  onClick={() => void openAside("graded")}
+                >
+                  {busyKey === "aside:graded"
+                    ? "Listing…"
+                    : totals.aside.graded_matched > 0
+                      ? `Copy ${fmt(totals.aside.graded_matched)} from their sources…`
+                      : "Look…"}
+                </button>
+              </div>
+            )}
+            {readyList.length > 0 && (
+              <div className="plan-card is-lead">
+                <h3 className="plan-title">Ready to confirm</h3>
+                <span className="plan-count">{fmt(readyMedia)}</span>
+                <p className="plan-text">
+                  {fmt(readyList.length)} {readyList.length === 1 ? "card" : "cards"} with a confident
+                  suggestion — the located frames just before and after within {rules?.tight_km ?? 2} km,
+                  or most of those shot then in one place.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setReviewing(true)}
+                  title="One card after another: Enter applies, → skips"
+                >
+                  Review {fmt(readyList.length)}
+                </button>
+              </div>
+            )}
+            {handCards > 0 && (
+              <div className="plan-card">
+                <h3 className="plan-title">By hand</h3>
+                <span className="plan-count">{fmt(handMedia)}</span>
+                <p className="plan-text">
+                  {fmt(handCards)} {handCards === 1 ? "card" : "cards"}: a weak or missing suggestion,
+                  frames that moved, or a container folder.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={triage === "hand"}
+                  onClick={() => setTriage("hand")}
+                >
+                  {triage === "hand" ? "Shown below" : `Show ${fmt(handCards)} ${handCards === 1 ? "card" : "cards"}`}
+                </button>
+              </div>
+            )}
+          </section>
 
           {shown.length === 0 ? (
             <EmptyState
@@ -1247,6 +1441,41 @@ export default function UnplacedPane() {
         />
       )}
 
+      {aside?.kind === "nap" && (
+        <NotAPlaceDialog
+          items={aside.data.not_a_place}
+          truncated={aside.data.truncated}
+          cap={aside.data.cap}
+          onClose={() => setAside(null)}
+          onApplied={(n, ids) => {
+            setAside(null);
+            setNotice(`${fmt(n)} media left unplaced — they will not come back here`);
+            setUndo({
+              label: "Undo",
+              run: async () => {
+                await exemptAssets(ids, false);
+              },
+            });
+            void load();
+          }}
+        />
+      )}
+
+      {aside?.kind === "graded" && (
+        <GradedDialog
+          items={aside.data.graded}
+          truncated={aside.data.truncated}
+          cap={aside.data.cap}
+          onClose={() => setAside(null)}
+          onPlaceLoose={openLoose}
+          onApplied={(message) => {
+            setAside(null);
+            setNotice(message);
+            void load();
+          }}
+        />
+      )}
+
       {reviewing && (
         <ReviewReady
           groups={readyList}
@@ -1273,7 +1502,7 @@ export default function UnplacedPane() {
             flowSource(flow) !== "inferred"
               ? null
               : flow.seed && flow.loc && distanceM(flow.seed, flow.loc) <= (rules?.move_m ?? 100)
-                ? suggestionNote(flow.group)
+                ? flow.group && suggestionNote(flow.group)
                 : "A position accepted as a suggestion for another folder — borrowed as offered, it stays a suggestion. Move the pin to verify it."
           }
           onTargetChange={(loc) => setFlow({ ...flow, loc })}

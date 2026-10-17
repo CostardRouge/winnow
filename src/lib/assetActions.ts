@@ -351,13 +351,16 @@ export type GeotagAsset = {
   lens?: string | null;
   /** The capture instant — how the stops dialog sorts a frame into its stop. */
   captured_at?: string | null;
+  /** Set aside from the Unplaced view's cards (docs/UNPLACED.md §12): a
+   *  screenshot, a file saved from another app, a graded export. */
+  aside?: "screenshot" | "saved" | "graded" | null;
 };
 
 // Every live, non-exempt media of these sessions, in the recap shape — the
 // entry points that have no asset grid loaded start here: the Geotag action on
 // a session card and on the session page's header (one session), and the
 // Unplaced view's Place (a folder group, several). ONE unpaged request to
-// api/assets/geotag/targets, which returns exactly these eleven columns; it used
+// api/assets/geotag/targets, which returns exactly these twelve columns; it used
 // to page through the session assets route for the full grid projection, eight
 // requests for a large folder.
 //
