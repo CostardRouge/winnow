@@ -62,7 +62,7 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Retention**: rows exist only by the owner's explicit gestures and go with the user (CASCADE); 1 MiB cap per body (`MAX_DOC_BYTES`, advertised in `/api/capabilities`). No automatic writer, no janitor.
 
-**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`. The kinds today (2026-09-20): `trip`, `project`, `roll` + `presets` for Atelier's Develop tool (its `docs/develop-tool.md`), and `lutpack` — the INDEX of a purchased LUT pack, whose lattices are too big for a document and live in the file bucket below; Atelier checks `capabilities.documents.kinds` before offering a kind, so an instance that predates an entry hides the feature instead of answering 400.
+**How to apply**: never read `doc` server-side — Winnow stays ignorant of what a trip is; a second client app is a new `app` value, not a new table; a new `kind` is one entry in `DOC_KINDS`. The kinds today (2026-09-20): `trip`, `project`, `roll` + `presets` for Atelier's Develop tool (its `docs/develop-tool.md`), and `lutpack` — the INDEX of a purchased LUT pack, whose lattices are too big for a document and live in the file bucket below; and (2026-10-17) `atlas`, a Flight Atlas — settings and flights by reference, the logs' text never inside; Atelier checks `capabilities.documents.kinds` before offering a kind, so an instance that predates an entry hides the feature instead of answering 400.
 
 ## The same idea in BYTES: a client app's files are content-addressed (2026-09-20)
 
