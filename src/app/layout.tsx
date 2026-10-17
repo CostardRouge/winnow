@@ -10,6 +10,7 @@ import ConnectionStatus from "./ConnectionStatus";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import { FeaturesProvider } from "./FeaturesProvider";
 import { getFeatures } from "@/lib/featureGate";
+import { APP_VERSION } from "@/lib/version";
 
 // DB-backed layout: never pre-rendered/cached at build time. The feature flags
 // below are read from Postgres on every request (behind a short cache), and
@@ -120,7 +121,7 @@ export default async function RootLayout({
         />
         <FeaturesProvider value={features}>
           <div className="root">
-            <AppRail />
+            <AppRail version={APP_VERSION} />
             <div className="root-main">{children}</div>
           </div>
         </FeaturesProvider>

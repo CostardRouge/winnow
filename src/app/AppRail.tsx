@@ -7,7 +7,6 @@ import ThemeToggle from "./ThemeToggle";
 import ChangePasswordModal from "./ChangePasswordModal";
 import { useFeatures } from "./FeaturesProvider";
 import type { FeatureId } from "@/lib/features";
-import { APP_VERSION } from "@/lib/version";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 // Persistent navigation rail: vertical on desktop (left edge), a bottom tab bar
@@ -98,7 +97,7 @@ type Me = {
 
 // The signed-in account, foot of the rail: an initial chip that opens a small
 // popover (who am I, role, Users management for admins, sign out).
-function AccountChip() {
+function AccountChip({ version }: { version: string }) {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [open, setOpen] = useState(false);
@@ -211,7 +210,7 @@ function AccountChip() {
           </button>
           {/* Which build the instance runs, at the foot of the menu: a phone in
               hand has no other way to tell (CHANGELOG.md says what it brought). */}
-          <div className="account-version">Winnow v{APP_VERSION}</div>
+          <div className="account-version">Winnow v{version}</div>
         </div>
       )}
       {changingPassword && (
@@ -221,7 +220,13 @@ function AccountChip() {
   );
 }
 
-export default function AppRail() {
+/**
+ * `version` comes down from the root layout, a server component, as a plain
+ * string: importing `@/lib/version` here would put the whole package.json —
+ * every dependency — into a client chunk, since the bundler does not narrow a
+ * JSON import to the one key a client component reads.
+ */
+export default function AppRail({ version }: { version: string }) {
   const pathname = usePathname() ?? "/";
   const features = useFeatures();
 
@@ -261,7 +266,7 @@ export default function AppRail() {
           rail on desktop and the right-most chip in the phone header. */}
       <div className="rail-foot">
         <ThemeToggle />
-        <AccountChip />
+        <AccountChip version={version} />
       </div>
     </nav>
   );
