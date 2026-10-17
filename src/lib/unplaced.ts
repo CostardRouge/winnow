@@ -35,6 +35,10 @@
 //      split_km only: their donors one by one, then their own media's capture times,
 //      then the tallies of each place's window — see the step itself.
 //
+//   7. each frame by its neighbours, for every shoot and part at once: the
+//      located frames around each frame's own minute (lib/unplacedTrace.ts,
+//      neighbourCounts) — see the step itself.
+//
 // Beside it, placesNear(): the positions a human already applied around a
 // card's dates, for the Place dialog to offer as one-click choices.
 // The donors are the TRUSTWORTHY located frames only — gps_source NULL (a
@@ -45,6 +49,7 @@
 import type { PoolClient } from "pg";
 import { tx } from "./db";
 import { gradedExports } from "./unplacedAside";
+import { neighbourCounts } from "./unplacedTrace";
 import {
   ASIDE,
   GRADED,
@@ -70,6 +75,7 @@ import {
   sortGroups,
   splitSessions,
   suggestionConfidence,
+  traceStops,
   type EvidenceFix,
   type PlaceRun,
   type UnplacedDonor,
@@ -349,6 +355,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           conflict: null,
           nearest: null,
           moments: null,
+          neighbours: null,
         });
         continue;
       }
@@ -376,6 +383,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           conflict: null,
           nearest: null,
           moments: null,
+          neighbours: null,
         });
       }
       // What the parts do not cover — all of it when the folder was not cut.
@@ -402,6 +410,7 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           conflict: null,
           nearest: null,
           moments: cuts.length > UNPLACED_RULES.parts_max ? cuts.length : null,
+          neighbours: null,
         });
       }
     }
@@ -854,6 +863,47 @@ export async function listUnplaced(): Promise<UnplacedResponse> {
           verified: r.manual === true,
         };
       }
+    }
+
+    // 7. Each frame by its neighbours (§13). A card's suggestion speaks for
+    //    its HOURS, and a folder's hours can hold two places: *sunrise beach*
+    //    ran 09:47–21:51, its 280 unplaced frames all shot before 11:00
+    //    between two iPhone fixes at one spot, while the fixes nearest its
+    //    evening end — its own frames, placed by the track — said Tin Can
+    //    Bay, 58 km on. So every shoot and part with no conflict is also
+    //    matched frame by frame (neighbourCounts: the two located frames
+    //    around each frame's minute, plus any kept import). What it gives
+    //    the card: how many frames that places, in how many places, and
+    //    whether they all lie within split_km of the card's own suggestion.
+    //    A Ready card whose frames land elsewhere is no longer Ready
+    //    (isReady) — one pin for it would be wrong — and a card the
+    //    neighbours mostly place gets "Place N by their neighbours" as its
+    //    verb (isNeighbourly).
+    const matchable = groups.flatMap((g, i) =>
+      g.kind !== "span" && g.conflict == null
+        ? [{ idx: i, sid: g.sessions[0].id, t0: g.t0, t1: g.t1 }]
+        : [],
+    );
+    const matched = await neighbourCounts(client, matchable);
+    for (const [idx, frames] of matched) {
+      const g = groups[idx];
+      const placed = frames.filter((f) => f.pos != null);
+      if (!placed.length) continue;
+      const { runs } = traceStops(
+        placed.map((f, k) => ({ id: k, at: f.at, pos: f.pos, source: "inferred", import_id: null })),
+        UNPLACED_RULES.split_km * 1000,
+        UNPLACED_RULES.stay_min * 60_000,
+      );
+      const s = g.suggestion;
+      g.neighbours = {
+        placed: placed.length,
+        total: frames.length,
+        places: runs.length,
+        agrees:
+          s && !g.stops
+            ? placed.every((f) => distanceM(f.pos!, s) <= UNPLACED_RULES.split_km * 1000)
+            : null,
+      };
     }
 
     // Worked from the top: the confident suggestions first, the biggest pile

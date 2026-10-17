@@ -691,3 +691,57 @@ a single file**), each media counted once, first match wins:
    The fix it calls for is **per-frame**: each frame takes the fixes around
    ITS time, not the card's — the canvas's screen 4a. Until it lands, the
    card's *Follow a track…* with the iPhone frames does exactly that.
+
+## 13. Each frame by its neighbours
+
+*2026-10-17, the canvas's screen 4a, asked for by the maintainer ("lance
+chaque photo par ses voisines").*
+
+A card's suggestion speaks for its HOURS, and a folder's hours can hold two
+places. §12.4's *sunrise beach* ran 09:47–21:51; all 280 unplaced frames were
+shot before 11:00 between two iPhone fixes at one spot, while the fixes
+nearest the folder's evening end — its own frames, placed by the track — were
+at Tin Can Bay, 58 km on, and pulled the card's suggestion there.
+
+1. **Every shoot and part with no conflict is also matched frame by frame**
+   (`neighbourCounts` in `lib/unplacedTrace.ts`, step 7 of `listUnplaced`).
+   Each placeable frame — unplaced, not set aside, camera media — takes the
+   located frames just before and after ITS minute, with "Follow a
+   track…"'s own rule (`positionAt`, now printed as `frame_*` in the rules):
+   between two at most 60 min apart (never faster than 200 km/h), or two at
+   one spot (`tight_km`) up to 12 h apart, or the nearest within 15 min;
+   else nothing. Kept import fixes come first. positionAt reads only the two
+   fixes around an instant, so the list asks the database for exactly those
+   instead of every fix of a ±12 h window — two walks per frame down
+   `0055_trusted_geo_captured`, a partial index on exactly the trusted
+   located frames (without it a walk crosses every unplaced frame in
+   between: millions of row checks for a fresh 3 000-frame folder).
+2. **A body /gear calls someone else's, or no camera, never counts**
+   (`gear_owners` 0053, owner `other`/`none`). A friend's camera elsewhere
+   pulled frames to it — the test shows two of six frames moving 100 km
+   without the guard. A body with no row still counts: not sorted is not
+   assumed either way.
+3. **The card gets `neighbours`**: frames placed / frames, how many places
+   (stops at `split_km`), and whether every placed frame lies within
+   `split_km` of the card's own suggestion. **A Ready card whose frames land
+   elsewhere is no longer Ready** — one pin for it would be wrong; this is
+   the case the census missed, *sunrise beach* read *medium* on the demo
+   copy. A card the neighbours place at least half of (`isNeighbourly`: not
+   Ready, no stops, no conflict) gets *Place N by their neighbours…* as its
+   verb, a sentence saying so, its own pile in the plan band and its own
+   filter (*Neighbours*); other cards with any frame placed offer it in the
+   ⋯ menu. The verb is the stops dialog of "Follow a track…" with the
+   sources chosen for the human (`auto`), so what is recorded is unchanged:
+   `'inferred'` from frames, `'track'` from an import, never `'manual'`,
+   never over a position.
+4. Measured on the instance before building (2026-10-17, via the trace
+   route with every source): 406 of the 691 media on cards that were not
+   Ready; minus the graded exports, which per-frame matching would have
+   placed at their EXPORT time — the reason the placeable frames exclude the
+   set-aside media.
+5. **Trap met on the way**: Leaflet 1.9.4's canvas renderer can have a
+   redraw scheduled that `map.remove()` fails to cancel; it then fires on a
+   canvas with no context (`reading 'clearRect' of undefined`) — on every
+   StrictMode remount of the stops map, and on a close right after opening.
+   StopsMap now mounts each map on a container of its own and removes it a
+   frame after unmount.

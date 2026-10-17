@@ -62,8 +62,19 @@ export default function StopsMap({
   }, [onPick, onMove]);
 
   useEffect(() => {
-    if (!boxRef.current || mapRef.current) return;
-    const map = L.map(boxRef.current, { zoomControl: true, preferCanvas: true });
+    const box = boxRef.current;
+    if (!box || mapRef.current) return;
+    // Each map gets a container of its own inside the box, and is removed a
+    // frame AFTER its unmount: Leaflet's canvas renderer can have a redraw
+    // already scheduled, which its removal fails to cancel — it then fires on
+    // a canvas with no context ("reading 'clearRect' of undefined"), on every
+    // StrictMode remount and on a close right after opening (traced
+    // 2026-10-17 in Leaflet 1.9.4). The next map mounts meanwhile on a fresh
+    // container, so the two never share one.
+    const el = document.createElement("div");
+    el.className = "stops-map-pane";
+    box.appendChild(el);
+    const map = L.map(el, { zoomControl: true, preferCanvas: true });
     map.setView([20, 0], 2);
     L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
     map.on("click", (e: L.LeafletMouseEvent) => {
@@ -73,12 +84,16 @@ export default function StopsMap({
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     const ro = new ResizeObserver(() => map.invalidateSize());
-    ro.observe(boxRef.current);
+    ro.observe(box);
     return () => {
       ro.disconnect();
-      map.remove();
       mapRef.current = null;
       fitted.current = false;
+      el.style.display = "none";
+      requestAnimationFrame(() => {
+        map.remove();
+        el.remove();
+      });
     };
   }, []);
 

@@ -15,6 +15,7 @@ import { distText, spanText } from "@/lib/unplacedFormat";
 import {
   distanceM,
   isAllNoExif,
+  isNeighbourly,
   isReady,
   parseUnplacedSort,
   sortGroups,
@@ -117,6 +118,13 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // just before and just after it, within tight_km of each other, make it high
 // whatever the donor count — and the card says so in words.
 //
+// And a card whose hours hold more than one place is placed FRAME BY FRAME
+// (§13): the server matches each frame against the located frames around its
+// own minute (`neighbours`), and a card they mostly place offers "Place N by
+// their neighbours…" — the stops dialog of "Follow a track…", its sources
+// chosen for the human (every import, every body but someone else's). A Ready
+// card whose frames land elsewhere is no longer Ready.
+//
 // What is recorded depends on what the human did with the pin: accepted as
 // offered (within `move_m` of the suggestion) → 'inferred', shown as such in
 // the recap and never written into the originals; moved further, or placed
@@ -125,7 +133,7 @@ import { EmptyState, Icons, SkeletonCards } from "./ui";
 // "verified" as the pin leaves the suggestion — the consequence is visible
 // before the button is pressed, not explained after it.
 
-type Triage = "all" | "ready" | "hand";
+type Triage = "all" | "ready" | "neighbours" | "hand";
 
 // The in-flight Place flow: the group, the media the recap will list (every
 // live, non-exempt media the card covers — placed ones start unchecked there,
@@ -457,7 +465,8 @@ export default function UnplacedPane() {
   const shown = useMemo(() => {
     const all = sortGroups(data?.groups ?? [], sort);
     if (triage === "ready") return all.filter(isReady);
-    if (triage === "hand") return all.filter((g) => !isReady(g));
+    if (triage === "neighbours") return all.filter(isNeighbourly);
+    if (triage === "hand") return all.filter((g) => !isReady(g) && !isNeighbourly(g));
     return all;
   }, [data, triage, sort]);
 
@@ -660,6 +669,34 @@ export default function UnplacedPane() {
     [loadGroupAssets],
   );
 
+  // Each frame by its neighbours (§13): the trace with its sources chosen
+  // for the human, straight into the stops dialog — no sources step.
+  const openNeighbours = useCallback(
+    async (g: UnplacedGroup) => {
+      if (busyKey) return;
+      setBusyKey(g.key);
+      try {
+        const trace = await fetchJson<TraceResponse>("/api/assets/unplaced/trace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: g.sessions[0].id,
+            from: new Date(g.t0).toISOString(),
+            // Rounded up a millisecond: pg's microseconds vs ISO's milliseconds.
+            to: new Date(Date.parse(g.t1) + 1).toISOString(),
+            auto: true,
+          }),
+        });
+        await openTrace(g, trace);
+      } catch (e) {
+        setNotice((e as Error).message);
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [busyKey, openTrace],
+  );
+
   // Exempt the card's media that carry no camera EXIF at all — the census's
   // discriminator for screenshots and scans — one card at a time, never the
   // whole library, and never silently.
@@ -776,7 +813,9 @@ export default function UnplacedPane() {
   const readyList = useMemo(() => sortGroups(data?.groups ?? [], sort).filter(isReady), [data, sort]);
   // The plan band's counts: media, since a card can hold one or a thousand.
   const readyMedia = readyList.reduce((n, g) => n + g.unplaced, 0);
-  const handGroups = (data?.groups ?? []).filter((g) => !isReady(g));
+  const neighbourCards = (data?.groups ?? []).filter(isNeighbourly);
+  const neighbourMedia = neighbourCards.reduce((n, g) => n + (g.neighbours?.placed ?? 0), 0);
+  const handGroups = (data?.groups ?? []).filter((g) => !isReady(g) && !isNeighbourly(g));
   const handCards = handGroups.length;
   const handMedia = handGroups.reduce((n, g) => n + g.unplaced, 0);
   const napCount = totals ? totals.aside.screenshots + totals.aside.saved : 0;
@@ -863,9 +902,31 @@ export default function UnplacedPane() {
       },
       "〰",
     );
+    const nb = g.neighbours;
+    const byNeighbours: Verb | null =
+      nb && nb.placed > 0
+        ? {
+            label:
+              nb.placed === nb.total
+                ? `Place ${fmt(nb.placed)} by their neighbours…`
+                : `Place ${fmt(nb.placed)} of ${fmt(nb.total)} by their neighbours…`,
+            title: "Each frame where the located frames around its own minute put it — check the stops, then apply",
+            run: () => void openNeighbours(g),
+          }
+        : null;
     const items: MenuItem[] = [trace];
     if (g.no_exif > 0) items.push(item("exempt", exempt, "⊘"));
     items.push(item("grid", { ...grid, label: "Open in grid" }, "▦"));
+    if (isNeighbourly(g) && byNeighbours) {
+      return {
+        primary: byNeighbours,
+        items: [
+          item("place", { ...place, label: `Place all ${n} at one point…`, title: "Only if the whole card really is one place" }, "📌"),
+          ...items,
+        ],
+      };
+    }
+    if (byNeighbours) items.unshift(item("neighbours", byNeighbours, "⋯"));
     if (g.stops) {
       return {
         primary: {
@@ -946,6 +1007,25 @@ export default function UnplacedPane() {
         </div>
       );
     }
+    if (isNeighbourly(g)) {
+      const nb = g.neighbours!;
+      const rest = nb.total - nb.placed;
+      return (
+        <div className="card-suggest">
+          Each frame by the located frames around its own minute:{" "}
+          <strong>
+            {fmt(nb.placed)} of {fmt(nb.total)}
+          </strong>{" "}
+          placed, in {nb.places === 1 ? "one place" : `${fmt(nb.places)} places`}.
+          <span className="hint">
+            {nb.agrees === false && g.suggestion
+              ? ` The hours around the folder point at ${suggestionLabel(g)} — too broad for these frames.`
+              : ""}
+            {rest > 0 ? ` ${fmt(rest)} stay to place by hand.` : ""}
+          </span>
+        </div>
+      );
+    }
     const s = g.suggestion;
     if (!s && g.nearest) {
       const at = g.nearest;
@@ -985,10 +1065,16 @@ export default function UnplacedPane() {
       count: totals?.ready,
     },
     {
+      key: "neighbours",
+      label: "Neighbours",
+      hint: "Placed frame by frame, by the located frames around each one’s minute",
+      count: neighbourCards.length,
+    },
+    {
       key: "hand",
       label: "By hand",
       hint: "A weak or missing suggestion, or a container folder",
-      count: totals?.by_hand,
+      count: handCards,
     },
   ];
 
@@ -1127,6 +1213,15 @@ export default function UnplacedPane() {
                     nearest of them. Screenshots, files saved from another app
                     and graded exports (<code>…_lut_YYYYMMDD</code>) are on no
                     card: their hours say nothing about where they were shot.
+                    Each frame is also matched by its own minute: between the
+                    located frames just before and after it when they are at
+                    most {rules.frame_bracket_min} min apart (never faster
+                    than {rules.frame_kmh} km/h), or at one spot up to{" "}
+                    {rules.frame_still_h} h apart, or the nearest within{" "}
+                    {rules.frame_nearest_min} min — a camera marked on /gear
+                    as someone else’s never counts. A card whose frames land
+                    elsewhere than its pin is not Ready; one they mostly
+                    place is placed by its neighbours, stop by stop.
                     Accepting
                     the pin as offered records a suggested position, not written
                     into the originals; moving it more than {rules.move_m} m
@@ -1205,6 +1300,26 @@ export default function UnplacedPane() {
                 </button>
               </div>
             )}
+            {neighbourCards.length > 0 && (
+              <div className="plan-card">
+                <h3 className="plan-title">By their neighbours</h3>
+                <span className="plan-count">{fmt(neighbourMedia)}</span>
+                <p className="plan-text">
+                  {fmt(neighbourCards.length)} {neighbourCards.length === 1 ? "card" : "cards"} whose hours hold
+                  more than one place: each frame goes where the located frames around its own minute were.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={triage === "neighbours"}
+                  onClick={() => setTriage("neighbours")}
+                >
+                  {triage === "neighbours"
+                    ? "Shown below"
+                    : `Show ${fmt(neighbourCards.length)} ${neighbourCards.length === 1 ? "card" : "cards"}`}
+                </button>
+              </div>
+            )}
             {handCards > 0 && (
               <div className="plan-card">
                 <h3 className="plan-title">By hand</h3>
@@ -1249,7 +1364,7 @@ export default function UnplacedPane() {
                     className={`session-card is-stacked unplaced-card is-${g.kind}`}
                   >
                     <div className="card-head">
-                      {s && g.kind !== "span" && !g.stops && !g.conflict && (
+                      {s && g.kind !== "span" && !g.stops && !g.conflict && !isNeighbourly(g) && (
                         <MapThumb
                           lat={s.lat}
                           lon={s.lon}
