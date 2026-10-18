@@ -17,6 +17,11 @@ const nextConfig = {
     // This flag makes Next shell out to the project-local `tsc` instead — the
     // same binary `npm run typecheck` uses.
     useTypeScriptCli: true,
+    // src/proxy.ts sees every /api request, and Next buffers the body for it
+    // up to this size and TRUNCATES the rest without an error (the default is
+    // 10 MB): the route then reads half a JSON document. Matches
+    // MAX_DOC_BYTES (lib/appDocuments.ts) plus room for the envelope.
+    proxyClientMaxBodySize: "100mb",
   },
   devIndicators: false,
 };
