@@ -30,9 +30,16 @@ import { many, one } from "./db";
 export const DOC_KINDS = ["trip", "project", "roll", "presets", "lutpack", "atlas"] as const;
 export type DocKind = (typeof DOC_KINDS)[number];
 
-// Tens of KB is a big trip; 1 MiB is a generous ceiling that still keeps a
-// runaway client from filling the table. Advertised in /api/capabilities.
-export const MAX_DOC_BYTES = 1024 * 1024;
+// No policy cap: a document takes the room its owner's work needs (a Develop
+// roll of 300 edited pictures, each with its making-of journal, is tens of
+// MB). What is left is the TRANSPORT's ceiling: Cloudflare's tunnel refuses a
+// request body over 100 MB with its own HTML page, so 96 MiB keeps the refusal
+// ours and advertised in /api/capabilities (Atelier says it in a sentence
+// before any byte travels). `next.config.mjs` raises proxyClientMaxBodySize to
+// match — past its 10 MB default, Next silently TRUNCATES a body that goes
+// through src/proxy.ts and the route sees "not JSON". Rows still exist only by
+// the owner's gestures and go with the user (CASCADE).
+export const MAX_DOC_BYTES = 96 * 1024 * 1024;
 
 // The namespace a client writes under. Lowercase slug, so it can never be a
 // path trick, and short, so it stays an index key rather than a payload.

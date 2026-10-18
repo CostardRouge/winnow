@@ -9,6 +9,11 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+### Changed
+
+- Atelier's documents (trips, projects, Develop rolls…) are no longer held to 1 MB: a roll of hundreds of edited
+  pictures saves whole, up to 96 MB, the tunnel's own limit.
+
 ## [1.0.0] - 2026-10-17 — Rye
 
 The first numbered release: Winnow as it runs on the Optiplex today, over the whole NAS library.
