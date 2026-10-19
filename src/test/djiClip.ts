@@ -15,7 +15,9 @@ export function box(type: string, ...body: Buffer[]): Buffer {
 
 const u32 = (...v: number[]) => {
   const b = Buffer.alloc(4 * v.length);
-  v.forEach((x, i) => b.writeUInt32BE(x, i * 4));
+  v.forEach((x, i) => {
+    b.writeUInt32BE(x, i * 4);
+  });
   return b;
 };
 

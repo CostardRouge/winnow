@@ -113,7 +113,7 @@ function refresh(): Promise<void> {
     inflight = fetchJson<Stats>("/api/stats")
       .then((s) => {
         snapshot = s;
-        subscribers.forEach((fn) => fn(s));
+        for (const fn of subscribers) fn(s);
       })
       .catch(() => {
         /* transient: keep the current snapshot */

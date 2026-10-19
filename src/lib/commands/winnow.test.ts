@@ -24,7 +24,7 @@ function fakeClient(opts: { role?: string; via?: string; timeline?: boolean; byt
       if (path.endsWith("/rating")) return { rating: { asset_id: 7, ...(body as object) } } as never;
       if (path.startsWith("/api/sessions"))
         return { sessions: [1, 2, 3].map((id) => ({ id, name: `f${id}`, asset_count: 10, pick_count: 1, reject_count: 2, skip_count: 0, unrated_count: 7, status: "to_sort", captured_at_min: null, captured_at_max: null, ignored: false, last_reviewed_at: null, device_hint: null })) } as never;
-      if (path === "/api/features") return { features: { people: opts.peopleOff ? false : true } } as never;
+      if (path === "/api/features") return { features: { people: !opts.peopleOff } } as never;
       if (path === "/api/people/suggestions") return { suggestions: [{ a: 1, b: 2, similarity: 0.81234 }], more: false } as never;
       if (path.startsWith("/api/people/") && method === "GET")
         return { person: { id: 1, name: "Vanessa" }, faces: [{ id: 10, asset_id: 7, score: 0.93859 }, { id: 11, asset_id: 8, score: 0.5 }] } as never;

@@ -28,6 +28,7 @@ export default function GlobalError({
       <body>
         {/* Keep in sync with the theme script in layout.tsx. */}
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: the layout's constant pre-paint theme script — no data reaches it
           dangerouslySetInnerHTML={{
             __html: `try{var t=localStorage.getItem("winnow.theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
           }}

@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static checks — no services needed, so this fails fast on type errors.
-  # (winnow has no ESLint config; `tsc --noEmit` is its static gate.)
+  # Static checks — no services needed, so this fails fast: Biome over src/
+  # (biome.jsonc), then `tsc --noEmit`.
   typecheck:
     name: Typecheck
     runs-on: ubuntu-24.04
@@ -41,6 +41,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck

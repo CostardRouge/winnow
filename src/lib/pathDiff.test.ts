@@ -49,5 +49,7 @@ test("a lone path is all prefix, and every split rejoins to its input", () => {
     ["/nas/finals/2024/Japan/", "", "DSC04877.jpg"],
   );
   const inputs = ["/x/a/b/c.ARW", "/x/a/c.ARW", "/y/c.ARW", "rel/c.ARW"];
-  splitPaths(inputs).forEach((p, i) => assert.equal(join(p), inputs[i]));
+  splitPaths(inputs).forEach((p, i) => {
+    assert.equal(join(p), inputs[i]);
+  });
 });

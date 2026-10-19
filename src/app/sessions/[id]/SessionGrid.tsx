@@ -665,7 +665,7 @@ export default function SessionGrid({
       });
       setSelected((prev) => {
         const next = new Set(prev);
-        ids.forEach((i) => next.delete(i));
+        for (const i of ids) next.delete(i);
         return next;
       });
       try {

@@ -101,10 +101,9 @@ const fmtExt = (ext?: string | null) =>
   (ext ?? "").replace(".", "").toUpperCase();
 
 // One member of a RAW+JPEG group, summarised for the at-a-glance pair block:
-// its format badge plus the per-file stats (dimensions, size) that differ
-// between the two sides. `null` stats are simply omitted.
+// the per-file stats (dimensions, size) that differ between the two sides,
+// drawn beside its format badge. `null` stats are simply omitted.
 const memberStats = (
-  ext?: string | null,
   width?: number | null,
   height?: number | null,
   size?: number | null,
@@ -1285,7 +1284,6 @@ export default function MediaViewer<T extends ViewerItem>({
                   <span className="viewer-pair-ext">{fmtExt(item.ext)}</span>
                   <span className="viewer-pair-stat">
                     {memberStats(
-                      item.ext,
                       item.width,
                       item.height,
                       item.file_size,
@@ -1314,7 +1312,6 @@ export default function MediaViewer<T extends ViewerItem>({
                   </span>
                   <span className="viewer-pair-stat">
                     {memberStats(
-                      item.companion_ext,
                       item.companion_width,
                       item.companion_height,
                       item.companion_file_size,
@@ -1393,7 +1390,7 @@ export default function MediaViewer<T extends ViewerItem>({
                     // open, so the box stays a plain label.
                     const linkable = f.person_id != null && peopleOffered;
                     const crop = (
-                      // eslint-disable-next-line @next/next/no-img-element
+                      // biome-ignore lint/correctness/useJsxKeyInIterable: placed inside the keyed <button> or <span> below, which carries the key
                       <img
                         className="chip-face"
                         src={`/api/faces/${f.id}/thumb`}

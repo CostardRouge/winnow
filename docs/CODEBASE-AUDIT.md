@@ -892,7 +892,7 @@ without a confirm) are not repeated.
 - **Problem / Impact:** hook dependency arrays are checked by nothing — FE-01's stale reset lives in exactly such an effect.
 - **Fix:** a minimal flat config with `eslint-plugin-react-hooks` (+ `jsx-a11y`), not a style ruleset. New devDependencies (`eslint`, two plugins, all actively maintained, dev-only, zero runtime/bundle cost); the alternative — hand-review of every effect — is what produced FE-01.
 - **Effort:** M · **Risk of fixing:** low (findings, not rewrites) · **Verification:** `npx eslint src` clean after fixing what it reports.
-- *Evidence:* read · *Status:* Decision D9
+- *Evidence:* read · *Status:* Decision D9, **settled 2026-10-19 by the portfolio standard (C14, N3): Biome, not ESLint** — its recommended rules run in CI (`npm run lint`), with `useExhaustiveDependencies` and the a11y rules switched off in `biome.jsonc` until batch 7–8 fixes what they report
 
 **DX-03** — **Severity:** medium
 - **Location:** `src/lib/lensLabels.ts:116, 127` (literal NUL bytes as a sentinel: `"\0unknown"` written raw).
@@ -1036,7 +1036,7 @@ with two moves argued below.
 | D6 | SCL-01 migrations on deploy | (a) worker migrates at boot under an advisory lock; (b) label `migrate` + Watchtower `--revive-stopped` | **(a)** — survives any deploy tool · **answered (a), shipped 2026-10-11** |
 | D7 | SCL-02 image build | (a) `workflow_run` after CI; (b) one workflow with `needs:` | **(a)** — smallest diff |
 | D8 | DX-01 CI job | add `npm test` to the `build` job (it has Postgres) | **yes** · **settled by the portfolio standard (C15), shipped 2026-10-19** |
-| D9 | DX-02 linting | adopt ESLint for hooks + a11y only, or not | **yes**, dev-only, findings fixed in batch 7–8 |
+| D9 | DX-02 linting | adopt ESLint for hooks + a11y only, or not | **yes**, dev-only, findings fixed in batch 7–8 · **settled 2026-10-19: Biome (the portfolio standard's N3) in the gate; its hook and a11y rules off until batch 7–8 fixes what they report** |
 | D10 | BE-07 export layout | suffix collisions `__N` (as the importer does) and add the job id to the folder name, or keep names and refuse collisions | suffix + job id; confirm Capture One's import is indifferent to folder names |
 | D11 | SEC-07 offload paths | list the card mount(s) in `BROWSE_ROOTS`, then confine | needs the Optiplex's card mount path |
 | D12 | BE-14 indexes | collect `pg_stat_user_indexes` for a week, then a migration | run `SELECT indexrelname, idx_scan FROM pg_stat_user_indexes WHERE relname='assets' ORDER BY idx_scan` on the Optiplex and send it |

@@ -54,17 +54,18 @@ the process with a readable error. When you add a new environment variable:
 ## Before you open a PR
 
 CI runs on every pull request (`.github/workflows/ci.yml`). Run the same checks
-locally so there are no surprises — there is **no ESLint config**; `tsc` is the
-static gate:
+locally so there are no surprises — Biome (`npm run lint`, the recommended rules
+over `src/`, no formatter yet) and `tsc` are the static gates:
 
 ```bash
+npm run lint            # Biome over src/ — must pass
 npm run typecheck       # tsc --noEmit — must pass
 npm test                # node:test suite — CI runs it too, the database-backed tests against its Postgres
 npm run migrate         # applies/validates the SQL (the schema is part of the contract)
 npm run build           # production build — must succeed
 ```
 
-A change is ready when all four are green. `npm test` uses Node's built-in
+A change is ready when all five are green. `npm test` uses Node's built-in
 runner through `tsx` (no extra dependency); tests live next to the module they
 cover as `*.test.ts`. The database-backed ones run only when you point them at
 a scratch database that `npm run migrate` has been run against — they insert
@@ -92,8 +93,8 @@ Postgres, so a broken or out-of-order migration fails the build.
 
 ## Conventions
 
-- **TypeScript everywhere**, ES modules. Keep things strictly typed — `tsc` is the
-  guardrail.
+- **TypeScript everywhere**, ES modules. Keep things strictly typed — `tsc` and
+  Biome (`biome.jsonc`) are the guardrails.
 - **Comments explain the *why*.** The codebase favours short comments that capture
   intent and trade-offs (why a derivative is built on a proxy, why a path is
   guarded), not restatements of the code. Match that style.
@@ -113,7 +114,7 @@ Postgres, so a broken or out-of-order migration fails the build.
   history.
 - Explain the *why* in the PR description, and include screenshots / clips for UI
   changes.
-- Make sure `typecheck`, `test`, `migrate` and `build` pass before requesting review.
+- Make sure `lint`, `typecheck`, `test`, `migrate` and `build` pass before requesting review.
 
 ---
 

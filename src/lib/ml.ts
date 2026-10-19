@@ -86,7 +86,7 @@ function buildEntries(): Record<string, unknown> {
     };
   }
   if (config.ml.ocr.enabled) {
-    entries["ocr"] = {
+    entries.ocr = {
       detection: {
         modelName: config.ml.ocr.model,
         options: { minScore: 0.5, maxResolution: 736 },
@@ -100,7 +100,7 @@ function buildEntries(): Record<string, unknown> {
   // CLIP visual embedding for semantic search — rides the same /predict call,
   // so faces + OCR + clip cost ONE round trip and one image decode container-side.
   if (config.ml.clip.enabled) {
-    entries["clip"] = {
+    entries.clip = {
       visual: { modelName: config.ml.clip.model, options: {} },
     };
   }
