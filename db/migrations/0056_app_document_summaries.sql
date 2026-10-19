@@ -1,0 +1,15 @@
+-- A small summary beside each client document (api/apps/[app]/docs, 0041).
+--
+-- The list route used to hand back every body whole, which was right while a
+-- trip was tens of KB. Since the cap went to 96 MiB (Atelier's Develop rolls:
+-- 300 edited pictures with their making-of journals reach tens of MB), a
+-- gallery that only draws a name, a few counts and four thumbnails was
+-- downloading every roll in full on each visit. The client now sends a
+-- summary with each PUT, and `GET …/docs?fields=summary` answers with it
+-- instead of the body.
+--
+-- Opaque like `doc`: Winnow stores it and never reads it. NULL for every row
+-- written before this migration, and for a PUT that sends none (an older
+-- client) — so a summary can never describe an older body than the one
+-- stored. The list falls back to the body for those rows.
+ALTER TABLE app_documents ADD COLUMN IF NOT EXISTS summary JSONB;

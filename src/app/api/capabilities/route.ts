@@ -106,7 +106,9 @@ export async function GET(req: NextRequest) {
       // Where a client app keeps its own documents (api/apps/[app]/docs,
       // migration 0041): own rows for any signed-in role, an etag that
       // refuses a stale write, a body cap the client checks before sending.
-      documents: { bucket: true, kinds: [...DOC_KINDS], maxBytes: MAX_DOC_BYTES },
+      // `summaries`: a PUT may carry a small summary and the list answers
+      // with it in place of the body on `?fields=summary` (migration 0056).
+      documents: { bucket: true, kinds: [...DOC_KINDS], maxBytes: MAX_DOC_BYTES, summaries: true },
       // The binary half of the same idea (api/apps/[app]/files, migration
       // 0044): blobs a client keeps here, content-addressed by SHA-256, own
       // rows for any signed-in role. A client that must hold something bigger

@@ -11,6 +11,8 @@ were given after the fact to the history's turning points.
 
 ### Changed
 
+- Atelier's galleries list documents by a small summary instead of downloading each one whole, so a Develop gallery of
+  big rolls opens in a few kilobytes.
 - Atelier's documents (trips, projects, Develop rolls…) are no longer held to 1 MB: a roll of hundreds of edited
   pictures saves whole, up to 96 MB, the tunnel's own limit.
 
