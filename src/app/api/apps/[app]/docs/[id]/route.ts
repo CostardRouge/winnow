@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { identityFromHeaders } from "@/lib/auth";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
+import { readSummary } from "@/lib/appDocumentSummary";
 import {
   MAX_DOC_BYTES,
   deleteDocument,
@@ -96,18 +97,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return badRequest("body must be an object");
     }
-    const b = parsed as { kind?: unknown; version?: unknown; doc?: unknown };
+    const b = parsed as { kind?: unknown; version?: unknown; doc?: unknown; summary?: unknown };
     if (!isDocKind(b.kind)) return badRequest("unknown kind");
     if (typeof b.version !== "number" || !Number.isInteger(b.version) || b.version < 0) {
       return badRequest("version must be a non-negative integer");
     }
     if (typeof b.doc !== "object" || b.doc === null) return badRequest("doc must be an object");
+    const summary = readSummary(b.summary);
+    if (!summary.ok) return json({ error: summary.error }, summary.status);
 
     const outcome = await putDocument(
       r.me.id,
       r.app,
       r.id,
-      { kind: b.kind, version: b.version, doc: b.doc },
+      { kind: b.kind, version: b.version, doc: b.doc, summary: summary.summary },
       normalizeEtag(req.headers.get("if-match")),
     );
     switch (outcome.status) {

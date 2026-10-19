@@ -68,6 +68,15 @@ export type AppDocumentRow = {
   doc: unknown;
 };
 
+// A row of the list asked with `fields=summary`: the client's summary in
+// place of the body — or, for a row that has none (written before 0056, or
+// by a client that sends none), the body as before, so nothing ever lists
+// as an empty card.
+export type AppDocumentListRow = Omit<AppDocumentRow, "doc"> & {
+  summary?: unknown;
+  doc?: unknown;
+};
+
 const ROW_SELECT = "id, kind, version, updated_at, etag, doc";
 
 // Strong-validator ETag as HTTP writes it: quoted. Compared after stripping
@@ -101,6 +110,27 @@ export async function listDocuments(
   );
 }
 
+// The same list with each body replaced by its summary where there is one.
+// The CASE is what keeps the bodies off the wire AND off the disk: Postgres
+// detoasts `doc` only for the rows whose summary is NULL.
+export async function listDocumentSummaries(
+  userId: number,
+  app: string,
+  kind: DocKind | null,
+): Promise<AppDocumentListRow[]> {
+  const rows = await many<AppDocumentRow & { summary: unknown }>(
+    `SELECT id, kind, version, updated_at, etag, summary,
+            CASE WHEN summary IS NULL THEN doc END AS doc
+     FROM app_documents
+     WHERE user_id = $1 AND app = $2 AND ($3::text IS NULL OR kind = $3)
+     ORDER BY updated_at DESC`,
+    [userId, app, kind],
+  );
+  return rows.map(({ summary, doc, ...rest }) =>
+    summary === null ? { ...rest, doc } : { ...rest, summary },
+  );
+}
+
 export async function getDocument(
   userId: number,
   app: string,
@@ -126,7 +156,7 @@ export async function putDocument(
   userId: number,
   app: string,
   id: string,
-  body: { kind: DocKind; version: number; doc: unknown },
+  body: { kind: DocKind; version: number; doc: unknown; summary: unknown | null },
   ifMatch: string | null,
 ): Promise<PutOutcome> {
   // The primary key is (app, id) across every user, so another user's row
@@ -140,14 +170,17 @@ export async function putDocument(
 
   const etag = newEtag();
   const docJson = JSON.stringify(body.doc);
+  // Written on EVERY put, null included: a summary always describes the body
+  // stored beside it, never an older one (migration 0056).
+  const summaryJson = body.summary === null ? null : JSON.stringify(body.summary);
 
   if (!current) {
     if (ifMatch) return { status: "notfound" };
     const row = await one<{ updated_at: string }>(
-      `INSERT INTO app_documents (app, id, user_id, kind, version, doc, etag)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+      `INSERT INTO app_documents (app, id, user_id, kind, version, doc, etag, summary)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)
        RETURNING updated_at`,
-      [app, id, userId, body.kind, body.version, docJson, etag],
+      [app, id, userId, body.kind, body.version, docJson, etag, summaryJson],
     );
     return { status: "ok", etag, updated_at: row!.updated_at, created: true };
   }
@@ -160,10 +193,10 @@ export async function putDocument(
   // past the SELECT above cannot both succeed here.
   const row = await one<{ updated_at: string }>(
     `UPDATE app_documents
-     SET kind = $4, version = $5, doc = $6::jsonb, etag = $7, updated_at = now()
+     SET kind = $4, version = $5, doc = $6::jsonb, etag = $7, summary = $9::jsonb, updated_at = now()
      WHERE app = $1 AND id = $2 AND user_id = $3 AND etag = $8
      RETURNING updated_at`,
-    [app, id, userId, body.kind, body.version, docJson, etag, ifMatch],
+    [app, id, userId, body.kind, body.version, docJson, etag, ifMatch, summaryJson],
   );
   if (!row) {
     const latest = await one<{ etag: string; updated_at: string }>(
