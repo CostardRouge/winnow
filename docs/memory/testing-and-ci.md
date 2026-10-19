@@ -4,19 +4,19 @@ Read before deciding a change is "done", or before touching `.github/workflows/`
 
 Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.json` and `docs/ARCHITECTURE-REVIEW.md` §3.5.
 
-## The gate is three commands, and that is the whole gate (2026-08-20)
+## The gate is four commands, and CI runs all four (2026-08-20, revised 2026-10-19)
 
-**Decision**: `npm run typecheck` (`tsc --noEmit`), `npm run migrate` (against a real Postgres — the SQL is part of the contract), `npm run build`. CI runs exactly these: a fast `typecheck` job with no services, and a `build` job with a `pgvector/pgvector:pg16` service.
+**Decision**: `npm run typecheck` (`tsc --noEmit`), `npm test`, `npm run migrate` (against a real Postgres — the SQL is part of the contract), `npm run build`. CI runs exactly these: a fast `typecheck` job with no services, and a `build` job with a `pgvector/pgvector:pg16` service that it migrates, runs the whole suite against (`WINNOW_TEST_DATABASE_URL` set to that database, so the database-backed tests run there — and nowhere else by accident, since they never read `DATABASE_URL`), then builds. The tests joined the gate on 2026-10-19 under the portfolio standard (C15 in `COMMON-PROJECT-SPEC.md`, `second-brain`: a pull request is gated on lint, typecheck, tests and build), which settled decision D8 of `docs/CODEBASE-AUDIT.md` the way it recommended — `npm test` in the `build` job, because that job has the Postgres.
 
-**How to apply**: run them locally before committing; a red one is a broken PR, and CI cancels superseded PR runs but never cancels a run on `main`. `paths-ignore` skips CI entirely for `**/*.md`, `docs/**` and `LICENSE` — a docs-only change gets no CI run at all, which is fine but means "CI passed" is not a statement about it.
+**How to apply**: run them locally before committing; a red one is a broken PR, and CI cancels superseded PR runs but never cancels a run on `main`. The job names (`Typecheck`, `Build & migrations`) stay as they are: a branch-protection rule lists its required checks by name. `paths-ignore` skips CI entirely for `**/*.md`, `docs/**` and `LICENSE` — a docs-only change gets no CI run at all, which is fine but means "CI passed" is not a statement about it.
 
-## No linter; a young test suite that CI does not run yet (2026-08-20, revised 2026-10-02)
+## No linter; a young test suite, in CI since 2026-10-19 (2026-08-20, revised 2026-10-19)
 
 **Fact**: no ESLint config exists — `tsc --noEmit` is the static gate. Since 2026-10-02, `npm test` runs `tsx --test "src/**/*.test.ts"`: Node's built-in `node:test` + `node:assert/strict`, through the `tsx` that is already a runtime dependency — **no test package was added**, which is why it was chosen over vitest/jest. Tests sit next to the module they test (`src/lib/authz.test.ts`).
 
 **DB-backed tests are opt-in**: they run only when `WINNOW_TEST_DATABASE_URL` is set, and point `DATABASE_URL` at it before importing anything — never at whatever database the shell happens to have, because a test that inserts rows must not be able to land them in a real library. Without it they **skip and say so**. Locally: a migrated scratch database (`npm run migrate` against it first).
 
-**Consequences to hold in mind**: coverage is thin (the role policy and the batch-1 regression tests), so most refactors still have only the type checker behind them. "It builds" means it compiles; for anything user-visible, look at it in the browser. CI does not run `npm test` until decision D8 (`docs/CODEBASE-AUDIT.md`) is taken.
+**Consequences to hold in mind**: coverage is thin (the role policy and the batch-1 regression tests), so most refactors still have only the type checker behind them. "It builds" means it compiles; for anything user-visible, look at it in the browser. CI runs `npm test` since 2026-10-19 (the section above): what a green run proves is bounded by that thin coverage, not by the gate.
 
 **How to apply**: a bug fix ships with a test that fails without it. Good next seams, pure and mock-free: `categorizeAsset`, `includeFromParams`, `snapToCell`, `lineageRole`, burst clustering, filter building, the pure half of `lib/timeline.ts`.
 

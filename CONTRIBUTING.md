@@ -59,7 +59,7 @@ static gate:
 
 ```bash
 npm run typecheck       # tsc --noEmit — must pass
-npm test                # node:test suite (not in CI yet — run it yourself)
+npm test                # node:test suite — CI runs it too, the database-backed tests against its Postgres
 npm run migrate         # applies/validates the SQL (the schema is part of the contract)
 npm run build           # production build — must succeed
 ```
@@ -74,8 +74,9 @@ and delete rows, so never at a real library:
 WINNOW_TEST_DATABASE_URL=postgres://winnow:winnow@localhost:5432/winnow_test npm test
 ```
 
-Without the variable they are skipped, and the runner says so. A bug fix comes
-with a test that fails without it.
+Without the variable they are skipped, and the runner says so. CI sets it to the
+database its `build` job has just migrated, so a pull request runs them all. A
+bug fix comes with a test that fails without it.
 
 ### Database migrations
 
@@ -112,7 +113,7 @@ Postgres, so a broken or out-of-order migration fails the build.
   history.
 - Explain the *why* in the PR description, and include screenshots / clips for UI
   changes.
-- Make sure `typecheck`, `migrate` and `build` pass before requesting review.
+- Make sure `typecheck`, `test`, `migrate` and `build` pass before requesting review.
 
 ---
 
