@@ -7,6 +7,7 @@ Agents read this file at the start of every session. These rules override the ag
 - Winnow indexes, culls and exports the RAW photos/videos on a home NAS without touching the originals more than once. Next.js 16 (App Router) + React 19 + TypeScript 7 on Node ≥ 22, backed by Postgres and a Redis/BullMQ queue set; `sharp` + `exiftool-vendored` build the derivatives, Tailwind 4 styles the UI. Package manager: **npm** — the lockfile is `package-lock.json` (the only lockfile in the tree).
 - It ships as a Docker image: a push to `main` builds and publishes `ghcr.io/costardrouge/winnow` (`.github/workflows/docker-build.yml`), and Watchtower re-pulls it on the Optiplex that runs the whole stack behind Traefik + a Cloudflare Tunnel.
 - Commands that actually exist here: `npm run dev` (UI + API on :3000), `npm run worker` (the BullMQ workers), `npm run typecheck` (`tsc --noEmit`), `npm run migrate` (applies `db/migrations/`), `npm run build`, `npm test` (node:test through the `tsx` already in dependencies; DB-backed tests run only when `WINNOW_TEST_DATABASE_URL` is set). **There is no linter**, and the test suite is young and **not yet in CI** — CI runs `typecheck` + `migrate` + `build`. `make help` lists the docker-compose wrappers.
+- **This repository is PUBLIC** (measured 2026-10-19). So rule 3's public-repo restriction applies: a Registry block carries only `Project:`, ticked boxes and one `Log:` line — never a `Last point:` nor an open box. `registry.yml` reads the visibility itself, so nothing here needs changing if the repo goes private.
 - Several agent sessions may run **in parallel** on this repo. Git history must stay readable: **one commit = one task**.
 - **Local sessions: never `git push`** — the developer tests locally and pushes himself. **Cloud / web sessions (ephemeral container): push the working branch and open a pull request**, it is the only way the code gets out. Never push to `main` either way.
 
@@ -23,7 +24,7 @@ As soon as a task requested by the user is finished (feature, fix, refactor, con
    - If one file holds changes from this task AND another, prefer `git add -p <file>` to stage only the relevant hunks. If inextricable, stage the whole file and say so in the commit body ("also contains …").
    - Never stage: `.env` and any secret file, `.idea/`, `.vscode/`, `.next/`, `out/`, `build/`, `dist/`, `coverage/`, `*.tsbuildinfo`, `node_modules/`, `.DS_Store`, and the local media/data roots `nas/`, `data/`, `backups/`, `dump.rdb`, `/nas-incoming`, `/nas-final` — unless the task is explicitly about them. `.env.dist` is the exception: it is the tracked, documented template and a new variable **must** be added to it. If one of these turns out to be *tracked*, say so: it must be untracked and gitignored, not carefully avoided at every commit.
    - Check with `git diff --cached --stat` before committing.
-3. **Commit with a readable message** (format below). Always use a HEREDOC to keep title + body:
+3. **Commit with a readable message** (format below). Always use a HEREDOC to keep title + body, and end it with the attribution trailer(s) your harness asks for:
 
    ```bash
    git commit -m "$(cat <<'EOF'
@@ -32,7 +33,7 @@ As soon as a task requested by the user is finished (feature, fix, refactor, con
    Why this change, what it does concretely, non-obvious decisions.
    One line per idea. Mention the files/areas touched if useful.
 
-   Co-Authored-By: Claude <noreply@anthropic.com>
+   Co-Authored-By: …
    EOF
    )"
    ```
@@ -185,7 +186,7 @@ Rye; the next starts after R).
 
 ## Related files
 
-- `AGENTS.md`: points to this file for tools that do not read `CLAUDE.md`.
+- `AGENTS.md`: a symlink to this file, for tools that do not read `CLAUDE.md`.
 - `MEMORY.md` + `docs/memory/`: project long-term memory (rule 2).
 - `CHANGELOG.md`: what each release brought (rule 4); `.github/release.mjs` + `.github/workflows/release.yml` tag and publish it.
 - `CONTRIBUTING.md`: the human-facing version — setup, the CI gate, the code conventions. Read it once; it is the source this file defers to on commit style and migrations.
