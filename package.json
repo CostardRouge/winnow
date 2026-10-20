@@ -35,7 +35,7 @@
     "bullmq": "^5.81.2",
     "chokidar": "^5.0.0",
     "clsx": "^2.1.1",
-    "exiftool-vendored": "^37.0.0",
+    "exiftool-vendored": "^39.0.1",
     "geist": "^1.7.2",
     "heic-decode": "^2.1.0",
     "ioredis": "^5.11.1",
