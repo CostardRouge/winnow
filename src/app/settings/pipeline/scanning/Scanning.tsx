@@ -43,8 +43,6 @@ type RootGroup = {
 // was enqueued (still active/queued runs have no finished_at yet).
 const runWhen = (j: ScanJob) => j.finished_at ?? j.timestamp ?? 0;
 
-const RUNNING_STATES = new Set(["active", "waiting", "prioritized", "delayed"]);
-
 function groupByRoot(items: ScanJob[]): RootGroup[] {
   const groups = new Map<string, RootGroup>();
   for (const j of items) {

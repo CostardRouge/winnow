@@ -30,7 +30,7 @@
 //     automatically when the file reappears, or by hand from the triage page.
 //     Purging (irreversible) is always a separate, confirmed user action.
 import { stat } from "node:fs/promises";
-import { q, one, many } from "./db";
+import { q, many } from "./db";
 import { enqueueDerivative } from "./queue";
 import { getStorage } from "./storage";
 import { getSettings } from "./settings";

@@ -1,0 +1,87 @@
+{
+  // Biome lints src/ (`npm run lint`, in CI's typecheck job) under its recommended rules — the portfolio
+  // standard's N3 (COMMON-PROJECT-SPEC C14 in second-brain, adopted 2026-10-19). The formatter stays off:
+  // a repo-wide reformat is its own pull request. Every rule switched off below carries its count on
+  // 2026-10-19 and its reason: re-enable one at a time, fix what it reports, delete its line here
+  // (docs/memory/testing-and-ci.md keeps the list and what the first run fixed).
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["src/**"] },
+  "formatter": { "enabled": false },
+  // globals.css is Tailwind 4: without this its @theme / @utility / @custom-variant blocks read as
+  // 1 276 parse errors.
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        // 494 findings across eleven rules — the audit's batch 7 (accessibility, docs/CODEBASE-AUDIT.md)
+        // is where they get fixed, one rule at a time. An autoFocus inside a dialog is the dialog
+        // pattern (judge each); `<ul role="listbox">` is the APG combobox pattern; a clip of the library
+        // has no captions to offer.
+        "useButtonType": "off", // 307
+        "noSvgWithoutTitle": "off", // 63
+        "useSemanticElements": "off", // 51
+        "noStaticElementInteractions": "off", // 25
+        "useKeyWithClickEvents": "off", // 14
+        "noLabelWithoutControl": "off", // 13
+        "noAutofocus": "off", // 12
+        "useAriaPropsSupportedByRole": "off", // 3
+        "noNoninteractiveElementToInteractiveRole": "off", // 3
+        "useFocusableInteractive": "off", // 2
+        "useMediaCaption": "off" // 1
+      },
+      "correctness": {
+        // 65 effects and callbacks — the audit's D9 (hook dependency arrays; 21 of them carry a deliberate
+        // eslint-disable from the days without a linter). Review them effect by effect, then re-enable.
+        "useExhaustiveDependencies": "off"
+      },
+      "complexity": {
+        "useOptionalChain": "off" // 25, a style sweep for later
+      },
+      "performance": {
+        // Thumbnails and proxies are our own API routes and next/image is switched off on purpose
+        // (next.config.mjs, images.unoptimized — audit SEC-02): a plain <img> is the decision.
+        "noImgElement": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off", // 353
+        "useImportType": "off", // 95 — Biome's safe fix (`biome lint --write`) lands with the formatter, in its own PR
+        "useTemplate": "off" // 9
+      },
+      "suspicious": {
+        "noExplicitAny": "off", // 30
+        "noImplicitAnyLet": "off", // 14 `let x;` the compiler types from the branches that assign them
+        "noArrayIndexKey": "off", // 9
+        "noConfusingVoidType": "off" // 4 callback types `() => Promise<unknown> | void`: the union is the intent
+      }
+    }
+  },
+  "overrides": [
+    {
+      // The 7 000-line stylesheet: 51 descending-specificity warnings and two !important are its
+      // cascade, not mistakes to chase one by one.
+      "includes": ["src/**/*.css"],
+      "linter": {
+        "rules": {
+          "style": { "noDescendingSpecificity": "off" },
+          "complexity": { "noImportantStyles": "off" }
+        }
+      }
+    },
+    {
+      // useTestDatabase() (src/test/db.ts) is a test helper, not a React hook: 21 tests call it at
+      // module level, and no component lives here.
+      "includes": ["src/**/*.test.ts", "src/test/**"],
+      "linter": { "rules": { "correctness": { "useHookAtTopLevel": "off" } } }
+    },
+    {
+      // Seven hooks (the faces layer, the image-box measure) sit after `if (!item) return null;`: a real
+      // rules-of-hooks finding, left to the viewer's own rework rather than moved blind here.
+      "includes": ["src/app/MediaViewer.tsx"],
+      "linter": { "rules": { "correctness": { "useHookAtTopLevel": "off" } } }
+    }
+  ],
+  "assist": { "enabled": false }
+}

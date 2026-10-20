@@ -24,7 +24,7 @@
 export const BRIDGE_VERSION = 1;
 
 /** SHA-256 of every source file bundled into the bridge but this one, sorted by path, line endings normalised. */
-export const BRIDGE_SOURCE_HASH = "345fd324eaf4c5b255ab930bcfbabbea0ea927bdf9a2bb0da248a1d0730365be";
+export const BRIDGE_SOURCE_HASH = "82e09ee4771bc9df78ab143cc48222aa7f577cca30b34c6b9752ee1fecc2f76b";
 
 /** What each version changed, newest first — drawn on Users › Agents. */
 export const BRIDGE_CHANGES: readonly { version: number; date: string; changes: readonly string[] }[] = [

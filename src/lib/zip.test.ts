@@ -50,18 +50,27 @@ test("streamed and buffered entries produce byte-identical archives", async () =
   }
 });
 
-const unzip = await run("unzip", ["-v"]).then(() => true, () => false);
+// unzip is asked in the C locale. Debian's unzip 6.0 (the Ubuntu runners',
+// which run under C.UTF-8) sees the UTF-8 flag (bit 11) and still re-encodes
+// every name from CP437 in a UTF-8 locale: `Café — été.jpg` lists and extracts
+// as `Caf├й ├втАЭ…`, and `-p <name>` matches nothing — measured on 6.0-28ubuntu4.1.
+// In the C locale the bytes pass through untouched. The archive is right (the
+// flag is set, `-t` passes, bsdtar and the desktop unarchivers read it); it is
+// the checker that is told not to translate.
+const unzipEnv = { ...process.env, LC_ALL: "C" };
+const unzip = await run("unzip", ["-v"], { env: unzipEnv }).then(() => true, () => false);
 
 test("the archive is valid and round-trips every entry", { skip: unzip ? false : "unzip not installed" }, async () => {
   const { dir, entries, bytes } = await fixture();
   try {
     const zipPath = path.join(dir, "out.zip");
     await writeFile(zipPath, await collect(createZipStream(entries, { bufferMaxBytes: 1000 })));
-    const { stdout } = await run("unzip", ["-t", zipPath]);
+    const { stdout } = await run("unzip", ["-t", zipPath], { env: unzipEnv });
     assert.match(stdout, /No errors detected/);
     for (let i = 0; i < entries.length; i++) {
       const { stdout: out } = await run("unzip", ["-p", zipPath, entries[i].name], {
         encoding: "buffer",
+        env: unzipEnv,
         maxBuffer: 10 * 1024 * 1024,
       });
       assert.ok(Buffer.from(out).equals(bytes[i]), entries[i].name);

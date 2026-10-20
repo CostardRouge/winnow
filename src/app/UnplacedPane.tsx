@@ -1517,6 +1517,7 @@ export default function UnplacedPane() {
               className="hint unplaced-attrib"
               // The tile source's own attribution string (operator-configured,
               // HTML by contract — the map view renders the same one).
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: a build-time constant (NEXT_PUBLIC_MAP_TILE_ATTRIBUTION), never a visitor's input
               dangerouslySetInnerHTML={{ __html: `Map previews ${TILE_ATTRIBUTION}` }}
             />
           )}

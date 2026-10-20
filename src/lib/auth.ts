@@ -209,13 +209,13 @@ declare global {
   var __winnowAuthTouch: Map<string, number> | undefined;
 }
 
-const cache: Map<string, CacheEntry> = (globalThis.__winnowAuthCache ??=
-  new Map());
+globalThis.__winnowAuthCache ??= new Map();
+const cache: Map<string, CacheEntry> = globalThis.__winnowAuthCache;
 const CACHE_TTL_MS = 10_000;
 const CACHE_MAX = 1000;
 
-const lastTouch: Map<string, number> = (globalThis.__winnowAuthTouch ??=
-  new Map());
+globalThis.__winnowAuthTouch ??= new Map();
+const lastTouch: Map<string, number> = globalThis.__winnowAuthTouch;
 
 export async function validateSession(
   token: string,

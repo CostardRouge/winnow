@@ -118,10 +118,10 @@ test("the Claude Desktop manifest asks for the address and a sensitive token, an
   };
   assert.equal(m.version, "0.1.0");
   assert.equal(m.server.entry_point, MCPB_ENTRY);
-  assert.deepEqual(m.server.mcp_config.args, ["${__dirname}/server/winnow-mcp.mjs"]);
+  assert.deepEqual(m.server.mcp_config.args, [`\${__dirname}/server/winnow-mcp.mjs`]);
   assert.deepEqual(m.server.mcp_config.env, {
-    WINNOW_HOST: "${user_config.winnow_host}",
-    WINNOW_TOKEN: "${user_config.winnow_token}",
+    WINNOW_HOST: `\${user_config.winnow_host}`,
+    WINNOW_TOKEN: `\${user_config.winnow_token}`,
   });
   assert.equal(m.user_config.winnow_token.sensitive, true);
   assert.equal(m.user_config.winnow_host.required, true);

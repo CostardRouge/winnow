@@ -104,6 +104,7 @@ export default async function RootLayout({
             — so a dark-mode user never sees a flash of light paper. ThemeToggle
             keeps this attribute and the "winnow.theme" key in sync at runtime. */}
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script of ours, the pre-paint theme — no data reaches it
           dangerouslySetInnerHTML={{
             __html: `try{var t=localStorage.getItem("winnow.theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
           }}
@@ -115,6 +116,7 @@ export default async function RootLayout({
             phones use the transient slide-in drawer. Keep the key and query in
             sync with ASIDE_KEY/ASIDE_MQ in GalleryShell.tsx. */}
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script of ours, the pre-paint sidebar state — no data reaches it
           dangerouslySetInnerHTML={{
             __html: `try{if(window.matchMedia("(min-width: 761px)").matches&&localStorage.getItem("winnow.gallery.aside")==="closed"){document.documentElement.setAttribute("data-gallery-aside","closed")}}catch(e){}`,
           }}

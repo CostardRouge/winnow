@@ -25,6 +25,7 @@ function Bar({ parts, label }: { parts: KitPart[]; label: string }) {
       {parts.map((p) => {
         const style = { flexGrow: p.count, background: shareInk(p.share) };
         const inner = (
+          // biome-ignore lint/correctness/useJsxKeyInIterable: placed inside the keyed segment below, which carries the key
           <span className="gear-stk-pct" style={{ color: shareInkText(p.share) }}>
             {p.share >= LABEL_AT ? `${Math.round(p.share * 100)}%` : ""}
           </span>

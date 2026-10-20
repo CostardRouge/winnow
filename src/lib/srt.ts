@@ -58,10 +58,10 @@ const GB_YAW_RE = new RegExp(`gb_yaw\\s*[:=]?\\s*${num}`, "i");
 const GB_PITCH_RE = new RegExp(`gb_pitch\\s*[:=]?\\s*${num}`, "i");
 const GB_ROLL_RE = new RegExp(`gb_roll\\s*[:=]?\\s*${num}`, "i");
 const HS_RE = new RegExp(`H\\.S\\s*[:=]?\\s*${num}\\s*m/S`, "i");
-const ISO_RE = new RegExp(`\\biso\\s*[:=]?\\s*(\\d+)`, "i");
-const SHUTTER_RE = new RegExp(`shutter\\s*[:=]?\\s*([0-9]+(?:\\.[0-9]+)?(?:/[0-9]+(?:\\.[0-9]+)?)?)`, "i");
+const ISO_RE = /\biso\s*[:=]?\s*(\d+)/i;
+const SHUTTER_RE = /shutter\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?(?:\/[0-9]+(?:\.[0-9]+)?)?)/i;
 // DJI encodes the f-number x100 (280 ⇒ f/2.8).
-const FNUM_RE = new RegExp(`fnum\\s*[:=]?\\s*(\\d+)`, "i");
+const FNUM_RE = /fnum\s*[:=]?\s*(\d+)/i;
 const FOCAL_RE = new RegExp(`focal_len\\s*[:=]?\\s*${num}`, "i");
 
 function validCoord(lat: number, lon: number): boolean {

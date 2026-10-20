@@ -227,8 +227,8 @@ export function mcpbManifest(version: string): Record<string, unknown> {
         command: "node",
         args: [`\${__dirname}/${MCPB_ENTRY}`],
         env: {
-          WINNOW_HOST: "${user_config.winnow_host}",
-          WINNOW_TOKEN: "${user_config.winnow_token}",
+          WINNOW_HOST: `\${user_config.winnow_host}`,
+          WINNOW_TOKEN: `\${user_config.winnow_token}`,
         },
       },
     },

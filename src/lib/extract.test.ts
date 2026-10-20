@@ -41,8 +41,8 @@ test("a camera clip's date is read although its moov comes after the media data"
 function previewlessDng(): Buffer {
   const W = 64, H = 32;
   const entries: Array<[tag: number, type: number, count: number, value: Buffer]> = [];
-  const short = (...v: number[]) => { const b = Buffer.alloc(v.length * 2); v.forEach((x, i) => b.writeUInt16LE(x, i * 2)); return b; };
-  const long = (...v: number[]) => { const b = Buffer.alloc(v.length * 4); v.forEach((x, i) => b.writeUInt32LE(x, i * 4)); return b; };
+  const short = (...v: number[]) => { const b = Buffer.alloc(v.length * 2); v.forEach((x, i) => { b.writeUInt16LE(x, i * 2); }); return b; };
+  const long = (...v: number[]) => { const b = Buffer.alloc(v.length * 4); v.forEach((x, i) => { b.writeUInt32LE(x, i * 4); }); return b; };
   const srational = (...v: Array<[number, number]>) => { const b = Buffer.alloc(v.length * 8); v.forEach(([n, d], i) => { b.writeInt32LE(n, i * 8); b.writeInt32LE(d, i * 8 + 4); }); return b; };
   const ascii = (t: string) => Buffer.from(`${t}\0`, "latin1");
   const SHORT = 3, LONG = 4, ASCII = 2, BYTE = 1, SRATIONAL = 10;

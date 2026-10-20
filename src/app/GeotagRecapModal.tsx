@@ -240,7 +240,10 @@ export default function GeotagRecapModal({
     for (const a of assets) {
       if (a.session_id == null) continue;
       let e = m.get(a.session_id);
-      if (!e) m.set(a.session_id, (e = { all: [], holes: [] }));
+      if (!e) {
+        e = { all: [], holes: [] };
+        m.set(a.session_id, e);
+      }
       e.all.push(a.id);
       if (!a.gps) e.holes.push(a.id);
     }

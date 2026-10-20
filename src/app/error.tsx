@@ -4,7 +4,7 @@
 // wipes out the whole app — we show a recoverable fallback.
 import { useEffect } from "react";
 
-export default function Error({
+export default function ErrorPage({
   error,
   reset,
 }: {

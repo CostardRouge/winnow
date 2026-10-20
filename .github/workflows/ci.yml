@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static checks — no services needed, so this fails fast on type errors.
-  # (winnow has no ESLint config; `tsc --noEmit` is its static gate.)
+  # Static checks — no services needed, so this fails fast: Biome over src/
+  # (biome.jsonc), then `tsc --noEmit`.
   typecheck:
     name: Typecheck
     runs-on: ubuntu-24.04
@@ -35,17 +35,23 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          # Matches the runtime image (node:24-slim) so CI validates what ships.
-          node-version: 24
+          # .nvmrc holds the major the runtime image pins exactly (Dockerfile),
+          # so CI validates what ships.
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck
         run: npm run typecheck
 
-  # Build + migrations against a real Postgres (the SQL is part of the contract).
+  # Migrations, the tests and the build against a real Postgres (the SQL is
+  # part of the contract). The job keeps its name: a branch-protection rule
+  # lists its required checks by name.
   build:
     name: Build & migrations
     runs-on: ubuntu-24.04
@@ -81,7 +87,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -89,6 +95,15 @@ jobs:
 
       - name: Apply migrations (validates SQL)
         run: npm run migrate
+
+      # The whole suite, the database-backed tests included: they run only
+      # when WINNOW_TEST_DATABASE_URL names a migrated scratch database, which
+      # the step above has just made of this job's Postgres (src/test/db.ts —
+      # never DATABASE_URL, so a test can never land rows in a real library).
+      - name: Tests
+        run: npm test
+        env:
+          WINNOW_TEST_DATABASE_URL: postgres://winnow:winnow@localhost:5432/winnow
 
       - name: Production build
         run: npm run build

@@ -248,7 +248,6 @@ export default function PipelineAssetList({
   showStatus = false,
   showMl = false,
   defaultSort = { field: "captured", dir: "desc" },
-  storageKey = "pipeline",
 }: {
   /** Base filters, ANDed with the sort/status/folder selections (e.g. the
    *  Pending page fixes `derivative_status=pending,processing`). */
@@ -268,8 +267,6 @@ export default function PipelineAssetList({
   showMl?: boolean;
   /** Sort used until the user picks one (persisted thereafter). */
   defaultSort?: Sort;
-  /** Namespaces the status query param seeded from the URL. */
-  storageKey?: string;
 }) {
   const [items, setItems] = useState<AssetGridRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);

@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # Keep Node type definitions in step with the Node.js version in .nvmrc.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
+
+  # The runtime image's base tag is exact (Dockerfile): Dependabot raises its
+  # minor and patch in a pull request CI builds first. The major moves by hand,
+  # with .nvmrc, @types/node and the ignore above, in one commit. Dependabot
+  # names a Docker dependency with its registry, so the image pulled through
+  # Google's mirror is `mirror.gcr.io/library/node`; the bare `node` is listed
+  # too, for the day the Dockerfile pulls from Docker Hub again.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: mirror.gcr.io/library/node
+        update-types: ['version-update:semver-major']
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

@@ -110,7 +110,7 @@ export async function setOwner(input: OwnerInput): Promise<GearOwner | null> {
   if (from && until && from > until)
     throw new BadOwner("“Mine from” comes after “until”");
 
-  let personId = other ? (input.personId ?? null) : null;
+  const personId = other ? (input.personId ?? null) : null;
   let name = other ? input.name?.trim().replace(/\s+/g, " ") || null : null;
   if (personId != null) {
     const person = await one<{ name: string | null }>(
