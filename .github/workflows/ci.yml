@@ -35,8 +35,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          # Matches the runtime image (node:24-slim) so CI validates what ships.
-          node-version: 24
+          # .nvmrc holds the major the runtime image pins exactly (Dockerfile),
+          # so CI validates what ships.
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -86,7 +87,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies

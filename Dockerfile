@@ -8,7 +8,11 @@
 # failed on its `429 Too Many Requests` — no image was published, and the
 # redeploy silently pulled the old one (docs/SILENT-LIMITS-AUDIT.md G0). The
 # alternative is a Docker Hub login in docker-build.yml, which needs a secret.
-FROM mirror.gcr.io/library/node:24-slim
+# The tag is exact, never a floating major: a re-pull must not ship a Node
+# nobody tested (spotify-poller lost a day to 24.19.0's better-sqlite3 abort).
+# Dependabot raises the minor and patch (.github/dependabot.yml); the major
+# moves by hand, with .nvmrc and @types/node.
+FROM mirror.gcr.io/library/node:24.22.0-slim
 
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
