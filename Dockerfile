@@ -12,7 +12,7 @@
 # nobody tested (spotify-poller lost a day to 24.19.0's better-sqlite3 abort).
 # Dependabot raises the minor and patch (.github/dependabot.yml); the major
 # moves by hand, with .nvmrc and @types/node.
-FROM mirror.gcr.io/library/node:26.12.0-slim
+FROM mirror.gcr.io/library/node:24.22.1-slim
 
 # System dependencies:
 #  - perl            : required by exiftool-vendored on Linux.
