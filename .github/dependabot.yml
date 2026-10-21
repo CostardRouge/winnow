@@ -1,42 +1,77 @@
+# Dependabot, the portfolio's shape (COMMON-PROJECT-SPEC.md, C20).
+# Monthly, after a cooldown; one pull request for every minor and patch; a
+# major on its own (at most three open), a family's major as one. Security
+# updates skip the schedule and the cooldown. No auto-merge.
+#
+# No docker-compose block on purpose: the compose files pin majors
+# (pgvector/pgvector:pg16, postgres:16-alpine, redis:7-alpine), never an exact
+# tag, and a Postgres major is a dump/restore that moves by hand with the
+# Dockerfile's postgresql-client and CI's service (docs/memory/deployment.md).
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    open-pull-requests-limit: 3
+    groups:
+      # Families that only work in step: a major moves the whole family.
+      # Listed first, since a dependency goes to the first group it matches.
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+        update-types: [major]
+      next:
+        patterns: ['next', '@next/*']
+        update-types: [major]
+      tailwind:
+        patterns: ['tailwindcss', '@tailwindcss/*']
+        update-types: [major]
+      # The S3 client and its presigner share one release train.
+      aws-sdk:
+        patterns: ['@aws-sdk/*']
+        update-types: [major]
+      # Every minor and patch, production and development together:
+      # one pull request a month.
+      minor-and-patch:
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ['*']
     ignore:
-      # Keep Node type definitions in step with the Node.js version in .nvmrc.
+      # Node's type definitions follow .nvmrc's major (C14).
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-    groups:
-      dev-dependencies:
-        dependency-type: development
-        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ['*']
 
   # The runtime image's base tag is exact (Dockerfile): Dependabot raises its
-  # minor and patch in a pull request CI builds first. The major moves by hand,
-  # with .nvmrc, @types/node and the ignore above, in one commit. Dependabot
-  # names a Docker dependency with its registry, so the image pulled through
-  # Google's mirror is `mirror.gcr.io/library/node`; the bare `node` is listed
-  # too, for the day the Dockerfile pulls from Docker Hub again.
+  # minor and patch in a pull request CI builds first.
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 7
     ignore:
-      - dependency-name: mirror.gcr.io/library/node
+      # The base image follows .nvmrc's major (C14): a new Node major is
+      # raised by hand, with .nvmrc, CI and @types/node in the same PR.
+      # Dependabot names the image pulled through Google's mirror
+      # `library/node` (#331, "Bump library/node", slipped past the two
+      # names below), so all three spellings are held.
+      - dependency-name: 'library/node'
         update-types: ['version-update:semver-major']
-      - dependency-name: node
+      - dependency-name: 'mirror.gcr.io/library/node'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'node'
         update-types: ['version-update:semver-major']
