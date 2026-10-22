@@ -26,7 +26,7 @@ Seeded 2026-08-20 from `Dockerfile`, `docker-compose*.yml`, `Makefile`, `.github
 
 **Decision**: `.github/workflows/docker-build.yml` builds on every push to `main` and publishes `ghcr.io/costardrouge/winnow` with `main` + `latest` (moving, what Watchtower re-pulls) and `sha-<short>` (immutable, what you pin for a rollback). An optional `DEPLOY_WEBHOOK_URL`/`DEPLOY_WEBHOOK_TOKEN` pair pokes Watchtower's HTTP API for an instant redeploy; unset, the build still publishes and only the redeploy step is skipped.
 
-**How to apply**: a merge to `main` is a production deploy. To roll back, pin the `sha-` tag rather than reverting and waiting for a rebuild. The registry-side layer cache is keyed on the workflow run (`type=gha`).
+**How to apply**: a merge to `main` is a production deploy. To roll back, pin the `sha-` tag rather than reverting and waiting for a rebuild. **A 524 from the redeploy step is not a failed deploy** (2026-10-22): Watchtower's `/v1/update` answers only after the pull and the recreate, and Cloudflare cuts an origin at 100 s — #335's new Node base layer took longer, and the run went red although the image was pushed. The step now treats 524 as a warning (no retry, which would queue a second update), retries only 000/502/503/504, and fails on anything else; the instance's `node` and version on Settings › Instance are what say the deploy landed. The registry-side layer cache is keyed on the workflow run (`type=gha`).
 
 ## Network posture: nothing but Traefik reaches the app (2026-08-20)
 
