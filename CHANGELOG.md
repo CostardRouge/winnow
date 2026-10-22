@@ -9,6 +9,8 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-22 — Sorghum
+
 ### Changed
 
 - Atelier's galleries list documents by a small summary instead of downloading each one whole, so a Develop gallery of
