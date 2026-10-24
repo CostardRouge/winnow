@@ -54,3 +54,5 @@ Seeded 2026-08-20 from `Dockerfile`, `docker-compose*.yml`, `Makefile`, `.github
 **Why**: the maintainer wants to know which build the Optiplex runs and his site to show each project's history; slowing deploys to releases is a later choice per project.
 
 **How to apply**: a release is its own PR (version + changelog, nothing else). The backfilled 0.1.0–0.10.0 are tagged by `second-brain`'s "Backfill releases" workflow, never by `release.yml` (GitHub refuses its token a tag on a commit whose workflows differ from `main`'s). When deploys follow releases, `docker-build.yml` should also push `:x.y.z`, and a GITHUB_TOKEN release triggers no workflow: the build has to run inside `release.yml`'s publish job or be called from it.
+
+2026-10-24 — **The shared workflows** (`.github/workflows/registry.yml`, `release.yml`, `.github/release.mjs`) are copied byte for byte from `second-brain/system/meta/common-project-spec/shared/`, never from another repo; their `check` jobs run on `vars.CI_RUNNER || 'ubuntu-24.04'` (never set here: the repo is public), the writing jobs stay on hosted runners.
