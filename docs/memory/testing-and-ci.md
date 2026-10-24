@@ -24,7 +24,7 @@ Seeded 2026-08-20 from `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `package.j
 
 ## The CI environment is a deliberate mirror of production (2026-08-20)
 
-**Decision**: CI runs the Node of `.nvmrc` (24 — since 2026-10-19 the one place the major is written for CI and a local `nvm use`), the major the runtime image pins exactly (`node:24.22.1-slim`, `Dockerfile`); both moved from 22 on 2026-10-09; `engines` keeps the floor at 22, and `@types/node` is `^24` to match, held to that major by Dependabot; the Postgres service is pgvector-on-16 to match both the compose image major and the extension the CLIP migration needs.
+**Decision**: CI runs the Node of `.nvmrc` (26 — since 2026-10-19 the one place the major is written for CI and a local `nvm use`), the major the runtime image pins exactly (`node:26.12.1-slim`, `Dockerfile`); both moved from 22 to 24 on 2026-10-09 and to 26 on 2026-10-24; `engines` keeps the floor at 22, and `@types/node` is `^26` to match, held to that major by Dependabot; the Postgres service is pgvector-on-16 to match both the compose image major and the extension the CLIP migration needs.
 
 **Why**: CI is meant to validate what ships. Drifting the Node major or the Postgres major would make a green build meaningless for the box it deploys to.
 
