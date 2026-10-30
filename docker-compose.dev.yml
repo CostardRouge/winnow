@@ -5,7 +5,13 @@
 #   - the source tree is bind-mounted (live edits, no rebuild),
 #   - `next dev` / `tsx watch` reload on change,
 #   - the three "NAS" mounts point at LOCAL folders (./nas, ./nas-incoming,
-#     ./nas-final) regardless of what NAS_* says in .env.
+#     ./nas-final) regardless of what NAS_* says in .env — or at the folders
+#     DEV_NAS_MOUNT / DEV_NAS_INCOMING / DEV_NAS_FINAL name, e.g. the real NAS
+#     mounted on this computer (still read-only for the sessions),
+#   - a local Atelier (http://localhost:5173) may call the API: CORS is open
+#     to it unless CORS_ALLOWED_ORIGINS says otherwise. With that, the whole
+#     video workflow runs on one machine: Atelier picks from this Winnow,
+#     exports, and sends the export back here (or to the server) to archive.
 #
 # Usage:
 #   cp .env.dist .env            # leave DATABASE_URL/REDIS_URL as-is (services)
@@ -25,9 +31,9 @@ x-dev-volumes: &dev-volumes
   - .:/app
   - /app/node_modules
   - /app/.next
-  - ./nas:/nas:ro
-  - ./nas-incoming:/nas-incoming
-  - ./nas-final:/nas-final:ro
+  - ${DEV_NAS_MOUNT:-./nas}:/nas:ro
+  - ${DEV_NAS_INCOMING:-./nas-incoming}:/nas-incoming
+  - ${DEV_NAS_FINAL:-./nas-final}:/nas-final:ro
   - inbox:/data/inbox
   - derivatives:/data/derivatives
   - exports:/data/exports
@@ -43,6 +49,10 @@ services:
     command: ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
     environment:
       NODE_ENV: development
+      # Atelier's own dev server (`npm run dev` there) is a sibling on this
+      # machine: localhost → localhost is same-site, so the session cookie
+      # travels once this origin is allowed. An explicit value in .env wins.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
     # Don't restart-loop on a crash while editing.
     restart: "no"
     volumes: *dev-volumes
