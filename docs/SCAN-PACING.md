@@ -6,7 +6,8 @@ better: sometimes the machine blows hard — there are probably better
 strategies to scan gently, over time, while staying reactive, rather than load
 peaks and the fan climbing for a while". §2 says why the box peaks today, read
 from the code; §3–§4 are the strategy; §5 orders it into pull requests; §6 is
-what only the maintainer can decide. It builds on two findings already filed
+what only the maintainer can decide; §8 is how he runs it, from a local
+Claude Code session on the Optiplex. It builds on two findings already filed
 and never built: ARC-03 (`pace(stage)`, `docs/CODEBASE-AUDIT.md`) and E19
 (quiet hours, `docs/SETTINGS-UI.md`), and on review items C5 and C8
 (`docs/ARCHITECTURE-REVIEW.md`).*
@@ -251,9 +252,11 @@ discoveries in old folders, ML → background.
 **Phase 0 — measure first (no behaviour change).** Read PSI, the thermal zone
 and loadavg in the worker, publish them to Redis every 10 s, show them on
 Settings › Pipeline; record each derivative's elapsed time and media type in
-the job's return value. This answers, on the Optiplex and without SSH: is PSI
-readable in the container, which zone is the package, what a .hif / a clip
-really costs. Every number in §4.2 is a placeholder until this runs.
+the job's return value. The local session of §8.2 answers the questions
+first, from the host — is PSI readable in the container, which zone is the
+package, what a .hif / a clip really costs; the panel keeps them visible
+afterwards, without a terminal. Every number in §4.2 is a placeholder until
+this runs.
 
 **Phase 1 — quick wins, low risk.** (a) video poster split from the proxy;
 (b) `-threads` + nice on children; (c) one query per directory in the walk;
@@ -311,3 +314,85 @@ tunes a system phases 0–3 made measurable.
 - **Hashing more of each file to detect in-place edits**: the stat gate is
   what keeps a reconcile free (`docs/memory/pipeline.md`); size + mtime stay
   the change signal.
+
+## 8. Running it: a local Claude Code session on the Optiplex
+
+The maintainer will carry this plan out himself, from `claude` (the CLI) on
+the Optiplex. That changes how it starts, not what ships: a local session can
+read the host's pressure, temperatures and containers directly, so phase 0's
+numbers come from the machine before any code is written. Everything the plan
+delivers still lands as UI (the governor's readings on Settings › Pipeline,
+the controls for S1–S6): the CLI is how the work is done and measured, not a
+channel the instance depends on (`MEMORY.md`, "A repair the maintainer has to
+SSH into… does not exist").
+
+### 8.1 Before the first phase
+
+- A checkout of this repository on the Optiplex (`git clone`, then
+  `npm ci`), separate from the running stack, which keeps pulling the ghcr
+  image. Nothing in the plan runs the dev server against the production
+  database.
+- The CLAUDE.md rules for a **local** session apply: one commit per phase
+  (or per item of phase 1), the full gate green before each (`npm run lint`,
+  `typecheck`, `test`, plus `migrate` when a migration lands and `build`),
+  memory updated in the same commit, the Registry block after a `Registry:`
+  line in the commit body — and **never `git push`**: the maintainer reviews
+  and pushes.
+- §6's decisions answered, or at least S1 (the share of the box) and S2 (the
+  video proxy as a second job): phase 1 depends on both.
+
+### 8.2 Phase 0 on the machine: what to measure, read-only
+
+Each line reads; none changes the stack. The session records the answers in
+§9 below (a new section, dated) so the numbers outlive the session.
+
+| Question | Command (host) |
+|---|---|
+| CPU, cores | `nproc; lscpu \| grep 'Model name'` |
+| PSI readable on the host | `cat /proc/pressure/cpu /proc/pressure/io` |
+| PSI readable **inside** the worker | `docker exec winnow_worker cat /proc/pressure/cpu` |
+| Which thermal zone is the package | `for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done` |
+| Readable inside the worker too | `docker exec winnow_worker sh -c 'cat /sys/class/thermal/thermal_zone*/type'` |
+| Fan speed, if exposed | `sensors` (lm-sensors), else the zones above |
+| Is VAAPI on, and does it work | `docker exec winnow_worker printenv VIDEO_HWACCEL DERIVATIVE_CONCURRENCY SCAN_CONCURRENCY`, then `docker exec winnow_worker vainfo` |
+| The live rates | Settings › Pipeline, or `docker exec winnow_postgres psql -U winnow -c "SELECT key, value FROM app_settings"` (container and user names from `docker ps` / `.env`) |
+| Is the worker throttled by a cap | `docker inspect winnow_worker --format '{{.HostConfig.NanoCpus}}'` (0 = no cap) |
+| Who burns during a peak | `docker stats --no-stream` and `top -o %CPU -b -n1 \| head -20` while a card is being derived |
+
+Then three short recordings, each sampling every 10 s
+(`/proc/pressure/cpu`, `/proc/pressure/io`, the package zone, `docker stats
+--no-stream`) into a CSV under the session's scratch directory:
+
+1. **At rest**, 10 min: the floor.
+2. **During an hourly rescan** (Settings › Pipeline, re-index the incoming
+   root): the cost of P5 on its own.
+3. **During a real import** of a few hundred files with clips in it: the peak
+   P1–P2 describe. Note the time from the end of the copy to the first
+   thumbnail and to the first video poster — the §4.5 targets start from
+   those two numbers.
+
+What the session reports at the end of phase 0: the three recordings
+summarised (mean / p95 of `some avg10`, max temperature), whether PSI and the
+package zone are readable in the container (if not, the governor's fallback
+signal is the plan), whether VAAPI works, and the measured cost of a JPEG
+preview, a .hif and a one-minute clip. Those replace the placeholders in §4.2.
+
+### 8.3 Then, one phase at a time
+
+Phases 1 → 4 of §5, in order, each closed by its commit, its tests and, for
+phase 1, the same recording as 8.2 step 3 repeated: the plan works when the
+peak's p95 and the maximum temperature fall while the two reaction times do
+not grow. A phase whose recording does not improve stops the plan there, and
+the finding goes into §9 before anything else is built.
+
+### 8.4 The prompt to start with
+
+```
+Read CLAUDE.md, MEMORY.md, docs/memory/pipeline.md and docs/SCAN-PACING.md.
+We are on the Optiplex that runs Winnow; this is a local session (never push).
+Run phase 0 as §8.2 describes: read-only measurements on the host and in the
+winnow_worker container, the three recordings, then write the results into a
+new dated §9 of docs/SCAN-PACING.md and replace the placeholders of §4.2
+where a measurement answers them. Ask me before anything that changes the
+running stack. Then stop and summarise; we will decide phase 1 together.
+```
