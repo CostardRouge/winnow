@@ -97,6 +97,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 ## Open items (dated; remove when done)
 
+- 2026-10-30 — **The scan pacing brief is written, nothing in it is built: `docs/SCAN-PACING.md`.** Reactive detection (import-scoped scans, a directory-mtime poll, a nightly full reconcile) split from smoothed work (interactive/background lanes, a work-second budget driven by PSI and the package temperature, quiet hours = E19, ARC-03/C5/C8 closed together). Phase 0 (measure PSI, temperature and per-job cost on the instance, no behaviour change) comes first; S1–S6 in its §6 are the maintainer's calls, S2 (video proxy as a second job) needing migration `0057`.
+
 - 2026-10-19 — **No security header is sent** (C16 of the portfolio standard for a repo that serves a page; audit SEC-08: no `frame-ancestors` / `X-Frame-Options`, `nosniff`, `Referrer-Policy`, and `X-Powered-By` on). The audit files it in batch 2 (auth hardening), which waits on the maintainer's approval — headers change who may frame the app — so the standard's pass of 2026-10-19 left it; when it lands, one list in one module with a drift test (`vanessagedeon.com`'s `src/security.ts` is the model), the CSP Report-Only first (the pre-paint theme script needs a hash).
 - 2026-10-17 — **The backfilled releases 0.1.0–0.10.0 wait on `second-brain`'s "Backfill releases" workflow** (a tag on a commit older than `release.yml` needs the maintainer's token), run once for every repo when all are versioned. The ghcr image is still tagged `latest` only: a `:x.y.z` tag per release is the natural next step once deploys follow releases.
 
@@ -153,6 +155,11 @@ or a new way of reading the library at large:
   NOT to do and the decisions, §4 what batch 1 changed. Read §2 before
   touching a destructive path, the proxy, the deploy or a cull write.
 
+- **`docs/SCAN-PACING.md`** — the brief of 2026-10-30 for reactive but
+  gentle scanning: §2 nine findings on why the box peaks, §3–§4 the design
+  (detection tiers, one governor with two lanes, the video proxy split, OS
+  guardrails, targets), §5 the phases, §6 the maintainer's six calls, §7 what
+  not to do. Read it before touching pacing, the rescan or a bulk enqueue.
 - **`docs/SILENT-LIMITS-AUDIT.md`** — the sweep of 2026-10-09 for screens that
   present part of the data as all of it: a cap, a page, a fixed fold, an
   unchecked answer. Read it before adding a LIMIT, a `.slice`, a "select all",
