@@ -240,6 +240,8 @@ isolation the indexer gives each file.
 
 **How to apply**: derivatives use BullMQ's `rateLimit()` — the job is re-queued and no attempt is burned. Scan/ML/geocode instead hold the worker slot in a sleep loop. `rateLimit()` is the target shape (review C5); prefer it for anything new. Import, export and purge are deliberately **exempt from pause**: they are explicit user actions and pausing them mid-batch would strand half-moved files.
 
+**The pacing redesign of record is `docs/SCAN-PACING.md` (2026-10-30, a brief, nothing built).** Its diagnosis, read from the code: `scanPerHour`/`analyzePerHour` default to 0 (unlimited), so a card is read and derived flat out; the peak is the libx264 software transcode with no `-threads` ×3, and a clip gets no grid poster until it ends; a rate counts jobs, not work, so no flat cap is both smooth and reactive; the hourly rescan costs a stat + two queries per file before the stat gate; an import rescans the whole incoming root. Its answer: detection (cheap, by directory mtime, hinted by imports) split from work (two lanes, a budget in work-seconds, scaled by PSI + package temperature, quiet hours), in five phases, phase 0 measuring first. Six calls are the maintainer's (§6). Read it before touching a rate, a concurrency, the rescan tick or a bulk enqueue.
+
 ## Reverse geocoding leans on a cell cache, not on the provider (2026-08-20)
 
 **Decision**: Nominatim (public instance by default) behind a coordinate-cell cache in `places`, which collapses ~90k geotagged assets into a few hundred calls, at a ~1 req/s budget.
