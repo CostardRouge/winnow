@@ -9,6 +9,13 @@
 //   • a clip's sidecars (C0001M01.XML, DJI_0001.SRT, …) stay in the same
 //     directory as the clip, where the importer's sidecar-carry expects them.
 // Without a "paths" entry a file is filed flat by its basename (phone picker).
+//
+// An edit sent back by a client (Atelier) names the capture it came from in
+// "original_asset_id" — one value for the request, or one per file. A valid id
+// (an existing asset, not in the trash) travels with the import job, and the
+// filed file is linked to it as soon as it is indexed (lib/importLinks.ts). An
+// invalid one is logged and reported in `links`, and the upload goes through
+// unlinked: the bytes matter more than the link. "chapter_id" is not read.
 import { NextRequest } from "next/server";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -18,6 +25,8 @@ import path from "node:path";
 import { one } from "@/lib/db";
 import { enqueueImport } from "@/lib/queue";
 import { uploadStagingDir } from "@/lib/import";
+import { linkTargetProblem } from "@/lib/importLinks";
+import { parseOriginalIds } from "@/lib/uploadLinkField";
 import { json, badRequest, serverError } from "@/lib/api";
 
 // One path segment → a safe folder/file name. Anything that isn't a tame
@@ -53,6 +62,23 @@ export async function POST(req: NextRequest) {
     // client appended them). Missing/short → fall back to the file's basename.
     const paths = form.getAll("paths").map((p) => (typeof p === "string" ? p : ""));
 
+    // The source each file is an edit of (checked before any byte is written,
+    // so a malformed field costs the client a 400, not a half-staged batch).
+    const field = parseOriginalIds(form.getAll("original_asset_id"), files.length);
+    if (!field.ok) return badRequest(field.error);
+    const problems = new Map<number, string | null>();
+    for (const id of field.ids) {
+      if (id != null && !problems.has(id)) problems.set(id, await linkTargetProblem(id));
+    }
+    type LinkReport = {
+      file: string;
+      original_asset_id: number | string;
+      status: "pending" | "ignored";
+      reason?: string;
+    };
+    const linkReport: LinkReport[] = [];
+    const links: Record<string, number> = {};
+
     // Hidden staging (.uploads): imported explicitly below as a batch; the
     // inbox watcher ignores it (dot-folder) -> no double import.
     const batchDir = path.join(
@@ -65,6 +91,21 @@ export async function POST(req: NextRequest) {
       const file = files[i];
       const rel = safeRelPath(paths[i], file.name);
       const dest = path.join(batchDir, rel);
+      const id = field.ids[i];
+      const bad = field.invalid[i];
+      if (id != null) {
+        const problem = problems.get(id) ?? null;
+        if (problem) {
+          console.warn(`[upload] original_asset_id ${id} ignored for ${file.name}: ${problem}`);
+          linkReport.push({ file: file.name, original_asset_id: id, status: "ignored", reason: problem });
+        } else {
+          links[rel] = id;
+          linkReport.push({ file: file.name, original_asset_id: id, status: "pending" });
+        }
+      } else if (bad) {
+        console.warn(`[upload] original_asset_id "${bad.value}" ignored for ${file.name}: ${bad.reason}`);
+        linkReport.push({ file: file.name, original_asset_id: bad.value, status: "ignored", reason: bad.reason });
+      }
       await mkdir(path.dirname(dest), { recursive: true });
       await pipeline(
         Readable.fromWeb(file.stream() as any),
@@ -82,9 +123,19 @@ export async function POST(req: NextRequest) {
       origin: "web_upload",
       removeAfter: true,
       batchId: batch!.id,
+      ...(Object.keys(links).length ? { links } : {}),
     });
 
-    return json({ batch_id: batch!.id, received: files.length }, 202);
+    return json(
+      {
+        batch_id: batch!.id,
+        received: files.length,
+        // Only when the request named a source: "pending" = will be linked when
+        // the file is indexed; "ignored" = uploaded unlinked, with the reason.
+        ...(linkReport.length ? { links: linkReport } : {}),
+      },
+      202,
+    );
   } catch (err) {
     return serverError(err);
   }
