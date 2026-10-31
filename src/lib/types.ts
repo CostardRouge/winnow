@@ -178,7 +178,9 @@ export type Asset = {
   // Finals → sources reconciliation (cf. lib/reconcile.ts). On an edited "final",
   // `original_asset_id` points at the source capture it was derived from; NULL on
   // sources and on unmatched finals. `edit_match` records how the link was made:
-  // 'name_date' (basename + capture time), 'name' (basename only), 'manual'.
+  // 'name_date' (basename + capture time), 'name' (basename only), 'upload' (the
+  // client that uploaded the edit named its source, cf. lib/importLinks.ts),
+  // 'manual'.
   original_asset_id: number | null;
   edit_match: string | null;
   // Reverse-geocoded place (cf. lib/geocode.ts). `place_id` links to the shared

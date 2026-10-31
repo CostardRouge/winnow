@@ -21,6 +21,13 @@ import { enqueueIndex, PRIORITY } from "./queue";
 import { recordDuplicateHit } from "./duplicates";
 import { findSidecars } from "./sidecars";
 import { slug } from "./slug";
+import {
+  applyImportLinks,
+  linkExistingAsset,
+  linkTargetProblem,
+  recordImportLink,
+  type LinkIgnored,
+} from "./importLinks";
 
 // HIDDEN subfolders of the inbox (prefix ". ") — therefore ignored both by
 // the watcher and by the import walk of the entire inbox:
@@ -38,6 +45,16 @@ export type ImportArgs = {
   origin: ImportOrigin;
   removeAfter: boolean; // true for inbox/upload, false for a card
   batchId?: number;
+  // An uploaded edit's source capture, keyed by the file's path relative to
+  // `sourceDir` (POST /api/upload stages each file there). The filed file is
+  // linked to it (assets.original_asset_id) — cf. lib/importLinks.ts.
+  links?: Record<string, number>;
+};
+
+// Seams for a caller that is not the worker: the tests index the incoming
+// themselves, with no Redis to enqueue on.
+export type ImportHooks = {
+  enqueueIndex?: (rootId: number) => Promise<unknown>;
 };
 
 export type ImportResult = {
@@ -45,6 +62,10 @@ export type ImportResult = {
   duplicates: number;
   failed: number;
   errors: Array<{ file: string; error: string }>;
+  // Uploaded edits and their source (args.links): linked now (a duplicate of a
+  // file already indexed), recorded for the indexer to apply, or ignored with
+  // the reason — a bad id never fails the file itself.
+  links: { linked: number; recorded: number; ignored: LinkIgnored[] };
 };
 
 async function* walk(dir: string): AsyncGenerator<string> {
@@ -169,12 +190,22 @@ async function uniqueDest(dest: string): Promise<string> {
   return `${base}__${Date.now()}${ext}`;
 }
 
-export async function runImport(args: ImportArgs): Promise<ImportResult> {
+export async function runImport(
+  args: ImportArgs,
+  hooks: ImportHooks = {},
+): Promise<ImportResult> {
   const res: ImportResult = {
     imported: 0,
     duplicates: 0,
     failed: 0,
     errors: [],
+    links: { linked: 0, recorded: 0, ignored: [] },
+  };
+  // Filed paths whose link waits for the indexer (lib/importLinks.ts).
+  const linkPaths: string[] = [];
+  const ignoreLink = (file: string, id: number, reason: string) => {
+    console.warn(`[import] original_asset_id ${id} ignored for ${file}: ${reason}`);
+    res.links.ignored.push({ file, original_asset_id: id, reason });
   };
 
   if (args.batchId) {
@@ -188,6 +219,18 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
     if (!classifyExt(ext)) continue; // not a recognized media: we leave it in place
 
     try {
+      // The source capture this file is an edit of, when the upload named one.
+      // Checked again here: the asset may have been trashed since the upload.
+      let linkTo: number | null =
+        args.links?.[path.relative(args.sourceDir, src)] ?? null;
+      if (linkTo != null) {
+        const problem = await linkTargetProblem(linkTo);
+        if (problem) {
+          ignoreLink(src, linkTo, problem);
+          linkTo = null;
+        }
+      }
+
       const st = await stat(src);
       const hash = await partialHash(src, st.size);
 
@@ -210,7 +253,14 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
           fileSize: st.size,
         });
         if (same === true) {
-          // Confirmed duplicate: copy nothing.
+          // Confirmed duplicate: copy nothing. An edit sent twice (a retry, or
+          // a send made before this link existed) still gets its link — on the
+          // copy the library already holds.
+          if (linkTo != null) {
+            const problem = await linkExistingAsset(dup.id, linkTo, src);
+            if (problem) res.links.ignored.push({ file: src, original_asset_id: linkTo, reason: problem });
+            else res.links.linked++;
+          }
           res.duplicates++;
           if (args.removeAfter) await rm(src, { force: true });
           continue;
@@ -251,6 +301,12 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
             });
             // Recorded either way; only a confirmed match is dropped (BE-01).
             if (same === null) throw unverifiable(planned);
+            // The file on disk may not be indexed yet: link it when it is.
+            if (linkTo != null) {
+              await recordImportLink(planned, linkTo, args.batchId);
+              linkPaths.push(planned);
+              res.links.recorded++;
+            }
             res.duplicates++;
             if (args.removeAfter) await rm(src, { force: true });
             continue;
@@ -284,6 +340,13 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
         throw new Error("copy verification failed (size/hash)");
       }
       await rename(tmp, dest);
+      // Before the index is enqueued (end of this run), so the scan that
+      // inserts the row finds the link waiting.
+      if (linkTo != null) {
+        await recordImportLink(dest, linkTo, args.batchId);
+        linkPaths.push(dest);
+        res.links.recorded++;
+      }
 
       // Cameras drop companion files next to a clip (Sony XML/THM, DJI SRT) —
       // carry them along so the clip and its sidecars stay together in the
@@ -327,8 +390,9 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
   }
 
   // The incoming is a "source" root: we register it and enqueue indexing
-  // (incremental: only new files will be processed).
-  if (res.imported > 0) {
+  // (incremental: only new files will be processed). A link recorded on a file
+  // already on disk but not yet indexed needs that scan too.
+  if (res.imported > 0 || res.links.recorded > 0) {
     const root = await one<{ id: number }>(
       `INSERT INTO roots (path, kind, watch) VALUES ($1, 'source', true)
        ON CONFLICT (path) DO UPDATE SET path = EXCLUDED.path
@@ -336,7 +400,23 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
       [config.import.incomingDir],
     );
     // The incoming (from an import) takes priority over ordinary scans.
-    if (root) await enqueueIndex(root.id, { priority: PRIORITY.high });
+    if (root) {
+      if (hooks.enqueueIndex) await hooks.enqueueIndex(root.id);
+      else await enqueueIndex(root.id, { priority: PRIORITY.high });
+    }
+  }
+
+  // A link recorded on a file the library had already indexed (a duplicate at
+  // its planned path) waits for no scan: apply what can be applied now. The
+  // scan enqueued above applies the rest when it inserts the rows. Never fatal.
+  if (res.links.recorded > 0) {
+    try {
+      const applied = await applyImportLinks({ paths: linkPaths });
+      res.links.linked += applied.linked;
+      res.links.ignored.push(...applied.ignored);
+    } catch (err) {
+      console.warn("[import] applying upload links failed:", (err as Error).message);
+    }
   }
 
   if (args.batchId) {
@@ -350,7 +430,10 @@ export async function runImport(args: ImportArgs): Promise<ImportResult> {
         res.imported,
         res.duplicates,
         res.failed,
-        JSON.stringify({ errors: res.errors.slice(0, 50) }),
+        JSON.stringify({
+          errors: res.errors.slice(0, 50),
+          ...(args.links ? { links: res.links } : {}),
+        }),
       ],
     );
   }

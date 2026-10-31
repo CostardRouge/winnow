@@ -24,6 +24,7 @@ import {
 } from "./pairing";
 import { reconcileBurstsForSession } from "./bursts";
 import { reconcileEdits } from "./reconcile";
+import { applyImportLinks } from "./importLinks";
 import { recordSidecars } from "./sidecars";
 import { reconcileMissingForRoot } from "./integrity";
 import { decideOwnZone, type OffsetSource } from "./captureZone";
@@ -121,7 +122,8 @@ export type IndexResult = {
   // Video sidecars (Sony .XML / .THM) tied to their clip this scan (lib/sidecars.ts).
   sidecars: number;
   // Edited finals newly linked back to their source original this scan
-  // (finals → sources reconciliation, cf. lib/reconcile.ts).
+  // (finals → sources reconciliation, cf. lib/reconcile.ts), plus uploaded
+  // edits whose stated source was applied (cf. lib/importLinks.ts).
   editsLinked: number;
   // Originals confirmed gone from disk this scan (cf. lib/integrity.ts):
   // auto-trashed (reversible soft delete) / only flagged (mass-disappearance
@@ -690,6 +692,21 @@ export async function indexRoot(
         (err as Error).message,
       );
     }
+  }
+
+  // Uploaded edits that named their source (POST /api/upload's
+  // original_asset_id): the import recorded the link against the path it filed
+  // the file to, and this is the first moment the row exists. Every scan, even
+  // a stopped or no-op one — it only reads rows already written, and an empty
+  // table costs one index probe. Counted with the reconciled edits; never fatal
+  // (cf. lib/importLinks.ts).
+  try {
+    res.editsLinked += (await applyImportLinks()).linked;
+  } catch (err) {
+    console.warn(
+      `Upload link pass failed for root ${root.id}:`,
+      (err as Error).message,
+    );
   }
 
   // Capture days: a frame its own file could not place (a Sony with the phone
