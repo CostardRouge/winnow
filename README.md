@@ -191,6 +191,23 @@ go to **Volumes → + Add folder** and enter the path **as seen inside the
 container** (e.g. `/nas/2026/…`). `./nas`, `./nas-incoming`, `./nas-final` and
 `./data` are git-ignored (Docker auto-creates them on first `up`).
 
+To work on your **real library** from this computer, point the dev stack at
+the NAS as this machine mounts it (still read-only for the sessions) with
+`DEV_NAS_MOUNT`, `DEV_NAS_INCOMING` and `DEV_NAS_FINAL` in `.env` (e.g.
+`DEV_NAS_MOUNT=/Volumes/photo`). It is a library of its own — its own Postgres,
+indexed from scratch — beside the server's, never a copy of it.
+
+**With Atelier on the same machine.** The dev stack allows Atelier's own dev
+server (`http://localhost:5173`) by itself: run Atelier with `npm run dev`,
+connect `http://localhost:3000` on its `#/sources` — same site, so this
+instance's sign-in works — and the whole video workflow stays on your computer:
+pick from this Winnow, edit and export in Atelier, then send the export to a
+Winnow to archive it (`POST /api/upload`, imported into Incoming). To send it to
+the **server's** instance instead, add `http://localhost:5173` to that
+instance's `CORS_ALLOWED_ORIGINS` and connect it in Atelier with an app token
+minted on its *Users › App tokens*: localhost and the server are different
+sites, so its cookie cannot reach the local page.
+
 > The standalone (non-dev) `docker compose up` reads `NAS_MOUNT` / `NAS_INCOMING`
 > / `NAS_FINAL` from `.env`. To point *that* at local dirs instead of the NAS,
 > set those three variables to local paths (or remove them to fall back to the
