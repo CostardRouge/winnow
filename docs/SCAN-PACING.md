@@ -328,10 +328,24 @@ SSH into… does not exist").
 
 ### 8.1 Before the first phase
 
-- A checkout of this repository on the Optiplex (`git clone`, then
-  `npm ci`), separate from the running stack, which keeps pulling the ghcr
-  image. Nothing in the plan runs the dev server against the production
-  database.
+- The box holds the **stack, not the repository**: the session starts in
+  the compose directory, where the containers are, and the code is a fresh
+  `git clone` beside it (read-only for phase 0; `npm ci` there from phase 1).
+  The running stack keeps pulling the ghcr image; nothing in the plan runs
+  the dev server against the production database.
+- The homelab moves on its own (security and performance passes the
+  repository does not record), so the session **checks before it assumes**:
+  a CPU cap already set, VAAPI already on, a renamed container are findings
+  for §9, not errors.
+- Credentials the maintainer leaves on the box for the session (sudo, the
+  Portainer API) are read from files by redirection and **never printed** —
+  not into the transcript, not into a report — and the session reminds him
+  to delete them at the end. A command whose output would carry a secret
+  (`docker inspect`, a container's environment, `.env`) is filtered to the
+  keys it needs.
+- Phase 0's report is written beside the stack and handed back to the cloud
+  session that holds this plan, which writes it in as §9 and pushes: a local
+  session never pushes, and the box has no checkout to commit from anyway.
 - The CLAUDE.md rules for a **local** session apply: one commit per phase
   (or per item of phase 1), the full gate green before each (`npm run lint`,
   `typecheck`, `test`, plus `migrate` when a migration lands and `build`),
@@ -343,8 +357,8 @@ SSH into… does not exist").
 
 ### 8.2 Phase 0 on the machine: what to measure, read-only
 
-Each line reads; none changes the stack. The session records the answers in
-§9 below (a new section, dated) so the numbers outlive the session.
+Each line reads; none changes the stack. The answers end up in §9 below (a
+new section, dated) so the numbers outlive the session.
 
 | Question | Command (host) |
 |---|---|
@@ -387,12 +401,19 @@ the finding goes into §9 before anything else is built.
 
 ### 8.4 The prompt to start with
 
+The generic form; the maintainer's own copy adds where his credentials
+are and which cloud session to hand the report to (kept out of this public
+file).
+
 ```
-Read CLAUDE.md, MEMORY.md, docs/memory/pipeline.md and docs/SCAN-PACING.md.
-We are on the Optiplex that runs Winnow; this is a local session (never push).
-Run phase 0 as §8.2 describes: read-only measurements on the host and in the
-winnow_worker container, the three recordings, then write the results into a
-new dated §9 of docs/SCAN-PACING.md and replace the placeholders of §4.2
-where a measurement answers them. Ask me before anything that changes the
-running stack. Then stop and summarise; we will decide phase 1 together.
+You are on the Optiplex, in the compose directory of the Winnow stack (no
+repository here). Clone github.com/CostardRouge/winnow beside it and read
+CLAUDE.md, MEMORY.md, docs/memory/pipeline.md and docs/SCAN-PACING.md.
+This is a local session: never push. Check the stack before assuming
+anything the repository says about it. Run phase 0 as §8.2 describes:
+read-only measurements on the host and in the worker container, the three
+recordings, then write a report (findings, results, the numbers that
+replace §4.2's placeholders) beside the stack. Never print a credential.
+Ask me before anything that changes the running stack. Then stop and
+summarise; we will decide phase 1 together.
 ```
