@@ -9,6 +9,11 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+### Added
+
+- Atelier can keep a Storytelling series' script and a Mosaic on your Winnow, so another device opens the same
+  one.
+
 ## [1.1.0] - 2026-10-22 — Sorghum
 
 ### Changed

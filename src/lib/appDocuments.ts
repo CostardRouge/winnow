@@ -24,10 +24,13 @@ import { many, one } from "./db";
 // its tree, what its owner hides — whose lattices are too big for a document
 // and live in the file bucket beside it (appFiles.ts). atlas: a Flight Atlas —
 // its settings and its flights BY REFERENCE (each log's hash and Winnow id),
-// never the logs' text, which a device fetches back from here. Atelier reads
-// this list from /api/capabilities and does not offer to keep a kind an
-// instance does not name.
-export const DOC_KINDS = ["trip", "project", "roll", "presets", "lutpack", "atlas"] as const;
+// never the logs' text, which a device fetches back from here. mosaic: a
+// Mosaic — its pictures by reference with their measured colours, never the
+// tiles. story: a Storytelling series' SCRIPT — the words, the sources' names
+// and the counted facts of its posts, so the Mac and the phone open the same
+// one (Atelier's strategy R2). Atelier reads this list from /api/capabilities
+// and does not offer to keep a kind an instance does not name.
+export const DOC_KINDS = ["trip", "project", "roll", "presets", "lutpack", "atlas", "mosaic", "story"] as const;
 export type DocKind = (typeof DOC_KINDS)[number];
 
 // No policy cap: a document takes the room its owner's work needs (a Develop
