@@ -131,6 +131,8 @@ export type ImportJob = {
   origin: "web_upload" | "card_offload" | "inbox" | "ftp";
   removeAfter: boolean;
   batchId?: number;
+  // Uploaded edits → their source asset, by staged relative path (lib/import.ts).
+  links?: Record<string, number>;
 };
 export const QUEUES = {
   index: "winnow-index",

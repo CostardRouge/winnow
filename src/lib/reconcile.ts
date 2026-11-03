@@ -66,6 +66,11 @@ function matchCTE(rootScoped: boolean): string {
       JOIN roots rt ON rt.id = s.root_id
       WHERE rt.kind IN ('source', 'inbox')
         AND a.deleted_at IS NULL
+        -- An edit already linked to its own source is not a capture: an
+        -- uploaded final lands in the incoming (a source root) under its
+        -- source's basename, and would otherwise make that capture look
+        -- ambiguous to every real final of it (cf. lib/importLinks.ts).
+        AND a.original_asset_id IS NULL
     ),
     cand AS (
       SELECT f.id AS final_id, s.id AS source_id,

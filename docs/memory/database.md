@@ -38,6 +38,10 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Note**: the `int8 → Number` type parser silently loses precision past 2^53. Unreachable at current scale and unguarded (D10).
 
+## `import_links` carries an upload's source across the import → index gap (2026-10-31)
+
+**Decision**: migration `0057_import_links.sql` — `abs_path` PK (the filed path), `original_asset_id` (CASCADE), `batch_id` (SET NULL). A row lives from the import to the scan that indexes its file and is deleted then, linked or refused; one whose file never becomes an asset is dropped after 30 days by the same pass — that is its retention. `applyImportLinks` locks with `FOR UPDATE OF l SKIP LOCKED` so two roots' scans never wait on each other. `edit_match` gains the value `'upload'` (no CHECK on that column). Rationale: `docs/memory/architecture.md`.
+
 ## Growth with no retention is the known unpaid debt (2026-08-20)
 
 **Decision (pending)**: `purge_log`, resolved `scan_failures`, `export_jobs.result` / `import_batches.result` JSONB, `exports` lineage and stale-model `asset_clip` rows all grow without bound. A retention janitor is P1 in the review (D7) and does not exist yet.

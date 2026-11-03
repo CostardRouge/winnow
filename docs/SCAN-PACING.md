@@ -218,7 +218,7 @@ discoveries in old folders, ML → background.
   its own job (`derive-proxy`, background lane). The grid shows a new clip in
   seconds; the transcode drips. The viewer must then show the poster, not an
   error, while the proxy is pending — to check when it lands. Whether "pending proxy" needs its own status column is
-  a migration (next free number `0057`) — §6, S2.
+  a migration (next free number `0058`; `0057` went to `import_links`) — §6, S2.
 - **Bounded encoder threads**: `-threads N` on the transcode (`VIDEO_THREADS`,
   default 2), and VAAPI on where the iGPU is present — Quick Sync encodes a
   4K clip at a fraction of the package power libx264 needs.
@@ -285,7 +285,7 @@ tunes a system phases 0–3 made measurable.
   of the box may Winnow ever take?
 - **S2 — Video proxy as a second job.** The grid gets the poster at once; the
   proxy arrives later and a clip can be "visible, not yet playable" for a
-  while. Accept that state, and with it a status column (migration `0057`)?
+  while. Accept that state, and with it a status column (migration `0058`)?
 - **S3 — The full reconcile's cadence.** Nightly is the proposal. An in-place
   rewrite (an external tool writing GPS into a file) would then wait for the
   night unless the NAS agent (S5) is installed.
