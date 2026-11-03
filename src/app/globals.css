@@ -142,10 +142,16 @@
   .map-zoom .btn {
     min-width: var(--control-h-lg);
   }
+  /* 44px tall, but never over a neighbour's face. A later sibling paints
+     (and hit-tests) above an earlier one, so only the overhang to the top and
+     the left can steal a tap: each stays within .chips' 6px gap (top 6, left
+     3 = half the gap, so the row's gaps split evenly). The bottom takes the
+     rest of the 16px; where it reaches into the next row, that row's chip is
+     on top. */
   button.chip::after {
     content: "";
     position: absolute;
-    inset: calc((var(--control-h-sm) - var(--control-h-lg)) / 2);
+    inset: -6px -3px calc(var(--control-h-sm) - var(--control-h-lg) + 6px);
   }
 }
 
@@ -357,8 +363,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .theme-toggle {
     @apply inline-flex items-center justify-center rounded-[var(--radius)]
       border-0 p-0 transition duration-150;
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     background: transparent;
     color: var(--color-muted);
     transition-timing-function: var(--ease-out);
@@ -2796,7 +2802,7 @@ html[data-theme="dark"] .btn-primary:hover {
      right on the day it appears, not a render later. */
   .tabs .opt-trigger {
     @apply rounded-[var(--radius)] px-3 text-sm font-semibold;
-    padding-block: calc(0.375rem - 0.05em) calc(0.375rem + 0.05em);
+    padding-block: 0 0.1em;
   }
 
   .opt-list {
@@ -5493,11 +5499,11 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .page-actions .page-primary {
     flex: 1;
-    height: 44px;
+    height: var(--control-h-lg);
   }
   .page-actions .card-more {
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
   }
   /* The connection pill shares the phone's header band with the theme toggle,
      so it is anchored rather than centred: a centred pill of any useful width
@@ -6641,8 +6647,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .sift-tile-go {
     @apply flex flex-shrink-0 items-center justify-center;
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     padding: 0;
   }
   .sift-tile-go svg {
@@ -6775,8 +6781,8 @@ html[data-theme="dark"] .btn-primary:hover {
   /* While playing, the toggle fades back so it doesn't sit over the footage;
      it lifts to full on hover so pausing stays one tap away. */
   .deck-card-play.is-playing {
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     font-size: 15px;
     opacity: 0.35;
   }
@@ -8127,7 +8133,7 @@ html[data-theme="dark"] .btn-primary:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .gear-deck-answers .btn {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   .gear-deck-name-form {
     @apply flex gap-2;
