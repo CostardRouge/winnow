@@ -18,6 +18,8 @@ were given after the fact to the history's turning points.
 
 - Red and vermillion now mean something: Pause scan and Remove from history are plain buttons, and sliders,
   checkboxes and the selection count are drawn in ink instead of the accent colour.
+- Buttons, fields, tabs and toggles come in three heights instead of nine, and on a phone every one of them is
+  44 px tall — tabs no longer shrink on a narrow screen, and filter chips keep their size with a larger touch area.
 
 ### Fixed
 
