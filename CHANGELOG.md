@@ -14,6 +14,11 @@ were given after the fact to the history's turning points.
 - Atelier can keep a Storytelling series' script and a Mosaic on your Winnow, so another device opens the same
   one.
 
+### Changed
+
+- Red and vermillion now mean something: Pause scan and Remove from history are plain buttons, and sliders,
+  checkboxes and the selection count are drawn in ink instead of the accent colour.
+
 ### Fixed
 
 - An edit sent back from Atelier is linked to the photo or clip it was made from as soon as it is indexed, whoever sent

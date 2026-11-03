@@ -295,7 +295,7 @@ function RootGroupCard({
             )}
             <span className="spacer" />
             <button
-              className="btn btn-sm btn-reject"
+              className="btn btn-sm"
               onClick={() => onRemove(j.job_id)}
               disabled={busy != null || j.state === "active"}
               title={

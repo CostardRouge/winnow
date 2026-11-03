@@ -196,7 +196,7 @@ export default function MlQueuePanel() {
                 </span>
                 <span className="spacer" />
                 <button
-                  className="btn btn-sm btn-reject"
+                  className="btn btn-sm"
                   onClick={() => remove(j.job_id)}
                   disabled={busy != null || j.state === "active"}
                   title={

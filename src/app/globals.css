@@ -817,7 +817,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .slider input[type="range"] {
     @apply w-full;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* A labelled control in a .control-row that is NOT a range input — the
      geocoding cell size is an OptionPicker. Same column shape and same label
@@ -2153,7 +2153,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .export-opt input {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
 
   /* ---- Full-screen viewer (the dark frame) ------------------------------ */
@@ -3518,7 +3518,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .bulk-bar .input {
     @apply px-2.5 py-1.5 text-xs;
   }
-  /* Live selection count: the accent dot carries the state, the label whispers. */
+  /* Live selection count: the ink dot carries the state, the label whispers.
+     Ink, not vermillion: a count is not the brand (UI review H4). */
   .bulk-count {
     @apply inline-flex items-center gap-1.5 pr-0.5 text-xs;
     color: var(--color-muted);
@@ -3533,8 +3534,8 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-muted);
   }
   .bulk-count-num.has {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-text);
+    color: var(--color-bg);
   }
   /* Tag popover: anchored to its button, opening upward over the grid. The bar
      is already fixed, so plain absolute positioning stays glued to it. */
@@ -3748,7 +3749,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .fail-check {
     @apply h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* flex-wrap so the date + download/retry actions drop to a new line instead
      of pushing the card past the viewport on narrow/mobile widths. */
@@ -4574,7 +4575,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-table input[type="checkbox"] {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* Fixed widths, so the name column absorbs whatever is left. */
   .dev-c-check {
@@ -4688,7 +4689,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-pick-row input {
     @apply h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .dev-pick-name {
     @apply min-w-0 flex-1 truncate font-medium;
@@ -4724,7 +4725,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-pick-replace input {
     @apply mt-0.5 h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .dev-pick-replace .dev-pick-note {
     @apply mt-1 block;
@@ -5767,7 +5768,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .export-check input {
     @apply mt-0.5 shrink-0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .export-check.is-disabled {
     @apply cursor-not-allowed opacity-50;
@@ -6069,7 +6070,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .recap-folder input[type="checkbox"] {
     @apply shrink-0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .recap-folder.is-off .recap-folder-text,
   .recap-folder.is-off .recap-folder-count {
@@ -6169,7 +6170,7 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply opacity-60;
   }
   .recap-table input[type="checkbox"] {
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* The thumbnail at the file's own ratio — the derivative is fit "inside",
      so a fixed height and an auto width ARE the ratio. The cell carries the
@@ -7270,7 +7271,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .feature-switch input {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .feature-name {
     @apply text-sm;

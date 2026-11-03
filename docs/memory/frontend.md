@@ -370,6 +370,22 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **Traps the review found that are not in the doc's tables**: `a { color: var(--color-accent) }` is a base rule, so any card title that is a link turns vermillion by default — set the colour on the card, not the link; the host `.topbar`'s trailing `.hint` has no room at 390 px and overlaps the theme toggle (`SessionGrid`); `.tab` is *shrunk* to ≈22 px by the ≤767 px block; five shadows hardcode `rgba(27,24,19,…)` and stay light-ink at night, `.btn-primary` included.
 
+## What each colour may mean — applied (2026-11-03, UI review H4)
+
+**Decision** (COS-22's measured proposal, applied in CSS + JSX, no new token):
+
+| Colour | May mean | Never means |
+| --- | --- | --- |
+| Vermillion `--color-accent` | the brand, the active rail entry, the focus ring, a link in prose, the active option of a group | a title, a date, a count, a slider, a checkbox, a Pause button |
+| Ink `--color-text` | titles, the primary action (`.btn-primary`), form controls (sliders, checkboxes, radios: `accent-color: var(--color-text)`) | — |
+| Green / red `pick` / `reject` | a verdict on a frame | a count, a queue state |
+| Red button `btn-reject` | a destructive action that is **confirmed** (dialog or acknowledgement box) | a reversible one: Pause, Remove from history, Cancel |
+| Amber | attention (pending, paused) | a zero |
+
+**Why**: there is no `danger` token — red is both verdict and destructive — so the only thing keeping it legible is never spending it on something reversible. Pause was red, two un-confirmed "Remove from history" were red, three sliders and nine checkbox rules were vermillion: a rate-settings page carried three "alerts" for nothing.
+
+**How to apply**: every `accent-color` in `globals.css` is ink except `.modal-ack input` (`reject`: the "I understand" box of a deletion, correct). Pause is neutral `btn` and Resume `btn-primary`; while paused the amber pill carries the state, not the button. A count (`.bulk-count-num.has`) is ink. `.tl-ch-dates` (the Timeline's chapter dates) is still vermillion on purpose: it waits on the maintainer's Timeline rework decision — do not "fix" it in passing.
+
 ## Running the UI locally for a screenshot pass (2026-09-13)
 
 **Recipe, measured on the cloud container** (Postgres 16 and Redis are packaged there): `pg_ctlcluster 16 main start`, create role + db `winnow`, `redis-server --daemonize yes`; a `.env` pointing `DATABASE_URL`/`REDIS_URL` at `127.0.0.1` and `INCOMING_DIR`/`FINALS_DIRS`/`STORAGE_DISK_PATH`/`EXPORT_DIR`/`INBOX_DIR`/`BROWSE_ROOTS` at scratch folders, with `GEOCODE_ENABLED=false ML_ENABLED=false WATCH_INBOX=false`; `npm run migrate`, `npm run worker`, `npm run dev`. pgvector is absent there: migration 0030 skips `asset_clip` and everything else applies, as documented. A synthetic library is enough for chrome: JPEGs from `sharp` with `exiftool.write()` stamping Make/Model/LensModel/DateTimeOriginal/GPS (one folder = one session; frames one second apart become a burst); the worker's bootstrap registers `INCOMING_DIR` and `FINALS_DIRS` and enqueues the scans itself, so `npm run scan` is not needed. First admin: `POST /api/auth/setup {username,password}`; optional sections: `PATCH /api/features {timeline:true,…}` as that admin. Playwright is installed globally (`require("/opt/node22/lib/node_modules/playwright")` from a `.cjs`), Chromium in `/opt/pw-browsers`; set `localStorage["winnow.theme"]` in an init script to pick the theme, click a `.cell` to open the viewer.
