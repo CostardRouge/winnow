@@ -9,6 +9,11 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+### Added
+
+- Atelier can keep a Storytelling series' script and a Mosaic on your Winnow, so another device opens the same
+  one.
+
 ### Fixed
 
 - An edit sent back from Atelier is linked to the photo or clip it was made from as soon as it is indexed, whoever sent
