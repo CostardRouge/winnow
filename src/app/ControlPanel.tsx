@@ -314,7 +314,7 @@ export default function ControlPanel() {
 
       <div className="control-row">
         <button
-          className={`btn ${paused ? "btn-primary" : "btn-reject"}`}
+          className={paused ? "btn btn-primary" : "btn"}
           onClick={togglePause}
           disabled={busy || !stats}
           title="Suspend or resume scanning and analysis"

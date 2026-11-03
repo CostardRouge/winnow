@@ -96,6 +96,65 @@
   --heat-place-3: #8e44ad;
 }
 
+/* Control heights — the only three a control may take (UI review T2 + A3).
+   Plain custom properties in :root, not @theme: Tailwind 4 drops an @theme
+   variable outside its namespaces (the --heat-* trap above), and these are
+   only ever read through var(), never as a utility.
+     sm 28 — compact controls in a band: a clickable chip, a pipeline tab,
+             .btn-sm, a .view-toggle group.
+     md 36 — the default: .btn, .btn-icon, .input, .select, .seg-actions,
+             .fail-tab, a .tabs group, and every control of a toolbar band.
+     lg 44 — anything tappable under (pointer: coarse), the block below.
+   A control sets min-height (never padding-block) and centres its content;
+   a segmented group sets it on the shell and its segments stretch to fill.
+   An icon button is as wide as it is tall. A new control rule takes one of
+   these three or no height at all — no pixel value. */
+:root {
+  --control-h-sm: 28px;
+  --control-h-md: 36px;
+  --control-h-lg: 44px;
+}
+
+/* A finger needs 44px. Unlayered on purpose, so it outranks every component
+   rule — including a toolbar's shared height — without a specificity race.
+   Display-only pills and tags do not move; a clickable chip keeps its 28px
+   look and gets an invisible 44px hit area instead, so filter bars do not
+   double in height on a phone (COS-22, option (a)). */
+@media (pointer: coarse) {
+  .page-tools,
+  .pl-toolbar {
+    --tb-control-h: var(--control-h-lg);
+  }
+  .btn,
+  .input,
+  .select,
+  .tabs,
+  .view-toggle,
+  .layout-toggle,
+  .pipeline-tabs,
+  .seg-actions,
+  .fail-tab,
+  .icon-toggle {
+    min-height: var(--control-h-lg);
+  }
+  .btn-icon,
+  .icon-toggle,
+  .map-zoom .btn {
+    min-width: var(--control-h-lg);
+  }
+  /* 44px tall, but never over a neighbour's face. A later sibling paints
+     (and hit-tests) above an earlier one, so only the overhang to the top and
+     the left can steal a tap: each stays within .chips' 6px gap (top 6, left
+     3 = half the gap, so the row's gaps split evenly). The bottom takes the
+     rest of the 16px; where it reaches into the next row, that row's chip is
+     on top. */
+  button.chip::after {
+    content: "";
+    position: absolute;
+    inset: -6px -3px calc(var(--control-h-sm) - var(--control-h-lg) + 6px);
+  }
+}
+
 /* =========================================================================
    "Papier nuit" — the dark theme
    The same Paper system after dark: warm ink surfaces (never cold black),
@@ -304,8 +363,8 @@ html[data-theme="dark"] .btn-primary:hover {
   .theme-toggle {
     @apply inline-flex items-center justify-center rounded-[var(--radius)]
       border-0 p-0 transition duration-150;
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     background: transparent;
     color: var(--color-muted);
     transition-timing-function: var(--ease-out);
@@ -510,7 +569,7 @@ html[data-theme="dark"] .btn-primary:hover {
     /* One compromise height for every control on the row (between the thin
        text segments and the taller icon toggles) so swapping a view's
        modifier — Select, list/card toggle, or nothing — never reflows it. */
-    --tb-control-h: 32px;
+    --tb-control-h: var(--control-h-md);
     min-height: 48px;
     padding-block: 7px;
     background: var(--color-surface);
@@ -555,8 +614,9 @@ html[data-theme="dark"] .btn-primary:hover {
   /* ---- Buttons ---------------------------------------------------------- */
   .btn {
     @apply inline-flex select-none items-center justify-center gap-1.5
-      rounded-[var(--radius)] border px-3.5 py-2 text-sm font-medium
+      rounded-[var(--radius)] border px-3.5 text-sm font-medium
       transition duration-150;
+    min-height: var(--control-h-md);
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     color: var(--color-text);
@@ -577,14 +637,17 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   /* Square icon-only button */
   .btn-icon {
-    @apply h-9 w-9 p-0;
+    @apply p-0;
+    height: var(--control-h-md);
+    width: var(--control-h-md);
     color: var(--color-muted);
   }
   .btn-icon:hover {
     color: var(--color-text);
   }
   .btn-sm {
-    @apply px-2.5 py-1 text-xs;
+    @apply px-2.5 text-xs;
+    min-height: var(--control-h-sm);
   }
   /* Primary = solid ink for quiet, high-contrast emphasis */
   .btn-primary {
@@ -658,7 +721,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
 
   .input {
-    @apply rounded-[var(--radius)] border px-3.5 py-2 text-sm transition duration-150;
+    @apply rounded-[var(--radius)] border px-3.5 text-sm transition duration-150;
+    min-height: var(--control-h-md);
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     color: var(--color-text);
@@ -817,7 +881,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .slider input[type="range"] {
     @apply w-full;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* A labelled control in a .control-row that is NOT a range input — the
      geocoding cell size is an OptionPicker. Same column shape and same label
@@ -920,6 +984,7 @@ html[data-theme="dark"] .btn-primary:hover {
   /* ---- Tabs (segmented control) ----------------------------------------- */
   .tabs {
     @apply inline-flex gap-1 rounded-[var(--radius-lg)] border p-1;
+    min-height: var(--control-h-md);
     background: var(--color-surface-2);
     border-color: var(--color-border);
   }
@@ -929,10 +994,10 @@ html[data-theme="dark"] .btn-primary:hover {
     /* Optically center the label. Space Grotesk reserves ~0.28em of space
        above its caps (ascent 0.98em vs cap height 0.70em) while its descenders
        sit close to the baseline, so plain metric-box centering leaves the text
-       riding low in the pill. Trim that bias off the top padding and add it
-       back to the bottom: net vertical padding (py-1.5 → 0.75rem) and the pill
-       height are unchanged, so the active tab's background stays put. */
-    padding-block: calc(0.375rem - 0.05em) calc(0.375rem + 0.05em);
+       riding low in the pill. The tab stretches to its group's control height
+       (.tabs) and centres its label; this bottom pad lifts the label by that
+       0.05em bias without touching the height. */
+    padding-block: 0 0.1em;
   }
   .tab:hover {
     color: var(--color-text);
@@ -1163,8 +1228,7 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex items-center gap-2;
   }
   .card-actions .btn {
-    @apply py-0;
-    height: 2.25rem;
+    height: var(--control-h-md);
   }
   /* The line under a card's meta that states what is PROPOSED and how sure the
      proposal is, plus the rules block above such a list. Shared by the two
@@ -1525,6 +1589,7 @@ html[data-theme="dark"] .btn-primary:hover {
      own outer corners instead of relying on the container clipping them. */
   .seg-actions {
     @apply inline-flex flex-nowrap items-stretch rounded-[var(--radius)] border;
+    min-height: var(--control-h-md);
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     box-shadow: 0 1px 1.5px rgba(27, 24, 19, 0.04);
@@ -1539,7 +1604,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .seg-btn {
     @apply inline-flex select-none items-center justify-center gap-1.5
-      whitespace-nowrap border-0 bg-transparent px-3 py-2 text-sm font-medium
+      whitespace-nowrap border-0 bg-transparent px-3 text-sm font-medium
       transition duration-150;
     color: var(--color-text);
     transition-timing-function: var(--ease-out);
@@ -1884,6 +1949,7 @@ html[data-theme="dark"] .btn-primary:hover {
      Grid/Map/Sessions segmented control. */
   .layout-toggle {
     @apply inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
+    min-height: var(--control-h-sm);
     background: var(--color-surface-2);
     border-color: var(--color-border);
   }
@@ -2153,7 +2219,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .export-opt input {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
 
   /* ---- Full-screen viewer (the dark frame) ------------------------------ */
@@ -2658,12 +2724,13 @@ html[data-theme="dark"] .btn-primary:hover {
   /* ---- Grid / Map view toggle (gallery controls) ----------------------- */
   .view-toggle {
     @apply inline-flex gap-0.5 rounded-[var(--radius)] border p-0.5;
+    min-height: var(--control-h-sm);
     background: var(--color-surface);
     border-color: var(--color-border);
   }
   .view-btn {
     @apply inline-flex items-center justify-center rounded-[var(--radius-sm)]
-      border-0 bg-transparent px-2.5 py-1 text-xs font-medium transition duration-150;
+      border-0 bg-transparent px-2.5 text-xs font-medium transition duration-150;
     color: var(--color-muted);
   }
   .view-btn:hover {
@@ -2702,7 +2769,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .opt-trigger {
     @apply inline-flex min-w-0 items-center gap-1.5 rounded-[var(--radius-sm)]
-      border-0 bg-transparent py-1 pl-2.5 pr-1.5 text-xs font-medium transition duration-150;
+      border-0 bg-transparent pl-2.5 pr-1.5 text-xs font-medium transition duration-150;
     color: var(--color-text);
   }
   .opt-trigger:hover {
@@ -2735,7 +2802,7 @@ html[data-theme="dark"] .btn-primary:hover {
      right on the day it appears, not a render later. */
   .tabs .opt-trigger {
     @apply rounded-[var(--radius)] px-3 text-sm font-semibold;
-    padding-block: calc(0.375rem - 0.05em) calc(0.375rem + 0.05em);
+    padding-block: 0 0.1em;
   }
 
   .opt-list {
@@ -2822,7 +2889,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .map-zoom .btn {
     @apply px-0;
-    width: 2.25rem;
+    width: var(--control-h-md);
     /* Bigger glyph but keep text-sm's line-height so the height matches the
        toolbar buttons exactly. */
     font-size: 1.1rem;
@@ -3446,6 +3513,10 @@ html[data-theme="dark"] .btn-primary:hover {
     border-color: var(--color-border-strong);
     background: var(--color-surface-3);
   }
+  button.chip {
+    @apply relative;
+    min-height: var(--control-h-sm);
+  }
   .chip.active {
     background: var(--color-accent);
     border-color: var(--color-accent);
@@ -3510,15 +3581,20 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   /* Compact controls: the bar is a floating toolbar, not a form row. */
   .bulk-bar .btn {
-    @apply px-2.5 py-1.5 text-xs;
+    @apply px-2.5 text-xs;
+    min-height: var(--control-h-sm);
   }
   .bulk-bar .btn-icon {
-    @apply h-8 w-8 p-0;
+    @apply p-0;
+    height: var(--control-h-sm);
+    width: var(--control-h-sm);
   }
   .bulk-bar .input {
-    @apply px-2.5 py-1.5 text-xs;
+    @apply px-2.5 text-xs;
+    min-height: var(--control-h-sm);
   }
-  /* Live selection count: the accent dot carries the state, the label whispers. */
+  /* Live selection count: the ink dot carries the state, the label whispers.
+     Ink, not vermillion: a count is not the brand (UI review H4). */
   .bulk-count {
     @apply inline-flex items-center gap-1.5 pr-0.5 text-xs;
     color: var(--color-muted);
@@ -3533,8 +3609,8 @@ html[data-theme="dark"] .btn-primary:hover {
     color: var(--color-muted);
   }
   .bulk-count-num.has {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-text);
+    color: var(--color-bg);
   }
   /* Tag popover: anchored to its button, opening upward over the grid. The bar
      is already fixed, so plain absolute positioning stays glued to it. */
@@ -3704,7 +3780,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .fail-tab {
     @apply inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-[var(--radius)]
-      border px-3 py-1.5 text-[13px] font-medium;
+      border px-3 text-[13px] font-medium;
+    min-height: var(--control-h-md);
     background: var(--color-surface);
     border-color: var(--color-border);
     color: var(--color-muted);
@@ -3748,7 +3825,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .fail-check {
     @apply h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* flex-wrap so the date + download/retry actions drop to a new line instead
      of pushing the card past the viewport on narrow/mobile widths. */
@@ -3772,10 +3849,12 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex shrink-0 items-center gap-1.5;
   }
   .fail-actions .btn {
-    @apply h-7 min-h-0;
+    height: var(--control-h-sm);
+    min-height: var(--control-h-sm);
   }
   .fail-actions .btn.btn-icon {
-    @apply w-7 p-0;
+    @apply p-0;
+    width: var(--control-h-sm);
   }
   .fail-path {
     @apply mt-0.5 break-all text-[11px];
@@ -4288,7 +4367,8 @@ html[data-theme="dark"] .btn-primary:hover {
      its content, so the max-w-full + overflow-x-auto below never engaged and
      "Failures" was clipped off-screen (UI review S2). */
   .pipeline-tabs {
-    @apply inline-flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
+    @apply inline-flex min-w-0 max-w-full items-stretch gap-0.5 overflow-x-auto rounded-[var(--radius)] border p-0.5;
+    min-height: var(--control-h-sm);
     background: var(--color-surface);
     border-color: var(--color-border);
     scrollbar-width: none;
@@ -4297,7 +4377,7 @@ html[data-theme="dark"] .btn-primary:hover {
     display: none;
   }
   .pipeline-tab {
-    @apply inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border-0 bg-transparent px-2.5 py-1 text-xs font-medium transition duration-150;
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border-0 bg-transparent px-2.5 text-xs font-medium transition duration-150;
     color: var(--color-muted);
   }
   .pipeline-tab:hover {
@@ -4574,7 +4654,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-table input[type="checkbox"] {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* Fixed widths, so the name column absorbs whatever is left. */
   .dev-c-check {
@@ -4688,7 +4768,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-pick-row input {
     @apply h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .dev-pick-name {
     @apply min-w-0 flex-1 truncate font-medium;
@@ -4724,7 +4804,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .dev-pick-replace input {
     @apply mt-0.5 h-4 w-4 shrink-0 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .dev-pick-replace .dev-pick-note {
     @apply mt-1 block;
@@ -4888,7 +4968,7 @@ html[data-theme="dark"] .btn-primary:hover {
   /* The toolbar wraps on narrow widths; the hint takes the slack so the
      controls stay grouped on the right. */
   .pl-toolbar {
-    --tb-control-h: 32px;
+    --tb-control-h: var(--control-h-md);
     @apply flex-wrap gap-2;
   }
   .pl-hint {
@@ -5171,7 +5251,8 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply flex gap-2;
   }
   .body-chooser-actions .btn {
-    @apply min-h-[44px] flex-1 justify-center px-2 text-[13px];
+    @apply flex-1 justify-center px-2 text-[13px];
+    min-height: var(--control-h-lg);
   }
   @media (max-width: 640px) {
     .body-chooser-backdrop {
@@ -5418,11 +5499,11 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .page-actions .page-primary {
     flex: 1;
-    height: 44px;
+    height: var(--control-h-lg);
   }
   .page-actions .card-more {
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
   }
   /* The connection pill shares the phone's header band with the theme toggle,
      so it is anchored rather than centred: a centred pill of any useful width
@@ -5526,10 +5607,10 @@ html[data-theme="dark"] .btn-primary:hover {
   .tabs::-webkit-scrollbar {
     display: none;
   }
+  /* Narrower, never shorter: the group keeps its md height (and lg under a
+     finger) — this block used to shrink a tab to ~22px. UI review A3. */
   .tab {
     @apply shrink-0 px-2.5;
-    /* Same optical-centering trim as desktop, against the tighter py-1 pad. */
-    padding-block: calc(0.25rem - 0.05em) calc(0.25rem + 0.05em);
   }
   /* The session page's band stays one line: the counted verdict toggle
      scrolls inside its own border (five labels with their counts outrun a
@@ -5628,7 +5709,8 @@ html[data-theme="dark"] .btn-primary:hover {
 @layer components {
   /* Select, styled to match .input */
   .select {
-    @apply rounded-[var(--radius)] border px-2.5 py-1.5 text-sm transition duration-150;
+    @apply rounded-[var(--radius)] border px-2.5 text-sm transition duration-150;
+    min-height: var(--control-h-md);
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     color: var(--color-text);
@@ -5767,7 +5849,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .export-check input {
     @apply mt-0.5 shrink-0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .export-check.is-disabled {
     @apply cursor-not-allowed opacity-50;
@@ -6069,7 +6151,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .recap-folder input[type="checkbox"] {
     @apply shrink-0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .recap-folder.is-off .recap-folder-text,
   .recap-folder.is-off .recap-folder-count {
@@ -6169,7 +6251,7 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply opacity-60;
   }
   .recap-table input[type="checkbox"] {
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   /* The thumbnail at the file's own ratio — the derivative is fit "inside",
      so a fixed height and an auto width ARE the ratio. The cell carries the
@@ -6565,8 +6647,8 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .sift-tile-go {
     @apply flex flex-shrink-0 items-center justify-center;
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     padding: 0;
   }
   .sift-tile-go svg {
@@ -6699,8 +6781,8 @@ html[data-theme="dark"] .btn-primary:hover {
   /* While playing, the toggle fades back so it doesn't sit over the footage;
      it lifts to full on hover so pausing stays one tap away. */
   .deck-card-play.is-playing {
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-lg);
+    height: var(--control-h-lg);
     font-size: 15px;
     opacity: 0.35;
   }
@@ -7270,7 +7352,7 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .feature-switch input {
     @apply h-4 w-4 cursor-pointer;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-text);
   }
   .feature-name {
     @apply text-sm;
@@ -8051,7 +8133,7 @@ html[data-theme="dark"] .btn-primary:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .gear-deck-answers .btn {
-    min-height: 44px;
+    min-height: var(--control-h-lg);
   }
   .gear-deck-name-form {
     @apply flex gap-2;

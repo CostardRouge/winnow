@@ -368,7 +368,31 @@ Seeded 2026-08-20 from `src/app/globals.css`, `next.config.mjs`, `public/sw.js`,
 
 **Why**: the screens are chrome-heavy (172 px of header on desktop, 390 of 844 px on a phone before the first card), every element carries the same weight so the eye lands on the red, and the component layer has five segmented-control families, four chip families and seven toolbar wrappers — measured, not felt. `--color-faint` is 2.3:1 on paper and is used on 45 rules of text under 12 px.
 
-**Traps the review found that are not in the doc's tables**: `a { color: var(--color-accent) }` is a base rule, so any card title that is a link turns vermillion by default — set the colour on the card, not the link; the host `.topbar`'s trailing `.hint` has no room at 390 px and overlaps the theme toggle (`SessionGrid`); `.tab` is *shrunk* to ≈22 px by the ≤767 px block; five shadows hardcode `rgba(27,24,19,…)` and stay light-ink at night, `.btn-primary` included.
+**Traps the review found that are not in the doc's tables**: `a { color: var(--color-accent) }` is a base rule, so any card title that is a link turns vermillion by default — set the colour on the card, not the link; the host `.topbar`'s trailing `.hint` has no room at 390 px and overlaps the theme toggle (`SessionGrid`); five shadows hardcode `rgba(27,24,19,…)` and stay light-ink at night, `.btn-primary` included.
+
+## What each colour may mean — applied (2026-11-03, UI review H4)
+
+**Decision** (COS-22's measured proposal, applied in CSS + JSX, no new token):
+
+| Colour | May mean | Never means |
+| --- | --- | --- |
+| Vermillion `--color-accent` | the brand, the active rail entry, the focus ring, a link in prose, the active option of a group | a title, a date, a count, a slider, a checkbox, a Pause button |
+| Ink `--color-text` | titles, the primary action (`.btn-primary`), form controls (sliders, checkboxes, radios: `accent-color: var(--color-text)`) | — |
+| Green / red `pick` / `reject` | a verdict on a frame | a count, a queue state |
+| Red button `btn-reject` | a destructive action that is **confirmed** (dialog or acknowledgement box) | a reversible one: Pause, Remove from history, Cancel |
+| Amber | attention (pending, paused) | a zero |
+
+**Why**: there is no `danger` token — red is both verdict and destructive — so the only thing keeping it legible is never spending it on something reversible. Pause was red, two un-confirmed "Remove from history" were red, three sliders and nine checkbox rules were vermillion: a rate-settings page carried three "alerts" for nothing.
+
+**How to apply**: every `accent-color` in `globals.css` is ink except `.modal-ack input` (`reject`: the "I understand" box of a deletion, correct). Pause is neutral `btn` and Resume `btn-primary`; while paused the amber pill carries the state, not the button. A count (`.bulk-count-num.has`) is ink. `.tl-ch-dates` (the Timeline's chapter dates) is still vermillion on purpose: it waits on the maintainer's Timeline rework decision — do not "fix" it in passing.
+
+## Three control heights, 44 px under a finger — applied (2026-11-03, UI review T2 + A3)
+
+**Decision**: `--control-h-sm` 28 / `--control-h-md` 36 / `--control-h-lg` 44, declared in a plain `:root` beside the `--heat-*` block (not `@theme`, which drops a variable outside Tailwind's namespaces), and the only heights a control takes. sm = compact controls in a band (clickable `button.chip`, `.btn-sm`, `.pipeline-tabs`, `.view-toggle`/`.layout-toggle`, the bulk bar, `.fail-actions`); md = the default (`.btn`, `.btn-icon`, `.input`, `.select`, `.seg-actions`, `.fail-tab`, `.tabs`, and every control of `.page-tools`/`.pl-toolbar`, whose `--tb-control-h` now reads `md`); lg = everything tappable under `(pointer: coarse)`, one unlayered block right after the tokens.
+
+**How to apply**: a control sets `min-height: var(--control-h-*)` and drops its vertical padding; a segmented group sets it on the SHELL (`.tabs`, `.view-toggle`, `.seg-actions`, `.pipeline-tabs`) and its segments stretch — putting md on `.view-btn` inside a padded shell would make the group 42. An icon button is as wide as it is tall. A clickable chip keeps its 28 px look and gets a 44 px `::after` hit area under a coarse pointer (`button.chip` is `relative` for it) — option (a) of COS-22, so a phone's filter bars do not double; the area overhangs 6 px up, 3 px sideways and 10 px down, because a later sibling paints and hit-tests on top, so only the top and left overhang can steal a neighbour's tap and both stay within `.chips`' 6 px gap; a display chip (`span.chip`), `.pill` and `.tag` do not move. The coarse block is unlayered so a toolbar's fixed `height` cannot win against it: `min-height` beats `height`. The ≤767 px block no longer shrinks `.tab`. A new control rule takes one of the three tokens or no height — never a pixel value. Every former 44 px control now reads `--control-h-lg`; pixel heights remain on rows, thumbs and avatars, on two deliberate oversizes (`.body-chooser-confirm` 48, the deck's play overlay 56) and on a few one-off controls the review did not list (32–40 px) — move each to a token when you touch it, do not read the file as clean.
+
+**Not done**: the three older `(pointer: coarse)` blocks stay where they are (they hide keyboard hints and the viewer's step/zoom beside the components they belong to, so merging them would scatter the reasoning); `.pill`, `.tag` and `.chip` tones are untouched. Verified by build output and computed CSS only — no browser could run in the session that shipped it, so the 390 px pass is the reviewer's.
 
 ## Running the UI locally for a screenshot pass (2026-09-13)
 
