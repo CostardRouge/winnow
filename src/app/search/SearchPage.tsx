@@ -41,6 +41,7 @@ import {
   type LibrarySource,
 } from "../LibrarySourceTabs";
 import type { AssetGridRow } from "@/lib/types";
+import { readJson, searchFailureMessage } from "@/lib/searchFailure";
 
 // The API returns the usual grid rows plus the cosine distance it ranked by.
 type Item = AssetGridRow & { distance: number };
@@ -186,15 +187,23 @@ function SearchPage() {
         const res = await fetch(
           `/api/search?q=${encodeURIComponent(text)}&limit=${LIMIT}&source=${activeSource}`,
         );
-        const data = await res.json();
+        // Read as text first: in front of the instance a gateway can answer
+        // with its own HTML page (a 502/504/524), never JSON (lib/searchFailure.ts).
+        const body = await res.text();
+        const data = readJson(body) as {
+          enabled?: boolean;
+          items?: Item[];
+          indexed?: unknown;
+          library?: unknown;
+        } | null;
         if (data?.enabled === false) {
           setItems([]);
           setState("disabled");
           return;
         }
-        if (!res.ok) {
+        if (!res.ok || !data) {
           setState("error");
-          setMsg(data?.detail || data?.error || "Search failed");
+          setMsg(searchFailureMessage(res.status, body));
           return;
         }
         setItems(data.items ?? []);
