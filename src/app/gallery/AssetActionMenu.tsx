@@ -5,6 +5,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 // Reusable right-click action menu for a single asset, shared by the gallery
 // grid and the session grid. The host handles each emitted action (it owns the
 // optimistic state + the network call), so this stays purely presentational.
+//
+// `readOnly` is the Gallery's form (finalized masters, curation off): only the
+// maintenance entries — download, regenerate, resolve location, ML — none of
+// which writes a verdict, a tag, an export or a delete, nor touches an original.
 
 export type AssetMenuAction =
   | { kind: "verdict"; verdict: "pick" | "reject" | "unrated" }
@@ -26,11 +30,23 @@ export type AssetMenuAction =
   | { kind: "pile_keep_sharpest" }
   | { kind: "pile_export" };
 
+// What the `readOnly` menu offers, and all a read-only host acts on: none of
+// these writes curation (verdict, star, tag, export, trash) or an original.
+// "Set location…" is deliberately absent: a manual pin is written back INTO the
+// original's EXIF (lib/exifWrite.ts).
+export const MAINTENANCE_ACTIONS: ReadonlySet<AssetMenuAction["kind"]> = new Set([
+  "download",
+  "regenerate",
+  "geocode",
+  "ml",
+]);
+
 export default function AssetActionMenu({
   x,
   y,
   label,
   pile,
+  readOnly = false,
   onAction,
   onClose,
 }: {
@@ -40,6 +56,8 @@ export default function AssetActionMenu({
   /** When the asset belongs to a burst pile: its live frame count. Shows the
       pile section (pick/reject/keep-one/export the whole stack). */
   pile?: { count: number } | null;
+  /** Maintenance entries only: no verdict, star, pile, tag, export or delete. */
+  readOnly?: boolean;
   onAction: (a: AssetMenuAction) => void;
   onClose: () => void;
 }) {
@@ -91,112 +109,116 @@ export default function AssetActionMenu({
     >
       {label && <div className="ctx-label">{label}</div>}
 
-      <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "pick" })}>
-        <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>✓</span> Pick
-      </button>
-      <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "reject" })}>
-        <span className="ctx-ic" style={{ color: "var(--color-reject)" }}>✕</span> Reject
-      </button>
-      <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "unrated" })}>
-        <span className="ctx-ic">↺</span> Clear verdict
-      </button>
-
-      <div className="ctx-stars" role="group" aria-label="Rate">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            className="ctx-star"
-            title={`${n} star${n > 1 ? "s" : ""}`}
-            onClick={() => fire({ kind: "star", star: n })}
-          >
-            ★
-          </button>
-        ))}
-        <button
-          className="ctx-star ctx-star-off"
-          title="Clear stars"
-          onClick={() => fire({ kind: "star", star: 0 })}
-        >
-          ✕
-        </button>
-      </div>
-
-      {pile && pile.count > 1 && (
+      {!readOnly && (
         <>
+          <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "pick" })}>
+            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>✓</span> Pick
+          </button>
+          <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "reject" })}>
+            <span className="ctx-ic" style={{ color: "var(--color-reject)" }}>✕</span> Reject
+          </button>
+          <button className="ctx-item" onClick={() => fire({ kind: "verdict", verdict: "unrated" })}>
+            <span className="ctx-ic">↺</span> Clear verdict
+          </button>
+
+          <div className="ctx-stars" role="group" aria-label="Rate">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                className="ctx-star"
+                title={`${n} star${n > 1 ? "s" : ""}`}
+                onClick={() => fire({ kind: "star", star: n })}
+              >
+                ★
+              </button>
+            ))}
+            <button
+              className="ctx-star ctx-star-off"
+              title="Clear stars"
+              onClick={() => fire({ kind: "star", star: 0 })}
+            >
+              ✕
+            </button>
+          </div>
+
+          {pile && pile.count > 1 && (
+            <>
+              <div className="ctx-sep" />
+              <div className="ctx-label">Pile · {pile.count} frames</div>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_keep" })}
+              >
+                <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◉</span>
+                Keep this one, reject the rest
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_keep_sharpest" })}
+                title="Let the sharpness analysis pick the keeper"
+              >
+                <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◆</span>
+                Keep sharpest, reject the rest
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_verdict", verdict: "pick" })}
+              >
+                <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>✓</span>
+                Pick whole pile
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_verdict", verdict: "reject" })}
+              >
+                <span className="ctx-ic" style={{ color: "var(--color-reject)" }}>✕</span>
+                Reject whole pile
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_verdict", verdict: "unrated" })}
+              >
+                <span className="ctx-ic">↺</span> Clear pile verdicts
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => fire({ kind: "pile_export" })}
+              >
+                <span className="ctx-ic">⤓</span> Export pile
+              </button>
+            </>
+          )}
+
           <div className="ctx-sep" />
-          <div className="ctx-label">Pile · {pile.count} frames</div>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_keep" })}
-          >
-            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◉</span>
-            Keep this one, reject the rest
-          </button>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_keep_sharpest" })}
-            title="Let the sharpness analysis pick the keeper"
-          >
-            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>◆</span>
-            Keep sharpest, reject the rest
-          </button>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_verdict", verdict: "pick" })}
-          >
-            <span className="ctx-ic" style={{ color: "var(--color-pick)" }}>✓</span>
-            Pick whole pile
-          </button>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_verdict", verdict: "reject" })}
-          >
-            <span className="ctx-ic" style={{ color: "var(--color-reject)" }}>✕</span>
-            Reject whole pile
-          </button>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_verdict", verdict: "unrated" })}
-          >
-            <span className="ctx-ic">↺</span> Clear pile verdicts
-          </button>
-          <button
-            className="ctx-item"
-            onClick={() => fire({ kind: "pile_export" })}
-          >
-            <span className="ctx-ic">⤓</span> Export pile
+
+          {tagging ? (
+            <form
+              className="ctx-tag"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (tag.trim()) fire({ kind: "tag", name: tag });
+              }}
+            >
+              <input
+                autoFocus
+                className="input"
+                placeholder="tag name…"
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                style={{ width: "100%", padding: "4px 8px" }}
+              />
+            </form>
+          ) : (
+            <button className="ctx-item" onClick={() => setTagging(true)}>
+              <span className="ctx-ic">#</span> Tag…
+            </button>
+          )}
+
+          <button className="ctx-item" onClick={() => fire({ kind: "export" })}>
+            <span className="ctx-ic">⤓</span> Export
           </button>
         </>
       )}
-
-      <div className="ctx-sep" />
-
-      {tagging ? (
-        <form
-          className="ctx-tag"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (tag.trim()) fire({ kind: "tag", name: tag });
-          }}
-        >
-          <input
-            autoFocus
-            className="input"
-            placeholder="tag name…"
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            style={{ width: "100%", padding: "4px 8px" }}
-          />
-        </form>
-      ) : (
-        <button className="ctx-item" onClick={() => setTagging(true)}>
-          <span className="ctx-ic">#</span> Tag…
-        </button>
-      )}
-
-      <button className="ctx-item" onClick={() => fire({ kind: "export" })}>
-        <span className="ctx-ic">⤓</span> Export
-      </button>
 
       <button className="ctx-item" onClick={() => fire({ kind: "download" })}>
         <span className="ctx-ic">⇩</span> Download original
@@ -214,11 +236,14 @@ export default function AssetActionMenu({
         <span className="ctx-ic">☻</span> Detect faces &amp; text
       </button>
 
-      <div className="ctx-sep" />
-
-      <button className="ctx-item ctx-danger" onClick={() => fire({ kind: "delete" })}>
-        <span className="ctx-ic">🗑</span> Delete
-      </button>
+      {!readOnly && (
+        <>
+          <div className="ctx-sep" />
+          <button className="ctx-item ctx-danger" onClick={() => fire({ kind: "delete" })}>
+            <span className="ctx-ic">🗑</span> Delete
+          </button>
+        </>
+      )}
     </div>
   );
 }

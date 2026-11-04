@@ -47,6 +47,20 @@ test("self-service prefixes are viewer even when mutating", () => {
   assert.equal(requiredRole("PUT", "/api/apps/atelier/docs/trip-1"), "viewer");
 });
 
+// The Gallery (finalized masters, curation off) offers these four from its
+// viewer, context menu and bulk bar. The guard decides by method + path alone:
+// nothing about the asset's root reaches it, and the handlers filter only on
+// deleted_at / gps / a derivative to feed — so a Gallery id passes exactly as
+// an Incoming one does (Settings › Pipeline › Media, the workaround until now,
+// calls the very same routes). Moving one under an admin prefix would take the
+// action away from editors in both sections; this says so first.
+test("the Gallery's maintenance actions are gated by role, never by section", () => {
+  assert.equal(requiredRole("POST", "/api/assets/regenerate"), "editor");
+  assert.equal(requiredRole("POST", "/api/assets/geocode"), "editor");
+  assert.equal(requiredRole("POST", "/api/assets/ml"), "editor");
+  assert.equal(requiredRole("GET", "/api/assets/42/download"), "viewer");
+});
+
 test("a prefix matches whole path segments only", () => {
   // `/api/rootsx` is not under `/api/roots`.
   assert.equal(requiredRole("POST", "/api/rootsx"), "editor");

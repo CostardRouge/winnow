@@ -16,6 +16,10 @@ import type { DownloadFile } from "@/lib/assetActions";
 // in the host so each surface keeps its own optimistic state. This is the
 // many-asset mirror of the per-asset context menu and the in-viewer
 // ViewerActions, kept in one place so the three stay in step.
+//
+// The curation verbs (verdicts, stars, tag, export, delete) are opt-in like the
+// maintenance ones: the Gallery, where curation is off, passes none of them and
+// gets a bar of download + the maintenance ⋯ (regenerate, resolve location, ML).
 export default function BulkActionBar({
   count,
   onSelectAll,
@@ -40,12 +44,14 @@ export default function BulkActionBar({
   onSelectAll: () => void;
   /** Drop the current selection (stays in select mode). */
   onClear: () => void;
-  onPick: () => void;
-  onReject: () => void;
-  onStar: (n: number) => void;
+  /** The verdict and star group, shown when `onPick` is given. Omitted where
+   * curation is off (the Gallery). */
+  onPick?: () => void;
+  onReject?: () => void;
+  onStar?: (n: number) => void;
   /** Add (`add`) or remove a tag by name across the selection. */
-  onTag: (name: string, add: boolean) => void;
-  onExport: () => void;
+  onTag?: (name: string, add: boolean) => void;
+  onExport?: () => void;
   /** Pull the selection's original files down (the shared DownloadMenu: ZIP /
    * each file / save-to-folder). Omitted when the host doesn't offer it. */
   download?: {
@@ -71,7 +77,9 @@ export default function BulkActionBar({
   /** (Re)run the ML analysis (faces + OCR) on the selection. Omitted when the
    * host surface doesn't offer it. */
   onMl?: () => void;
-  onDelete: () => void;
+  /** Soft-delete the selection (⋯ menu + the Delete key). Omitted where
+   * curation is off. */
+  onDelete?: () => void;
 }) {
   const [tagInput, setTagInput] = useState("");
   const [tagOpen, setTagOpen] = useState(false);
@@ -83,7 +91,7 @@ export default function BulkActionBar({
   // soft-delete the host's onDelete already runs. Bound here (not per-host)
   // so it comes for free wherever this bar mounts, same as the click path.
   useEffect(() => {
-    if (none) return;
+    if (none || !onDelete) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       // Don't hijack while typing (e.g. the tag popover's input).
@@ -115,7 +123,7 @@ export default function BulkActionBar({
   }, [tagOpen]);
 
   const tag = (add: boolean) => {
-    if (!tagInput.trim()) return;
+    if (!tagInput.trim() || !onTag) return;
     onTag(tagInput, add);
     setTagOpen(false);
   };
@@ -194,14 +202,18 @@ export default function BulkActionBar({
           } as MenuItem,
         ]
       : []),
-    {
-      key: "delete",
-      label: "Delete…",
-      icon: "🗑",
-      danger: true,
-      disabled: none,
-      onSelect: onDelete,
-    },
+    ...(onDelete
+      ? [
+          {
+            key: "delete",
+            label: "Delete…",
+            icon: "🗑",
+            danger: true,
+            disabled: none,
+            onSelect: onDelete,
+          } as MenuItem,
+        ]
+      : []),
   ];
 
   return (
@@ -216,70 +228,78 @@ export default function BulkActionBar({
       <button className="btn" disabled={none} onClick={onClear} title="Drop the selection">
         None
       </button>
-      <span className="ctx-sep-v" aria-hidden />
-      <button className="btn btn-pick" disabled={none} onClick={onPick}>
-        ✓<span className="bulk-label">Pick</span>
-      </button>
-      <button className="btn btn-reject" disabled={none} onClick={onReject}>
-        ✕<span className="bulk-label">Reject</span>
-      </button>
-      <span className="bulk-stars" role="group" aria-label="Rate selection">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            className="btn bulk-star"
-            disabled={none}
-            title={`${n} star${n > 1 ? "s" : ""}`}
-            onClick={() => onStar(n)}
-          >
-            ★
+      {onPick && onReject && onStar && (
+        <>
+          <span className="ctx-sep-v" aria-hidden />
+          <button className="btn btn-pick" disabled={none} onClick={onPick}>
+            ✓<span className="bulk-label">Pick</span>
           </button>
-        ))}
-      </span>
+          <button className="btn btn-reject" disabled={none} onClick={onReject}>
+            ✕<span className="bulk-label">Reject</span>
+          </button>
+          <span className="bulk-stars" role="group" aria-label="Rate selection">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                className="btn bulk-star"
+                disabled={none}
+                title={`${n} star${n > 1 ? "s" : ""}`}
+                onClick={() => onStar(n)}
+              >
+                ★
+              </button>
+            ))}
+          </span>
+        </>
+      )}
       <span className="ctx-sep-v" aria-hidden />
-      <span className="bulk-tag-wrap" ref={tagRef}>
-        <button
-          className={`btn${tagOpen ? " is-open" : ""}`}
-          disabled={none}
-          aria-haspopup="true"
-          aria-expanded={tagOpen}
-          title="Add or remove a tag across the selection"
-          onClick={() => setTagOpen((o) => !o)}
-        >
-          #<span className="bulk-label">Tag</span>
-        </button>
-        {tagOpen && (
-          <form
-            className="bulk-tag-pop"
-            onSubmit={(e) => {
-              e.preventDefault();
-              tag(true);
-            }}
+      {onTag && (
+        <span className="bulk-tag-wrap" ref={tagRef}>
+          <button
+            className={`btn${tagOpen ? " is-open" : ""}`}
+            disabled={none}
+            aria-haspopup="true"
+            aria-expanded={tagOpen}
+            title="Add or remove a tag across the selection"
+            onClick={() => setTagOpen((o) => !o)}
           >
-            <input
-              autoFocus
-              className="input"
-              placeholder="tag name"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-            />
-            <button type="submit" className="btn" disabled={noTag}>
-              + Add
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={noTag}
-              onClick={() => tag(false)}
+            #<span className="bulk-label">Tag</span>
+          </button>
+          {tagOpen && (
+            <form
+              className="bulk-tag-pop"
+              onSubmit={(e) => {
+                e.preventDefault();
+                tag(true);
+              }}
             >
-              − Remove
-            </button>
-          </form>
-        )}
-      </span>
-      <button className="btn" disabled={none} onClick={onExport}>
-        ⤓<span className="bulk-label">Export</span>
-      </button>
+              <input
+                autoFocus
+                className="input"
+                placeholder="tag name"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+              />
+              <button type="submit" className="btn" disabled={noTag}>
+                + Add
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={noTag}
+                onClick={() => tag(false)}
+              >
+                − Remove
+              </button>
+            </form>
+          )}
+        </span>
+      )}
+      {onExport && (
+        <button className="btn" disabled={none} onClick={onExport}>
+          ⤓<span className="bulk-label">Export</span>
+        </button>
+      )}
       {download && (
         <DownloadMenu
           zipHref={download.zipHref}
