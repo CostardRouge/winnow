@@ -17,7 +17,10 @@ import FilterPanel, {
   type Facets,
 } from "./FilterPanel";
 import Tree, { type PathSeg } from "./Tree";
-import AssetActionMenu, { type AssetMenuAction } from "./AssetActionMenu";
+import AssetActionMenu, {
+  MAINTENANCE_ACTIONS,
+  type AssetMenuAction,
+} from "./AssetActionMenu";
 import { ViewSegments, type SectionView, type ViewContext } from "./ViewSwitch";
 import SimilarStrip from "./SimilarStrip";
 import MediaViewer from "../MediaViewer";
@@ -50,7 +53,13 @@ import { EmptyState, Icons, LoadingState, Spinner } from "../ui";
 // Reusable gallery shell, parameterized by a `scope` (folder role):
 //   - no scope          → the whole library (route /gallery, power-user);
 //   - scope="incoming"  → full culling (rating, tags, selection);
-//   - scope="final"     → read-only (readOnly): no rating, no export.
+//   - scope="final"     → curation off (readOnly): no rating, tag, export or
+//                          delete — finalized masters are accepted as they are.
+//                          The MAINTENANCE actions stay (download the original,
+//                          regenerate derivatives, resolve location, re-run ML):
+//                          they write nothing into curation or the originals,
+//                          and the Gallery's broken thumbnail is fixed where it
+//                          is seen instead of from Settings › Pipeline › Media.
 // `kind` (= scope) is injected into every call (assets/facets/tree) BUT is not
 // stored in Filters: "Reset" must never clear the tab scope.
 //
@@ -317,7 +326,8 @@ export default function GalleryShell({
   /** Notified whenever filters change, so the host can mirror them to the URL. */
   onFiltersChange?: (f: Filters) => void;
 }) {
-  // Final = read-only: hide culling/selection/export.
+  // Final = curation off: no verdict, star, tag, export, delete or geotag.
+  // Selection, the context menu and the viewer's ⋯ stay, maintenance only.
   const readOnly = scope === "final";
 
   const [facets, setFacets] = useState<Facets | null>(null);
@@ -943,6 +953,9 @@ export default function GalleryShell({
   // Dispatch a context-menu action onto a single asset.
   const onMenuAction = useCallback(
     (id: number, action: AssetMenuAction) => {
+      // The read-only menu never emits these; refuse them anyway, so curation
+      // stays off in the Gallery whatever the menu draws.
+      if (readOnly && !MAINTENANCE_ACTIONS.has(action.kind)) return;
       switch (action.kind) {
         case "verdict":
           return void rate(id, { verdict: action.verdict });
@@ -964,7 +977,7 @@ export default function GalleryShell({
           return void removeAssets([id]);
       }
     },
-    [rate, assignTags, exportSelection, regenerateSelection, geocodeSelection, mlSelection, removeAssets],
+    [readOnly, rate, assignTags, exportSelection, regenerateSelection, geocodeSelection, mlSelection, removeAssets],
   );
 
   // Rating shortcuts inside the viewer (p/x/u + 0–5). Navigation and
@@ -1056,7 +1069,7 @@ export default function GalleryShell({
     // grid's last rows can scroll up past it (see .bulk-bar in globals.css).
     <main
       className={`gallery-main${
-        mode === "grid" && !readOnly && selectMode ? " has-bulk-bar" : ""
+        mode === "grid" && selectMode ? " has-bulk-bar" : ""
       }`}
     >
       {mode === "map" ? (
@@ -1102,10 +1115,10 @@ export default function GalleryShell({
                   loadMore={loadMore}
                   targetWidth={GRID_SIZES[gridSize].w}
                   onOpen={setViewer}
-                  selectMode={!readOnly && selectMode}
+                  selectMode={selectMode}
                   selectedIds={selected}
                   onToggleSelect={toggleSelect}
-                  onContextMenu={readOnly ? undefined : openTileMenu}
+                  onContextMenu={openTileMenu}
                 />
                 {/* Paging in the next page while the grid stays on screen. */}
                 {loading && items.length > 0 && (
@@ -1153,20 +1166,18 @@ export default function GalleryShell({
         >
           {Icons.gridSize}
         </button>
-        {!readOnly && (
-          <button
-            className={`icon-toggle${selectMode ? " active" : ""}`}
-            onClick={() => {
-              setSelectMode((m) => !m);
-              setSelected(new Set());
-            }}
-            aria-label={selectMode ? "Done selecting" : "Select multiple"}
-            aria-pressed={selectMode}
-            title={selectMode ? "Done selecting" : "Select multiple"}
-          >
-            {Icons.select}
-          </button>
-        )}
+        <button
+          className={`icon-toggle${selectMode ? " active" : ""}`}
+          onClick={() => {
+            setSelectMode((m) => !m);
+            setSelected(new Set());
+          }}
+          aria-label={selectMode ? "Done selecting" : "Select multiple"}
+          aria-pressed={selectMode}
+          title={selectMode ? "Done selecting" : "Select multiple"}
+        >
+          {Icons.select}
+        </button>
       </>
     ),
     render: () => renderGalleryMain("grid"),
@@ -1271,16 +1282,28 @@ export default function GalleryShell({
         )}
       </div>
 
-      {!readOnly && selectMode && view === "grid" && (
+      {selectMode && view === "grid" && (
         <BulkActionBar
           count={selected.size}
           onSelectAll={() => setSelected(new Set(items.map((i) => i.id)))}
           onClear={() => setSelected(new Set())}
-          onPick={() => rateMany([...selected], { verdict: "pick" })}
-          onReject={() => rateMany([...selected], { verdict: "reject" })}
-          onStar={(n) => rateMany([...selected], { star: n })}
-          onTag={(name, add) => assignTags([...selected], name, add)}
-          onExport={() => exportSelection([...selected])}
+          // Curation (verdicts, stars, tag, export, geotag, body, backlog,
+          // delete) is off in the Gallery: only the download and the
+          // maintenance ⋯ ride its bar.
+          {...(readOnly
+            ? {}
+            : {
+                onPick: () => rateMany([...selected], { verdict: "pick" }),
+                onReject: () => rateMany([...selected], { verdict: "reject" }),
+                onStar: (n: number) => rateMany([...selected], { star: n }),
+                onTag: (name: string, add: boolean) =>
+                  assignTags([...selected], name, add),
+                onExport: () => exportSelection([...selected]),
+                onGeotag: () => geotagSelection([...selected]),
+                onSetDevice: () => setDeviceSelection([...selected]),
+                onExempt: (exempt: boolean) => exemptSelection([...selected], exempt),
+                onDelete: () => removeAssets([...selected]),
+              })}
           download={{
             zipHref: selectionZipHref([...selected]),
             zipUnavailable: selectionZipUnavailable(selected.size),
@@ -1293,11 +1316,7 @@ export default function GalleryShell({
           }}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
-          onGeotag={() => geotagSelection([...selected])}
-          onSetDevice={() => setDeviceSelection([...selected])}
-          onExempt={(exempt) => exemptSelection([...selected], exempt)}
           onMl={() => mlSelection([...selected])}
-          onDelete={() => removeAssets([...selected])}
         />
       )}
 
@@ -1422,14 +1441,10 @@ export default function GalleryShell({
             setViewer(null);
           }}
           onKeyDown={onViewerKey}
-          onContextMenu={
-            readOnly
-              ? undefined
-              : (e, it) => {
-                  e.preventDefault();
-                  setMenu({ x: e.clientX, y: e.clientY, id: it.id });
-                }
-          }
+          onContextMenu={(e, it) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY, id: it.id });
+          }}
           renderInfo={(it) => (
             <>
               {((it.tags ?? []).length || !readOnly) && (
@@ -1454,7 +1469,16 @@ export default function GalleryShell({
           )}
           renderActions={
             readOnly
-              ? undefined
+              ? (it) => (
+                  // Curation off: a bare ⋯ More holding the maintenance
+                  // entries only (cf. ViewerActions — every action is opt-in).
+                  <ViewerActions
+                    onDownload={() => downloadAssetOriginal(it.id)}
+                    onRegenerate={() => regenerateSelection([it.id])}
+                    onGeocode={() => geocodeSelection([it.id])}
+                    onMl={() => mlSelection([it.id])}
+                  />
+                )
               : (it) => (
                   <ViewerActions
                     verdict={it.verdict}
@@ -1498,6 +1522,7 @@ export default function GalleryShell({
               ? mapAsset
               : items.find((i) => i.id === menu.id))?.filename
           }
+          readOnly={readOnly}
           onAction={(action) => onMenuAction(menu.id, action)}
           onClose={() => setMenu(null)}
         />

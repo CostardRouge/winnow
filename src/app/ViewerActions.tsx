@@ -15,6 +15,11 @@ import type { Verdict } from "@/lib/types";
 //
 // Shared by every full-screen viewer (the gallery lightbox and the session
 // triage viewer) so the culling controls read identically everywhere.
+//
+// Every action is opt-in: a group or a menu entry renders only when its handler
+// is passed. The Gallery (finalized masters, curation off) passes the
+// maintenance entries alone — download, regenerate, resolve location, ML — so
+// it gets a bare "⋯ More" with nothing that rates, tags, exports or deletes.
 export default function ViewerActions({
   verdict,
   star,
@@ -29,21 +34,23 @@ export default function ViewerActions({
   onDelete,
   onTag,
 }: {
-  verdict: Verdict;
-  star: number;
-  onVerdict: (v: Verdict) => void;
-  onStar: (n: number) => void;
-  onExport: () => void;
+  verdict?: Verdict;
+  star?: number;
+  /** Optional: the Pick/Reject toggle. Omitted where curation is off. */
+  onVerdict?: (v: Verdict) => void;
+  /** Optional: the star row. Omitted where curation is off. */
+  onStar?: (n: number) => void;
+  onExport?: () => void;
   /** Optional: pull the original file down to inspect it (works pre-derivative). */
   onDownload?: () => void;
-  onRegenerate: () => void;
+  onRegenerate?: () => void;
   /** Optional: resolve the GPS coordinates to place names (country/city/POI). */
   onGeocode?: () => void;
   /** Optional: manually set the capture location (picker + recap flow). */
   onGeotag?: () => void;
   /** Optional: (re)run the ML analysis (faces + OCR) on this media. */
   onMl?: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   /** Optional: when provided, the overflow menu offers a quick tag input. */
   onTag?: (name: string) => void;
 }) {
@@ -80,50 +87,55 @@ export default function ViewerActions({
   }
 
   // Toggle semantics: re-selecting the current verdict/star clears it.
-  const toggleVerdict = (v: Verdict) => onVerdict(verdict === v ? "unrated" : v);
-  const toggleStar = (n: number) => onStar(star === n ? 0 : n);
+  const toggleVerdict = (v: Verdict) => onVerdict?.(verdict === v ? "unrated" : v);
+  const toggleStar = (n: number) => onStar?.(star === n ? 0 : n);
+  const rating = star ?? 0;
 
   return (
     <div className="viewer-actions">
-      <div className="vbar-verdict" role="group" aria-label="Verdict">
-        <button
-          type="button"
-          className={`vbar-btn vbar-reject${verdict === "reject" ? " active" : ""}`}
-          aria-pressed={verdict === "reject"}
-          title="Reject (X) · click again to clear"
-          onClick={() => toggleVerdict("reject")}
-        >
-          ✕ <span className="vbar-label">Reject</span>
-        </button>
-        <button
-          type="button"
-          className={`vbar-btn vbar-pick${verdict === "pick" ? " active" : ""}`}
-          aria-pressed={verdict === "pick"}
-          title="Pick (P) · click again to clear"
-          onClick={() => toggleVerdict("pick")}
-        >
-          ✓ <span className="vbar-label">Pick</span>
-        </button>
-      </div>
-
-      <div className="vbar-stars" role="group" aria-label="Rating">
-        {[1, 2, 3, 4, 5].map((n) => (
+      {onVerdict && (
+        <div className="vbar-verdict" role="group" aria-label="Verdict">
           <button
-            key={n}
             type="button"
-            className={`vbar-star${star >= n ? " on" : ""}`}
-            aria-pressed={star >= n}
-            title={
-              star === n
-                ? "Click to clear the rating"
-                : `${n} star${n > 1 ? "s" : ""}`
-            }
-            onClick={() => toggleStar(n)}
+            className={`vbar-btn vbar-reject${verdict === "reject" ? " active" : ""}`}
+            aria-pressed={verdict === "reject"}
+            title="Reject (X) · click again to clear"
+            onClick={() => toggleVerdict("reject")}
           >
-            ★
+            ✕ <span className="vbar-label">Reject</span>
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            className={`vbar-btn vbar-pick${verdict === "pick" ? " active" : ""}`}
+            aria-pressed={verdict === "pick"}
+            title="Pick (P) · click again to clear"
+            onClick={() => toggleVerdict("pick")}
+          >
+            ✓ <span className="vbar-label">Pick</span>
+          </button>
+        </div>
+      )}
+
+      {onStar && (
+        <div className="vbar-stars" role="group" aria-label="Rating">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              className={`vbar-star${rating >= n ? " on" : ""}`}
+              aria-pressed={rating >= n}
+              title={
+                rating === n
+                  ? "Click to clear the rating"
+                  : `${n} star${n > 1 ? "s" : ""}`
+              }
+              onClick={() => toggleStar(n)}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="vbar-more" ref={wrap}>
         <button
@@ -167,17 +179,19 @@ export default function ViewerActions({
                   <span className="vbar-menu-ic">#</span> Tag…
                 </button>
               ))}
-            <button
-              type="button"
-              role="menuitem"
-              className="vbar-menu-item"
-              onClick={() => {
-                onExport();
-                close();
-              }}
-            >
-              <span className="vbar-menu-ic">⤓</span> Export
-            </button>
+            {onExport && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                onClick={() => {
+                  onExport();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">⤓</span> Export
+              </button>
+            )}
             {onDownload && (
               <button
                 type="button"
@@ -191,17 +205,19 @@ export default function ViewerActions({
                 <span className="vbar-menu-ic">⇩</span> Download original
               </button>
             )}
-            <button
-              type="button"
-              role="menuitem"
-              className="vbar-menu-item"
-              onClick={() => {
-                onRegenerate();
-                close();
-              }}
-            >
-              <span className="vbar-menu-ic">↻</span> Regenerate derivatives
-            </button>
+            {onRegenerate && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                onClick={() => {
+                  onRegenerate();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">↻</span> Regenerate derivatives
+              </button>
+            )}
             {onGeocode && (
               <button
                 type="button"
@@ -241,18 +257,22 @@ export default function ViewerActions({
                 <span className="vbar-menu-ic">☻</span> Detect faces &amp; text
               </button>
             )}
-            <div className="vbar-menu-sep" />
-            <button
-              type="button"
-              role="menuitem"
-              className="vbar-menu-item danger"
-              onClick={() => {
-                onDelete();
-                close();
-              }}
-            >
-              <span className="vbar-menu-ic">🗑</span> Delete
-            </button>
+            {onDelete && (
+              <>
+                <div className="vbar-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="vbar-menu-item danger"
+                  onClick={() => {
+                    onDelete();
+                    close();
+                  }}
+                >
+                  <span className="vbar-menu-ic">🗑</span> Delete
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

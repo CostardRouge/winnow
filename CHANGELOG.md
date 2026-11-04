@@ -11,6 +11,9 @@ were given after the fact to the history's turning points.
 
 ### Added
 
+- The Gallery offers its maintenance actions where you see the media: Download original, Regenerate derivatives,
+  Resolve location and Detect faces & text, from the viewer's ⋯ More, a right-click on a tile, or a multi-selection.
+  Curation stays off there — no rating, tag, export or delete.
 - Atelier can keep a Storytelling series' script and a Mosaic on your Winnow, so another device opens the same
   one.
 
