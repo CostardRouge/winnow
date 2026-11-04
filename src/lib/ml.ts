@@ -178,6 +178,9 @@ function toVectorLiteral(embedding: number[]): string {
   return `[${embedding.join(",")}]`;
 }
 
+/** How long a search waits for the container to read its words: a text embedding takes well under a second once the model is loaded, a few seconds while it loads. */
+const TEXT_TIMEOUT_MS = 20_000;
+
 // Embed a natural-language query with the SAME CLIP model's TEXTUAL head, so the
 // vector lives in the same cosine space as the stored visual embeddings. One
 // /predict call, the `text` form field instead of an image. Used by /api/search;
@@ -201,10 +204,14 @@ export async function embedText(query: string): Promise<number[]> {
   );
   form.set("text", query);
 
+  // A person is waiting, and Cloudflare cuts the request at 100 s (a 524 the
+  // page cannot read): a search gives the container TEXT_TIMEOUT_MS, never the
+  // worker's ML_TIMEOUT_MS (120 s by default) — a hung container (2026-11-03,
+  // docs/memory/pipeline.md) then fails in seconds with the route's own 502.
   const res = await fetch(url, {
     method: "POST",
     body: form,
-    signal: AbortSignal.timeout(config.ml.timeoutMs),
+    signal: AbortSignal.timeout(Math.min(config.ml.timeoutMs, TEXT_TIMEOUT_MS)),
   });
   if (!res.ok) throw httpError(res.status, url);
   const data = (await res.json()) as ImmichPredictResponse;

@@ -26,6 +26,8 @@ were given after the fact to the history's turning points.
 - An edit sent back from Atelier is linked to the photo or clip it was made from as soon as it is indexed, whoever sent
   it — no admin reconcile needed. An unknown or trashed source is ignored with its reason, and the edit is still
   uploaded.
+- Search says when the machine-learning container did not answer, and where to look, instead of failing with
+  «Unexpected token '<'»; it gives up after 20 seconds rather than hanging until the connection is cut.
 
 ## [1.1.0] - 2026-10-22 — Sorghum
 
