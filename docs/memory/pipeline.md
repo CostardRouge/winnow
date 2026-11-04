@@ -244,6 +244,8 @@ isolation the indexer gives each file.
 
 **The pacing redesign of record is `docs/SCAN-PACING.md` (2026-10-30, a brief, nothing built).** Its diagnosis, read from the code: `scanPerHour`/`analyzePerHour` default to 0 (unlimited), so a card is read and derived flat out; the peak is the libx264 software transcode with no `-threads` ×3, and a clip gets no grid poster until it ends; a rate counts jobs, not work, so no flat cap is both smooth and reactive; the hourly rescan costs a stat + two queries per file before the stat gate; an import rescans the whole incoming root. Its answer: detection (cheap, by directory mtime, hinted by imports) split from work (two lanes, a budget in work-seconds, scaled by PSI + package temperature, quiet hours), in five phases, phase 0 measuring first. Six calls are the maintainer's (§6). Read it before touching a rate, a concurrency, the rescan tick or a bulk enqueue.
 
+**Phase 0 is measured (2026-11-04, `docs/SCAN-PACING.md` §9; tools in `scripts/pacing/`).** What changes the design: the package hits 100 °C and throttles under work that never saturates the box (1.2 worker cores of `.hif`, one clip), so a `cpus:` cap bounds only the many-clips case; **turbo is the lever** (off: ≤ 62 °C, no throttling, 66–72 % less energy per job, ×1.85–2.2 time — but host-wide, outside this repo), EPP barely matters; PSI is blind to heat; the package temperature jumps to the ceiling and its rest level drifts, so **no temperature target** — the governor reads the throttle-count rate (over the ceiling), `fan1_input` (noise; it rose on a cool 5-core clip with nothing throttling), host PSI (busy) and the worker's cgroup PSI (its own contention). The §4.2 costs are in §9.4 (`.hif` 4.5 s with the child a lane of 1, 4K proxy 10 s + 1.45 × duration). Still owed: an import recording and its reaction delays.
+
 ## Reverse geocoding leans on a cell cache, not on the provider (2026-08-20)
 
 **Decision**: Nominatim (public instance by default) behind a coordinate-cell cache in `places`, which collapses ~90k geotagged assets into a few hundred calls, at a ~1 req/s budget.
@@ -292,7 +294,7 @@ re-read. `BURST_BRACKET_EV_EPSILON` isn't yet in `docker-compose-optiplex.yml`'s
 
 **Why**: this runs on an Optiplex in a home, not in a rack. "Faster" is not automatically better here.
 
-**How to apply**: do not raise scan concurrency or parallelise exports for a spinning NAS. If a task feels too slow, propose a rate change (live, no restart) before a concurrency change (restart, memory implications).
+**How to apply**: do not raise scan concurrency or parallelise exports for a spinning NAS. If a task feels too slow, propose a rate change (live, no restart) before a concurrency change (restart, memory implications). (2026-11-04) On the CPU side the noise is mostly **turbo**, not concurrency: one busy core costs +30 W at turbo and +4.6 W without (`docs/SCAN-PACING.md` §9.3). Measure a CPU-side change with `scripts/pacing/` before and after.
 
 ## A DJI clip carries no camera at all, and device is a join key (2026-09-19)
 

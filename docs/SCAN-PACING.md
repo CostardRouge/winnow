@@ -7,7 +7,8 @@ strategies to scan gently, over time, while staying reactive, rather than load
 peaks and the fan climbing for a while". §2 says why the box peaks today, read
 from the code; §3–§4 are the strategy; §5 orders it into pull requests; §6 is
 what only the maintainer can decide; §8 is how he runs it, from a local
-Claude Code session on the Optiplex. It builds on two findings already filed
+Claude Code session on the Optiplex; §9 is what phase 0 measured there
+(2026-11-01, 2026-11-04). It builds on two findings already filed
 and never built: ARC-03 (`pace(stage)`, `docs/CODEBASE-AUDIT.md`) and E19
 (quiet hours, `docs/SETTINGS-UI.md`), and on review items C5 and C8
 (`docs/ARCHITECTURE-REVIEW.md`).*
@@ -256,7 +257,7 @@ the job's return value. The local session of §8.2 answers the questions
 first, from the host — is PSI readable in the container, which zone is the
 package, what a .hif / a clip really costs; the panel keeps them visible
 afterwards, without a terminal. Every number in §4.2 is a placeholder until
-this runs.
+this runs — measured since: §9.4.
 
 **Phase 1 — quick wins, low risk.** (a) video poster split from the proxy;
 (b) `-threads` + nice on children; (c) one query per directory in the walk;
@@ -417,3 +418,186 @@ replace §4.2's placeholders) beside the stack. Never print a credential.
 Ask me before anything that changes the running stack. Then stop and
 summarise; we will decide phase 1 together.
 ```
+
+## 9. Phase 0 results (2026-11-01, 2026-11-04)
+
+*Measured on the Optiplex by two local sessions, as §8.2 describes: read-only
+on 2026-11-01 (image `4b0f174`) and 2026-11-04 (image `ef4c991`), plus one
+hour on 11-04 afternoon that changed the host's CPU power policy and restored
+it (§9.3). The two full reports, with the host's inventory, stay in the
+maintainer's private infrastructure notes; the raw 10 s recordings stay on the
+box. The tools are `scripts/pacing/` (its README says how to run them again,
+which §8.3 needs after each phase). No import happened in either window: the
+import recording and the reaction delays (§8.2 step 3) are still owed (§9.7).*
+
+### 9.1 What the box offers the governor
+
+| Signal | Readable in the worker? | What it is worth (§9.5) |
+|---|---|---|
+| Host PSI `/proc/pressure/{cpu,io}` | yes (the host's counters) | contention only, blind to heat |
+| Worker cgroup `cpu.pressure` (`/sys/fs/cgroup`) | yes | tells the worker's own contention (three ffmpeg) from the box's |
+| Package temperature, `thermal_zone4` = `x86_pkg_temp` | yes | jumps to the ceiling in 10 s, rest level drifts 48–82 °C over a day: too coarse for a target |
+| Fan, `dell_smm` hwmon `fan1_input` | yes | the noise itself; lags the load ~30 s and takes up to 7 min to come down. Reads above the driver's 4 000 rpm maximum under load (5 928 seen): trust its steps, not its value above ~4 000 |
+| `thermal_throttle/package_throttle_count` | yes | 0 at rest and during the rescan, +1 400–2 100/min at the ceiling: a clean "over the ceiling" signal |
+| RAPL package energy | **no, root only** | the best proportional signal; usable from the host only |
+
+The box: i7-12700 (12 C / 20 T), `intel_pstate` with EPP `balance_performance`
+and turbo on (P-cores to 4.8 GHz), RAPL PL1 65 W / PL2 202 W. The worker has
+no CPU cap (`NanoCpus 0`), `DERIVATIVE_CONCURRENCY=3`, and **every rate is 0
+on the instance, `ml_per_hour` included** (P1 is worse than written: nothing
+is paced).
+
+### 9.2 Recordings
+
+10 s samples; PSI is `some avg10` in %, mean / p95 / max; worker in cores;
+package power from RAPL on the host.
+
+| What | CPU PSI | Package °C | Fan rpm | Host CPU % | Worker | Package W | Throttle events |
+|---|---|---|---|---|---|---|---|
+| Rest (11-04 noon / afternoon) | 0.0 / 0.0 / 0.4 | 55 / 67.5 mean | ~1 800 | ~5 | 0.02 | 11–15 | 0 |
+| Hourly rescan, the walk (100 593 + 7 808 files in 54 + 10 s; 82–94 s on 11-01) | ≤ 0.1 | ≤ 75 | flat | ~8 | 0.3 (+ Postgres 0.3) | ~20 | 0 |
+| One 4K clip alone (DJI, 59 s) | ≤ 1.8 | 88 within 10 s, 100 from +30 s | → 2 659 | ~31 | 5.3 | 69 | +6 319 |
+| 55 Sony `.hif` (folder re-derive, concurrency 3) | 0.4 / 2.0 / 5.6 | 90 / 100 / 100 | → 3 873 | ~10 | 1.2 | 45 | +5 481 |
+| 26 Sony clips (21 × 4K, concurrency 3) | **36 / 52 / 54** | 94 / 100 / 100 | → 5 928\* | **90** | **16.9** | 68 | +20 033 |
+
+\* above the driver's 4 000 rpm, see §9.1. During the `.hif` run Immich ML
+peaked at 10.5 cores in its own container (no thread limit set), and the
+fan needed 7 min 10 s after the clip run to fall back under 1 900 rpm.
+
+### 9.3 The CPU power policy experiment (2026-11-04, 16:17–17:13 UTC)
+
+§6 S1's question, asked to the host. The worker image's own code, in a
+throwaway container on local copies of the inputs (no NFS, no queue):
+**hif** = 20 sequential decodes of 10 Sony `.hif` by `heicDecode.ts` (one
+core); **clip** = the DJI 4K clip's poster + 720p libx264 proxy, the
+worker's two ffmpeg passes (~5 cores). Five conditions, a calm box (fan on its
+floor for 30 s, ≥ 120 s after the last run, Winnow's queues idle) before each
+run, the reference repeated last as a control. Net energy = RAPL package
+energy over the run minus the pre-run baseline (8–11 W).
+
+| Policy | hif time | hif energy · peak W · max °C | clip time | clip energy · peak W · max °C · throttle | clip fan peak |
+|---|---|---|---|---|---|
+| `balance_performance` + turbo (ref; control) | **77 s; 77 s** | 2.15 kJ · 41 W · 89 °C | **86 s; 86 s** | 5.0–5.1 kJ · 80–82 W · 100 °C · ~6 200 | 3 191 |
+| `balance_power` + turbo | 81 s (+5 %) | 2.30 kJ · 41 W · 97 °C | 88 s (+2 %) | 4.9 kJ · 79 W · 100 °C · 6 507 | 3 045 |
+| `power` + turbo | 94 s (+22 %) | 2.09 kJ · 35 W · 92 °C | 103 s (+20 %) | 4.7 kJ · 66 W · 97 °C · 2 639 | 3 019 |
+| `balance_performance`, **turbo off** | 167 s (× 2.2) | **0.61 kJ · 13 W · 61 °C** | 159 s (× 1.85) | **1.7 kJ · 20 W · 62 °C · 0** | **2 652** |
+
+The controls match the reference to the second, and the clip's 86 s equals
+§9.4's measurement inside the worker.
+
+1. **EPP barely matters.** `balance_power` is indistinguishable from the
+   reference; `power` trims the peak by 15–18 % and halves throttling, but
+   the package still reaches 97 °C — for +20 % of time. Under HWP, EPP nudges
+   how fast a core ramps; it does not cap the turbo frequency.
+2. **Turbo is the lever.** Without it neither load passed 62 °C, nothing
+   throttled, and each job cost 66–72 % less energy for 1.85–2.2 × the time.
+   One busy core costs +4.6 W over rest without turbo, +30 W with it.
+3. **The fan does not follow the package alone.** On the clip without turbo
+   the package stayed at 54–62 °C and the fan still rose 1 817 → 2 652 rpm,
+   30 s in. The BIOS curve reads other sensors too. The host's Prometheus
+   keeps the Dell board sensors (node-exporter's hwmon, 30 s): at that same
+   +30 s the board's **"Ambient"** sensor jumped 70 → 76 °C and the second
+   NVMe (the clip's local copy being read) 47 → 52 °C, while the board's
+   "CPU" sensor moved 55 → 56 °C. "Ambient" rises on every clip run (+3 to
+   +8 °C) and not on the `.hif` runs: the best candidate for what the fan
+   follows, from one run at 30 s resolution. Five busy cores at ~20 W were
+   audible; the hourly rescan at ~20 W on fewer cores was not.
+4. **One decode alone does not reach the ceiling.** 77 s of one `.hif` decoder
+   at turbo peaked at 89 °C without throttling. The noon run that reached
+   100 °C lasted 225 s with Immich ML bursting to 10 cores beside it.
+5. **Turbo is host-wide.** Neither the worker nor a container can scope it;
+   turning it off slows every neighbour on the box. Untested middle grounds:
+   `intel_pstate/max_perf_pct` 60–70 % with turbo on, and RAPL PL1 at 25–35 W.
+
+### 9.4 Cost per derivative — the numbers for §4.2
+
+BullMQ `processedOn → finishedOn`; "alone" = nothing else in the derivative
+queue.
+
+| §4.2 placeholder | Measured | Proposal |
+|---|---|---|
+| preview JPEG 0.3 s | JPEG 0.72 s, ARW 0.82 s alone (ARW median 0.64 s in history) | `photo_preview` **0.8 s** |
+| `.hif` 3 s | 4.4–5.0 s alone, 3.9 s isolated (§9.3), 4.1 s of throughput in a batch: the decoding child is serialized, so concurrency 3 waits on one decoder | **4.5 s**, and the HEIF child is a lane of 1 |
+| DNG demosaic 10 s | none in either sample | keep 10 s |
+| video poster 5 s | not separable (poster and proxy are one job); short clips show a fixed ~8–10 s per clip | measure after phase 1 (a) |
+| video proxy ≈ `duration_s` × factor | 4K libx264 alone **1.41–1.45 ×**; at concurrency 3 median 2.8 ×; Sony 1080p ~1.0 ×; iPhone 1080p 0.05–0.3 ×; turbo off 2.7 × (4K) | **10 s + 1.45 × duration** for 4K, 10 s + 1.0 × for Sony 1080p; by bitrate (`file_size / duration`) rather than height if available |
+| ML per asset | 0.47–0.62 s warm, p90 0.93 s, 3.4 s after an idle spell (models reload) | **0.7 s**, background lane, counted in the box budget (P8) |
+| PSI cpu ~25 % | rest ≤ 0.1, rescan ≤ 0.2, `.hif` ≤ 6, one clip ≤ 2, three clips 36 mean / 52 p95 | 25 % only sees saturation: keep it as the **contention** brake, read the worker's cgroup PSI for self-contention |
+| PSI io ~40 % | ≤ 5 % in every recording | stands; IO is not this box's constraint |
+| target temperature | rest 48–82 °C depending on the hour; work at 88–100 °C within 10–30 s | **no temperature target**: brake on throttle-count rate > 0 over 30 s (over the ceiling) and on `fan1_input` above its floor (noise); ease off when both are calm |
+| (new) package power | rest 11–15 W, rescan 20 W, one `.hif` decoder 35–41 W at turbo / 13 W without, one clip 66–82 W / 20 W | the thermal budget is power, and turbo sets most of it (§9.3) |
+
+**Poster delay today (P2, measured):** a 5-minute 4K clip had no grid
+thumbnail for **424 s** after its job started, and the job started 2 min
+after the batch was queued.
+
+### 9.5 Departures from the plan
+
+1. **The ceiling is reached by work that never saturates the box.** The
+   `.hif` batch held the worker at 1.2 cores with the host at 10 % CPU and
+   still put the package at 100 °C; one clip did it at 5 cores. A `cpus:` cap
+   (§4.4, S1) bounds the 17-core clip folder, not those. Frequency and power
+   are the lever (§9.3), and they are host settings, outside this repo.
+2. **PSI is blind to heat** (≤ 6 % at 100 °C). It rises only when three clips
+   saturate the box. S6's "both" stands, but the thermal half cannot be PSI.
+3. **The package temperature is not a proportional signal** (§9.1), and the
+   rest level drifts with the hour at the same 11–15 W: a fixed temperature
+   target would mean different things at different times. The throttle rate
+   does not drift.
+4. **The fan is its own signal** (§9.3 point 3): it can rise with the package
+   cool and nothing throttling, so the governor reads `fan1_input` directly.
+5. **A capped container raises host PSI** (11-01: a 2-CPU-capped CI runner
+   took host CPU PSI to 20 % with the box 88 % idle). With a `cpus:` on the
+   worker, an AIMD loop on host PSI would brake on its own cap: read the
+   worker's cgroup `cpu.pressure` for "am I throttled".
+6. **Three clips contend with each other** (worker cgroup PSI 34 / 51 / 53 %).
+   `-threads N` (§4.3) removes that; it does not remove one clip's heat.
+7. **Nothing is paced on the instance**, ML included (`ml_per_hour = 0`), and
+   Immich ML has no thread limit (~10 cores on `.hif`): P8 is real, and the
+   ML container's threads are the operator's lever (§4.4).
+8. **VAAPI is not one env flip away.** The image's `i965` driver cannot drive
+   this Gen12 iGPU (`vainfo`: `iHD_drv_video.so` absent, `i965` init fails);
+   `intel-media-va-driver(-non-free)` must go into the Dockerfile first.
+   ffmpeg is 7.1 since the Debian 13 image and may decode HEIF natively
+   (untested).
+9. **P5 is small.** The hourly walk costs ~1 min at ~0.6 core (worker +
+   Postgres), no CPU pressure, ≤ 5 % IO, no fan change. It costs
+   reactivity (P6), not noise: phase 1 (c) is a nice-to-have.
+10. **§8.2's commands name `winnow_worker` / `winnow_postgres`**; the
+    instance's containers are `winnow-worker`, `winnow-app`,
+    `winnow-postgres`, `winnow-redis`, in a Portainer stack (no compose
+    directory to `cd` into). The production stack runs **no `backup`
+    sidecar**; the host's own nightly dump covers Postgres.
+11. **A session's Regenerate on a folder of 74 `.hif` + 74 `.arw` enqueued 55
+    jobs, all `.hif`.** Not investigated: by design (pairs) or a gap in what a
+    session regenerate selects.
+
+### 9.6 What it says about §6
+
+- **S1 — the thermal ceiling.** The share of the box that stays quiet is a
+  share of **power**, set mostly by turbo. A worker `cpus:` is still worth it
+  as the guard against a 17-core clip folder, not as the noise fix. The
+  noise fix measured is host-side (turbo off: silent `.hif`, cool clips, ×2
+  time, the whole box slower); `max_perf_pct` and PL1 are the next tests.
+  The maintainer's call, and none of it ships from this repo.
+- **S2 — proxy as a second job.** The measured cost of not doing it: a
+  5-minute clip invisible for 7 minutes after its job starts. A clip is also
+  the heaviest thermal event: as a background job it can wait for the night
+  (S4) or for a calm fan.
+- **S6 — the control signal.** Host PSI for "the box is busy", the worker's
+  cgroup PSI for its own contention, the throttle-count rate for "over the
+  ceiling", `fan1_input` for the noise. No temperature target.
+- S3, S4, S5: nothing measured changes them.
+
+### 9.7 Still owed
+
+- **An import recording** with reaction delays (`record.sh import 7200`
+  during a real card, then `reaction.sh <copy start> <copy end>`): time to
+  first thumbnail and first video poster, §4.5's starting point.
+- Which sensor the BIOS fan curve follows: "Ambient" is the candidate
+  (§9.3 point 3); a load that heats the board without the CPU (a long local
+  disk read) would confirm it. Not readable today from inside the worker
+  except through the same hwmon files (`dell_smm`, `temp2`).
+- `max_perf_pct` and PL1 as `exp.sh` conditions (`power.sh` needs a `set`
+  branch for each).
+- A DNG demosaic, and the poster alone once phase 1 (a) splits it.
