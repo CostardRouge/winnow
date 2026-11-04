@@ -494,9 +494,14 @@ The controls match the reference to the second, and the clip's 86 s equals
    One busy core costs +4.6 W over rest without turbo, +30 W with it.
 3. **The fan does not follow the package alone.** On the clip without turbo
    the package stayed at 54–62 °C and the fan still rose 1 817 → 2 652 rpm,
-   30 s in. The BIOS curve reads other sensors too (`dell_smm` and `dell_ddv`
-   expose ten temperatures each; none was recorded). Five busy cores at
-   ~20 W were audible; the hourly rescan at ~20 W on fewer cores was not.
+   30 s in. The BIOS curve reads other sensors too. The host's Prometheus
+   keeps the Dell board sensors (node-exporter's hwmon, 30 s): at that same
+   +30 s the board's **"Ambient"** sensor jumped 70 → 76 °C and the second
+   NVMe (the clip's local copy being read) 47 → 52 °C, while the board's
+   "CPU" sensor moved 55 → 56 °C. "Ambient" rises on every clip run (+3 to
+   +8 °C) and not on the `.hif` runs: the best candidate for what the fan
+   follows, from one run at 30 s resolution. Five busy cores at ~20 W were
+   audible; the hourly rescan at ~20 W on fewer cores was not.
 4. **One decode alone does not reach the ceiling.** 77 s of one `.hif` decoder
    at turbo peaked at 89 °C without throttling. The noon run that reached
    100 °C lasted 225 s with Immich ML bursting to 10 cores beside it.
@@ -589,8 +594,10 @@ after the batch was queued.
 - **An import recording** with reaction delays (`record.sh import 7200`
   during a real card, then `reaction.sh <copy start> <copy end>`): time to
   first thumbnail and first video poster, §4.5's starting point.
-- Which sensor the BIOS fan curve follows: record the `dell_smm` / `dell_ddv`
-  temperatures next time.
+- Which sensor the BIOS fan curve follows: "Ambient" is the candidate
+  (§9.3 point 3); a load that heats the board without the CPU (a long local
+  disk read) would confirm it. Not readable today from inside the worker
+  except through the same hwmon files (`dell_smm`, `temp2`).
 - `max_perf_pct` and PL1 as `exp.sh` conditions (`power.sh` needs a `set`
   branch for each).
 - A DNG demosaic, and the poster alone once phase 1 (a) splits it.
