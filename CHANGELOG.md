@@ -16,6 +16,8 @@ were given after the fact to the history's turning points.
   Curation stays off there — no rating, tag, export or delete.
 - Atelier can keep a Storytelling series' script and a Mosaic on your Winnow, so another device opens the same
   one.
+- Search by description can hand over far more than 200 pictures: Atelier's Mosaic now gathers every picture close
+  to a description across your whole library, page after page.
 
 ### Changed
 
