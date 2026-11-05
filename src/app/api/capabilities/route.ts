@@ -21,6 +21,7 @@ import { DOC_KINDS, MAX_DOC_BYTES } from "@/lib/appDocuments";
 import { MAX_FILE_BYTES, MAX_USER_BYTES } from "@/lib/appFiles";
 import { getFeatures } from "@/lib/featureGate";
 import { BRIDGE_VERSION } from "@/lib/commands/bridgeVersion";
+import { MAX_LIMIT as MAX_SEARCH_LIMIT } from "@/lib/searchQuery";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,11 @@ export async function GET(req: NextRequest) {
         // and not in a `features` block of its own.
         timeline: features.timeline,
       },
+      // GET /api/search pages (2026-11-05): `limit` up to `maxLimit` rows a
+      // page and `offset` into the same ranking, `next_offset` in the answer.
+      // An older instance caps a description at 200 rows and ignores `offset`
+      // — Atelier asks one page there, and says so.
+      search: { maxLimit: MAX_SEARCH_LIMIT, offset: true },
       // Where a client app keeps its own documents (api/apps/[app]/docs,
       // migration 0041): own rows for any signed-in role, an etag that
       // refuses a stale write, a body cap the client checks before sending.

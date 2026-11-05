@@ -1,4 +1,4 @@
-// GET /api/search?q=<natural language>&limit=N -> CLIP semantic search.
+// GET /api/search?q=<natural language>&limit=N&offset=M -> CLIP semantic search.
 //
 // Embeds the query text with the same CLIP model that produced the stored image
 // embeddings (lib/ml.ts embedText), then ranks the library by cosine distance
@@ -16,6 +16,11 @@
 // 'finals' for Gallery. `source=all`, an unrecognized value, or the param
 // missing altogether all run the ranking over the whole library (an 'export'
 // root's frames still never match — they belong to neither half).
+//
+// `?offset=` pages through the same ranking (2026-11-05, Atelier's Mosaic takes
+// thousands of a description's closest): `limit` is capped at MAX_LIMIT, and
+// `next_offset` says where the next page starts, null on the last one
+// (lib/searchQuery.ts; announced as `capabilities.search`).
 import { NextRequest } from "next/server";
 import { many } from "@/lib/db";
 import { config } from "@/lib/config";
@@ -24,11 +29,9 @@ import { GRID_SELECT, GRID_FROM } from "@/lib/assetQuery";
 import { json, badRequest, serverError } from "@/lib/api";
 import { featureOff } from "@/lib/featureGate";
 import type { AssetGridRow } from "@/lib/types";
+import { nextOffset, readSearchQuery } from "@/lib/searchQuery";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_LIMIT = 60;
-const MAX_LIMIT = 200;
 
 type SearchRow = AssetGridRow & { distance: number };
 
@@ -44,24 +47,9 @@ export async function GET(req: NextRequest) {
       return json({ items: [], enabled: false, model: config.ml.clip.model });
     }
 
-    const sp = req.nextUrl.searchParams;
-    const q = (sp.get("q") ?? "").trim();
-    if (!q) return badRequest("q (the search text) is required");
-    if (q.length > 300) return badRequest("q is too long (max 300 chars)");
-
-    const limit = Math.min(
-      Math.max(Number.parseInt(sp.get("limit") ?? "", 10) || DEFAULT_LIMIT, 1),
-      MAX_LIMIT,
-    );
-
-    // "all" (the third LibrarySource option, cf. LibrarySourceTabs.tsx) and
-    // any unrecognized value both behave like "omitted" — the whole library —
-    // rather than erroring, so a stale/garbled query string can't break search.
-    const sourceParam = sp.get("source");
-    const source =
-      sourceParam === "incoming" || sourceParam === "gallery"
-        ? sourceParam
-        : null;
+    const asked = readSearchQuery(req.nextUrl.searchParams);
+    if (!asked.ok) return badRequest(asked.error);
+    const { q, limit, offset, source } = asked;
 
     // Index coverage, returned with every response: with a partially indexed
     // library the ranking silently runs over a small pool and every query
@@ -87,6 +75,7 @@ export async function GET(req: NextRequest) {
         model: config.ml.clip.model,
         indexed,
         library,
+        next_offset: null,
       });
     }
 
@@ -130,14 +119,14 @@ export async function GET(req: NextRequest) {
            AND a.group_role IS DISTINCT FROM 'companion'
            AND cl.model = $2
            ${sourceWhere}
-         ORDER BY cl.embedding <=> $1::vector
-         LIMIT $3
+         ORDER BY cl.embedding <=> $1::vector, cl.asset_id
+         LIMIT $3 OFFSET $4
        )
        SELECT ${GRID_SELECT}, ranked.distance
        ${GRID_FROM}
        JOIN ranked ON ranked.asset_id = a.id
-       ORDER BY ranked.distance ASC`,
-      [literal, config.ml.clip.model, limit],
+       ORDER BY ranked.distance ASC, a.id`,
+      [literal, config.ml.clip.model, limit, offset],
     );
 
     return json({
@@ -146,6 +135,7 @@ export async function GET(req: NextRequest) {
       model: config.ml.clip.model,
       indexed,
       library,
+      next_offset: nextOffset(offset, limit, items.length),
     });
   } catch (err) {
     return serverError(err);
