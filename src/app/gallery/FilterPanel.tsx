@@ -174,6 +174,8 @@ export type Filters = {
   date_to?: string;
   verdict?: "pick" | "reject" | "unrated";
   star_min?: number;
+  // Only media marked ♥ (migration 0058). Truthy-only: the chip has one state.
+  favourite?: boolean;
   iso_min?: number;
   iso_max?: number;
   focal_min?: number;
@@ -627,6 +629,19 @@ export default function FilterPanel({
               {v}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="facet">
+        <div className="facet-title">Favourites</div>
+        <div className="chips">
+          <button
+            className={`chip${filters.favourite ? " active" : ""}`}
+            aria-pressed={!!filters.favourite}
+            onClick={() => u({ favourite: filters.favourite ? undefined : true })}
+          >
+            ♥ Favourites only
+          </button>
         </div>
       </div>
 

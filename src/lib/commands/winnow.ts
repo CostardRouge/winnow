@@ -198,6 +198,7 @@ type GridRow = {
   star: number;
   color_label: string | null;
   rated_via?: string | null;
+  favourite?: boolean;
   tags: string[];
   companion_id: number | null;
   group_kind: string | null;
@@ -240,6 +241,7 @@ export function summarize(a: GridRow) {
       color: a.color_label,
       ...(a.rated_via ? { by: a.rated_via } : {}),
     },
+    ...(a.favourite ? { favourite: true } : {}),
     ...(a.tags?.length ? { tags: a.tags } : {}),
     ...(a.companion_id ? { pair: { kind: a.group_kind, companion_id: a.companion_id } } : {}),
     ...(a.burst_id
@@ -260,6 +262,7 @@ type Folder = {
   reject_count: number;
   skip_count: number;
   unrated_count: number;
+  favourite_count?: number;
   status: string;
   ignored: boolean;
   last_reviewed_at: string | null;
@@ -277,6 +280,7 @@ export function summarizeFolder(f: Folder) {
     rejects: f.reject_count,
     skips: f.skip_count,
     unrated: f.unrated_count,
+    ...(f.favourite_count ? { favourites: Number(f.favourite_count) } : {}),
     status: f.status,
     ...(f.device_hint ? { device: f.device_hint } : {}),
     ...(f.last_reviewed_at ? { last_reviewed_at: f.last_reviewed_at } : {}),
@@ -541,6 +545,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         to: { type: "string", optional: true, description: "Last day, YYYY-MM-DD" },
         verdict: { type: "string", enum: VERDICTS, optional: true, description: "Only media with this verdict" },
         star_min: { type: "number", integer: true, min: 0, max: 5, optional: true, description: "At least this many stars" },
+        favourite: { type: "boolean", optional: true, description: "true: only media marked ♥ (favourites), false: only the others" },
         type: { type: "string", enum: ["photo", "video"], optional: true, description: "Photos or videos only" },
         kind: { type: "string", enum: ["incoming", "final"], optional: true, description: "incoming = the cull's material, final = the delivered gallery" },
         search: { type: "string", optional: true, description: "Words matched against names, places, camera, text in the picture" },
@@ -579,6 +584,7 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
             date_to: day ?? date(p, "to"),
             verdict: p.verdict as string | undefined,
             star_min: p.star_min as number | undefined,
+            favourite: p.favourite === undefined ? undefined : p.favourite === true ? "true" : "false",
             media_type: p.type as string | undefined,
             kind: p.kind as string | undefined,
             q: p.search as string | undefined,
@@ -1152,6 +1158,21 @@ export function winnowCommands(client: WinnowClient): CommandSpec[] {
         if (p.star !== undefined) body.star = p.star;
         if (p.wholePile === true) body.expand_bursts = true;
         return client.json("POST", "/api/ratings/bulk", body);
+      },
+    },
+
+    {
+      id: "cull.favourite",
+      title: "Favourite",
+      description:
+        "Mark media ♥ (favourite: true) or clear the mark (false) — POST /api/favourites, each pair's companion included. A favourite is NOT a verdict: it says \"show this one\" (recaps, shares reach for it first), moves no verdict, star or folder progress, and is the one mark the Gallery (finals, curation off) accepts. Shared: one mark per media, whoever set it. Marked as an agent's when the token was minted for one — propose, do not decide for the person: favourite only what you were asked to.",
+      available: canWrite,
+      params: {
+        ids: { type: "numbers", integer: true, min: 1, maxItems: MAX_BULK, description: `Asset ids (at most ${MAX_BULK} a call)` },
+        favourite: { type: "boolean", description: "true to mark ♥, false to clear" },
+      },
+      async run(p) {
+        return client.json("POST", "/api/favourites", { ids: p.ids, favourite: p.favourite });
       },
     },
   ];

@@ -133,6 +133,9 @@ export async function GET(req: NextRequest) {
          COALESCE(d.rejects, 0) AS reject_count,
          COALESCE(d.skips, 0)   AS skip_count,
          COALESCE(d.unrated, 0) AS unrated_count,
+         -- Media marked ♥ (migration 0058), counted per MEDIA: a favourited
+         -- pair is one, so the companion row is left out of the tally.
+         COALESCE(d.favourites, 0) AS favourite_count,
          -- Media with no position and not exempted — the card's "N unplaced"
          -- pill, which links to the Unplaced view (docs/UNPLACED.md).
          COALESCE(d.unplaced, 0) AS unplaced_count,
@@ -171,6 +174,8 @@ export async function GET(req: NextRequest) {
            count(*) FILTER (WHERE r.verdict = 'skip')                                  AS skips,
            count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')          AS unrated,
            count(*) FILTER (WHERE a.gps_lat IS NULL AND a.geo_exempt_at IS NULL)       AS unplaced,
+           count(*) FILTER (WHERE fv.asset_id IS NOT NULL
+                              AND a.group_role IS DISTINCT FROM 'companion')           AS favourites,
            max(r.reviewed_at)                                                          AS last_reviewed,
            -- Fraction triaged (every verdict ÷ all media); NULL for an empty
            -- session so NULLS LAST parks it at the end of a progress sort.
@@ -178,6 +183,7 @@ export async function GET(req: NextRequest) {
              / NULLIF(count(*), 0)                                                     AS frac
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
+         LEFT JOIN favourites fv ON fv.asset_id = a.id
          WHERE a.session_id = s.id AND a.deleted_at IS NULL
        ) d ON true
        -- Companion-pair tallies per session, so the export modal can show the

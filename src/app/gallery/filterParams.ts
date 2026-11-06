@@ -45,7 +45,7 @@ const STRS = ["date_from", "date_to", "q"] as const;
 // Truthy-only flags. `has_edit`/`is_edit` deliberately live OUTSIDE this list:
 // they're tri-state (cf. below), and this list's decode tests the *string's*
 // truthiness — `?has_edit=0` would come back as `true`.
-const BOOLS = ["show_ignored", "has_text", "near_dup"] as const;
+const BOOLS = ["show_ignored", "has_text", "near_dup", "favourite"] as const;
 
 export function encodeFilters(f: Filters): URLSearchParams {
   const sp = new URLSearchParams();

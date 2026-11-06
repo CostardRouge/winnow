@@ -37,6 +37,7 @@ import {
   deleteAssets,
   downloadAssetOriginal,
   exemptAssets,
+  favouriteAssets,
   geocodeAssets,
   mlAnalyzeAssets,
   rateAssets,
@@ -213,6 +214,7 @@ function toQuery(
   if (f.date_to) sp.set("date_to", f.date_to);
   if (f.verdict) sp.set("verdict", f.verdict);
   if (f.star_min) sp.set("star_min", String(f.star_min));
+  if (f.favourite) sp.set("favourite", "true");
   for (const k of [
     "iso_min", "iso_max", "focal_min", "focal_max", "aperture_min", "aperture_max",
     "sharpness_min", "sharpness_max",
@@ -267,6 +269,7 @@ function countActiveFilters(f: Filters): number {
   if (f.date_from || f.date_to) n++;
   if (f.verdict) n++;
   if (f.star_min) n++;
+  if (f.favourite) n++;
   if (f.iso_min != null || f.iso_max != null) n++;
   if (f.focal_min != null || f.focal_max != null) n++;
   if (f.aperture_min != null || f.aperture_max != null) n++;
@@ -686,6 +689,50 @@ export default function GalleryShell({
     [readOnly],
   );
 
+  // The ♥ on a set of ids (migration 0058). Optimistic like rateMany, put back
+  // on a refusal; the count is announced only once the server has answered.
+  // NOT gated by readOnly: the Gallery's curation is off, but a favourite is
+  // not curation — it judges no final, it says "show this one".
+  const favouriteMany = useCallback(
+    async (ids: number[], on: boolean, announce = ids.length > 1): Promise<boolean> => {
+      if (!ids.length) return false;
+      const idset = new Set(ids);
+      const before = new Map<number, boolean>();
+      setItems((prev) =>
+        prev.map((a) => {
+          if (!idset.has(a.id)) return a;
+          before.set(a.id, !!a.favourite);
+          return { ...a, favourite: on };
+        }),
+      );
+      setMapAsset((cur) => (cur && idset.has(cur.id) ? { ...cur, favourite: on } : cur));
+      try {
+        await favouriteAssets(ids, on);
+      } catch (e) {
+        setItems((prev) =>
+          prev.map((a) => (before.has(a.id) ? { ...a, favourite: before.get(a.id) } : a)),
+        );
+        setMapAsset((cur) =>
+          cur && before.has(cur.id) ? { ...cur, favourite: before.get(cur.id) } : cur,
+        );
+        setNotice((e as Error).message);
+        return false;
+      }
+      if (announce)
+        setNotice(
+          on
+            ? `${ids.length} added to favourites`
+            : `${ids.length} removed from favourites`,
+        );
+      return true;
+    },
+    [],
+  );
+  const toggleFavourite = useCallback(
+    (a: { id: number; favourite?: boolean }) => void favouriteMany([a.id], !a.favourite),
+    [favouriteMany],
+  );
+
   // Soft delete (hidden from the library, original untouched). Returns whether
   // it actually ran (false if the confirm was dismissed).
   const removeAssets = useCallback(
@@ -986,6 +1033,9 @@ export default function GalleryShell({
   // (same as clicking the lit button). Stars keep explicit set/clear (1–5/0).
   const onViewerKey = useCallback(
     (e: KeyboardEvent, it: Row) => {
+      // F: the ♥, in the Gallery too (a favourite is not curation).
+      if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey && !e.altKey)
+        return void toggleFavourite(it);
       if (readOnly) return;
       if (e.key.toLowerCase() === "p")
         return void rate(it.id, { verdict: it.verdict === "pick" ? "unrated" : "pick" });
@@ -996,7 +1046,7 @@ export default function GalleryShell({
       // Same soft-delete + confirm as the overflow menu's Delete entry.
       if (e.key === "Delete") return void removeAssets([it.id]);
     },
-    [rate, readOnly, removeAssets],
+    [rate, readOnly, removeAssets, toggleFavourite],
   );
 
   // What the full-screen viewer is showing: the grid feed (navigable, paged) or
@@ -1118,6 +1168,7 @@ export default function GalleryShell({
                   selectMode={selectMode}
                   selectedIds={selected}
                   onToggleSelect={toggleSelect}
+                  onToggleFavourite={toggleFavourite}
                   onContextMenu={openTileMenu}
                 />
                 {/* Paging in the next page while the grid stays on screen. */}
@@ -1287,8 +1338,10 @@ export default function GalleryShell({
           count={selected.size}
           onSelectAll={() => setSelected(new Set(items.map((i) => i.id)))}
           onClear={() => setSelected(new Set())}
+          // The ♥ in both zones: it is not curation (migration 0058).
+          onFavourite={(on) => void favouriteMany([...selected], on, true)}
           // Curation (verdicts, stars, tag, export, geotag, body, backlog,
-          // delete) is off in the Gallery: only the download and the
+          // delete) is off in the Gallery: only the download, the ♥ and the
           // maintenance ⋯ ride its bar.
           {...(readOnly
             ? {}
@@ -1473,6 +1526,8 @@ export default function GalleryShell({
                   // Curation off: a bare ⋯ More holding the maintenance
                   // entries only (cf. ViewerActions — every action is opt-in).
                   <ViewerActions
+                    favourite={!!it.favourite}
+                    onFavourite={(on) => void favouriteMany([it.id], on)}
                     onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onGeocode={() => geocodeSelection([it.id])}
@@ -1481,6 +1536,8 @@ export default function GalleryShell({
                 )
               : (it) => (
                   <ViewerActions
+                    favourite={!!it.favourite}
+                    onFavourite={(on) => void favouriteMany([it.id], on)}
                     verdict={it.verdict}
                     star={it.star}
                     onVerdict={(verdict) => rate(it.id, { verdict })}

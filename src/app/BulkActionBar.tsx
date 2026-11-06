@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
 import DownloadMenu from "./DownloadMenu";
 import type { DownloadFile } from "@/lib/assetActions";
+import { HeartIcon } from "./FavouriteHeart";
 
 // Shared bulk-action toolbar shown while selecting assets in a grid (the library
 // gallery + the session detail). It floats fixed at the bottom of the viewport
@@ -19,11 +20,13 @@ import type { DownloadFile } from "@/lib/assetActions";
 //
 // The curation verbs (verdicts, stars, tag, export, delete) are opt-in like the
 // maintenance ones: the Gallery, where curation is off, passes none of them and
-// gets a bar of download + the maintenance ⋯ (regenerate, resolve location, ML).
+// gets a bar of download + the maintenance ⋯ (regenerate, resolve location, ML)
+// — plus the ♥ (migration 0058), which is not curation: it judges no final.
 export default function BulkActionBar({
   count,
   onSelectAll,
   onClear,
+  onFavourite,
   onPick,
   onReject,
   onStar,
@@ -44,6 +47,9 @@ export default function BulkActionBar({
   onSelectAll: () => void;
   /** Drop the current selection (stays in select mode). */
   onClear: () => void;
+  /** Set (`true`) or clear (`false`) the ♥ across the selection. Offered in
+   * the Gallery too: a favourite is beside the cull, not part of it. */
+  onFavourite?: (on: boolean) => void;
   /** The verdict and star group, shown when `onPick` is given. Omitted where
    * curation is off (the Gallery). */
   onPick?: () => void;
@@ -131,6 +137,17 @@ export default function BulkActionBar({
   // Occasional maintenance + the destructive tail, folded behind one ⋯ so the
   // bar stays a single readable row. Glyphs mirror the per-asset context menu.
   const more: MenuItem[] = [
+    ...(onFavourite
+      ? [
+          {
+            key: "unfavourite",
+            label: "Remove from favourites",
+            icon: "♡",
+            disabled: none,
+            onSelect: () => onFavourite(false),
+          } as MenuItem,
+        ]
+      : []),
     {
       key: "regenerate",
       label: "Regenerate derivatives",
@@ -228,6 +245,20 @@ export default function BulkActionBar({
       <button className="btn" disabled={none} onClick={onClear} title="Drop the selection">
         None
       </button>
+      {onFavourite && (
+        <>
+          <span className="ctx-sep-v" aria-hidden />
+          <button
+            className="btn btn-fav"
+            disabled={none}
+            onClick={() => onFavourite(true)}
+            title="Add the selection to favourites (remove: ⋯)"
+          >
+            <HeartIcon filled />
+            <span className="bulk-label">Favourite</span>
+          </button>
+        </>
+      )}
       {onPick && onReject && onStar && (
         <>
           <span className="ctx-sep-v" aria-hidden />

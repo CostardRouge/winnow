@@ -34,12 +34,14 @@ import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
 import { useFeatures } from "@/app/FeaturesProvider";
 import { Icons } from "@/app/ui";
+import { HeartIcon, TileHeart } from "@/app/FavouriteHeart";
 import { formatBadge, formatCaptureSpan } from "@/lib/format";
 import {
   deleteAssets,
   downloadAssetOriginal,
   geocodeAssets,
   mlAnalyzeAssets,
+  favouriteAssets,
   rateAssets,
   exemptAssets,
   regenerateAssets,
@@ -109,6 +111,8 @@ type AssetRow = {
   sharpness?: number | null;
   verdict: Verdict;
   star: number;
+  // The ♥ (migration 0058): beside the cull, never a verdict.
+  favourite?: boolean;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, its
   // group kind and the companion's per-file stats. Feed the grid badge and the
   // viewer's segmented light↔RAW toggle; NULL when the asset isn't paired.
@@ -156,6 +160,8 @@ type SessionInfo = {
   reject_count: number | string;
   skip_count: number | string;
   unrated_count: number | string;
+  // Media marked ♥ (migration 0058), a pair counted once.
+  favourite_count?: number | string;
   raw_jpeg_pairs: number | string;
   live_photo_pairs: number | string;
   exporting: boolean;
@@ -176,6 +182,9 @@ const VERDICT_FILTERS: Array<{
   { key: "pick", label: "Picks", count: (s) => Number(s.pick_count) || 0 },
   { key: "reject", label: "Rejects", count: (s) => Number(s.reject_count) || 0 },
   { key: "skip", label: "Skipped", count: (s) => Number(s.skip_count) || 0 },
+  // Not a verdict: the ♥ (migration 0058), the media a recap reaches for first.
+  // It rides this control because it is the same question — "show me these".
+  { key: "favourite", label: "♥", count: (s) => Number(s.favourite_count) || 0 },
 ];
 
 function fmtDate(s: string | null): string {
@@ -335,7 +344,8 @@ export default function SessionGrid({
       try {
         const sp = new URLSearchParams();
         if (cur) sp.set("cursor", cur);
-        if (verdict) sp.set("verdict", verdict);
+        if (verdict === "favourite") sp.set("favourite", "true");
+        else if (verdict) sp.set("verdict", verdict);
         // Small first page for a fast first paint, big follow-ups so deep
         // scrolling stays cheap in round-trips (mirrors GalleryShell).
         sp.set("limit", cur ? "200" : "60");
@@ -625,6 +635,39 @@ export default function SessionGrid({
         setNotice((e as Error).message);
         return;
       }
+      void loadSession();
+    },
+    [loadSession],
+  );
+
+  // The ♥ on a set of ids (migration 0058): optimistic like rateMany, put back
+  // on a refusal, announced once the server has answered. Allowed on every
+  // session, finals included — a favourite is not curation.
+  const favouriteMany = useCallback(
+    async (ids: number[], on: boolean, announce = ids.length > 1) => {
+      if (!ids.length) return;
+      const idset = new Set(ids);
+      const before = new Map<number, boolean>();
+      setAssets((prev) =>
+        prev.map((a) => {
+          if (!idset.has(a.id)) return a;
+          before.set(a.id, !!a.favourite);
+          return { ...a, favourite: on };
+        }),
+      );
+      try {
+        await favouriteAssets(ids, on);
+      } catch (e) {
+        setAssets((prev) =>
+          prev.map((a) => (before.has(a.id) ? { ...a, favourite: before.get(a.id) } : a)),
+        );
+        setNotice((e as Error).message);
+        return;
+      }
+      if (announce)
+        setNotice(
+          on ? `${ids.length} added to favourites` : `${ids.length} removed from favourites`,
+        );
       void loadSession();
     },
     [loadSession],
@@ -943,6 +986,8 @@ export default function SessionGrid({
   // set/clear (1–5/0).
   const onViewerKey = useCallback(
     (e: KeyboardEvent, a: AssetRow) => {
+      if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey && !e.altKey)
+        return void favouriteMany([a.id], !a.favourite);
       if (e.key.toLowerCase() === "p")
         return void rate(a.id, { verdict: a.verdict === "pick" ? "unrated" : "pick" });
       if (e.key.toLowerCase() === "x")
@@ -952,7 +997,7 @@ export default function SessionGrid({
       // Same soft-delete + confirm as the overflow menu's Delete entry.
       if (e.key === "Delete") return void removeAssets([a.id]);
     },
-    [rate, removeAssets],
+    [rate, removeAssets, favouriteMany],
   );
 
   // The header's far end: the page's one primary verb + the ⋯ menu (H2/H5),
@@ -1031,7 +1076,17 @@ export default function SessionGrid({
           />
         )}
         <span className="spacer" />
-        <span className="kbd-hint">P pick · X reject · U clear · 1–5 stars · ←/→</span>
+        <span className="kbd-hint">F ♥ · P pick · X reject · U clear · 1–5 stars · ←/→</span>
+        {/* The favourites pass (docs/FAVOURITES.md §5): the folder as moments,
+            a tap is a ♥ — the quick way to a recap without a full cull. */}
+        <Link
+          href={`/sessions/${id}/favourites`}
+          className="btn btn-fav"
+          title="Favourites pass: the folder as moments, tap the ones you want to show"
+        >
+          <HeartIcon filled size={15} />
+          <span className="bulk-label">Pass</span>
+        </Link>
         <button
           className={`btn${selectMode ? " btn-primary" : ""}`}
           aria-pressed={selectMode}
@@ -1050,6 +1105,7 @@ export default function SessionGrid({
             count={selected.size}
             onSelectAll={() => setSelected(new Set(assets.map((a) => a.id)))}
             onClear={() => setSelected(new Set())}
+            onFavourite={(on) => void favouriteMany([...selected], on, true)}
             onPick={() => rateMany([...selected], { verdict: "pick" })}
             onReject={() => rateMany([...selected], { verdict: "reject" })}
             onStar={(n) => rateMany([...selected], { star: n })}
@@ -1150,9 +1206,15 @@ export default function SessionGrid({
                     {a.verdict === "pick" ? "✓" : "✕"}
                   </span>
                 )}
-                {a.star > 0 && (
-                  <span className="stars">{"★".repeat(a.star)}</span>
-                )}
+                <span className="cell-marks">
+                  <TileHeart
+                    on={!!a.favourite}
+                    onToggle={() => void favouriteMany([a.id], !a.favourite)}
+                  />
+                  {a.star > 0 && (
+                    <span className="stars">{"★".repeat(a.star)}</span>
+                  )}
+                </span>
                 <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
                   {formatBadge(a.ext, a.companion_ext, a.group_kind)}
                 </span>
@@ -1236,6 +1298,8 @@ export default function SessionGrid({
           renderInfo={(a) => <SimilarStrip assetId={a.id} />}
           renderActions={(a) => (
             <ViewerActions
+              favourite={!!a.favourite}
+              onFavourite={(on) => void favouriteMany([a.id], on)}
               verdict={a.verdict}
               star={a.star}
               onVerdict={(verdict) => rate(a.id, { verdict })}

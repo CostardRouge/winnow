@@ -54,6 +54,9 @@ export async function GET(
          COALESCE(d.rejects, 0)  AS reject_count,
          COALESCE(d.skips, 0)    AS skip_count,
          COALESCE(d.unrated, 0)  AS unrated_count,
+         -- Media marked ♥ (migration 0058), counted per MEDIA: a favourited
+         -- pair is one, so the companion row is left out of the tally.
+         COALESCE(d.favourites, 0) AS favourite_count,
          -- Computed lifecycle: empty (no live media) · done (every media has a
          -- verdict) · to_sort (some still unrated). Orthogonal to s.ignored.
          CASE
@@ -81,9 +84,12 @@ export async function GET(
            count(*) FILTER (WHERE r.verdict = 'pick')                                 AS picks,
            count(*) FILTER (WHERE r.verdict = 'reject')                               AS rejects,
            count(*) FILTER (WHERE r.verdict = 'skip')                                 AS skips,
-           count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')         AS unrated
+           count(*) FILTER (WHERE r.verdict IS NULL OR r.verdict = 'unrated')         AS unrated,
+           count(*) FILTER (WHERE fv.asset_id IS NOT NULL
+                              AND a.group_role IS DISTINCT FROM 'companion')          AS favourites
          FROM assets a
          LEFT JOIN ratings r ON r.asset_id = a.id
+         LEFT JOIN favourites fv ON fv.asset_id = a.id
          WHERE a.deleted_at IS NULL
          GROUP BY a.session_id
        ) d ON d.session_id = s.id

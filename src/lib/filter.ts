@@ -137,6 +137,10 @@ export const FilterSchema = z
     // Culling
     verdict: z.enum(["pick", "reject", "skip", "unrated"]).optional(),
     star_min: z.coerce.number().int().min(0).max(5).optional(),
+    // Favourites (migration 0058, lib/favourites.ts): true → only media marked
+    // ♥, false → only the others. Beside the cull, never part of it — a
+    // favourite may be unrated, and the Gallery (curation off) has them too.
+    favourite: boolish,
 
     // Type / format
     media_type: csv, // photo | video (multi)
@@ -378,6 +382,12 @@ export function buildFilter(
     params.push(filter.star_min);
   }
 
+  // A primary-key probe per row; no params, constant predicates.
+  if (filter.favourite === true)
+    conditions.push("EXISTS (SELECT 1 FROM favourites fv WHERE fv.asset_id = a.id)");
+  else if (filter.favourite === false)
+    conditions.push("NOT EXISTS (SELECT 1 FROM favourites fv WHERE fv.asset_id = a.id)");
+
   if (filter.media_type) inAny("a.media_type", filter.media_type);
   if (filter.ext) inAny("a.ext", filter.ext);
   if (filter.paired === true) conditions.push("a.group_id IS NOT NULL");
@@ -609,7 +619,7 @@ export function buildFilter(
   // So each fold asks whether a BETTER member of the same group passes the same
   // filter: the conditions above, re-aliased onto that sibling (`a.` → `x.`,
   // the ratings join `r.` → `xr.`) and reusing the same parameters. Every
-  // other alias in the conditions (s, rt, e, pf, cl, nd, at, t) is its own
+  // other alias in the conditions (s, rt, e, pf, cl, nd, at, t, fv) is its own
   // subquery's and stays untouched. Unfiltered, the result is what it always
   // was: the primary of each pair, the cover (else the first live frame) of
   // each pile. Both lookups are bounded (a pair is two rows, a pile is
@@ -667,6 +677,7 @@ export function filterFromSearchParams(sp: URLSearchParams): AssetFilter {
     "not_tags",
     "verdict",
     "star_min",
+    "favourite",
     "media_type",
     "ext",
     "paired",

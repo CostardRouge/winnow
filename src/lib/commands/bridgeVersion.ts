@@ -21,13 +21,20 @@
  * /api/capabilities, and the build script stamps the manifest from it.
  */
 
-export const BRIDGE_VERSION = 1;
+export const BRIDGE_VERSION = 2;
 
 /** SHA-256 of every source file bundled into the bridge but this one, sorted by path, line endings normalised. */
-export const BRIDGE_SOURCE_HASH = "82e09ee4771bc9df78ab143cc48222aa7f577cca30b34c6b9752ee1fecc2f76b";
+export const BRIDGE_SOURCE_HASH = "b32395bd111fcf85ca8eb91534692056820562b5dd4a226cc7731728dcd64f16";
 
 /** What each version changed, newest first — drawn on Users › Agents. */
 export const BRIDGE_CHANGES: readonly { version: number; date: string; changes: readonly string[] }[] = [
+  {
+    version: 2,
+    date: "2026-11-06",
+    changes: [
+      "Favourites: cull.favourite marks media ♥ or clears it, assets.list filters on it, and every listed media and folder says so.",
+    ],
+  },
   {
     version: 1,
     date: "2026-10-11",

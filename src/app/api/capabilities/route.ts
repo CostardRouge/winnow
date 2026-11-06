@@ -109,6 +109,13 @@ export async function GET(req: NextRequest) {
       // An older instance caps a description at 200 rows and ignores `offset`
       // — Atelier asks one page there, and says so.
       search: { maxLimit: MAX_SEARCH_LIMIT, offset: true },
+      // The ♥ (migration 0058, docs/FAVOURITES.md): every /api/assets row
+      // carries `favourite`, the list takes `favourite=1|0`, and
+      // POST /api/favourites { ids, favourite } sets or clears it (editor).
+      // Shared, beside the cull: a favourite moves no verdict, and the Gallery
+      // — where verdicts and stars are off — has them too. A client ranking
+      // pictures (Atelier's recaps) puts it first when this is true.
+      curation: { favourites: true },
       // Where a client app keeps its own documents (api/apps/[app]/docs,
       // migration 0041): own rows for any signed-in role, an etag that
       // refuses a stale write, a body cap the client checks before sending.

@@ -42,6 +42,10 @@ Seeded 2026-08-20 from `db/migrations/README.md`, `src/lib/migrate.ts`, `docs/AR
 
 **Decision**: migration `0057_import_links.sql` — `abs_path` PK (the filed path), `original_asset_id` (CASCADE), `batch_id` (SET NULL). A row lives from the import to the scan that indexes its file and is deleted then, linked or refused; one whose file never becomes an asset is dropped after 30 days by the same pass — that is its retention. `applyImportLinks` locks with `FOR UPDATE OF l SKIP LOCKED` so two roots' scans never wait on each other. `edit_match` gains the value `'upload'` (no CHECK on that column). Rationale: `docs/memory/architecture.md`.
 
+## Favourites are a table beside `ratings`, not a column in it (2026-11-06)
+
+**Decision**: migration `0058_favourites.sql` — `asset_id` PK (CASCADE), `favourited_at`, `favourited_by`, `favourited_via` (same three values as `rated_via`). **Why**: `ratings` is the cull, and the Gallery has curation off; a separate table keeps "nothing that culls touches a favourite, nothing that favourites touches the cull" readable, and lets the Gallery write it without opening `ratings` there. **How to apply**: read it through `EXISTS (… favourites fv WHERE fv.asset_id = a.id)` — `GRID_SELECT`'s `favourite`, the `favourite` filter key; `fv` is not an alias the fold rewrites. Counts per MEDIA exclude `group_role = 'companion'` (`favourite_count`), since a pair holds two rows.
+
 ## Growth with no retention is the known unpaid debt (2026-08-20)
 
 **Decision (pending)**: `purge_log`, resolved `scan_failures`, `export_jobs.result` / `import_batches.result` JSONB, `exports` lineage and stale-model `asset_clip` rows all grow without bound. A retention janitor is P1 in the review (D7) and does not exist yet.

@@ -40,6 +40,9 @@
   --color-reject: #b23a3a;
   --color-reject-fg: #ffffff;
   --color-star: #c2870f;
+  /* The ♥ (migration 0058): its own hue, raspberry — not the vermillion of
+     the brand and focus, not the red of a reject. A favourite is neither. */
+  --color-fav: #b8325f;
 
   /* The dark viewer frame */
   --color-frame: #100f0d;
@@ -196,6 +199,7 @@ html[data-theme="dark"] {
   --color-reject: #d85a5a;
   --color-reject-fg: #1c0f0f;
   --color-star: #e0a52a;
+  --color-fav: #ec6f9a;
 
   /* Heatmap ramp after dark — stepped from the night paper, not inverted from
      the light ramp: a flipped sequential scale puts its brightest step where
@@ -2128,6 +2132,153 @@ html[data-theme="dark"] .btn-primary:hover {
     pointer-events: none;
   }
 
+  /* The ♥ on a tile (migration 0058) and the stars share the bottom-left
+     corner, as one row: every other corner is taken. The heart shows on hover
+     (desktop) and stays once set; on a touch screen only a set heart shows —
+     the target is too small there, the viewer and the favourites pass are
+     where a phone sets one. */
+  .cell .cell-marks {
+    @apply absolute bottom-1 left-1 flex items-center gap-1;
+  }
+  .cell .cell-marks .stars {
+    position: static;
+  }
+  .cell .fav-btn {
+    @apply flex h-6 w-6 items-center justify-center rounded-full p-0;
+    background: rgba(16, 15, 13, 0.58);
+    border: 0;
+    color: #f4f0e7;
+    cursor: pointer;
+  }
+  .cell .fav-btn svg {
+    @apply h-[14px] w-[14px];
+  }
+  .cell .fav-btn.on {
+    background: #fbf8f1;
+    color: var(--color-fav);
+  }
+  .cell:not(:hover) .fav-btn:not(.on):not(:focus-visible) {
+    display: none;
+  }
+  @media (hover: none) {
+    .cell .fav-btn:not(.on) {
+      display: none;
+    }
+  }
+  /* The bulk bar's and the viewer's ♥: a quiet button that fills with the
+     favourite hue once set (aria-pressed). */
+  .btn-fav {
+    color: var(--color-fav);
+  }
+  .btn-fav svg {
+    @apply h-[15px] w-[15px];
+  }
+  .btn-fav[aria-pressed="true"] {
+    background: var(--color-fav);
+    border-color: var(--color-fav);
+    color: #ffffff;
+  }
+  .btn-fav[aria-pressed="true"]:hover {
+    background: color-mix(in srgb, var(--color-fav) 88%, #000);
+    color: #ffffff;
+  }
+
+  /* ---- The favourites pass (docs/FAVOURITES.md §5) ----------------------
+     One folder as moments; the whole tile is the target, a tap is a ♥.
+     Phone first: three columns at 390 px, auto-filling wider. */
+  .pass-counter {
+    @apply flex min-w-0 items-center gap-2;
+  }
+  .pass-count {
+    @apply inline-flex items-center gap-1 text-base font-bold tabular-nums;
+    color: var(--color-fav);
+  }
+  .pass-aim {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  .pass-bar {
+    @apply relative block h-1.5 w-24 overflow-hidden rounded-full;
+    background: var(--color-surface-3);
+  }
+  .pass-bar > span {
+    @apply absolute inset-y-0 left-0 rounded-full;
+    background: var(--color-fav);
+  }
+  .pass-grid {
+    @apply grid gap-1.5 px-4 pb-2 pt-3;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  .pass-tile {
+    @apply relative overflow-hidden rounded-[var(--radius-sm)] p-0;
+    aspect-ratio: 1 / 1;
+    background: var(--color-surface-2);
+  }
+  .pass-tile.on {
+    outline: 3px solid var(--color-fav);
+    outline-offset: -3px;
+  }
+  .pass-tile.suggested {
+    outline: 2px dashed var(--color-text);
+    outline-offset: -2px;
+  }
+  .pass-hit {
+    @apply absolute inset-0 block h-full w-full cursor-pointer border-0 p-0;
+    background: transparent;
+  }
+  .pass-sheet-grid .pass-hit {
+    position: relative;
+  }
+  .pass-hit img {
+    @apply block h-full w-full object-cover;
+  }
+  .pass-placeholder {
+    @apply flex h-full items-center justify-center p-2 text-center text-[11px];
+    color: var(--color-faint);
+  }
+  .pass-time {
+    @apply pointer-events-none absolute bottom-1 left-1.5 text-[11px] font-semibold tabular-nums;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  }
+  .pass-why {
+    @apply pointer-events-none absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] font-semibold;
+    background: #fbf8f1;
+    color: #1b1813;
+  }
+  .pass-heart {
+    @apply pointer-events-none absolute right-1 top-1 inline-flex h-7 min-w-7 items-center justify-center
+      gap-0.5 rounded-full px-1 text-[11px] font-bold;
+    background: #fbf8f1;
+    color: var(--color-fav);
+  }
+  .pass-stack {
+    @apply absolute left-1 top-1 inline-flex h-8 min-w-8 items-center justify-center rounded-[8px] border-0
+      px-2 text-[12px] font-semibold;
+    background: rgba(16, 15, 13, 0.72);
+    color: #f4f0e7;
+    cursor: pointer;
+  }
+  /* At the end of the sheet, not fixed: the counter rides the toolbar, and a
+     fixed bar would fight the phone's bottom nav for the same strip. */
+  .pass-foot {
+    @apply flex flex-col items-center gap-1 px-4 pb-6 pt-3;
+  }
+  .pass-done {
+    @apply w-full max-w-[420px] justify-center;
+  }
+  .pass-foot-note {
+    @apply text-center text-xs;
+    color: var(--color-muted);
+  }
+  .pass-sheet-grid {
+    @apply grid gap-1.5 overflow-y-auto px-5 pb-5 pt-2;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+  .pass-error {
+    @apply m-4;
+  }
+
   /* Accent rail under each expanded member: "these frames belong together". */
   .cell.in-stack::after {
     content: "";
@@ -2492,6 +2643,19 @@ html[data-theme="dark"] .btn-primary:hover {
      Grouped by intent: a verdict segment, a star cluster, an overflow menu. */
   .viewer-actions {
     @apply flex flex-wrap items-center justify-center gap-2;
+  }
+  /* The viewer's ♥ (migration 0058) sits on the dark frame like the verdict
+     toggle: a glass button whose heart takes the favourite hue, filled once set. */
+  .btn.vbar-fav {
+    @apply inline-flex h-[38px] w-[42px] items-center justify-center p-0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #f6a3bf;
+  }
+  .btn.vbar-fav[aria-pressed="true"] {
+    background: var(--color-fav);
+    border-color: var(--color-fav);
+    color: #ffffff;
   }
   .vbar-verdict {
     @apply inline-flex overflow-hidden rounded-[var(--radius)];
@@ -5530,6 +5694,12 @@ html[data-theme="dark"] .btn-primary:hover {
      content edge) clears the rail instead of tucking under it. */
   .root-main {
     padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The favourites pass: three moments a row on a phone. */
+  .pass-grid {
+    @apply px-2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   /* The bulk-selection bar rides just above the bottom nav, edge to edge (the
