@@ -11,6 +11,11 @@ were given after the fact to the history's turning points.
 
 ### Added
 
+- Favourites: a ♥ marks the pictures you want to show, without sorting the folder first. Set it with F in the
+  viewer, the heart on a tile, or ♥ Favourite on a selection — in Incoming and in the Gallery alike, where it is the
+  one mark allowed. It moves no verdict or star and leaves a folder's progress as it was; a RAW+JPEG pair or a Live
+  Photo is one favourite. A folder's ♥ tab and the ♥ Favourites only filter list them, and Atelier can rank them
+  first in a recap.
 - The Gallery offers its maintenance actions where you see the media: Download original, Regenerate derivatives,
   Resolve location and Detect faces & text, from the viewer's ⋯ More, a right-click on a tile, or a multi-selection.
   Curation stays off there — no rating, tag, export or delete.

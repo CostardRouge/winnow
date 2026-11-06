@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Verdict } from "@/lib/types";
+import { HeartIcon } from "./FavouriteHeart";
 
 // The viewer's action bar, grouped by intent instead of a flat row of buttons:
-//   [ ✕ Reject | ✓ Pick ]   ★★★★★   [ ⋯ More ▾ ]
+//   [ ♥ ]   [ ✕ Reject | ✓ Pick ]   ★★★★★   [ ⋯ More ▾ ]
 //
 //  - Verdict is a two-segment toggle: clicking the *active* verdict clears it
 //    back to "unrated" (so a pick/reject is reversible without a separate
@@ -19,8 +20,12 @@ import type { Verdict } from "@/lib/types";
 // Every action is opt-in: a group or a menu entry renders only when its handler
 // is passed. The Gallery (finalized masters, curation off) passes the
 // maintenance entries alone — download, regenerate, resolve location, ML — so
-// it gets a bare "⋯ More" with nothing that rates, tags, exports or deletes.
+// it gets a bare "⋯ More" with nothing that rates, tags, exports or deletes —
+// and the ♥, the one mark it takes (migration 0058): a favourite judges no
+// final, it says "show this one".
 export default function ViewerActions({
+  favourite,
+  onFavourite,
   verdict,
   star,
   onVerdict,
@@ -34,6 +39,10 @@ export default function ViewerActions({
   onDelete,
   onTag,
 }: {
+  /** The ♥ (migration 0058), beside the cull. */
+  favourite?: boolean;
+  /** Optional: the ♥ toggle (F). Offered in the Gallery too. */
+  onFavourite?: (on: boolean) => void;
   verdict?: Verdict;
   star?: number;
   /** Optional: the Pick/Reject toggle. Omitted where curation is off. */
@@ -93,6 +102,18 @@ export default function ViewerActions({
 
   return (
     <div className="viewer-actions">
+      {onFavourite && (
+        <button
+          type="button"
+          className="btn btn-fav vbar-fav"
+          aria-pressed={!!favourite}
+          aria-label={favourite ? "Remove from favourites" : "Add to favourites"}
+          title={favourite ? "Favourite (F) · click again to remove" : "Add to favourites (F)"}
+          onClick={() => onFavourite(!favourite)}
+        >
+          <HeartIcon filled={!!favourite} />
+        </button>
+      )}
       {onVerdict && (
         <div className="vbar-verdict" role="group" aria-label="Verdict">
           <button

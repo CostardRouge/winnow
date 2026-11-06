@@ -2,7 +2,8 @@
 // the single-asset detail route. Keeping one projection here stops the three
 // routes from drifting apart.
 //
-// Each row carries the asset, its rating (verdict/star/color), its tags, and —
+// Each row carries the asset, its rating (verdict/star/color), its favourite
+// mark, its tags, and —
 // for paired assets (cf. lib/pairing.ts) — its companion's id, extension,
 // media-type and per-file stats (filename, size, dimensions), plus the group's
 // kind. This lets the viewer offer the segmented toggle (describing whichever
@@ -24,6 +25,8 @@ export const GRID_SELECT = `a.*,
         COALESCE(r.star, 0)            AS star,
         r.color_label,
         r.rated_via,
+        -- The ♥ (migration 0058): one primary-key probe, beside the rating.
+        EXISTS (SELECT 1 FROM favourites fv WHERE fv.asset_id = a.id) AS favourite,
         comp.id         AS companion_id,
         comp.ext        AS companion_ext,
         comp.media_type AS companion_media_type,

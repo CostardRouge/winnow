@@ -13,6 +13,7 @@ import {
 import { List, type ListImperativeAPI, type RowComponentProps } from "react-window";
 import { formatBadge } from "@/lib/format";
 import { isLivePhoto, LiveMotionVideo } from "../LivePhotoPreview";
+import { HeartIcon, TileHeart } from "../FavouriteHeart";
 
 export type GalleryAsset = {
   id: number;
@@ -23,6 +24,9 @@ export type GalleryAsset = {
   file_size: number | null;
   verdict: "pick" | "reject" | "skip" | "unrated";
   star: number;
+  // The ♥ (migration 0058): beside the cull, and the one mark the Gallery
+  // (curation off) takes too. Absent on rows from older callers = not one.
+  favourite?: boolean;
   // Pairing (cf. lib/pairing.ts): the companion of this displayed primary, if
   // any, plus the group kind. Drives the corner badge — "RAW+…" for a RAW+JPEG
   // pair, "LIVE" for an iPhone Live Photo.
@@ -90,6 +94,7 @@ type RowData = {
   selectedIds?: Set<number>;
   onOpen: (index: number) => void;
   onToggleSelect?: (id: number) => void;
+  onToggleFavourite?: (asset: GalleryAsset) => void;
   onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
   // Long-press plumbing (present only when onContextMenu is): the grid owns
   // the single shared timer, rows just report the touches.
@@ -107,6 +112,7 @@ type TileProps = {
   selectMode: boolean;
   onOpen: (index: number) => void;
   onToggleSelect?: (id: number) => void;
+  onToggleFavourite?: (asset: GalleryAsset) => void;
   onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
   onPressStart?: (e: React.TouchEvent, asset: GalleryAsset) => void;
   onPressMove?: (e: React.TouchEvent) => void;
@@ -129,6 +135,7 @@ const Tile = memo(function Tile({
   selectMode,
   onOpen,
   onToggleSelect,
+  onToggleFavourite,
   onContextMenu,
   onPressStart,
   onPressMove,
@@ -212,7 +219,20 @@ const Tile = memo(function Tile({
           {a.verdict === "pick" ? "✓" : a.verdict === "reject" ? "✕" : "↪"}
         </span>
       )}
-      {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
+      {(onToggleFavourite || a.favourite || a.star > 0) && (
+        <span className="cell-marks">
+          {onToggleFavourite ? (
+            <TileHeart on={!!a.favourite} onToggle={() => onToggleFavourite(a)} />
+          ) : (
+            a.favourite && (
+              <span className="fav-btn on" role="img" aria-label="Favourite">
+                <HeartIcon filled />
+              </span>
+            )
+          )}
+          {a.star > 0 && <span className="stars">{"★".repeat(a.star)}</span>}
+        </span>
+      )}
       <span className={`ext-badge${a.companion_ext ? " paired" : ""}`}>
         {formatBadge(a.ext, a.companion_ext, a.group_kind)}
       </span>
@@ -231,6 +251,7 @@ function Row({
   selectedIds,
   onOpen,
   onToggleSelect,
+  onToggleFavourite,
   onContextMenu,
   onPressStart,
   onPressMove,
@@ -254,6 +275,7 @@ function Row({
         selectMode={selectMode}
         onOpen={onOpen}
         onToggleSelect={onToggleSelect}
+        onToggleFavourite={onToggleFavourite}
         onContextMenu={onContextMenu}
         onPressStart={onPressStart}
         onPressMove={onPressMove}
@@ -282,6 +304,9 @@ const VirtualGrid = forwardRef<
     selectMode?: boolean;
     selectedIds?: Set<number>;
     onToggleSelect?: (id: number) => void;
+    /** The tile's ♥ (migration 0058). Omitted → no heart button, a set
+     * favourite still shows as a mark. */
+    onToggleFavourite?: (asset: GalleryAsset) => void;
     /** Right-click on desktop, long-press on touch — one callback for both. */
     onContextMenu?: (e: TileMenuEvent, asset: GalleryAsset) => void;
     /** Target cell width (px). Smaller → more media per line. */
@@ -297,6 +322,7 @@ const VirtualGrid = forwardRef<
     selectMode = false,
     selectedIds,
     onToggleSelect,
+    onToggleFavourite,
     onContextMenu,
     targetWidth = TARGET,
   },
@@ -440,6 +466,7 @@ const VirtualGrid = forwardRef<
       selectedIds,
       onOpen,
       onToggleSelect,
+      onToggleFavourite,
       onContextMenu,
       onPressStart: onContextMenu ? onPressStart : undefined,
       onPressMove: onContextMenu ? onPressMove : undefined,
@@ -454,6 +481,7 @@ const VirtualGrid = forwardRef<
       selectedIds,
       onOpen,
       onToggleSelect,
+      onToggleFavourite,
       onContextMenu,
       onPressStart,
       onPressMove,

@@ -366,6 +366,8 @@ export type AssetGridRow = Asset & {
   // Which credential last rated it (migration 0050): "agent" marks an MCP
   // client's verdict; null when unrated or rated before 0050.
   rated_via: RatedVia | null;
+  // The ♥ (migration 0058): "show this one", beside the cull — never a verdict.
+  favourite: boolean;
   tags: string[];
   // Pairing (cf. lib/pairing.ts): the other member of this asset's group and the
   // group's kind. Null when the asset is not paired. Lets the viewer offer the

@@ -39,6 +39,19 @@ export async function rateAssets(
   await ensureOk(res, "save the rating");
 }
 
+// Set or clear the ♥ (migration 0058, POST /api/favourites) on one media or
+// many. Beside the cull: it moves no verdict, and the Gallery — curation off —
+// takes it too. Each pair's companion follows server-side.
+export async function favouriteAssets(ids: number[], favourite: boolean): Promise<void> {
+  if (!ids.length) return;
+  const res = await fetch("/api/favourites", {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({ ids, favourite }),
+  });
+  await ensureOk(res, favourite ? "add the favourite" : "remove the favourite");
+}
+
 // Pull the indexed original (abs_path) for a single asset down to the browser as
 // an attachment. Goes straight at the /download route — which streams the real
 // file even when no derivative exists yet — so you can inspect a Pending/failed

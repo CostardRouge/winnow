@@ -40,6 +40,9 @@
   --color-reject: #b23a3a;
   --color-reject-fg: #ffffff;
   --color-star: #c2870f;
+  /* The ♥ (migration 0058): its own hue, raspberry — not the vermillion of
+     the brand and focus, not the red of a reject. A favourite is neither. */
+  --color-fav: #b8325f;
 
   /* The dark viewer frame */
   --color-frame: #100f0d;
@@ -196,6 +199,7 @@ html[data-theme="dark"] {
   --color-reject: #d85a5a;
   --color-reject-fg: #1c0f0f;
   --color-star: #e0a52a;
+  --color-fav: #ec6f9a;
 
   /* Heatmap ramp after dark — stepped from the night paper, not inverted from
      the light ramp: a flipped sequential scale puts its brightest step where
@@ -2128,6 +2132,57 @@ html[data-theme="dark"] .btn-primary:hover {
     pointer-events: none;
   }
 
+  /* The ♥ on a tile (migration 0058) and the stars share the bottom-left
+     corner, as one row: every other corner is taken. The heart shows on hover
+     (desktop) and stays once set; on a touch screen only a set heart shows —
+     the target is too small there, the viewer and the favourites pass are
+     where a phone sets one. */
+  .cell .cell-marks {
+    @apply absolute bottom-1 left-1 flex items-center gap-1;
+  }
+  .cell .cell-marks .stars {
+    position: static;
+  }
+  .cell .fav-btn {
+    @apply flex h-6 w-6 items-center justify-center rounded-full p-0;
+    background: rgba(16, 15, 13, 0.58);
+    border: 0;
+    color: #f4f0e7;
+    cursor: pointer;
+  }
+  .cell .fav-btn svg {
+    @apply h-[14px] w-[14px];
+  }
+  .cell .fav-btn.on {
+    background: #fbf8f1;
+    color: var(--color-fav);
+  }
+  .cell:not(:hover) .fav-btn:not(.on):not(:focus-visible) {
+    display: none;
+  }
+  @media (hover: none) {
+    .cell .fav-btn:not(.on) {
+      display: none;
+    }
+  }
+  /* The bulk bar's and the viewer's ♥: a quiet button that fills with the
+     favourite hue once set (aria-pressed). */
+  .btn-fav {
+    color: var(--color-fav);
+  }
+  .btn-fav svg {
+    @apply h-[15px] w-[15px];
+  }
+  .btn-fav[aria-pressed="true"] {
+    background: var(--color-fav);
+    border-color: var(--color-fav);
+    color: #ffffff;
+  }
+  .btn-fav[aria-pressed="true"]:hover {
+    background: color-mix(in srgb, var(--color-fav) 88%, #000);
+    color: #ffffff;
+  }
+
   /* Accent rail under each expanded member: "these frames belong together". */
   .cell.in-stack::after {
     content: "";
@@ -2492,6 +2547,19 @@ html[data-theme="dark"] .btn-primary:hover {
      Grouped by intent: a verdict segment, a star cluster, an overflow menu. */
   .viewer-actions {
     @apply flex flex-wrap items-center justify-center gap-2;
+  }
+  /* The viewer's ♥ (migration 0058) sits on the dark frame like the verdict
+     toggle: a glass button whose heart takes the favourite hue, filled once set. */
+  .btn.vbar-fav {
+    @apply inline-flex h-[38px] w-[42px] items-center justify-center p-0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #f6a3bf;
+  }
+  .btn.vbar-fav[aria-pressed="true"] {
+    background: var(--color-fav);
+    border-color: var(--color-fav);
+    color: #ffffff;
   }
   .vbar-verdict {
     @apply inline-flex overflow-hidden rounded-[var(--radius)];
