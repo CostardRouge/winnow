@@ -16,6 +16,10 @@ were given after the fact to the history's turning points.
   one mark allowed. It moves no verdict or star and leaves a folder's progress as it was; a RAW+JPEG pair or a Live
   Photo is one favourite. A folder's ♥ tab and the ♥ Favourites only filter list them, and Atelier can rank them
   first in a recap.
+- The favourites pass: a folder's ♥ Pass shows it as moments — a burst, a run of near-identical frames, one tile
+  each — and a tap marks one ♥ without rejecting or skipping anything else. A counter aims at the ten to twenty
+  pictures a recap needs, ×N opens a moment's frames to choose another, and Suggest outlines a few moments worth a
+  first look (a pick, stars, faces, the sharpest) without marking them.
 - The Gallery offers its maintenance actions where you see the media: Download original, Regenerate derivatives,
   Resolve location and Detect faces & text, from the viewer's ⋯ More, a right-click on a tile, or a multi-selection.
   Curation stays off there — no rating, tag, export or delete.

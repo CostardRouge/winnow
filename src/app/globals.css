@@ -2183,6 +2183,102 @@ html[data-theme="dark"] .btn-primary:hover {
     color: #ffffff;
   }
 
+  /* ---- The favourites pass (docs/FAVOURITES.md §5) ----------------------
+     One folder as moments; the whole tile is the target, a tap is a ♥.
+     Phone first: three columns at 390 px, auto-filling wider. */
+  .pass-counter {
+    @apply flex min-w-0 items-center gap-2;
+  }
+  .pass-count {
+    @apply inline-flex items-center gap-1 text-base font-bold tabular-nums;
+    color: var(--color-fav);
+  }
+  .pass-aim {
+    @apply text-xs;
+    color: var(--color-muted);
+  }
+  .pass-bar {
+    @apply relative block h-1.5 w-24 overflow-hidden rounded-full;
+    background: var(--color-surface-3);
+  }
+  .pass-bar > span {
+    @apply absolute inset-y-0 left-0 rounded-full;
+    background: var(--color-fav);
+  }
+  .pass-grid {
+    @apply grid gap-1.5 px-4 pb-2 pt-3;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  .pass-tile {
+    @apply relative overflow-hidden rounded-[var(--radius-sm)] p-0;
+    aspect-ratio: 1 / 1;
+    background: var(--color-surface-2);
+  }
+  .pass-tile.on {
+    outline: 3px solid var(--color-fav);
+    outline-offset: -3px;
+  }
+  .pass-tile.suggested {
+    outline: 2px dashed var(--color-text);
+    outline-offset: -2px;
+  }
+  .pass-hit {
+    @apply absolute inset-0 block h-full w-full cursor-pointer border-0 p-0;
+    background: transparent;
+  }
+  .pass-sheet-grid .pass-hit {
+    position: relative;
+  }
+  .pass-hit img {
+    @apply block h-full w-full object-cover;
+  }
+  .pass-placeholder {
+    @apply flex h-full items-center justify-center p-2 text-center text-[11px];
+    color: var(--color-faint);
+  }
+  .pass-time {
+    @apply pointer-events-none absolute bottom-1 left-1.5 text-[11px] font-semibold tabular-nums;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  }
+  .pass-why {
+    @apply pointer-events-none absolute bottom-1 right-1 rounded-[6px] px-1.5 py-px text-[10px] font-semibold;
+    background: #fbf8f1;
+    color: #1b1813;
+  }
+  .pass-heart {
+    @apply pointer-events-none absolute right-1 top-1 inline-flex h-7 min-w-7 items-center justify-center
+      gap-0.5 rounded-full px-1 text-[11px] font-bold;
+    background: #fbf8f1;
+    color: var(--color-fav);
+  }
+  .pass-stack {
+    @apply absolute left-1 top-1 inline-flex h-8 min-w-8 items-center justify-center rounded-[8px] border-0
+      px-2 text-[12px] font-semibold;
+    background: rgba(16, 15, 13, 0.72);
+    color: #f4f0e7;
+    cursor: pointer;
+  }
+  /* At the end of the sheet, not fixed: the counter rides the toolbar, and a
+     fixed bar would fight the phone's bottom nav for the same strip. */
+  .pass-foot {
+    @apply flex flex-col items-center gap-1 px-4 pb-6 pt-3;
+  }
+  .pass-done {
+    @apply w-full max-w-[420px] justify-center;
+  }
+  .pass-foot-note {
+    @apply text-center text-xs;
+    color: var(--color-muted);
+  }
+  .pass-sheet-grid {
+    @apply grid gap-1.5 overflow-y-auto px-5 pb-5 pt-2;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+  .pass-error {
+    @apply m-4;
+  }
+
   /* Accent rail under each expanded member: "these frames belong together". */
   .cell.in-stack::after {
     content: "";
@@ -5598,6 +5694,12 @@ html[data-theme="dark"] .btn-primary:hover {
      content edge) clears the rail instead of tucking under it. */
   .root-main {
     padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The favourites pass: three moments a row on a phone. */
+  .pass-grid {
+    @apply px-2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   /* The bulk-selection bar rides just above the bottom nav, edge to edge (the

@@ -34,7 +34,7 @@ import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
 import { useFeatures } from "@/app/FeaturesProvider";
 import { Icons } from "@/app/ui";
-import { TileHeart } from "@/app/FavouriteHeart";
+import { HeartIcon, TileHeart } from "@/app/FavouriteHeart";
 import { formatBadge, formatCaptureSpan } from "@/lib/format";
 import {
   deleteAssets,
@@ -1077,6 +1077,16 @@ export default function SessionGrid({
         )}
         <span className="spacer" />
         <span className="kbd-hint">F ♥ · P pick · X reject · U clear · 1–5 stars · ←/→</span>
+        {/* The favourites pass (docs/FAVOURITES.md §5): the folder as moments,
+            a tap is a ♥ — the quick way to a recap without a full cull. */}
+        <Link
+          href={`/sessions/${id}/favourites`}
+          className="btn btn-fav"
+          title="Favourites pass: the folder as moments, tap the ones you want to show"
+        >
+          <HeartIcon filled size={15} />
+          <span className="bulk-label">Pass</span>
+        </Link>
         <button
           className={`btn${selectMode ? " btn-primary" : ""}`}
           aria-pressed={selectMode}
