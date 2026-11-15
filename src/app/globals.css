@@ -9250,6 +9250,21 @@ html[data-theme="dark"] .btn-primary:hover {
     font-size: 0.85rem;
     margin-top: 12px;
   }
+  /* "or", between the password and the second door (Sign in with Sésame). */
+  .login-or {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+    color: var(--color-muted);
+    font-size: 12px;
+  }
+  .login-or::before,
+  .login-or::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--color-border);
+  }
   .login-submit {
     margin-top: 18px;
     width: 100%;
