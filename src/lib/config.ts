@@ -284,6 +284,16 @@ const EnvSchema = z
     // default) = no cross-origin access at all. See lib/cors.ts.
     CORS_ALLOWED_ORIGINS: originListEnv(),
 
+    // --- Sésame (the portfolio's sign-in, OpenID Connect) ------------------
+    // A second door beside the password: "Sign in with Sésame" on /login,
+    // once an account has linked its Sésame identity (account menu → Link
+    // Sésame). The three together or none (cf. superRefine); empty = the
+    // button is not shown. Sésame says WHO; the role stays Winnow's.
+    // SESAME_ISSUER: https://auth.steeve.website — SESAME_CLIENT_ID: winnow.
+    SESAME_ISSUER: strEnv(""),
+    SESAME_CLIENT_ID: strEnv(""),
+    SESAME_CLIENT_SECRET: strEnv(""),
+
     // --- Folder picker (Volumes "Add folder") -----------------------------
     // Base directories the server-side folder picker is allowed to browse. The
     // configured volume dirs (incoming/finals/export) are always added on top,
@@ -476,6 +486,30 @@ const EnvSchema = z
     }
     // Immich push without a key would only fail later, one export job at a
     // time, with a 401 buried in the job result — fail at boot instead.
+    // Sésame: the three settings travel together, and the issuer is an
+    // absolute https URL (http on this machine only, for development).
+    const sesame = [env.SESAME_ISSUER, env.SESAME_CLIENT_ID, env.SESAME_CLIENT_SECRET];
+    if (sesame.some(Boolean) && !sesame.every(Boolean)) {
+      ctx.addIssue({
+        path: ["SESAME_ISSUER"],
+        code: z.ZodIssueCode.custom,
+        message: "SESAME_ISSUER, SESAME_CLIENT_ID and SESAME_CLIENT_SECRET are set together or not at all",
+      });
+    }
+    if (env.SESAME_ISSUER) {
+      let issuer: URL | null = null;
+      try {
+        issuer = new URL(env.SESAME_ISSUER);
+      } catch {}
+      const local = issuer && (issuer.hostname === "localhost" || issuer.hostname === "127.0.0.1");
+      if (!issuer || !(issuer.protocol === "https:" || (local && issuer.protocol === "http:"))) {
+        ctx.addIssue({
+          path: ["SESAME_ISSUER"],
+          code: z.ZodIssueCode.custom,
+          message: `must be an https URL, e.g. https://auth.steeve.website (got "${env.SESAME_ISSUER}")`,
+        });
+      }
+    }
     if (env.IMMICH_ENABLED && !env.IMMICH_API_KEY) {
       ctx.addIssue({
         path: ["IMMICH_API_KEY"],
@@ -529,6 +563,15 @@ function loadConfig() {
     cors: {
       allowedOrigins: e.CORS_ALLOWED_ORIGINS,
     },
+
+    // Sign-in through Sésame (cf. lib/sesame.ts); null = not configured.
+    sesame: e.SESAME_ISSUER
+      ? {
+          issuer: e.SESAME_ISSUER.replace(/\/+$/, ""),
+          clientId: e.SESAME_CLIENT_ID,
+          clientSecret: e.SESAME_CLIENT_SECRET,
+        }
+      : null,
 
     import: {
       inboxDir: e.INBOX_DIR,

@@ -28,6 +28,7 @@ const PUBLIC_PREFIXES = [
   "/api/auth/login",
   "/api/auth/setup",
   "/api/auth/invite",
+  "/api/auth/sesame", // the round trip to Sésame (lib/sesame.ts)
   "/api/health",
 ];
 

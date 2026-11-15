@@ -8,6 +8,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Brand, Spinner } from "../ui";
+import { SESAME_ERRORS, type SesameError } from "@/lib/sesameMessages";
 
 type Mode = "loading" | "login" | "setup";
 
@@ -19,7 +20,13 @@ function safeNext(raw: string | null): string {
 
 export default function LoginForm() {
   const router = useRouter();
-  const next = safeNext(useSearchParams().get("next"));
+  const params = useSearchParams();
+  const next = safeNext(params.get("next"));
+  // ?sesame=… : how the last round trip to Sésame ended (lib/sesameMessages).
+  const sesameError = params.get("sesame");
+  const sesameMessage =
+    sesameError && sesameError in SESAME_ERRORS ? SESAME_ERRORS[sesameError as SesameError] : null;
+  const [sesame, setSesame] = useState(false);
 
   const [mode, setMode] = useState<Mode>("loading");
   const [username, setUsername] = useState("");
@@ -34,7 +41,9 @@ export default function LoginForm() {
     fetch("/api/auth/setup")
       .then((r) => r.json())
       .then((d) => {
-        if (alive) setMode(d?.setupNeeded ? "setup" : "login");
+        if (!alive) return;
+        setMode(d?.setupNeeded ? "setup" : "login");
+        setSesame(Boolean(d?.sesame));
       })
       .catch(() => {
         if (alive) setMode("login");
@@ -164,7 +173,9 @@ export default function LoginForm() {
           </>
         )}
 
-        {error && <div className="login-error">{error}</div>}
+        {(error || (mode === "login" && sesameMessage)) && (
+          <div className="login-error">{error || sesameMessage}</div>
+        )}
 
         <button
           className="btn btn-primary login-submit"
@@ -179,6 +190,21 @@ export default function LoginForm() {
             "Sign in"
           )}
         </button>
+
+        {/* A second door, once this instance knows Sésame and the account has
+            linked it (account menu → Link Sésame). A plain link: the round
+            trip is a full navigation, never a fetch. */}
+        {mode === "login" && sesame && (
+          <>
+            <div className="login-or">or</div>
+            <a
+              className="btn login-submit"
+              href={`/api/auth/sesame/login?next=${encodeURIComponent(next)}`}
+            >
+              Sign in with Sésame
+            </a>
+          </>
+        )}
       </form>
     </div>
   );

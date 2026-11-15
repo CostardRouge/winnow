@@ -16,12 +16,14 @@ import {
   usersExist,
 } from "@/lib/auth";
 import { json, badRequest, serverError, cookieSecure } from "@/lib/api";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return json({ setupNeeded: !(await usersExist()) });
+    // `sesame`: whether /login offers "Sign in with Sésame" (lib/sesame.ts).
+    return json({ setupNeeded: !(await usersExist()), sesame: Boolean(config.sesame) });
   } catch (err) {
     return serverError(err);
   }

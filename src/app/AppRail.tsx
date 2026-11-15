@@ -93,12 +93,16 @@ type Me = {
   username: string;
   displayName: string | null;
   role: "admin" | "editor" | "viewer";
+  via?: string | null;
+  // null: this instance has no Sésame; else whether the account is linked.
+  sesame?: { linked: boolean } | null;
 };
 
 // The signed-in account, foot of the rail: an initial chip that opens a small
 // popover (who am I, role, Users management for admins, sign out).
 function AccountChip({ version }: { version: string }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [open, setOpen] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -117,6 +121,18 @@ function AccountChip({ version }: { version: string }) {
     };
   }, []);
 
+  // Back from linking Sésame (?sesame=linked|taken, api/auth/sesame/callback):
+  // say a refusal once, then drop the parameter from the address.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const outcome = url.searchParams.get("sesame");
+    if (outcome !== "linked" && outcome !== "taken") return;
+    if (outcome === "taken")
+      window.alert("This Sésame identity is already linked to another Winnow account.");
+    url.searchParams.delete("sesame");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
+
   // Close on any click outside the chip/popover.
   useEffect(() => {
     if (!open) return;
@@ -131,6 +147,17 @@ function AccountChip({ version }: { version: string }) {
 
   const name = me.displayName?.trim() || me.username;
   const initial = name.charAt(0).toUpperCase();
+
+  async function unlinkSesame() {
+    if (!window.confirm("Unlink Sésame? You will sign in with your password only.")) return;
+    setOpen(false);
+    const r = await fetch("/api/auth/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sesame: null }),
+    });
+    if (r.ok) setMe({ ...me!, sesame: { linked: false } });
+  }
 
   async function signOut() {
     try {
@@ -197,6 +224,34 @@ function AccountChip({ version }: { version: string }) {
             </span>
             Change password
           </button>
+          {/* Not through an app token: a token cannot link nor unlink (api/auth/me). */}
+          {me.sesame && me.via !== "token" && me.via !== "agent" && (
+            me.sesame.linked ? (
+              <button
+                type="button"
+                className="account-item"
+                role="menuitem"
+                onClick={unlinkSesame}
+              >
+                <span className="account-item-ic" aria-hidden>
+                  {Icons.key}
+                </span>
+                Unlink Sésame
+              </button>
+            ) : (
+              // A full navigation: the round trip to Sésame and back.
+              <a
+                href={`/api/auth/sesame/login?intent=link&next=${encodeURIComponent(pathname || "/library")}`}
+                className="account-item"
+                role="menuitem"
+              >
+                <span className="account-item-ic" aria-hidden>
+                  {Icons.key}
+                </span>
+                Link Sésame
+              </a>
+            )
+          )}
           <button
             type="button"
             className="account-item"

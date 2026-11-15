@@ -11,6 +11,10 @@ were given after the fact to the history's turning points.
 
 ### Added
 
+- Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
+  account menu (Link Sésame, while signed in with its password), /login offers Sign in with Sésame beside the
+  password, which keeps working. Whether someone may enter is decided in Sésame; their role stays Winnow's. Unlink
+  Sésame in the same menu.
 - Favourites: a ♥ marks the pictures you want to show, without sorting the folder first. Set it with F in the
   viewer, the heart on a tile, or ♥ Favourite on a selection — in Incoming and in the Gallery alike, where it is the
   one mark allowed. It moves no verdict or star and leaves a folder's progress as it was; a RAW+JPEG pair or a Live
