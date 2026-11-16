@@ -394,6 +394,14 @@ export const Icons = {
       <path d="M17 8.5 20.5 12 17 15.5" />
     </svg>
   ),
+  // Sésame's arch and its dot — the portfolio's sign-in door. Its own image
+  // so the account menu never shows the password's key for it.
+  sesame: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 20v-8a5 5 0 0 1 10 0v8" />
+      <circle cx="12" cy="15" r="1.2" fill="currentColor" />
+    </svg>
+  ),
   key: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="8" cy="14" r="4.5" />

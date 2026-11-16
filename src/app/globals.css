@@ -9335,6 +9335,35 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply inline-flex items-center justify-center;
     color: var(--color-muted);
   }
+  /* A group inside the popover (Sign-in: Password, Sésame), titled like the
+     app's other micro labels. */
+  .account-group {
+    margin-top: 2px;
+  }
+  .account-group-label {
+    @apply text-[11px] font-medium uppercase;
+    padding: 8px 8px 2px;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+  }
+  /* What a row is set to, at its right: "Change", "Link", "● linked". */
+  .account-item-hint {
+    @apply inline-flex items-center gap-1 text-[11px];
+    margin-left: auto;
+    padding-left: 14px;
+    color: var(--color-muted);
+  }
+  .account-state-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-pick);
+  }
+  /* Sign out stands alone under a rule. */
+  .account-sep {
+    border-top: 1px solid var(--color-border);
+    margin: 4px 2px;
+  }
   .account-version {
     @apply text-[11px];
     padding: 6px 8px 2px;
