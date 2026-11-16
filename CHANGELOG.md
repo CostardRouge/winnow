@@ -12,9 +12,9 @@ were given after the fact to the history's turning points.
 ### Added
 
 - Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
-  account menu (Link Sésame, while signed in with its password), /login offers Sign in with Sésame beside the
-  password, which keeps working. Whether someone may enter is decided in Sésame; their role stays Winnow's. Unlink
-  Sésame in the same menu.
+  account menu (Sésame › Link, while signed in with its password), /login offers Sign in with Sésame beside the
+  password, which keeps working. Whether someone may enter is decided in Sésame; their role stays Winnow's. The same
+  row says when it is linked and offers to unlink it, after a confirmation.
 - Favourites: a ♥ marks the pictures you want to show, without sorting the folder first. Set it with F in the
   viewer, the heart on a tile, or ♥ Favourite on a selection — in Incoming and in the Gallery alike, where it is the
   one mark allowed. It moves no verdict or star and leaves a folder's progress as it was; a RAW+JPEG pair or a Live
@@ -34,6 +34,8 @@ were given after the fact to the history's turning points.
 
 ### Changed
 
+- The account menu is grouped: Settings and Users, then how you sign in (Password, Sésame with whether it is
+  linked), then Sign out on its own. Unlinking Sésame asks first and is no longer a row beside Sign out.
 - Red and vermillion now mean something: Pause scan and Remove from history are plain buttons, and sliders,
   checkboxes and the selection count are drawn in ink instead of the accent colour.
 - Buttons, fields, tabs and toggles come in three heights instead of nine, and on a phone every one of them is

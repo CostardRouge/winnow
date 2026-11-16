@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Brand, Icons } from "./ui";
+import { AccountMenu } from "./AccountMenu";
+import { Brand, ConfirmDialog, Icons } from "./ui";
 import ThemeToggle from "./ThemeToggle";
 import ChangePasswordModal from "./ChangePasswordModal";
 import { useFeatures } from "./FeaturesProvider";
@@ -99,13 +100,15 @@ type Me = {
 };
 
 // The signed-in account, foot of the rail: an initial chip that opens a small
-// popover (who am I, role, Users management for admins, sign out).
+// popover (AccountMenu: the places, how you sign in, sign out).
 function AccountChip({ version }: { version: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [open, setOpen] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -149,14 +152,18 @@ function AccountChip({ version }: { version: string }) {
   const initial = name.charAt(0).toUpperCase();
 
   async function unlinkSesame() {
-    if (!window.confirm("Unlink Sésame? You will sign in with your password only.")) return;
-    setOpen(false);
-    const r = await fetch("/api/auth/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sesame: null }),
-    });
-    if (r.ok) setMe({ ...me!, sesame: { linked: false } });
+    setUnlinking(true);
+    try {
+      const r = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sesame: null }),
+      });
+      if (r.ok) setMe({ ...me!, sesame: { linked: false } });
+    } finally {
+      setUnlinking(false);
+      setConfirmingUnlink(false);
+    }
   }
 
   async function signOut() {
@@ -181,93 +188,43 @@ function AccountChip({ version }: { version: string }) {
         {initial}
       </button>
       {open && (
-        <div className="account-pop" role="menu">
-          <div className="account-id">
-            <span className="account-name">{name}</span>
-            <span className="account-role">{me.role}</span>
-          </div>
-          <Link
-            href="/settings"
-            className="account-item"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            <span className="account-item-ic" aria-hidden>
-              {Icons.settings}
-            </span>
-            Settings
-          </Link>
-          {me.role === "admin" && (
-            <Link
-              href="/users"
-              className="account-item"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-            >
-              <span className="account-item-ic" aria-hidden>
-                {Icons.users}
-              </span>
-              Users
-            </Link>
-          )}
-          <button
-            type="button"
-            className="account-item"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              setChangingPassword(true);
-            }}
-          >
-            <span className="account-item-ic" aria-hidden>
-              {Icons.key}
-            </span>
-            Change password
-          </button>
-          {/* Not through an app token: a token cannot link nor unlink (api/auth/me). */}
-          {me.sesame && me.via !== "token" && me.via !== "agent" && (
-            me.sesame.linked ? (
-              <button
-                type="button"
-                className="account-item"
-                role="menuitem"
-                onClick={unlinkSesame}
-              >
-                <span className="account-item-ic" aria-hidden>
-                  {Icons.key}
-                </span>
-                Unlink Sésame
-              </button>
-            ) : (
-              // A full navigation: the round trip to Sésame and back.
-              <a
-                href={`/api/auth/sesame/login?intent=link&next=${encodeURIComponent(pathname || "/library")}`}
-                className="account-item"
-                role="menuitem"
-              >
-                <span className="account-item-ic" aria-hidden>
-                  {Icons.key}
-                </span>
-                Link Sésame
-              </a>
-            )
-          )}
-          <button
-            type="button"
-            className="account-item"
-            role="menuitem"
-            onClick={signOut}
-          >
-            <span className="account-item-ic" aria-hidden>
-              {Icons.signout}
-            </span>
-            Sign out
-          </button>
-          {/* Which build the instance runs, at the foot of the menu: a phone in
-              hand has no other way to tell (CHANGELOG.md says what it brought). */}
-          <div className="account-version">Winnow v{version}</div>
-        </div>
+        <AccountMenu
+          user={{
+            name,
+            role: me.role,
+            // Not through an app token: a token cannot link nor unlink (api/auth/me).
+            sesame: me.sesame && me.via !== "token" && me.via !== "agent" ? me.sesame : null,
+          }}
+          version={version}
+          linkHref={`/api/auth/sesame/login?intent=link&next=${encodeURIComponent(pathname || "/library")}`}
+          onNavigate={() => setOpen(false)}
+          onChangePassword={() => {
+            setOpen(false);
+            setChangingPassword(true);
+          }}
+          onSesameLinked={() => {
+            setOpen(false);
+            setConfirmingUnlink(true);
+          }}
+          onSignOut={signOut}
+        />
       )}
+      <ConfirmDialog
+        open={confirmingUnlink}
+        title="Sésame is linked"
+        message={
+          <p>
+            You can sign in to Winnow with your Sésame passkey. Unlinking leaves your password as the
+            only way in; you can link Sésame again from this menu.
+          </p>
+        }
+        confirmLabel="Unlink Sésame"
+        cancelLabel="Keep it linked"
+        danger
+        busy={unlinking}
+        onConfirm={unlinkSesame}
+        onCancel={() => setConfirmingUnlink(false)}
+      />
       {changingPassword && (
         <ChangePasswordModal onClose={() => setChangingPassword(false)} />
       )}
