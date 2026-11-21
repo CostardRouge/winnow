@@ -22,7 +22,50 @@ type UserItem = {
   lastLoginAt: string | null;
   passwordSet: boolean;
   inviteExpiresAt: string | null; // live (non-expired) invite only
+  sesameLinked: boolean;
+  roleChange: RoleChange | null;
 };
+
+// The latest row of the role trail (migration 0060).
+type RoleChange = {
+  source: "admin" | "sesame";
+  from: string;
+  to: string;
+  kept: "last_admin" | null;
+  at: string;
+  by: string | null;
+};
+
+function fmtDay(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB");
+}
+
+// Under the role picker: where this role comes from. A linked account's role
+// is set at each Sésame sign-in from the role chosen in Sésame's app
+// `winnow`, so an edit here does not stick — the page says so rather than
+// letting it look permanent.
+function RoleSource({ u }: { u: UserItem }) {
+  const c = u.roleChange;
+  const last =
+    c?.kept === "last_admin"
+      ? `Sésame says ${c.to} (${fmtDay(c.at)}): kept admin, the last active one`
+      : c?.source === "sesame"
+        ? `set by Sésame ${fmtDay(c.at)}`
+        : c
+          ? `set here${c.by ? ` by @${c.by}` : ""} ${fmtDay(c.at)}`
+          : null;
+  if (!u.sesameLinked) return last ? <div className="hint">{last}</div> : null;
+  return (
+    <div
+      className="hint"
+      title="Linked to Sésame: each Sésame sign-in applies the role chosen for this person in Sésame's app winnow, overwriting an edit made here. With no role chosen there, the role here stays."
+    >
+      From Sésame — an edit here lasts until their next Sésame sign-in
+      {last && <div>{last}</div>}
+    </div>
+  );
+}
 
 const ROLES: UserRole[] = ["viewer", "editor", "admin"];
 
@@ -201,6 +244,7 @@ export default function UsersPanel() {
                         </option>
                       ))}
                     </select>
+                    <RoleSource u={u} />
                   </td>
                   <td className="num" data-th="Last sign-in">
                     {fmtDate(u.lastLoginAt)}

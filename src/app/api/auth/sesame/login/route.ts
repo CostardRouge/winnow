@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
     const state = oidc.randomState();
     const target = oidc.buildAuthorizationUrl(client, {
       redirect_uri: `${here}${SESAME_CALLBACK_PATH}`,
-      scope: "openid profile email",
+      // `role`: the person's role in Sésame's app `winnow`, applied to the
+      // linked account at sign-in (lib/sesameRole.ts).
+      scope: "openid profile email role",
       code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
       code_challenge_method: "S256",
       state,

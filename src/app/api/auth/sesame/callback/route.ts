@@ -2,7 +2,9 @@
 // The code is exchanged with the verifier this browser's flow cookie kept;
 // openid-client checks the state and the ID token. Then:
 //   * login: the account linked to this Sésame identity gets the SAME session
-//     cookie as the password (lib/auth createSession) — or /login says why not;
+//     cookie as the password (lib/auth createSession) — or /login says why not —
+//     and takes the role the ID token carries, when it carries a valid one
+//     (lib/sesameRole.ts: never on absence, never the last admin's);
 //   * link:  the signed-in account is linked to this identity.
 // Who may reach this point with a code is Sésame's decision: a person not
 // given access to the app `winnow` there is refused and never comes back.
@@ -13,6 +15,7 @@ import { config } from "@/lib/config";
 import { q } from "@/lib/db";
 import { cookieSecure } from "@/lib/api";
 import { linkSesame, sesameClient, userBySesameSub } from "@/lib/sesame";
+import { applySesameRole } from "@/lib/sesameRole";
 import {
   SESAME_FLOW_COOKIE,
   SESAME_FLOW_PATH,
@@ -41,6 +44,7 @@ export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.has("error")) return failed("refused");
 
   let sub: string;
+  let roleClaim: unknown;
   try {
     // The URL as the browser called it: the redirect_uri must match exactly.
     const current = new URL(`${here}${req.nextUrl.pathname}${req.nextUrl.search}`);
@@ -48,9 +52,10 @@ export async function GET(req: NextRequest) {
       pkceCodeVerifier: flow.verifier,
       expectedState: flow.state,
     });
-    const claimed = tokens.claims()?.sub;
-    if (!claimed) return failed("failed");
-    sub = claimed;
+    const claims = tokens.claims();
+    if (!claims?.sub) return failed("failed");
+    sub = claims.sub;
+    roleClaim = claims.role;
   } catch {
     return failed("failed");
   }
@@ -67,6 +72,7 @@ export async function GET(req: NextRequest) {
   const user = await userBySesameSub(sub);
   if (!user) return failed("unlinked");
   if (user.disabled) return failed("disabled");
+  await applySesameRole(user.id, roleClaim);
   const { token, expiresAt } = await createSession(user.id, req.headers.get("user-agent"));
   await q("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
   const res = done(flow.next);

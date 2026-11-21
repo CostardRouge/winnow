@@ -8,7 +8,10 @@
 //   * the library can never end up without an active admin — the last one
 //     cannot be demoted, disabled or deleted;
 //   * deleting your own account is refused (sign in as another admin to do it);
-//   * a disable revokes every session of the target.
+//   * a disable revokes every session of the target;
+//   * a role change is recorded in role_changes (migration 0060). On an account
+//     linked to Sésame it lasts until the next Sésame sign-in, which applies
+//     the role chosen there (lib/sesameRole.ts).
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { one } from "@/lib/db";
@@ -18,6 +21,8 @@ import {
   type UserRow,
 } from "@/lib/auth";
 import { json, badRequest, notFound, serverError } from "@/lib/api";
+import { pool } from "@/lib/db";
+import { recordRoleChange } from "@/lib/sesameRole";
 
 export const dynamic = "force-dynamic";
 
@@ -64,8 +69,18 @@ export async function PATCH(
     if (losesAdmin && (await activeAdminCount()) <= 1)
       return badRequest("Cannot remove the last active admin");
 
-    if (role !== undefined)
+    if (role !== undefined && role !== target.role) {
       await one("UPDATE users SET role = $2 WHERE id = $1", [id, role]);
+      // The trail the Users page reads (« set here by X » vs « set by Sésame »).
+      // A linked account's next Sésame sign-in may set it again.
+      await recordRoleChange(pool, {
+        userId: id,
+        from: target.role,
+        to: role,
+        source: "admin",
+        actorId: identityFromHeaders(req.headers)?.id ?? null,
+      });
+    }
     if (displayName !== undefined)
       await one("UPDATE users SET display_name = $2 WHERE id = $1", [
         id,
