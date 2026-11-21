@@ -5,8 +5,8 @@
 // 0059) from a session already signed in with the password. Never matched by
 // email — Sésame does not verify addresses, so an email match would hand an
 // account to whoever registered that address there. Sésame says who and,
-// through its memberships, whether this person may enter Winnow at all; the
-// role stays Winnow's. The protocol is openid-client's (OpenID Certified):
+// through its memberships, whether this person may enter Winnow at all — and,
+// since migration 0060, with which role (lib/sesameRole.ts). The protocol is openid-client's (OpenID Certified):
 // PKCE, state, the ID token's signature, issuer, audience and expiry.
 import * as oidc from "openid-client";
 import { config } from "./config";

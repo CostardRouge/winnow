@@ -193,6 +193,13 @@ export async function destroyUserSessions(userId: number): Promise<void> {
   for (const [k, v] of cache) if (v.user?.id === userId) cache.delete(k);
 }
 
+// Drop a user's cached identities — sessions and app tokens alike — WITHOUT
+// revoking them, so the next request re-reads the row (a role set by a Sésame
+// sign-in, lib/sesameRole.ts). The session stays; only its cached role goes.
+export function forgetUserCache(userId: number): void {
+  for (const [k, v] of cache) if (v.user?.id === userId) cache.delete(k);
+}
+
 // --- Validation (the per-request hot path) --------------------------------
 
 type CacheEntry = { user: SessionUser | null; at: number };

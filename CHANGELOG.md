@@ -13,8 +13,12 @@ were given after the fact to the history's turning points.
 
 - Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
   account menu (Sésame › Link, while signed in with its password), /login offers Sign in with Sésame beside the
-  password, which keeps working. Whether someone may enter is decided in Sésame; their role stays Winnow's. The same
-  row says when it is linked and offers to unlink it, after a confirmation.
+  password, which keeps working. Whether someone may enter is decided in Sésame, and so is their role: each Sésame
+  sign-in gives the account the role (viewer, editor or admin) chosen for that person in Sésame. With no role chosen
+  there, the role in Winnow stays as it is, and the last administrator is never demoted this way. The same row says
+  when it is linked and offers to unlink it, after a confirmation.
+- Users shows where each role comes from: "From Sésame" on a linked account — a change made there lasts until that
+  person's next Sésame sign-in — and who last set it (Sésame or an administrator, and when).
 - Favourites: a ♥ marks the pictures you want to show, without sorting the folder first. Set it with F in the
   viewer, the heart on a tile, or ♥ Favourite on a selection — in Incoming and in the Gallery alike, where it is the
   one mark allowed. It moves no verdict or star and leaves a folder's progress as it was; a RAW+JPEG pair or a Live

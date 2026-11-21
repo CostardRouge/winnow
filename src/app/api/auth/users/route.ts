@@ -22,6 +22,20 @@ export const dynamic = "force-dynamic";
 type ListRow = UserRow & {
   password_set: boolean;
   invite_expires_at: string | null;
+  sesame_linked?: boolean;
+  role_change?: RoleChange | null;
+};
+
+// The latest row of role_changes (migration 0060): who last set the role and
+// how — « set by Sésame » or « set here by X », or a Sésame claim refused
+// because it would have demoted the last active admin.
+type RoleChange = {
+  source: "admin" | "sesame";
+  from: string;
+  to: string;
+  kept: "last_admin" | null;
+  at: string;
+  by: string | null;
 };
 
 function publicUser(u: ListRow) {
@@ -36,6 +50,10 @@ function publicUser(u: ListRow) {
     passwordSet: u.password_set,
     // Live (non-expired) invite only: an expired link reads as "none".
     inviteExpiresAt: u.invite_expires_at,
+    // Linked to Sésame: its role is set at each Sésame sign-in from the role
+    // chosen there (lib/sesameRole.ts) — a hand edit here lasts until then.
+    sesameLinked: Boolean(u.sesame_linked),
+    roleChange: u.role_change ?? null,
   };
 }
 
@@ -45,9 +63,21 @@ export async function GET() {
       `SELECT u.id, u.username, u.display_name, u.role, u.disabled,
               u.created_at, u.last_login_at,
               (u.password_hash IS NOT NULL) AS password_set,
-              CASE WHEN i.expires_at > now() THEN i.expires_at END AS invite_expires_at
+              CASE WHEN i.expires_at > now() THEN i.expires_at END AS invite_expires_at,
+              (u.sesame_sub IS NOT NULL) AS sesame_linked,
+              rc.change AS role_change
          FROM users u
          LEFT JOIN user_invites i ON i.user_id = u.id
+         LEFT JOIN LATERAL (
+           SELECT json_build_object(
+                    'source', c.source, 'from', c.from_role, 'to', c.to_role,
+                    'kept', c.kept, 'at', c.at, 'by', a.username) AS change
+             FROM role_changes c
+             LEFT JOIN users a ON a.id = c.actor_id
+            WHERE c.user_id = u.id
+            ORDER BY c.at DESC, c.id DESC
+            LIMIT 1
+         ) rc ON true
         ORDER BY u.username`,
     );
     return json({ users: rows.map(publicUser) });
