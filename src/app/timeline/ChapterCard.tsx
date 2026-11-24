@@ -15,7 +15,7 @@ import { formatBadge } from "@/lib/format";
 import type { TimelineChapter } from "@/lib/timeline";
 import type { GalleryAsset } from "@/app/gallery/VirtualGrid";
 import type { ViewerItem } from "@/app/MediaViewer";
-import type { PickedLocation } from "@/app/LocationPickerModal";
+import type { PickedLocation } from "@/app/LocationPicker";
 
 export type Row = GalleryAsset & ViewerItem & { captured_at: string | null };
 
@@ -69,9 +69,9 @@ export default function ChapterCard({
   onOpen: (rows: Row[], index: number) => void;
   /** Rename / locate / split / merge — the host opens the dialog. */
   onEdit: (chapter: TimelineChapter) => void;
-  /** An inferred place is a guess: this opens the manual geotag flow (picker
-   *  + recap) on the chapter's GPS-less media. The only way an inference
-   *  ever becomes a coordinate. */
+  /** An inferred place is a guess: this opens the Place dialog shared with
+   *  Unplaced (map + recap in one) on the chapter's media. The only way an
+   *  inference ever becomes a coordinate. */
   onConfirmPlace: (chapter: TimelineChapter) => void;
   /** The chapter has a chosen location and GPS-less media: offer to place
    *  them there — through the same recap, never implicitly. */

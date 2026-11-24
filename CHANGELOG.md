@@ -46,6 +46,9 @@ were given after the fact to the history's turning points.
   44 px tall — tabs no longer shrink on a narrow screen, and filter chips keep their size with a larger touch area.
 - The Timeline starts from the present and scrolls back in time. Newest first / Oldest first switches the direction —
   the chapters and the month rail together — and the choice is remembered on the device and kept in the link.
+- Placing a Timeline chapter's media opens the same dialog as Unplaced: the map and the media in one window, folder
+  by folder, with the positions already placed around those dates one click away. A spot that was itself an accepted
+  suggestion stays a suggestion, and screenshots, saved files and graded exports are left out, as on Unplaced.
 
 ### Fixed
 

@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 import type { TimelineChapter } from "@/lib/timeline";
 import type { PlaceSuggestion } from "@/lib/geocode";
-import type { PickedLocation } from "@/app/LocationPickerModal";
+import type { PickedLocation } from "@/app/LocationPicker";
 import { Spinner } from "@/app/ui";
 import { useOverlayDismiss } from "@/app/useOverlayDismiss";
 
