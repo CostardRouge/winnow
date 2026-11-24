@@ -12,10 +12,10 @@ import CalendarView from "./CalendarView";
 import type { Bbox, GeoPoint } from "./MapView";
 import FilterPanel, {
   EMPTY_FILTERS,
-  MB,
   type Filters,
   type Facets,
 } from "./FilterPanel";
+import { countActiveFilters, filterQuery } from "./filterParams";
 import Tree, { type PathSeg } from "./Tree";
 import AssetActionMenu, {
   MAINTENANCE_ACTIONS,
@@ -178,113 +178,6 @@ const ASIDE_MQ = "(min-width: 761px)";
 // collapse/expand flash), a harmless no-op during SSR.
 const useIsoLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
-function toQuery(
-  f: Filters,
-  scope?: Scope,
-  cursor?: string | null,
-  opts?: { skipBbox?: boolean },
-): string {
-  const sp = new URLSearchParams();
-  const arr = (k: string, a: (string | number)[]) =>
-    a.length && sp.set(k, a.join(","));
-  if (f.q) sp.set("q", f.q);
-  arr("media_type", f.media_type);
-  arr("ext", f.ext);
-  arr("derivative_status", f.derivative_status);
-  arr("not_derivative_status", f.not_derivative_status);
-  arr("device", f.device);
-  arr("device_source", f.device_source);
-  arr("shot_by", f.shot_by);
-  arr("camera_model", f.camera_model);
-  arr("lens", f.lens);
-  arr("place_country", f.place_country);
-  arr("place_region", f.place_region);
-  arr("place_county", f.place_county);
-  arr("place_city", f.place_city);
-  arr("place_poi", f.place_poi);
-  arr("tags", f.tags);
-  arr("year", f.year);
-  arr("month", f.month);
-  arr("day", f.day);
-  if (scope) sp.set("kind", scope);
-  if (f.root_id != null) sp.set("root_id", String(f.root_id));
-  if (f.session_id != null) sp.set("session_id", String(f.session_id));
-  if (f.date_from) sp.set("date_from", f.date_from);
-  if (f.date_to) sp.set("date_to", f.date_to);
-  if (f.verdict) sp.set("verdict", f.verdict);
-  if (f.star_min) sp.set("star_min", String(f.star_min));
-  if (f.favourite) sp.set("favourite", "true");
-  for (const k of [
-    "iso_min", "iso_max", "focal_min", "focal_max", "aperture_min", "aperture_max",
-    "sharpness_min", "sharpness_max",
-  ] as const) {
-    if (f[k] != null) sp.set(k, String(f[k]));
-  }
-  if (f.size_min != null) sp.set("size_min", String(Math.round(f.size_min * MB)));
-  if (f.size_max != null) sp.set("size_max", String(Math.round(f.size_max * MB)));
-  if (f.geo_state) sp.set("geo_state", f.geo_state);
-  if (f.group_kind) sp.set("group_kind", f.group_kind);
-  // Finals ↔ sources (cf. lib/reconcile.ts) — tri-state, like has_faces/stacked:
-  // `false` asks for the complement (not edited yet / no original found).
-  if (f.has_edit != null) sp.set("has_edit", f.has_edit ? "true" : "false");
-  if (f.is_edit != null) sp.set("is_edit", f.is_edit ? "true" : "false");
-  // ML analysis (faces + OCR + people, cf. lib/ml.ts, lib/people.ts). The
-  // "together" combinator only means something with two or more people picked.
-  arr("face_count", f.face_count);
-  arr("person", f.person);
-  if (f.person_mode === "all" && f.person.length > 1)
-    sp.set("person_mode", "all");
-  if (f.has_faces != null) sp.set("has_faces", f.has_faces ? "true" : "false");
-  if (f.has_text) sp.set("has_text", "true");
-  if (f.near_dup) sp.set("near_dup", "true");
-  // Burst/bracket piles (cf. lib/bursts.ts) — tri-state, like has_faces.
-  if (f.stacked != null) sp.set("stacked", f.stacked ? "true" : "false");
-  if (f.burst_kind) sp.set("burst_kind", f.burst_kind);
-  // Session-grid status toggle (ignored sessions are hidden by default).
-  if (f.show_ignored) sp.set("show_ignored", "true");
-  if (f.bbox && !opts?.skipBbox) sp.set("bbox", f.bbox.join(","));
-  if (cursor) sp.set("cursor", cursor);
-  return sp.toString();
-}
-
-// How many filter dimensions are narrowing the library right now. Feeds the
-// toolbar's "N filters" pill so a reduced view is never mistaken for the whole
-// library. Each dimension counts once however many values it holds ("3" should
-// read as "three panel sections touched"), and min/max pairs count as one.
-// `show_ignored` widens the Sessions grid rather than narrowing it — excluded.
-const FILTER_ARRAY_KEYS = [
-  "media_type", "ext", "derivative_status", "not_derivative_status",
-  "device", "device_source", "shot_by", "camera_model", "lens",
-  "place_country", "place_region", "place_county", "place_city", "place_poi",
-  "person", "tags", "year", "month", "day",
-] as const;
-
-function countActiveFilters(f: Filters): number {
-  let n = 0;
-  for (const k of FILTER_ARRAY_KEYS) if (f[k].length) n++;
-  if (f.q) n++;
-  if (f.root_id != null) n++;
-  if (f.session_id != null) n++;
-  if (f.date_from || f.date_to) n++;
-  if (f.verdict) n++;
-  if (f.star_min) n++;
-  if (f.favourite) n++;
-  if (f.iso_min != null || f.iso_max != null) n++;
-  if (f.focal_min != null || f.focal_max != null) n++;
-  if (f.aperture_min != null || f.aperture_max != null) n++;
-  if (f.size_min != null || f.size_max != null) n++;
-  if (f.sharpness_min != null || f.sharpness_max != null) n++;
-  if (f.geo_state) n++;
-  if (f.group_kind) n++;
-  if (f.has_edit != null) n++;
-  if (f.is_edit != null) n++;
-  if (f.near_dup) n++;
-  if (f.stacked != null) n++;
-  if (f.burst_kind) n++;
-  if (f.bbox) n++;
-  return n;
-}
 
 // Applies a tree node's path as scope (resets the tree dimensions, keeps the
 // other filters: verdict, tags, type...).
@@ -501,7 +394,7 @@ export default function GalleryShell({
           assets?: Row[];
           next_cursor?: string | null;
         }>(
-          `/api/assets?${toQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1&limit=${cur ? NEXT_PAGE : FIRST_PAGE}`,
+          `/api/assets?${filterQuery(filters, scope, cur)}&sort_dir=${sortDir}&collapse=1&limit=${cur ? NEXT_PAGE : FIRST_PAGE}`,
           { signal: ctl.signal },
         );
         if (gen !== pageGen.current) return;
@@ -552,7 +445,7 @@ export default function GalleryShell({
   // marker per ~1 m spot with its count (`by=place` — the per-media points
   // stop at 10 000, newest first, which hid most of the library). The zone/bbox
   // is chosen ON the map, so it's excluded from this query.
-  const geoQuery = toQuery(filters, scope, null, { skipBbox: true });
+  const geoQuery = filterQuery(filters, scope, null, { skipBbox: true });
   useEffect(() => {
     if (view !== "map") return;
     let cancelled = false;
@@ -1264,7 +1157,7 @@ export default function GalleryShell({
 
   // Any view that shows the shared Filters/Browse aside (Grid, Map, Sessions).
   const showAside = Boolean(current.usesGalleryData || current.usesFilters);
-  const viewCtx: ViewContext = { query: toQuery(filters, scope) };
+  const viewCtx: ViewContext = { query: filterQuery(filters, scope) };
 
   return (
     <div className="gallery-shell">

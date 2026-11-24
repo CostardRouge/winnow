@@ -62,6 +62,7 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 - Dedup triage is a plan (one card per branch of the auto rule + "Needs you"), folder pairs, a staged keyboard review and the user's own strategies — every bulk path takes the FILTER and goes through `keepOneCopy`; the auto rule stays narrow and a new heuristic is only ever a suggestion → `docs/memory/frontend.md`
 - /gear carries no illustrations any more: eight layouts over one derived `Kit`, Stack the default, the choice remembered → `docs/memory/frontend.md`
 - One shared picker for "one of N": segments up to four options, a menu above — the form follows the count, never the viewport → `docs/memory/frontend.md`
+- One filter panel: a session mounts the Gallery's `FilterPanel` scoped to it (`/api/facets?session_id=`), one encoding (`filterQuery` in `gallery/filterParams.ts`) for both pages; never a second, reduced copy → `docs/memory/frontend.md`
 - The Incoming/Gallery/All picker is a SECTION selector: it rides `PageHeader`'s `tabs` slot beside the title on all five pages that carry it, never the toolbar band → `docs/memory/frontend.md`
 - Any element Leaflet initializes onto needs `isolation: isolate`, or its panes (z-index 200–700) escape and paint over the rest of the app — `.map-wrap`, `.picker-map`, `.heat-map` all needed it → `docs/memory/frontend.md`
 - An outage is reported as a status pill, never a takeover; the full-page offline screen is only for a cold navigation → `docs/memory/frontend.md`

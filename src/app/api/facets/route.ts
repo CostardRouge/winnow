@@ -1,7 +1,7 @@
-// GET /api/facets?kind=incoming|final -> available values (+ counts) to
-// build the filters. Global counts (v1), optionally restricted to the
-// folder role (Incoming/Final); cumulative filtering then applies on the
-// results side.
+// GET /api/facets?kind=incoming|final&session_id=N -> available values (+
+// counts) to build the filters. Global counts (v1), optionally restricted to
+// the folder role (Incoming/Final) or to one session (the session page's
+// panel); cumulative filtering then applies on the results side.
 import { NextRequest } from "next/server";
 import { many, one } from "@/lib/db";
 import {
@@ -55,10 +55,20 @@ async function settledArray(p: Promise<ValueCount[]>): Promise<ValueCount[]> {
 
 export async function GET(req: NextRequest) {
   try {
-    // Only `kind` (the role) matters here: the other dimensions are
-    // facets, not a scope.
-    const { kind } = filterFromSearchParams(req.nextUrl.searchParams);
-    const { conditions, params } = buildFilter(kind ? { kind } : {}, 1);
+    // Only the scope matters here — `kind` (the role) for the Library tabs,
+    // `session_id` for the session page's own panel, so its chips list what
+    // that folder holds and count it — never the library's 300 cities for a
+    // folder shot in one. The other dimensions are facets, not a scope.
+    const { kind, session_id } = filterFromSearchParams(
+      req.nextUrl.searchParams,
+    );
+    const { conditions, params } = buildFilter(
+      {
+        ...(kind ? { kind } : {}),
+        ...(session_id != null ? { session_id } : {}),
+      },
+      1,
+    );
     const scope = conditions.length ? ` AND ${conditions.join(" AND ")}` : "";
 
     const [

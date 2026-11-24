@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { friendlyCameraName } from "@/lib/cameraLabels";
 import { DEVICE_SOURCE_LABEL } from "@/lib/deviceTypes";
 
@@ -448,6 +455,10 @@ function PeopleFacet({
   );
 }
 
+// Set by a panel that hides the facets which cannot narrow anything (the
+// session page): the scope's media count, or null to show every facet.
+const NoOpTotal = createContext<number | null>(null);
+
 function Chips<T extends string | number>({
   title,
   options,
@@ -461,7 +472,19 @@ function Chips<T extends string | number>({
   onToggle: (v: T) => void;
   label?: (v: string | number) => string;
 }) {
+  const noOpTotal = useContext(NoOpTotal);
   if (!options || options.length === 0) return null;
+  // One value that every medium in scope carries is not a filter: picking it
+  // changes nothing. A folder is usually one camera, one country, one year —
+  // listing those would bury the two facets that do sort it. Never hidden
+  // while picked, so a deep link's chip can still be taken off.
+  if (
+    noOpTotal != null &&
+    options.length === 1 &&
+    options[0].count >= noOpTotal &&
+    selected.length === 0
+  )
+    return null;
   return (
     <div className="facet">
       <div className="facet-title">{title}</div>
@@ -500,6 +523,7 @@ function DerivativeFacet({
   exclude: string[];
   onChange: (next: { include: string[]; exclude: string[] }) => void;
 }) {
+  const noOpTotal = useContext(NoOpTotal);
   const [mode, setMode] = useState<"include" | "exclude">(
     exclude.length ? "exclude" : "include",
   );
@@ -512,6 +536,14 @@ function DerivativeFacet({
   }, [include.length, exclude.length]);
 
   if (!options || options.length === 0) return null;
+  // Same rule as Chips: one status every medium in scope shares sorts nothing.
+  if (
+    noOpTotal != null &&
+    options.length === 1 &&
+    options[0].count >= noOpTotal &&
+    include.length + exclude.length === 0
+  )
+    return null;
 
   const selected = mode === "exclude" ? exclude : include;
   const emit = (next: string[]) =>
@@ -580,18 +612,26 @@ export default function FilterPanel({
   filters,
   set,
   showSessionStatus = false,
+  inSession = false,
 }: {
   facets: Facets | null;
   filters: Filters;
   set: (f: Filters) => void;
   /** Show the Sessions-only status toggle (ignored). */
   showSessionStatus?: boolean;
+  /**
+   * The session page's panel: its toolbar already owns Verdict and ♥ (a
+   * counted toggle), so the panel leaves them out rather than draw a second
+   * control for the same filter, and it hides the facets one value covers.
+   */
+  inSession?: boolean;
 }) {
   if (!facets) return <div className="spinner">Loading filters…</div>;
   const u = (patch: Partial<Filters>) => set({ ...filters, ...patch });
   const status = facets.session_status;
 
   return (
+    <NoOpTotal.Provider value={inSession ? facets.total : null}>
     <div className="filter-panel">
       <SearchBox
         value={filters.q ?? ""}
@@ -617,6 +657,7 @@ export default function FilterPanel({
         </div>
       )}
 
+      {!inSession && (
       <div className="facet">
         <div className="facet-title">Verdict</div>
         <div className="chips">
@@ -631,7 +672,9 @@ export default function FilterPanel({
           ))}
         </div>
       </div>
+      )}
 
+      {!inSession && (
       <div className="facet">
         <div className="facet-title">Favourites</div>
         <div className="chips">
@@ -644,6 +687,7 @@ export default function FilterPanel({
           </button>
         </div>
       </div>
+      )}
 
       <div className="facet">
         <div className="facet-title">Min stars</div>
@@ -1140,5 +1184,6 @@ export default function FilterPanel({
         </div>
       )}
     </div>
+    </NoOpTotal.Provider>
   );
 }
