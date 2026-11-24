@@ -49,6 +49,9 @@ were given after the fact to the history's turning points.
 
 ### Fixed
 
+- Naming, locating or merging a chapter the Timeline cut by itself no longer fails with «Invalid span», and chapter
+  dates read correctly in Safari.
+
 - An edit sent back from Atelier is linked to the photo or clip it was made from as soon as it is indexed, whoever sent
   it — no admin reconcile needed. An unknown or trashed source is ignored with its reason, and the edit is still
   uploaded.
