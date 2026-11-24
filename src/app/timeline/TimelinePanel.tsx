@@ -20,6 +20,7 @@ import type {
 } from "@/lib/timeline";
 import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
 import PageHeader from "@/app/PageHeader";
+import { OptionPicker, type PickerOption } from "@/app/OptionPicker";
 import {
   LibrarySourceTabs,
   LIBRARY_SOURCES,
@@ -83,6 +84,20 @@ type Payload = {
 };
 
 const SOURCE_KEY = "winnow.timeline.source";
+const ORDER_KEY = "winnow.timeline.order";
+
+// Which way the stream reads. The derivation is chronological (chapters are
+// cut and absorbed in time order, cf. lib/timeline.ts); the order is a reading
+// choice applied on top, client-side, so flipping it costs no re-derivation.
+// Newest first is the default: the maintainer opens the Timeline to find what
+// he shot lately, and scrolling back is going back in time. A chapter's own
+// strip and dates stay chronological either way — a stay reads as a story.
+type Order = "newest" | "oldest";
+const ORDERS: PickerOption<Order>[] = [
+  { key: "newest", label: "Newest first", hint: "Start from the present and scroll back in time" },
+  { key: "oldest", label: "Oldest first", hint: "Start from the first dated media and scroll forward" },
+];
+const isOrder = (s: string | null): s is Order => s === "newest" || s === "oldest";
 
 const MODES: { key: ChapterMode; label: string; title: string }[] = [
   { key: "place", label: "Place", title: "One chapter per place, however long the stay" },
@@ -160,6 +175,28 @@ export default function TimelinePanel() {
     return isSource(s) ? s : null;
   });
   const [source, setSource] = useStoredLibrarySource(SOURCE_KEY, urlSource);
+  // A shared link's order wins; otherwise the last one chosen on this device.
+  const [order, setOrder] = useState<Order>(() => {
+    const o = searchParams.get("order");
+    return isOrder(o) ? o : "newest";
+  });
+  const orderFromUrl = useRef(isOrder(searchParams.get("order")));
+  useEffect(() => {
+    if (orderFromUrl.current) return;
+    try {
+      const saved = localStorage.getItem(ORDER_KEY);
+      if (isOrder(saved)) setOrder(saved);
+    } catch {
+      /* storage blocked: the default stands */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORDER_KEY, order);
+    } catch {
+      /* non-fatal */
+    }
+  }, [order]);
 
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -229,11 +266,12 @@ export default function TimelinePanel() {
       sp.set("mode", mode);
       sp.set("gran", gran);
       sp.set("source", source);
+      sp.set("order", order);
       router.replace(`/timeline?${sp.toString()}`, { scroll: false });
     } catch {
       /* non-fatal */
     }
-  }, [mode, gran, source, router]);
+  }, [mode, gran, source, order, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,22 +318,31 @@ export default function TimelinePanel() {
     [data],
   );
 
+  // The chapters in reading order: the payload is chronological, the newest
+  // first order is its reverse. Everything drawn in stream order (eras, the
+  // spine, the jump target) reads this list, never data.chapters directly.
+  const shown = useMemo(() => {
+    const list = (data?.chapters ?? []).filter((c) => !onlyInferred || c.place_inferred);
+    return order === "newest" ? [...list].reverse() : list;
+  }, [data, onlyInferred, order]);
+
   // Chapters grouped under their year, for the sticky era bracket.
   const eras = useMemo(() => {
     const out: { year: number; chapters: TimelineChapter[] }[] = [];
-    const list = (data?.chapters ?? []).filter((c) => !onlyInferred || c.place_inferred);
-    for (const ch of list) {
+    for (const ch of shown) {
       const y = new Date(ch.started_at).getUTCFullYear();
       const last = out[out.length - 1];
       if (last && last.year === y) last.chapters.push(ch);
       else out.push({ year: y, chapters: [ch] });
     }
     return out;
-  }, [data, onlyInferred]);
+  }, [shown]);
 
   const streamRef = useRef<HTMLDivElement>(null);
+  // The first chapter of that month ON SCREEN: newest first, that is the
+  // month's latest, so the jump lands at the top of the month either way.
   const jumpTo = (year: number, month: number) => {
-    const target = data?.chapters.find((c) => {
+    const target = shown.find((c) => {
       const d = new Date(c.started_at);
       return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
     });
@@ -336,6 +383,13 @@ export default function TimelinePanel() {
       />
 
       <div className="page-tools">
+        <OptionPicker
+          size="md"
+          ariaLabel="Direction of time"
+          options={ORDERS}
+          value={order}
+          onChange={setOrder}
+        />
         <div className="tabs" role="group" aria-label="Chapter rule">
           {MODES.map((m) => (
             <button
@@ -431,7 +485,8 @@ export default function TimelinePanel() {
         {data && data.spine.length > 0 && (
           <Spine
             spine={data.spine}
-            activeKey={data.chapters[0] ? monthKey(data.chapters[0].started_at) : null}
+            newestFirst={order === "newest"}
+            activeKey={shown[0] ? monthKey(shown[0].started_at) : null}
             onJump={jumpTo}
           />
         )}
@@ -537,10 +592,14 @@ const monthKey = (iso: string) => {
 
 function Spine({
   spine,
+  newestFirst,
   activeKey,
   onJump,
 }: {
   spine: { year: number; month: number; count: number }[];
+  /** Read top-down in the stream's own direction, so the rail and the
+   *  chapters it jumps to never run opposite ways. */
+  newestFirst: boolean;
   activeKey: string | null;
   onJump: (year: number, month: number) => void;
 }) {
@@ -557,6 +616,7 @@ function Spine({
       rows.push(spine.find((s) => s.year === y && s.month === m) ?? { year: y, month: m, count: 0 });
     }
   }
+  if (newestFirst) rows.reverse();
   let year: number | null = null;
   return (
     <div className="tl-spine" aria-label="Months">

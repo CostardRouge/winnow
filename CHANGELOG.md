@@ -44,6 +44,8 @@ were given after the fact to the history's turning points.
   checkboxes and the selection count are drawn in ink instead of the accent colour.
 - Buttons, fields, tabs and toggles come in three heights instead of nine, and on a phone every one of them is
   44 px tall — tabs no longer shrink on a narrow screen, and filter chips keep their size with a larger touch area.
+- The Timeline starts from the present and scrolls back in time. Newest first / Oldest first switches the direction —
+  the chapters and the month rail together — and the choice is remembered on the device and kept in the link.
 
 ### Fixed
 
