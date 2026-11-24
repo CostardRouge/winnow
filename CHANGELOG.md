@@ -44,8 +44,16 @@ were given after the fact to the history's turning points.
   checkboxes and the selection count are drawn in ink instead of the accent colour.
 - Buttons, fields, tabs and toggles come in three heights instead of nine, and on a phone every one of them is
   44 px tall — tabs no longer shrink on a narrow screen, and filter chips keep their size with a larger touch area.
+- The Timeline starts from the present and scrolls back in time. Newest first / Oldest first switches the direction —
+  the chapters and the month rail together — and the choice is remembered on the device and kept in the link.
+- Placing a Timeline chapter's media opens the same dialog as Unplaced: the map and the media in one window, folder
+  by folder, with the positions already placed around those dates one click away. A spot that was itself an accepted
+  suggestion stays a suggestion, and screenshots, saved files and graded exports are left out, as on Unplaced.
 
 ### Fixed
+
+- Naming, locating or merging a chapter the Timeline cut by itself no longer fails with «Invalid span», and chapter
+  dates read correctly in Safari.
 
 - An edit sent back from Atelier is linked to the photo or clip it was made from as soon as it is indexed, whoever sent
   it — no admin reconcile needed. An unknown or trashed source is ignored with its reason, and the edit is still

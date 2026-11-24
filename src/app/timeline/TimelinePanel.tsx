@@ -10,9 +10,10 @@
 // so a tile, its badges, its rating and the viewer are the gallery's, not a
 // second implementation that would drift.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
+import { geotagTargets, type GeotagAsset, type GeotagSource } from "@/lib/assetActions";
+import { distanceM, UNPLACED_RULES } from "@/lib/unplacedTypes";
 import type {
   ChapterMode,
   PlaceGranularity,
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/timeline";
 import { EmptyState, Icons, LoadingOverlay, LoadingState } from "@/app/ui";
 import PageHeader from "@/app/PageHeader";
+import { OptionPicker, type PickerOption } from "@/app/OptionPicker";
 import {
   LibrarySourceTabs,
   LIBRARY_SOURCES,
@@ -29,49 +31,42 @@ import {
 import MediaViewer, { type ViewerItem } from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import type { GalleryAsset } from "@/app/gallery/VirtualGrid";
-import GeotagRecapModal, { type GeotagRecapAsset } from "@/app/GeotagRecapModal";
-import type { PickedLocation } from "@/app/LocationPickerModal";
+import GeotagRecapModal, { type RecapFolder, type RecapPlace } from "@/app/GeotagRecapModal";
+import type { PickedLocation } from "@/app/LocationPicker";
+import { fetchNearPlaces } from "@/app/nearPlaces";
 import ChapterCard, { type Row } from "./ChapterCard";
 import ChapterEditModal from "./ChapterEditModal";
 
-// Leaflet touches `window` at import time: client-only, like the gallery.
-const LocationPickerModal = dynamic(() => import("@/app/LocationPickerModal"), {
-  ssr: false,
-});
+// Placing a chapter's media is the Unplaced view's Place, not a flow of its
+// own (docs/UNPLACED.md, docs/memory/frontend.md): ONE dialog — the recap with
+// the map in it (GeotagRecapModal + `onTargetChange`) — listing the chapter's
+// media folder by folder, the positions already placed around its dates as
+// chips, and the same record rule: a pin taken as offered from a spot that was
+// itself an accepted suggestion stays 'inferred' (never written into a file),
+// anything a human put down is 'manual'. It replaced a two-step picker →
+// fixed recap that knew none of that.
+type PlaceFlow = {
+  chapter: TimelineChapter;
+  /** Every live, non-exempt media of the chapter's folders inside its span,
+   *  both members of a pair — null while they are listed. */
+  assets: GeotagAsset[] | null;
+  folders: RecapFolder[];
+  places: RecapPlace[];
+  /** The chips that are accepted suggestions: taken as offered, they record
+   *  'inferred' — borrowing a guess must not make it a fact. */
+  unverified: { lat: number; lon: number }[];
+  /** Screenshots, saved files, graded exports: left out, as on Unplaced. */
+  aside: number;
+  loc?: PickedLocation;
+};
 
-// A chapter's media that carry no position, paged through the shared
-// /api/assets feed (has_gps=0) so the recap lists exactly what the grid would.
-// Capped at PAGE_MAX per page, cursor-driven; a chapter is at most a few
-// thousand frames, so this is a handful of requests at worst.
-async function fetchUngeotagged(
-  ch: TimelineChapter,
-  kind: string | null,
-): Promise<GeotagRecapAsset[]> {
-  const out: GeotagRecapAsset[] = [];
-  let cursor: string | null = null;
-  do {
-    const sp = new URLSearchParams();
-    // capture_date is the local day once a frame's place is known (migration
-    // 0046), the UTC day otherwise: a day of slack each side covers both, and
-    // the instant filter below keeps only the chapter's own frames.
-    const DAY = 86_400_000;
-    sp.set("date_from", new Date(Date.parse(ch.started_at) - DAY).toISOString().slice(0, 10));
-    sp.set("date_to", new Date(Date.parse(ch.ended_at) + DAY).toISOString().slice(0, 10));
-    sp.set("has_gps", "0");
-    sp.set("collapse", "1");
-    sp.set("limit", "500");
-    if (kind) sp.set("kind", kind);
-    if (cursor) sp.set("cursor", cursor);
-    const page: { assets: (GeotagRecapAsset & { captured_at: string | null })[]; next_cursor: string | null } =
-      await fetchJson(`/api/assets?${sp.toString()}`);
-    // The chapter's bounds are instants. Keep only what actually falls inside
-    // the chapter, not the whole edge days.
-    for (const a of page.assets) {
-      if (a.captured_at && a.captured_at >= ch.started_at && a.captured_at <= ch.ended_at) out.push(a);
-    }
-    cursor = page.next_cursor;
-  } while (cursor);
-  return out;
+// What the recap records, decided by what the human did with the pin — the
+// Unplaced view's rule (flowSource there), with no card suggestion to seed
+// from: a chapter's own place is either a guess with no coordinate (inferred
+// from its neighbours) or a position a human chose by name.
+function placeSource(f: PlaceFlow): GeotagSource {
+  if (!f.loc) return "manual";
+  return f.unverified.some((o) => distanceM(o, f.loc!) <= UNPLACED_RULES.move_m) ? "inferred" : "manual";
 }
 
 type Payload = {
@@ -83,6 +78,20 @@ type Payload = {
 };
 
 const SOURCE_KEY = "winnow.timeline.source";
+const ORDER_KEY = "winnow.timeline.order";
+
+// Which way the stream reads. The derivation is chronological (chapters are
+// cut and absorbed in time order, cf. lib/timeline.ts); the order is a reading
+// choice applied on top, client-side, so flipping it costs no re-derivation.
+// Newest first is the default: the maintainer opens the Timeline to find what
+// he shot lately, and scrolling back is going back in time. A chapter's own
+// strip and dates stay chronological either way — a stay reads as a story.
+type Order = "newest" | "oldest";
+const ORDERS: PickerOption<Order>[] = [
+  { key: "newest", label: "Newest first", hint: "Start from the present and scroll back in time" },
+  { key: "oldest", label: "Oldest first", hint: "Start from the first dated media and scroll forward" },
+];
+const isOrder = (s: string | null): s is Order => s === "newest" || s === "oldest";
 
 const MODES: { key: ChapterMode; label: string; title: string }[] = [
   { key: "place", label: "Place", title: "One chapter per place, however long the stay" },
@@ -160,6 +169,28 @@ export default function TimelinePanel() {
     return isSource(s) ? s : null;
   });
   const [source, setSource] = useStoredLibrarySource(SOURCE_KEY, urlSource);
+  // A shared link's order wins; otherwise the last one chosen on this device.
+  const [order, setOrder] = useState<Order>(() => {
+    const o = searchParams.get("order");
+    return isOrder(o) ? o : "newest";
+  });
+  const orderFromUrl = useRef(isOrder(searchParams.get("order")));
+  useEffect(() => {
+    if (orderFromUrl.current) return;
+    try {
+      const saved = localStorage.getItem(ORDER_KEY);
+      if (isOrder(saved)) setOrder(saved);
+    } catch {
+      /* storage blocked: the default stands */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORDER_KEY, order);
+    } catch {
+      /* non-fatal */
+    }
+  }, [order]);
 
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,35 +213,62 @@ export default function TimelinePanel() {
   const [onlyInferred, setOnlyInferred] = useState(false);
 
   // The ONE path from an inferred or chosen place to a coordinate on a media:
-  // the existing manual geotag flow — picker (unless a location is already
-  // chosen) → recap listing every media with its before/after → POST
-  // /api/assets/geotag, which is what writes the EXIF. Nothing else in this
-  // page writes a position (cf. docs/memory/architecture.md).
-  const [geotag, setGeotag] = useState<{
-    chapter: TimelineChapter;
-    assets: GeotagRecapAsset[] | null;
-    loc?: PickedLocation;
-  } | null>(null);
+  // the Place dialog shared with Unplaced (see PlaceFlow) → POST
+  // /api/assets/geotag. Nothing else in this page writes a position (cf.
+  // docs/memory/architecture.md). `loc` arrives set when the chapter has a
+  // place a human chose; an inferred one opens on an empty map.
+  const [geotag, setGeotag] = useState<PlaceFlow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const startGeotag = useCallback(
-    async (chapter: TimelineChapter, loc?: PickedLocation) => {
-      setGeotag({ chapter, assets: null, loc });
-      try {
-        const assets = await fetchUngeotagged(chapter, kindFor(source));
-        if (!assets.length) {
-          setGeotag(null);
-          setNotice("Every media in this chapter already has a position.");
-          return;
-        }
-        setGeotag((g) => (g && g.chapter.key === chapter.key ? { ...g, assets } : g));
-      } catch (e) {
+  const startGeotag = useCallback(async (chapter: TimelineChapter, loc?: PickedLocation) => {
+    setGeotag({ chapter, assets: null, folders: [], places: [], unverified: [], aside: 0, loc });
+    try {
+      const [all, places] = await Promise.all([
+        geotagTargets(
+          chapter.sessions.map((s) => s.id),
+          { from: chapter.started_at, to: chapter.ended_at },
+        ),
+        fetchNearPlaces(chapter.started_at, chapter.ended_at, "this chapter"),
+      ]);
+      const assets = all.filter((a) => !a.aside);
+      if (!assets.some((a) => !a.gps)) {
         setGeotag(null);
-        setNotice(`Couldn’t list the media with no position: ${(e as Error).message}`);
+        setNotice(
+          all.length > assets.length
+            ? "Nothing left to place here: the media with no position are screenshots, saved files or graded exports — Unplaced sets them aside."
+            : "Every media in this chapter already has a position.",
+        );
+        return;
       }
-    },
-    [source],
-  );
+      // One row per folder the chapter crosses, all ticked: the chapter is
+      // the unit chosen, and a row is how one folder of it is left out.
+      const folders: RecapFolder[] = chapter.sessions.map((s) => {
+        const own = assets.filter((a) => a.session_id === s.id);
+        const holes = own.filter((a) => !a.gps).length;
+        return {
+          id: s.id,
+          name: s.name,
+          detail: `${own.length.toLocaleString("en-GB")} media in this chapter · ${holes.toLocaleString("en-GB")} with no position`,
+          primary: true,
+        };
+      });
+      setGeotag((g) =>
+        g && g.chapter.key === chapter.key
+          ? {
+              ...g,
+              assets,
+              folders: folders.filter((f) => assets.some((a) => a.session_id === f.id)),
+              places,
+              unverified: places.filter((p) => !p.verified).map((p) => ({ lat: p.lat, lon: p.lon })),
+              aside: all.length - assets.length,
+            }
+          : g,
+      );
+    } catch (e) {
+      setGeotag(null);
+      setNotice(`Couldn’t list the chapter’s media: ${(e as Error).message}`);
+    }
+  }, []);
 
   const query = useMemo(() => {
     const sp = new URLSearchParams();
@@ -229,11 +287,12 @@ export default function TimelinePanel() {
       sp.set("mode", mode);
       sp.set("gran", gran);
       sp.set("source", source);
+      sp.set("order", order);
       router.replace(`/timeline?${sp.toString()}`, { scroll: false });
     } catch {
       /* non-fatal */
     }
-  }, [mode, gran, source, router]);
+  }, [mode, gran, source, order, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,22 +339,31 @@ export default function TimelinePanel() {
     [data],
   );
 
+  // The chapters in reading order: the payload is chronological, the newest
+  // first order is its reverse. Everything drawn in stream order (eras, the
+  // spine, the jump target) reads this list, never data.chapters directly.
+  const shown = useMemo(() => {
+    const list = (data?.chapters ?? []).filter((c) => !onlyInferred || c.place_inferred);
+    return order === "newest" ? [...list].reverse() : list;
+  }, [data, onlyInferred, order]);
+
   // Chapters grouped under their year, for the sticky era bracket.
   const eras = useMemo(() => {
     const out: { year: number; chapters: TimelineChapter[] }[] = [];
-    const list = (data?.chapters ?? []).filter((c) => !onlyInferred || c.place_inferred);
-    for (const ch of list) {
+    for (const ch of shown) {
       const y = new Date(ch.started_at).getUTCFullYear();
       const last = out[out.length - 1];
       if (last && last.year === y) last.chapters.push(ch);
       else out.push({ year: y, chapters: [ch] });
     }
     return out;
-  }, [data, onlyInferred]);
+  }, [shown]);
 
   const streamRef = useRef<HTMLDivElement>(null);
+  // The first chapter of that month ON SCREEN: newest first, that is the
+  // month's latest, so the jump lands at the top of the month either way.
   const jumpTo = (year: number, month: number) => {
-    const target = data?.chapters.find((c) => {
+    const target = shown.find((c) => {
       const d = new Date(c.started_at);
       return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
     });
@@ -336,6 +404,13 @@ export default function TimelinePanel() {
       />
 
       <div className="page-tools">
+        <OptionPicker
+          size="md"
+          ariaLabel="Direction of time"
+          options={ORDERS}
+          value={order}
+          onChange={setOrder}
+        />
         <div className="tabs" role="group" aria-label="Chapter rule">
           {MODES.map((m) => (
             <button
@@ -431,7 +506,8 @@ export default function TimelinePanel() {
         {data && data.spine.length > 0 && (
           <Spine
             spine={data.spine}
-            activeKey={data.chapters[0] ? monthKey(data.chapters[0].started_at) : null}
+            newestFirst={order === "newest"}
+            activeKey={shown[0] ? monthKey(shown[0].started_at) : null}
             onJump={jumpTo}
           />
         )}
@@ -457,23 +533,15 @@ export default function TimelinePanel() {
         );
       })()}
 
-      {geotag && !geotag.loc && (
-        <LocationPickerModal
-          count={geotag.chapter.ungeotagged}
-          initial={
-            geotag.chapter.place_lat != null && geotag.chapter.place_lon != null
-              ? { lat: geotag.chapter.place_lat, lon: geotag.chapter.place_lon }
-              : null
-          }
-          onClose={() => setGeotag(null)}
-          onPicked={(loc) => setGeotag((g) => (g ? { ...g, loc } : g))}
-        />
-      )}
-      {geotag?.loc && geotag.assets && (
+      {geotag?.assets && (
         <GeotagRecapModal
-          withCompanions
           assets={geotag.assets}
-          target={geotag.loc}
+          target={geotag.loc ?? null}
+          source={placeSource(geotag)}
+          sourceNote={placeNote(geotag)}
+          onTargetChange={(loc) => setGeotag((g) => (g ? { ...g, loc } : g))}
+          folders={geotag.folders}
+          places={geotag.places}
           onClose={() => setGeotag(null)}
           onApplied={(message) => {
             setGeotag(null);
@@ -484,10 +552,10 @@ export default function TimelinePanel() {
           }}
         />
       )}
-      {geotag?.loc && !geotag.assets && (
+      {geotag && !geotag.assets && (
         <div className="modal-overlay" role="presentation">
           <div className="modal">
-            <LoadingState label="Listing the media with no position…" />
+            <LoadingState label="Listing the chapter’s media…" />
           </div>
         </div>
       )}
@@ -524,6 +592,30 @@ export default function TimelinePanel() {
   );
 }
 
+// The sentence under the position: where the pin came from, and what the
+// recap will do with it. An inferred chapter says which neighbours named it,
+// since the name is all the inference has — it carries no coordinate.
+function placeNote(f: PlaceFlow): string | null {
+  const parts: string[] = [];
+  const ch = f.chapter;
+  if (placeSource(f) === "inferred") {
+    parts.push(
+      "Taken from a spot that was itself an accepted suggestion: borrowed as offered, it stays one.",
+    );
+  } else if (ch.place_inferred && !f.loc) {
+    parts.push(
+      `No media in this chapter carries a position; its neighbours put it in “${ch.name}”. Click the map, search a place${f.places.length ? " or take one already placed nearby" : ""}.`,
+    );
+  } else if (ch.place_label && f.loc && f.loc.lat === ch.place_lat && f.loc.lon === ch.place_lon) {
+    parts.push(`The place chosen for the chapter: “${ch.place_label}”. Move the pin if the media were shot elsewhere in it.`);
+  }
+  if (f.aside > 0)
+    parts.push(
+      `${f.aside.toLocaleString("en-GB")} screenshot${f.aside > 1 ? "s" : ""}, saved file${f.aside > 1 ? "s" : ""} or graded export${f.aside > 1 ? "s" : ""} left out, as on Unplaced.`,
+    );
+  return parts.length ? parts.join(" ") : null;
+}
+
 const jsonPost = (body: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -537,10 +629,14 @@ const monthKey = (iso: string) => {
 
 function Spine({
   spine,
+  newestFirst,
   activeKey,
   onJump,
 }: {
   spine: { year: number; month: number; count: number }[];
+  /** Read top-down in the stream's own direction, so the rail and the
+   *  chapters it jumps to never run opposite ways. */
+  newestFirst: boolean;
   activeKey: string | null;
   onJump: (year: number, month: number) => void;
 }) {
@@ -557,6 +653,7 @@ function Spine({
       rows.push(spine.find((s) => s.year === y && s.month === m) ?? { year: y, month: m, count: 0 });
     }
   }
+  if (newestFirst) rows.reverse();
   let year: number | null = null;
   return (
     <div className="tl-spine" aria-label="Months">

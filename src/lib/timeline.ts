@@ -20,6 +20,7 @@
 // (a name, a forced split, a forced merge) is stored as a CORRECTION to the
 // derivation, never as a copy of the chapters — the same reasoning bursts use
 // ("ratings stay per-asset, so re-clustering is safe", migration 0029).
+import { isoInstant } from "./instant";
 import { many } from "./db";
 import { buildFilter, type PartialAssetFilter } from "./filter";
 
@@ -675,7 +676,21 @@ export async function deriveTimeline(
     attachCovers(filter, bare),
     attachSamples(filter, bare),
   ]);
-  const chapters = withCovers.map((c, k) => ({ ...c, sample_ids: withSamples[k].sample_ids }));
+  // The bounds leave in ISO form (lib/instant.ts): the page posts them back
+  // unchanged to name, locate or merge a chapter, and the span route refuses
+  // pg's text form — every edit of a derived chapter failed "Invalid span" —
+  // and Safari cannot parse it. Converted HERE, after the derivation, because
+  // everything above compares them as pg text against spans and breaks.
+  const chapters = withCovers.map((c, k) => {
+    const started_at = isoInstant(c.started_at);
+    return {
+      ...c,
+      key: started_at,
+      started_at,
+      ended_at: isoInstant(c.ended_at, "ceil"),
+      sample_ids: withSamples[k].sample_ids,
+    };
+  });
   return { chapters, granularity, granularity_auto: opts.granularity === "auto" };
 }
 

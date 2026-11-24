@@ -11,7 +11,7 @@ import {
   type GeotagSource,
 } from "@/lib/assetActions";
 import { formatCaptureSpan } from "@/lib/format";
-import { distText, spanText } from "@/lib/unplacedFormat";
+import { distText, gapText, spanText } from "@/lib/unplacedFormat";
 import {
   distanceM,
   isAllNoExif,
@@ -21,7 +21,6 @@ import {
   sortGroups,
   tileFor,
   type UnplacedGroup,
-  type UnplacedPlace,
   type UnplacedResponse,
   type UnplacedSibling,
   type UnplacedSort,
@@ -32,6 +31,7 @@ import {
 } from "@/lib/unplacedTypes";
 import ActionMenu, { type MenuItem } from "./ActionMenu";
 import GeotagRecapModal, { type RecapFolder, type RecapPlace } from "./GeotagRecapModal";
+import { fetchNearPlaces } from "./nearPlaces";
 import StopsDialog, { type DialogStop, type FramePoint } from "./StopsDialog";
 import TraceSourcesModal from "./TraceSourcesModal";
 import ReviewReady from "./ReviewReady";
@@ -302,29 +302,6 @@ function stopWindow(st: UnplacedStop): string {
   return from === to ? from : `${from}–${to}`;
 }
 
-// "same hours", "5 h before", "3 days after" — how far from the card a spot
-// already placed lies.
-function gapLabel(h: number): string {
-  if (h === 0) return "same hours";
-  const side = h < 0 ? "before" : "after";
-  const a = Math.abs(h);
-  if (a < 24) return `${Math.max(1, Math.round(a))} h ${side}`;
-  const d = Math.round(a / 24);
-  return `${d} ${d === 1 ? "day" : "days"} ${side}`;
-}
-
-function placeChip(p: UnplacedPlace): RecapPlace {
-  const label = p.name ?? `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`;
-  return {
-    lat: p.lat,
-    lon: p.lon,
-    label,
-    detail: `${gapLabel(p.gap_h)} · ${fmt(p.count)}`,
-    title: `${fmt(p.count)} media placed here, ${gapLabel(p.gap_h)} this card${p.verified ? " — some placed by hand" : " — accepted suggestions"}`,
-    verified: p.verified,
-  };
-}
-
 const SORTS: PickerOption<UnplacedSort>[] = [
   {
     key: "size",
@@ -505,14 +482,7 @@ export default function UnplacedPane() {
           g.siblings.length
             ? geotagTargets(g.siblings.map((x) => x.id))
             : Promise.resolve([] as GeotagAsset[]),
-          fetchJson<{ places: UnplacedPlace[] }>(
-            `/api/assets/unplaced/places?${new URLSearchParams({
-              from: new Date(g.t0).toISOString(),
-              to: new Date(g.t1).toISOString(),
-            })}`,
-          )
-            .then((r) => r.places)
-            .catch(() => [] as UnplacedPlace[]),
+          fetchNearPlaces(g.t0, g.t1),
         ]);
         if (!own.length) {
           setNotice("Nothing left to place here.");
@@ -540,7 +510,7 @@ export default function UnplacedPane() {
           ],
           seed: s ? { lat: s.lat, lon: s.lon } : null,
           loc: at ? { lat: at.lat, lon: at.lon, label: at.label } : s ? { lat: s.lat, lon: s.lon, label: s.name } : undefined,
-          places: near.map(placeChip),
+          places: near,
           unverified: [
             ...near.filter((p) => !p.verified).map((p) => ({ lat: p.lat, lon: p.lon })),
             ...(at && !at.verified ? [{ lat: at.lat, lon: at.lon }] : []),
@@ -555,21 +525,6 @@ export default function UnplacedPane() {
     [busyKey, loadGroupAssets],
   );
 
-  // The places already used around a window, for the dialogs' chips. A
-  // convenience: a failure only means no chips.
-  const nearPlaces = useCallback(
-    (t0: string, t1: string) =>
-      fetchJson<{ places: UnplacedPlace[] }>(
-        `/api/assets/unplaced/places?${new URLSearchParams({
-          from: new Date(t0).toISOString(),
-          to: new Date(t1).toISOString(),
-        })}`,
-      )
-        .then((r) => r.places.map(placeChip))
-        .catch(() => [] as RecapPlace[]),
-    [],
-  );
-
   // A card whose frames moved: the stops dialog, one pin per stop, each
   // seeded with its suggestion. Frames are sorted into stops by their
   // capture instant; the stop windows tile the card, so a frame with no
@@ -579,7 +534,7 @@ export default function UnplacedPane() {
       if (busyKey || !g.stops) return;
       setBusyKey(g.key);
       try {
-        const [assets, places] = await Promise.all([loadGroupAssets(g), nearPlaces(g.t0, g.t1)]);
+        const [assets, places] = await Promise.all([loadGroupAssets(g), fetchNearPlaces(g.t0, g.t1)]);
         const stops: DialogStop[] = g.stops.map((st) => ({
           key: `s${st.index}`,
           name: st.suggestion.name,
@@ -610,7 +565,7 @@ export default function UnplacedPane() {
         setBusyKey(null);
       }
     },
-    [busyKey, loadGroupAssets, nearPlaces],
+    [busyKey, loadGroupAssets],
   );
 
   // A followed track came back: the same dialog, its stops read-only, each
@@ -1033,7 +988,7 @@ export default function UnplacedPane() {
         <div className="card-suggest">
           Nearest placement: <strong>{at.name ?? `${at.lat.toFixed(4)}, ${at.lon.toFixed(4)}`}</strong>
           <span className="hint">
-            {" "}— folder “{at.folder}” · {gapLabel(at.gap_h)} · {at.verified ? "placed by hand" : "a suggestion you accepted"}.
+            {" "}— folder “{at.folder}” · {gapText(at.gap_h)} · {at.verified ? "placed by hand" : "a suggestion you accepted"}.
             No located frame within a day of these.
           </span>
         </div>
