@@ -38,6 +38,7 @@ export default function BulkActionBar({
   onGeotag,
   onSetDevice,
   onExempt,
+  onCorrectTime,
   onMl,
   onDelete,
 }: {
@@ -80,6 +81,10 @@ export default function BulkActionBar({
    * scans) or put it back into the geotag backlog (`false`). Cf.
    * api/assets/geo-exempt. Omitted when the host surface doesn't offer it. */
   onExempt?: (exempt: boolean) => void;
+  /** Correct the capture time of the selection — a camera clock that was
+   * wrong (CaptureTimeModal, migration 0061). Omitted when the host surface
+   * doesn't offer it. */
+  onCorrectTime?: () => void;
   /** (Re)run the ML analysis (faces + OCR) on the selection. Omitted when the
    * host surface doesn't offer it. */
   onMl?: () => void;
@@ -185,6 +190,18 @@ export default function BulkActionBar({
             icon: "📷",
             disabled: none,
             onSelect: onSetDevice,
+          } as MenuItem,
+        ]
+      : []),
+    ...(onCorrectTime
+      ? [
+          {
+            key: "capture-time",
+            label: "Correct capture time…",
+            hint: "A camera clock that was wrong",
+            icon: "◷",
+            disabled: none,
+            onSelect: onCorrectTime,
           } as MenuItem,
         ]
       : []),

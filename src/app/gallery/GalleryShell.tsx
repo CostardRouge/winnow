@@ -27,6 +27,8 @@ import MediaViewer from "../MediaViewer";
 import ViewerActions from "../ViewerActions";
 import BulkActionBar from "../BulkActionBar";
 import GeotagRecapModal from "../GeotagRecapModal";
+import CaptureTimeModal from "../CaptureTimeModal";
+import { applyMoved, type CorrectionMode } from "@/lib/captureCorrectionTypes";
 import DevicePickerModal, {
   applyDeviceChange,
   deviceSelectionCounts,
@@ -866,6 +868,12 @@ export default function GalleryShell({
   // The frozen selection the dialog was opened for, plus what it holds —
   // counted here, from rows already in hand, so the dialog can state what each
   // of its buttons will and will not touch without a request of its own.
+  // "Correct capture time…" (CaptureTimeModal): the ids it opens on, and the
+  // method it starts with (the viewer's "Revert to the file" starts there).
+  const [captureFlow, setCaptureFlow] = useState<{
+    ids: number[];
+    mode: CorrectionMode;
+  } | null>(null);
   const [deviceFlow, setDeviceFlow] = useState<{
     ids: number[];
     withoutBody: number;
@@ -1020,6 +1028,8 @@ export default function GalleryShell({
           return void geocodeSelection([id]);
         case "ml":
           return void mlSelection([id]);
+        case "capture_time":
+          return setCaptureFlow({ ids: [id], mode: "shift" });
         case "delete":
           return void removeAssets([id]);
       }
@@ -1369,7 +1379,28 @@ export default function GalleryShell({
           }}
           onRegenerate={() => regenerateSelection([...selected])}
           onGeocode={() => geocodeSelection([...selected])}
+          onCorrectTime={() => setCaptureFlow({ ids: [...selected], mode: "shift" })}
           onMl={() => mlSelection([...selected])}
+        />
+      )}
+
+      {captureFlow && (
+        <CaptureTimeModal
+          ids={captureFlow.ids}
+          initialMode={captureFlow.mode}
+          onClose={() => setCaptureFlow(null)}
+          onApplied={({ message, moved }) => {
+            setCaptureFlow(null);
+            setNotice(message);
+            if (moved) {
+              setItems((prev) => applyMoved(prev, moved));
+              setMapAsset((cur) => (cur ? applyMoved([cur], moved)[0] : cur));
+            } else {
+              // Too many to send back: the list is read again.
+              setSelected(new Set());
+              fetchPage(null);
+            }
+          }}
         />
       )}
 
@@ -1498,6 +1529,7 @@ export default function GalleryShell({
             e.preventDefault();
             setMenu({ x: e.clientX, y: e.clientY, id: it.id });
           }}
+          onCorrectTime={(id, mode) => setCaptureFlow({ ids: [id], mode })}
           renderInfo={(it) => (
             <>
               {((it.tags ?? []).length || !readOnly) && (
@@ -1531,6 +1563,7 @@ export default function GalleryShell({
                     onDownload={() => downloadAssetOriginal(it.id)}
                     onRegenerate={() => regenerateSelection([it.id])}
                     onGeocode={() => geocodeSelection([it.id])}
+                    onCorrectTime={() => setCaptureFlow({ ids: [it.id], mode: "shift" })}
                     onMl={() => mlSelection([it.id])}
                   />
                 )
@@ -1548,6 +1581,7 @@ export default function GalleryShell({
                     onRegenerate={() => regenerateSelection([it.id])}
                     onGeocode={() => geocodeSelection([it.id])}
                     onGeotag={() => geotagSelection([it.id])}
+                    onCorrectTime={() => setCaptureFlow({ ids: [it.id], mode: "shift" })}
                     onMl={() => mlSelection([it.id])}
                     onDelete={async () => {
                       if (await removeAssets([it.id])) {

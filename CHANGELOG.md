@@ -11,6 +11,14 @@ were given after the fact to the history's turning points.
 
 ### Added
 
+- Correct capture time: when a camera's clock was wrong (its zone left at home, a summer-time change missed), its
+  media can be moved to the right time from the viewer (⋯ or the T key), a right-click on a tile, the selection bar
+  of the Gallery and of a session, or a session's ⋯ for the whole folder. Shift them by hours and minutes, or type the
+  time one frame was really taken and the others keep their gaps; untick the body whose clock was right (the phone)
+  and it stays put. A preview shows the days before and after, burst piles and RAW+JPEG pairs move whole, and
+  nothing is written into the files. The viewer's Date row says "corrected +9 h — file says …" and can revert it; a
+  new Day row says which time zone filed the day and where that zone came from. Every correction is listed, and can
+  be undone, under Settings › Pipeline › Dates & places.
 - Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
   account menu (Sésame › Link, while signed in with its password), /login offers Sign in with Sésame beside the
   password, which keeps working. Whether someone may enter is decided in Sésame, and so is their role: each Sésame

@@ -19,6 +19,9 @@ export type AssetMenuAction =
   | { kind: "regenerate" }
   | { kind: "geocode" }
   | { kind: "ml" }
+  // "Correct capture time…" (CaptureTimeModal, migration 0061): a shift
+  // stored beside the file's own time, never written into the original.
+  | { kind: "capture_time" }
   | { kind: "delete" }
   // Burst-pile actions (cf. lib/bursts.ts) — only emitted when the host passes
   // `pile`. `pile_verdict` culls the WHOLE stack in one gesture; `pile_keep`
@@ -33,12 +36,15 @@ export type AssetMenuAction =
 // What the `readOnly` menu offers, and all a read-only host acts on: none of
 // these writes curation (verdict, star, tag, export, trash) or an original.
 // "Set location…" is deliberately absent: a manual pin is written back INTO the
-// original's EXIF (lib/exifWrite.ts).
+// original's EXIF (lib/exifWrite.ts). A clock correction is in: a Capture One
+// export carries its source's wrong date too, and the correction lives in the
+// database alone.
 export const MAINTENANCE_ACTIONS: ReadonlySet<AssetMenuAction["kind"]> = new Set([
   "download",
   "regenerate",
   "geocode",
   "ml",
+  "capture_time",
 ]);
 
 export default function AssetActionMenu({
@@ -230,6 +236,10 @@ export default function AssetActionMenu({
 
       <button className="ctx-item" onClick={() => fire({ kind: "geocode" })}>
         <span className="ctx-ic">📍</span> Resolve location
+      </button>
+
+      <button className="ctx-item" onClick={() => fire({ kind: "capture_time" })}>
+        <span className="ctx-ic">◷</span> Correct capture time…
       </button>
 
       <button className="ctx-item" onClick={() => fire({ kind: "ml" })}>

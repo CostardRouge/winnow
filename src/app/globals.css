@@ -10273,3 +10273,134 @@ html[data-theme="dark"] .btn-primary:hover {
     font-family: var(--font-mono);
   }
 }
+
+/* =========================================================================
+   "Correct capture time…" (CaptureTimeModal, migration 0061) — the one dialog
+   behind the viewer's ⋯ and Date row, the context menu and the bulk bars.
+   ========================================================================= */
+@layer components {
+  .ctime {
+    @apply flex max-h-[90dvh] max-w-[600px] flex-col gap-3 overflow-y-auto;
+  }
+  /* Focused on open so its keys stay its own; the focus ring belongs to the
+     controls inside, not to the whole sheet. */
+  .ctime:focus {
+    outline: none;
+  }
+  .ctime-lede {
+    @apply m-0 text-[13px];
+    color: var(--color-muted);
+  }
+  .ctime-section {
+    @apply m-0 flex flex-col gap-2 border-0 p-0;
+  }
+  .ctime-label {
+    @apply p-0 text-left text-[11px] uppercase tracking-wider;
+    color: var(--color-muted);
+  }
+  .ctime-bodies {
+    @apply flex flex-wrap gap-2;
+  }
+  .ctime-body {
+    @apply flex cursor-pointer items-center gap-2 rounded-[var(--radius)] border px-3 text-[13px];
+    min-height: var(--control-h-lg);
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+  .ctime-body.is-on {
+    border-color: var(--color-text);
+    background: var(--color-surface);
+  }
+  .ctime-body-name {
+    @apply font-medium;
+  }
+  .ctime-count {
+    @apply text-[12px];
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+  }
+  .ctime-hint {
+    @apply m-0 text-[12px];
+    color: var(--color-muted);
+  }
+  .ctime-panel {
+    @apply m-0 flex flex-col gap-2 rounded-[var(--radius)] border p-3;
+    border-color: var(--color-border);
+    background: var(--color-surface);
+  }
+  .ctime-shift {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .ctime-shift select {
+    @apply w-auto;
+  }
+  .ctime-num {
+    @apply flex items-center gap-1.5 text-[13px];
+    color: var(--color-muted);
+  }
+  .ctime-num .input {
+    @apply w-20;
+    font-family: var(--font-mono);
+  }
+  .ctime-presets {
+    @apply flex flex-wrap gap-1.5;
+  }
+  .ctime-set {
+    @apply flex flex-col gap-1.5 text-[13px];
+    color: var(--color-text);
+  }
+  .ctime-set .input {
+    @apply w-full max-w-[260px];
+    font-family: var(--font-mono);
+  }
+  .ctime-preview {
+    @apply flex flex-col gap-2 border-t pt-3;
+    border-color: var(--color-border);
+  }
+  .ctime-summary {
+    @apply m-0 text-[13px];
+    color: var(--color-text);
+  }
+  .ctime-summary .spinner-ring {
+    @apply ml-2 inline-block align-middle;
+  }
+  .ctime-table {
+    @apply border-collapse text-[12px];
+    width: max-content;
+    max-width: 100%;
+    color: var(--color-text);
+  }
+  .ctime-table caption {
+    @apply pb-1;
+  }
+  .ctime-table th {
+    @apply py-1 pr-3 text-left font-normal;
+    color: var(--color-muted);
+  }
+  .ctime-table td {
+    @apply py-1 pr-2;
+    font-family: var(--font-mono);
+  }
+  .ctime-samples th {
+    @apply max-w-[12rem] overflow-hidden text-ellipsis whitespace-nowrap;
+    font-family: var(--font-mono);
+  }
+  .ctime-after {
+    @apply font-semibold;
+  }
+  .ctime-follows {
+    @apply m-0 flex list-disc flex-col gap-1 pl-5 text-[12px];
+    color: var(--color-muted);
+  }
+
+  /* The viewer's Date and Day rows: what Winnow uses, then what the file
+     says when a human corrected it, and the two links. */
+  .asset-meta-links {
+    @apply mt-0.5 flex flex-wrap gap-3;
+  }
+  /* A button dressed as the panel's own links (.asset-meta-link). */
+  .asset-meta-action {
+    @apply cursor-pointer border-0 bg-transparent p-0;
+    font: inherit;
+  }
+}

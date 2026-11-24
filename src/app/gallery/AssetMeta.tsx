@@ -8,6 +8,15 @@ import {
   formatDuration,
 } from "@/lib/format";
 import { shotByLine } from "@/lib/gearOwnerWords";
+import {
+  type CorrectionMode,
+  formatDay,
+  formatShift,
+  formatWall,
+  instantMs,
+  localWallMs,
+  wallIso,
+} from "@/lib/captureCorrectionTypes";
 import type { GearOwner } from "@/lib/gearTypes";
 import type { SidecarBrief } from "@/lib/types";
 
@@ -21,6 +30,14 @@ export type AssetMetaInput = {
   ext?: string | null;
   media_type?: "photo" | "video";
   captured_at?: string | null;
+  // How the time was read, the place's offset and a human clock correction
+  // (migrations 0046 and 0061). Present on every `assets.*` row; when absent
+  // (another viewer shape) the Date row falls back to the browser's clock.
+  captured_at_file?: string | null;
+  capture_shift_s?: number | null;
+  captured_at_source?: string | null;
+  capture_offset_min?: number | null;
+  capture_offset_source?: string | null;
   file_mtime?: string | null;
   file_size?: number | null;
   width?: number | null;
@@ -246,7 +263,93 @@ function deviceSource(a: AssetMetaInput): React.ReactNode {
   }
 }
 
-export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
+// Where the zone the day is filed in came from (0046's capture_offset_source).
+const ZONE_FROM: Record<string, string> = {
+  gps: "zone from its position",
+  track: "zone from a GPS track",
+  neighbour: "zone from a frame shot nearby",
+  exif: "the camera's own zone",
+};
+
+function utcOffset(min: number): string {
+  const sign = min < 0 ? "−" : "+";
+  const a = Math.abs(min);
+  const h = Math.floor(a / 60);
+  const m = a % 60;
+  return `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
+}
+
+// The Date and Day rows (docs/CAPTURE-TIME.md §6.1): the time Winnow uses, as
+// the local wall clock where it was shot — the reading the day is filed by —
+// then what the file says when a human corrected it; the Day row says which
+// zone filed the day and where that zone came from, which is what tells a
+// wrong clock from a wrong zone on one frame.
+function dateRows(
+  a: AssetMetaInput,
+  onCorrectTime?: (mode: CorrectionMode) => void,
+): Array<[string, React.ReactNode]> {
+  if (!a.captured_at) return [];
+  const ms = instantMs(a.captured_at);
+  if (a.captured_at_file === undefined || ms == null)
+    return [["Date", formatDateTime(a.captured_at)]];
+  const source = a.captured_at_source ?? null;
+  const offset = a.capture_offset_min ?? null;
+  const wall = wallIso(localWallMs(ms, source, offset));
+  const fileMs = instantMs(a.captured_at_file);
+  const shift = a.capture_shift_s ?? null;
+  const date = (
+    <span key="date" className="asset-meta-date">
+      {formatWall(wall)}
+      {shift != null && fileMs != null && (
+        <span className="asset-meta-dim">
+          {" "}
+          corrected {formatShift(shift)} — file says{" "}
+          {formatWall(wallIso(localWallMs(fileMs, source, offset)))}
+        </span>
+      )}
+      {shift == null && source === "file" && (
+        <span className="asset-meta-dim"> no date in the file — its modification time</span>
+      )}
+      {onCorrectTime && (
+        <span className="asset-meta-links">
+          <button type="button" className="asset-meta-link asset-meta-action" onClick={() => onCorrectTime("set")}>
+            Change…
+          </button>
+          {shift != null && (
+            <button type="button" className="asset-meta-link asset-meta-action" onClick={() => onCorrectTime("revert")}>
+              Revert to the file
+            </button>
+          )}
+        </span>
+      )}
+    </span>
+  );
+  let day: string;
+  if (source === "exif-wall")
+    day = "the camera's clock, which states no zone";
+  else if (offset != null)
+    day = `${utcOffset(offset)} · ${ZONE_FROM[a.capture_offset_source ?? ""] ?? "zone set by hand"}`;
+  else day = "UTC — no zone known";
+  return [
+    ["Date", date],
+    [
+      "Day",
+      <span key="day">
+        {formatDay(wall.slice(0, 10))}{" "}
+        <span className="asset-meta-dim">· {day}</span>
+      </span>,
+    ],
+  ];
+}
+
+export default function AssetMeta({
+  asset,
+  onCorrectTime,
+}: {
+  asset: AssetMetaInput;
+  /** Opens "Correct capture time…" on this media (its Date row's links). */
+  onCorrectTime?: (mode: CorrectionMode) => void;
+}) {
   const camera = [friendlyCameraName(asset.camera_model), asset.lens]
     .filter(Boolean)
     .join(" · ");
@@ -257,7 +360,7 @@ export default function AssetMeta({ asset }: { asset: AssetMetaInput }) {
     .join(" · ");
 
   const rows: Array<[string, React.ReactNode]> = [];
-  if (asset.captured_at) rows.push(["Date", formatDateTime(asset.captured_at)]);
+  rows.push(...dateRows(asset, onCorrectTime));
   if (camera) rows.push(["Camera", camera]);
   if (exposure) rows.push(["Exposure", exposure]);
   if (dims) rows.push(["Dimensions", dims]);

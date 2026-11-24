@@ -35,6 +35,7 @@ export default function ViewerActions({
   onRegenerate,
   onGeocode,
   onGeotag,
+  onCorrectTime,
   onMl,
   onDelete,
   onTag,
@@ -57,6 +58,8 @@ export default function ViewerActions({
   onGeocode?: () => void;
   /** Optional: manually set the capture location (picker + recap flow). */
   onGeotag?: () => void;
+  /** Optional: correct a wrong camera clock (CaptureTimeModal, key T). */
+  onCorrectTime?: () => void;
   /** Optional: (re)run the ML analysis (faces + OCR) on this media. */
   onMl?: () => void;
   onDelete?: () => void;
@@ -263,6 +266,20 @@ export default function ViewerActions({
                 }}
               >
                 <span className="vbar-menu-ic">📌</span> Set location…
+              </button>
+            )}
+            {onCorrectTime && (
+              <button
+                type="button"
+                role="menuitem"
+                className="vbar-menu-item"
+                title="Correct capture time (T)"
+                onClick={() => {
+                  onCorrectTime();
+                  close();
+                }}
+              >
+                <span className="vbar-menu-ic">◷</span> Correct capture time…
               </button>
             )}
             {onMl && (

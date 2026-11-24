@@ -1,9 +1,11 @@
 # Capture time — correcting a clock that was wrong
 
-*Written 2026-11-24. A brief, nothing in it is built. §3 answers the question
-the maintainer asked (which date can be changed); §10 lists the calls that are
-his. Mockups: the "Winnow — Capture time correction" canvas (five boards: the
-field decision, the viewer, the dialog, a session page, the corrections list in
+*Written 2026-11-24. §3 answers the question the maintainer asked (which date
+can be changed); §10 lists the calls that are his. **C1 answered the same day:
+database only. Phase 1 (§9) is built** — migration `0061_capture_shift`,
+`lib/captureCorrections.ts`, `app/CaptureTimeModal.tsx`; phases 2–4 are open.
+Mockups: the "Winnow — Capture time correction" canvas (five boards: the field
+decision, the viewer, the dialog, a session page, the corrections list in
 Settings).*
 
 ---
@@ -233,10 +235,19 @@ Not in phases 1–3.
 
 ## 9. Phases
 
-1. **The shift**: migration 0061, the writers of §5, *Shift by* and *Set the
-   time*, the viewer's two rows, the three entry points, Undo. Tests: the
-   invariant across a re-index, a re-read and an Undo, and reconcile against
-   `captured_at_file`.
+1. **The shift — built 2026-11-24.** Migration 0061, the writers of §5, *Shift
+   by*, *Set the time* and *Back to the file*, the viewer's two rows, the entry
+   points (viewer ⋯ and T, context menu, both bulk bars, a session's ⋯), Undo
+   in Settings › Pipeline › Dates & places step 4. Tests
+   (`captureCorrections.test.ts`): the invariant across a re-index, a re-read
+   and an Undo (stacked too), ticked bodies only, piles and pairs whole, *Set
+   the time* from the local wall clock, the capture-day step 0 and reconcile
+   against `captured_at_file`. As built, three things differ from §4–§6:
+   the invariant is enforced by the trigger (a writer that sets `captured_at`
+   alone speaks for the file), a row's before/after shift lives in
+   `capture_correction_assets` so Undo restores exactly what it replaced, and
+   `'track'` positions placed at the old moment keep it — the dialog counts
+   them; re-matching is phase 2.
 2. **The other two ways**: *Time zone* with per-frame A/B resolution and the
    `'manual'` zone, *Match a frame* with CLIP pairs, the track re-match
    report, Immich `dateTimeOriginal`.
@@ -245,15 +256,16 @@ Not in phases 1–3.
 
 ## 10. The maintainer's calls
 
-- **C1**: database-only, as §3 recommends, or the write-back of §8 from the
-  start?
+- **C1** — *answered 2026-11-24: database only.* Database-only, as §3
+  recommends, or the write-back of §8 from the start?
 - **C2**: should Immich be corrected through its API, for future pushes and
   for media already pushed?
 - **C3**: does a hand-set zone (`'manual'`) beat the frame's own GPS zone?
   Proposed: yes. A human who says "I was in Brisbane" knows better than a
   zone lookup at a border.
-- **C4**: who may correct: editor (proposed, like geotag) or admin?
-- **C5**: the key, **T** in the viewer?
+- **C4**: who may correct: editor (proposed, like geotag) or admin? *Built as
+  proposed (editor); his to overturn.*
+- **C5**: the key, **T** in the viewer? *Built as proposed.*
 - **C6**: confirm that an import folder named after the wrong day stays as it
   is (proposed: yes, Winnow does not create or rename structure in the
   originals' world beyond the import).
