@@ -101,6 +101,8 @@ This file is the **always-loaded index**. The detail lives in `docs/memory/<topi
 
 ## Open items (dated; remove when done)
 
+- 2026-11-24 — **Correcting a wrong camera clock is briefed, nothing built: `docs/CAPTURE-TIME.md`** (mockups: the "Winnow — Capture time correction" canvas). Proposed answer to "which date": a shift in Postgres beside what the file says (`captured_at = captured_at_file + capture_shift_s`, a `capture_corrections` row per Apply for Undo, migration `0061` if taken), never the NAS mtime, and the EXIF only as a later opt-in. "Wrong day" is two faults: a right moment filed in the camera's wrong zone (fix the zone, `'manual'`) vs a wrong moment (shift). Six calls are his (§10: C1 DB-only, C2 Immich, C3 manual zone vs GPS, C4 role, C5 key T, C6 folders keep their names); phase 1 waits on C1.
+
 - 2026-10-30 (revised 2026-11-04) — **The scan pacing brief is written, nothing in it is built: `docs/SCAN-PACING.md`. Phase 0 is measured (its §9, tools in `scripts/pacing/`): turbo, not concurrency, is what heats the box; PSI is blind to heat; no temperature target — throttle rate + fan; the import recording is still owed. S1 (now a power question, host-side) and S2 decide phase 1.** Reactive detection (import-scoped scans, a directory-mtime poll, a nightly full reconcile) split from smoothed work (interactive/background lanes, a work-second budget driven by PSI and the package temperature, quiet hours = E19, ARC-03/C5/C8 closed together). Phase 0 (measure PSI, temperature and per-job cost on the instance, no behaviour change) comes first; S1–S6 in its §6 are the maintainer's calls, S2 (video proxy as a second job) needing a migration (next free number `0061`; `0060` went to `role_changes`). **He runs it himself from a local `claude` session on the Optiplex** (its §8: the box holds the stack in a compose directory, not the repo — the session clones beside it, checks the homelab before trusting the repo about it, never prints the credentials left for it, measures read-only and hands its phase-0 report back to a cloud session, which writes §9 and pushes) — the CLI is how the work is done and measured; what the plan delivers still ships as UI.
 
 - 2026-10-19 — **No security header is sent** (C16 of the portfolio standard for a repo that serves a page; audit SEC-08: no `frame-ancestors` / `X-Frame-Options`, `nosniff`, `Referrer-Policy`, and `X-Powered-By` on). The audit files it in batch 2 (auth hardening), which waits on the maintainer's approval — headers change who may frame the app — so the standard's pass of 2026-10-19 left it; when it lands, one list in one module with a drift test (`vanessagedeon.com`'s `src/security.ts` is the model), the CSP Report-Only first (the pre-paint theme script needs a hash).
@@ -165,6 +167,11 @@ or a new way of reading the library at large:
   (stars, per-account likes, ♥ ⇒ pick), §3 the decisions, §4–§6 the three
   steps and what is open (source ↔ edit, suggestions, Immich). Read it before
   touching ratings, the Gallery's curation rule or what Atelier ranks by.
+- **`docs/CAPTURE-TIME.md`** — the brief of 2026-11-24 for correcting a
+  wrong camera clock: §2 the two faults behind "the wrong day", §3 which date
+  may change and why not the mtime nor the EXIF, §5 every writer and reader
+  of `captured_at` a correction must teach. Read it before touching
+  `captured_at`, the capture-day passes, reconcile or the Immich push.
 - **`docs/SCAN-PACING.md`** — the brief of 2026-10-30 for reactive but
   gentle scanning: §2 nine findings on why the box peaks, §3–§4 the design
   (detection tiers, one governor with two lanes, the video proxy split, OS
