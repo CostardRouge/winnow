@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,12 +12,23 @@ import {
 } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
 import AssetActionMenu, {
   type AssetMenuAction,
 } from "@/app/gallery/AssetActionMenu";
 import SimilarStrip from "@/app/gallery/SimilarStrip";
+import FilterPanel, {
+  EMPTY_FILTERS,
+  type Facets,
+  type Filters,
+} from "@/app/gallery/FilterPanel";
+import {
+  countActiveFilters,
+  decodeFilters,
+  encodeFilters,
+  filterQuery,
+} from "@/app/gallery/filterParams";
 import MediaViewer from "@/app/MediaViewer";
 import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
@@ -34,6 +46,7 @@ import SessionProgress from "@/app/sessions/SessionProgress";
 import PullToRefresh from "@/app/PullToRefresh";
 import { useFeatures } from "@/app/FeaturesProvider";
 import { Icons } from "@/app/ui";
+import { useRevealActiveTab } from "@/app/useRevealActiveTab";
 import { HeartIcon, TileHeart } from "@/app/FavouriteHeart";
 import { formatBadge, formatCaptureSpan } from "@/lib/format";
 import {
@@ -187,6 +200,40 @@ const VERDICT_FILTERS: Array<{
   { key: "favourite", label: "♥", count: (s) => Number(s.favourite_count) || 0 },
 ];
 
+// The toolbar's keys as they ride the URL: a verdict as `verdict=`, the ♥ as
+// `favourite=1` — the same names the gallery's links use.
+function verdictFromUrl(sp: URLSearchParams): string {
+  if (sp.get("favourite")) return "favourite";
+  const v = sp.get("verdict") ?? "";
+  return VERDICT_FILTERS.some((f) => f.key === v) ? v : "";
+}
+
+// The panel's filters, seeded from the URL. The toolbar owns the verdict and
+// the ♥ (one control per filter), and the session IS the scope, so a link
+// carrying the gallery's `session_id`/`root_id`/`verdict` hands those to the
+// toolbar or drops them instead of filtering twice.
+function panelFromUrl(sp: URLSearchParams): Filters {
+  return {
+    ...decodeFilters(sp),
+    verdict: undefined,
+    favourite: undefined,
+    session_id: undefined,
+    root_id: undefined,
+    show_ignored: undefined,
+  };
+}
+
+// The filters panel on this page starts CLOSED — the grid is the culling
+// surface and most folders need no filter — and on desktop remembers being
+// opened. Its own key, not the gallery's: the gallery's panel defaults open.
+// The root layout's inline script reads the same key and query before paint
+// (the <html data-session-aside> marker), so a panel left open does not pop
+// in after hydration. Phones use the transient drawer and never persist.
+const SESSION_ASIDE_KEY = "winnow.session.aside";
+const ASIDE_MQ = "(min-width: 761px)";
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 function fmtDate(s: string | null): string {
   if (!s) return "—";
   try {
@@ -211,13 +258,35 @@ export default function SessionGrid({
 }) {
   const { id } = usePromise(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [verdict, setVerdict] = useState("");
+  // Both seeded from the URL once, then mirrored back to it (below), so a
+  // filtered session is a link and survives a reload.
+  const [verdict, setVerdict] = useState(() =>
+    verdictFromUrl(new URLSearchParams(searchParams.toString())),
+  );
+  // The gallery's filters, inside this session (`/api/sessions/:id/assets`
+  // takes every one of them). The panel is the gallery's own FilterPanel.
+  const [filters, setFilters] = useState<Filters>(() =>
+    panelFromUrl(new URLSearchParams(searchParams.toString())),
+  );
+  const filterKey = useMemo(() => encodeFilters(filters).toString(), [filters]);
+  const activeFilterCount = countActiveFilters(filters);
+  const [panelOpen, setPanelOpen] = useState(false);
+  // The verdict toggle scrolls sideways on a phone: a verdict seeded from the
+  // URL ("Unrated", "♥") must not land out of view.
+  const verdictBar = useRef<HTMLDivElement>(null);
+  useRevealActiveTab(verdictBar, verdict);
+  // The panel's values and counts for THIS session (/api/facets?session_id=),
+  // fetched the first time the panel opens — a folder culled without it
+  // costs no request.
+  const [facets, setFacets] = useState<Facets | null>(null);
+  const [facetsError, setFacetsError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -342,8 +411,9 @@ export default function SessionGrid({
       loadingRef.current = true;
       setLoading(true);
       try {
-        const sp = new URLSearchParams();
-        if (cur) sp.set("cursor", cur);
+        // The panel's filters in the gallery's own encoding (the cursor rides
+        // along), then the toolbar's verdict — the panel never carries one.
+        const sp = new URLSearchParams(filterQuery(filters, undefined, cur));
         if (verdict === "favourite") sp.set("favourite", "true");
         else if (verdict) sp.set("verdict", verdict);
         // Small first page for a fast first paint, big follow-ups so deep
@@ -377,7 +447,7 @@ export default function SessionGrid({
         }
       }
     },
-    [id, verdict],
+    [id, verdict, filters],
   );
 
   // Initial (re)load on every filter change.
@@ -385,13 +455,97 @@ export default function SessionGrid({
     reset();
     fetchPage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verdict]);
+  }, [verdict, filterKey]);
 
-  // Pull-to-refresh: re-pull the header counts and the first page of the grid.
+  // Mirror the toolbar and the panel into the address bar. replaceState, not
+  // the router: no server round trip and no history entry per chip — Back
+  // leaves the session, it does not step through its filters (the gallery's
+  // rule). Next keeps useSearchParams in step with a native replaceState.
+  useEffect(() => {
+    const sp = new URLSearchParams(filterKey);
+    if (verdict === "favourite") sp.set("favourite", "1");
+    else if (verdict) sp.set("verdict", verdict);
+    const qs = sp.toString();
+    const want = qs ? `?${qs}` : "";
+    if (window.location.search === want) return;
+    window.history.replaceState(null, "", `${window.location.pathname}${want}`);
+  }, [filterKey, verdict]);
+
+  const loadFacets = useCallback(() => {
+    setFacetsError(null);
+    fetchJson<Facets>(`/api/facets?session_id=${id}`)
+      .then(setFacets)
+      .catch((e: Error) => {
+        setFacets(null);
+        setFacetsError(e.message);
+      });
+  }, [id]);
+  useEffect(() => {
+    if (panelOpen && !facets && !facetsError) loadFacets();
+  }, [panelOpen, facets, facetsError, loadFacets]);
+  // Counts the page itself just changed (a tag added): re-read them, but
+  // only once the panel has been opened — otherwise there is nothing to keep
+  // in step and the request would be wasted.
+  const facetsLoaded = facets != null;
+  const refreshFacets = useCallback(() => {
+    if (facetsLoaded) loadFacets();
+  }, [facetsLoaded, loadFacets]);
+
+  // Desktop: restore the remembered open panel before paint, then keep the
+  // <html data-session-aside> marker (what the CSS reads, and what the root
+  // layout seeds pre-paint) in step. Phones: the drawer owns it, no marker.
+  const asideBooted = useRef(false);
+  useIsoLayoutEffect(() => {
+    const el = document.documentElement;
+    if (!window.matchMedia(ASIDE_MQ).matches) {
+      delete el.dataset.sessionAside;
+      return;
+    }
+    if (!asideBooted.current) {
+      asideBooted.current = true;
+      let open = false;
+      try {
+        open = localStorage.getItem(SESSION_ASIDE_KEY) === "open";
+      } catch {
+        // Storage disabled: the panel simply starts closed.
+      }
+      if (open !== panelOpen) {
+        setPanelOpen(open);
+        return;
+      }
+    }
+    if (panelOpen) el.dataset.sessionAside = "open";
+    else delete el.dataset.sessionAside;
+  }, [panelOpen]);
+  // The marker belongs to this page: leave no open panel on <html> behind.
+  useEffect(
+    () => () => {
+      delete document.documentElement.dataset.sessionAside;
+    },
+    [],
+  );
+
+  const togglePanel = useCallback(() => {
+    const next = !panelOpen;
+    setPanelOpen(next);
+    if (window.matchMedia(ASIDE_MQ).matches) {
+      try {
+        localStorage.setItem(SESSION_ASIDE_KEY, next ? "open" : "closed");
+      } catch {
+        // Private mode: a toggle that is not remembered.
+      }
+    }
+  }, [panelOpen]);
+
+  const clearFilters = useCallback(() => setFilters(EMPTY_FILTERS), []);
+
+  // Pull-to-refresh: re-pull the header counts and the first page of the grid
+  // (and the panel's counts, when it has them).
   const refresh = useCallback(async () => {
     reset();
+    refreshFacets();
     await Promise.all([loadSession(), fetchPage(null)]);
-  }, [reset, loadSession, fetchPage]);
+  }, [reset, refreshFacets, loadSession, fetchPage]);
 
   // Infinite scroll.
   useEffect(() => {
@@ -453,9 +607,10 @@ export default function SessionGrid({
         return;
       }
       try {
-        // The pile is fetched WITHOUT the verdict filter: expanding is about
-        // seeing the whole run, whatever each frame is rated — every page of
-        // it (an interval-shot pile can outrun one 500-row page).
+        // The pile is fetched WITHOUT the verdict filter or the panel's:
+        // expanding is about seeing the whole run, whatever each frame is
+        // rated or carries — every page of it (an interval-shot pile can
+        // outrun one 500-row page).
         const members = await fetchAllPages<AssetRow>(
           `/api/sessions/${id}/assets?burst_id=${burstId}&limit=500`,
         );
@@ -685,8 +840,9 @@ export default function SessionGrid({
         return;
       }
       setNotice(`${add ? "Tagged" : "Untagged"} “${name.trim()}”`);
+      refreshFacets();
     },
-    [],
+    [refreshFacets],
   );
 
   // Soft delete (hidden from the library, original untouched). Returns whether
@@ -896,7 +1052,8 @@ export default function SessionGrid({
       return;
     }
     setNotice(`Tagged “${name.trim()}”`);
-  }, []);
+    refreshFacets();
+  }, [refreshFacets]);
 
   // --- Session-level actions (mirror the sessions list) --------------------
   const toggleIgnore = useCallback(async () => {
@@ -1017,19 +1174,26 @@ export default function SessionGrid({
   );
 
   // Publish the header's height so the sticky toolbar band (.session-tools)
-  // parks right under it, whatever the header wraps to on a phone.
+  // parks right under it, whatever the header wraps to on a phone — and the
+  // band's own height, so the filters panel parks under both.
   useEffect(() => {
     const head = document.querySelector<HTMLElement>(".page-head");
     if (!head) return;
+    const tools = document.querySelector<HTMLElement>(".session-tools");
     const root = document.documentElement;
-    const publish = () =>
+    const publish = () => {
       root.style.setProperty("--page-head-h", `${head.offsetHeight}px`);
+      if (tools)
+        root.style.setProperty("--session-tools-h", `${tools.offsetHeight}px`);
+    };
     publish();
     const ro = new ResizeObserver(publish);
     ro.observe(head);
+    if (tools) ro.observe(tools);
     return () => {
       ro.disconnect();
       root.style.removeProperty("--page-head-h");
+      root.style.removeProperty("--session-tools-h");
     };
   }, []);
 
@@ -1050,10 +1214,62 @@ export default function SessionGrid({
         }
       />
 
-      {/* The one toolbar band (S3): the verdict filters as a counted segmented
-          control, the triage bar beside them, Select at the far end. */}
+      {/* The one toolbar band (S3): the filters panel's toggle (and, while
+          the panel narrows the grid, the pill that says so), the verdict
+          filters as a counted segmented control, the triage bar beside them,
+          Select at the far end. */}
       <div className="page-tools session-tools">
-        <div className="view-toggle" role="group" aria-label="Show">
+        <button
+          className={`icon-toggle${panelOpen ? " active" : ""}`}
+          onClick={togglePanel}
+          aria-label="Toggle filters panel"
+          aria-pressed={panelOpen}
+          title="Filter this session: type, places, people, tags, text…"
+        >
+          {Icons.panelLeft}
+          {/* A phone has no room for the pill below: the count rides the
+              toggle there instead (CSS shows one or the other). */}
+          {activeFilterCount > 0 && (
+            <span className="session-filter-count">{activeFilterCount}</span>
+          )}
+        </button>
+        {activeFilterCount > 0 && (
+          <span className="chip active filters-chip">
+            <button
+              className="filters-chip-open"
+              onClick={() => setPanelOpen(true)}
+              title={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"} — review in the panel`}
+              aria-label={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"} — open the filters panel`}
+            >
+              {Icons.filter}
+              {activeFilterCount}
+              <span className="filters-chip-text">
+                filter{activeFilterCount === 1 ? "" : "s"} on
+              </span>
+            </button>
+            <button
+              className="chip-x"
+              onClick={clearFilters}
+              aria-label="Clear all filters"
+              title="Clear all filters"
+            >
+              {Icons.close}
+            </button>
+          </span>
+        )}
+        <div
+          ref={verdictBar}
+          className="view-toggle"
+          role="group"
+          aria-label="Show"
+          // The counts are the session's, not the panel's narrower view: say
+          // so rather than let "Picks 40" read as 40 of the filtered grid.
+          title={
+            activeFilterCount > 0
+              ? "Counts are for the whole session, before the panel's filters"
+              : undefined
+          }
+        >
           {VERDICT_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -1076,7 +1292,12 @@ export default function SessionGrid({
           />
         )}
         <span className="spacer" />
-        <span className="kbd-hint">F ♥ · P pick · X reject · U clear · 1–5 stars · ←/→</span>
+        <span
+          className="kbd-hint"
+          title="F ♥ · P pick · X reject · U clear · 1–5 stars · ←/→"
+        >
+          F ♥ · P pick · X reject · U clear · 1–5 stars · ←/→
+        </span>
         {/* The favourites pass (docs/FAVOURITES.md §5): the folder as moments,
             a tap is a ♥ — the quick way to a recap without a full cull. */}
         <Link
@@ -1099,6 +1320,48 @@ export default function SessionGrid({
         </button>
       </div>
 
+      <div className="session-body">
+        {/* Phones: tap outside the drawer to dismiss it. */}
+        {panelOpen && (
+          <div
+            className="session-aside-backdrop"
+            onClick={() => setPanelOpen(false)}
+            aria-hidden
+          />
+        )}
+        <aside
+          className={`session-aside${panelOpen ? " open" : ""}`}
+          aria-label="Filters"
+        >
+          <div className="aside-head">
+            <span className="facet-title">Filters</span>
+            <button
+              className="chip aside-reset"
+              onClick={clearFilters}
+              title="Reset all filters"
+            >
+              {Icons.reset} Reset
+            </button>
+          </div>
+          {/* Kept mounted once loaded, so the drawer slides out with its
+              content and reopens where it was scrolled. */}
+          {(panelOpen || facets) &&
+            (facetsError ? (
+              <div className="error-box">
+                <span>Couldn’t load filters: {facetsError}</span>
+                <button className="btn" onClick={loadFacets}>
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <FilterPanel
+                facets={facets}
+                filters={filters}
+                set={setFilters}
+                inSession
+              />
+            ))}
+        </aside>
       <PullToRefresh className="session-view-body" onRefresh={refresh}>
         {selectMode && (
           <BulkActionBar
@@ -1142,7 +1405,18 @@ export default function SessionGrid({
           </div>
         )}
         {assets.length === 0 && !loading && !error ? (
-          <div className="empty">No assets for this filter.</div>
+          <div className="empty">
+            {activeFilterCount > 0 ? (
+              <>
+                Nothing in this session matches the panel’s filters.{" "}
+                <button className="btn" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              "No assets for this filter."
+            )}
+          </div>
         ) : (
           // has-bulk-bar: clearance under the grid while the floating selection
           // bar is up, so the last rows can scroll past it (cf. globals.css).
@@ -1272,11 +1546,15 @@ export default function SessionGrid({
             on a phone the header's right end sits under the fixed theme toggle
             and account chip, and the hint collided with them (UI review M1). */}
         {assets.length > 0 && (
-          <p className="hint session-foot">{assets.length} loaded</p>
+          <p className="hint session-foot">
+            {assets.length} loaded
+            {activeFilterCount > 0 ? " · filtered" : ""}
+          </p>
         )}
         <div ref={sentinel} style={{ height: 40 }} />
         {loading && <div className="spinner">Loading…</div>}
       </PullToRefresh>
+      </div>
 
       {viewer != null && assets[viewer] && (
         <MediaViewer

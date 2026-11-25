@@ -555,6 +555,53 @@ html[data-theme="dark"] .btn-primary:hover {
   .session-foot {
     @apply m-0 mt-3 text-center;
   }
+  /* The session page's filters panel — the gallery's FilterPanel, scoped to
+     the session — beside the grid. Closed by default; on desktop a sticky
+     column parked under the header and the toolbar band (both heights are
+     published by SessionGrid, the header wraps on a phone), shown by the
+     <html data-session-aside> marker so a remembered open panel is there
+     before paint; on a phone a fixed drawer (see the max-width:760px block).
+     Not .gallery-aside: that one is a flex child of a fixed-height shell and
+     follows the GALLERY's remembered choice, which defaults open. */
+  .session-body {
+    @apply flex items-start;
+  }
+  .session-body > .session-view-body {
+    @apply min-w-0 flex-1;
+  }
+  .session-aside {
+    @apply w-[280px] flex-shrink-0 overflow-y-auto p-4;
+    display: none;
+    position: sticky;
+    top: calc(var(--page-head-h, 64px) + var(--session-tools-h, 48px));
+    max-height: calc(
+      100dvh - var(--page-head-h, 64px) - var(--session-tools-h, 48px)
+    );
+    border-right: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  html[data-session-aside="open"] .session-aside {
+    display: block;
+  }
+  .session-aside-backdrop {
+    @apply hidden;
+  }
+  /* The filter count on the panel toggle: a phone's stand-in for the
+     "N filters on" pill (see the max-width:760px block). */
+  .session-filter-count {
+    @apply hidden;
+  }
+  /* The keyboard hint gives way first: it takes the band's leftover width
+     and truncates, so the filters pill never pushes Pass and Select onto a
+     second line. Its title carries the full text. */
+  .session-tools .kbd-hint {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+  }
   .app-shell {
     @apply flex flex-col overflow-hidden;
     height: 100%;
@@ -5846,6 +5893,58 @@ html[data-theme="dark"] .btn-primary:hover {
   }
   .gallery-aside.open {
     transform: translateX(0);
+  }
+  /* The session page's drawer: fixed, because that page scrolls as a whole
+     (the gallery's drawer sits in a fixed-height body instead). It runs from
+     under the toolbar band to above the bottom rail. */
+  .session-aside {
+    display: block;
+    position: fixed;
+    z-index: 30;
+    top: calc(var(--page-head-h, 64px) + var(--session-tools-h, 48px));
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    width: 85vw;
+    max-width: 320px;
+    max-height: none;
+    transform: translateX(-100%);
+    transition: transform 0.24s var(--ease-out);
+  }
+  .session-aside.open {
+    transform: translateX(0);
+  }
+  .session-tools .filters-chip {
+    display: none;
+  }
+  .session-tools .icon-toggle {
+    position: relative;
+  }
+  .session-filter-count {
+    display: inline-flex;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    /* Ink, not vermillion: a count is never an accent (UI review H4). */
+    color: var(--color-bg);
+    background: var(--color-text);
+  }
+  .session-aside-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 29;
+    top: calc(var(--page-head-h, 64px) + var(--session-tools-h, 48px));
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    background: color-mix(in srgb, var(--color-frame) 14%, transparent);
   }
   .gallery-aside-backdrop {
     display: block;
