@@ -9,10 +9,17 @@
 // database write: it puts back the shift each row had, on the rows this
 // correction still owns. A row a later correction moved again is left as it
 // is, and the answer says how many.
+//
+// Below the list, "Clocks that look wrong" (lib/clockSuggestions.ts): on
+// demand, because it compares photos across bodies in the most recent
+// sessions — a read, never a write. Each card links to its session, where
+// Review opens the dialog pre-filled.
 import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "../../../ui";
+import ClockSuggestionCards, { suggestionKey } from "../../../ClockSuggestionCards";
 import { fetchJson } from "@/lib/fetchJson";
 import {
+  type ClockSuggestion,
   type CorrectionRecord,
   type UndoReport,
   formatDay,
@@ -37,8 +44,11 @@ function when(text: string): string {
 
 function how(c: CorrectionRecord): string {
   if (c.mode === "revert") return "back to the files";
+  if (c.mode === "zone") return `zone ${c.zone_from ?? "?"} → ${c.zone_to ?? "?"}`;
   const shift = formatShift(c.shift_s);
-  return c.mode === "set" ? `${shift} · one frame's time set` : shift;
+  if (c.mode === "set") return `${shift} · one frame's time set`;
+  if (c.mode === "match") return `${shift} · matched on a pair`;
+  return shift;
 }
 
 // "Mon 11 Nov → Tue 12 Nov" for the days that emptied and filled, from the
@@ -96,6 +106,44 @@ export default function ClockCorrectionsSection({ onChanged }: { onChanged: () =
     } finally {
       setBusy(null);
       setConfirming(null);
+    }
+  }
+
+  const [hints, setHints] = useState<{
+    suggestions: ClockSuggestion[];
+    checked: number;
+    limit: number;
+  } | null>(null);
+  const [looking, setLooking] = useState(false);
+
+  async function look() {
+    setLooking(true);
+    setError(null);
+    try {
+      setHints(
+        await fetchJson<{ suggestions: ClockSuggestion[]; checked: number; limit: number }>(
+          "/api/assets/capture-time/suggestions",
+        ),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLooking(false);
+    }
+  }
+
+  async function dismiss(s: ClockSuggestion) {
+    try {
+      await fetchJson("/api/assets/capture-time/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: s.sessionId, device: s.device, shift_s: s.shiftS }),
+      });
+      setHints((h) =>
+        h ? { ...h, suggestions: h.suggestions.filter((x) => suggestionKey(x) !== suggestionKey(s)) } : h,
+      );
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -198,6 +246,30 @@ export default function ClockCorrectionsSection({ onChanged }: { onChanged: () =
             </tbody>
           </table>
         </div>
+      )}
+
+      <h3 className="clock-subhead">Clocks that look wrong</h3>
+      <p className="hint">
+        Two ways to notice a wrong clock without being told: two cameras whose look-alike photos
+        (CLIP, at least 90 % alike) mostly disagree by the same amount, at least three of them; and a
+        camera whose own positions sit more than 25 km from an imported GPS track, which a shift of
+        whole half-hours puts back on it for four frames in five. Suggestions only — nothing moves
+        until you review one.
+      </p>
+      <div className="flow-actions">
+        <button type="button" className="btn btn-sm" disabled={looking} onClick={() => void look()}>
+          {looking ? "Looking…" : hints ? "Look again" : "Look for wrong clocks"}
+        </button>
+        {hints && (
+          <span className="hint">
+            {n(hints.checked)} session(s) checked — the {n(hints.limit)} most recent with two cameras or
+            more, or positions beside a GPS track.
+          </span>
+        )}
+      </div>
+      {hints && hints.suggestions.length === 0 && <p>No clock looks wrong there.</p>}
+      {hints && (
+        <ClockSuggestionCards suggestions={hints.suggestions} onDismiss={(s) => void dismiss(s)} linkSessions />
       )}
     </section>
   );

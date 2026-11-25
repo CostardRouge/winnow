@@ -54,8 +54,13 @@ type Seed = {
   device?: string | null;
   source?: "exif" | "exif-wall" | "file";
   offset?: number | null;
+  offsetSource?: string | null;
   session?: number;
   name?: string;
+  gps?: { lat: number; lon: number } | null;
+  gpsSource?: string | null;
+  trackImport?: number | null;
+  phash?: string | null;
 };
 
 async function seed(s: Seed): Promise<number> {
@@ -64,8 +69,10 @@ async function seed(s: Seed): Promise<number> {
   const row = await db.one<{ id: number }>(
     `INSERT INTO assets (session_id, abs_path, rel_path, filename, ext, media_type, device,
                          captured_at, captured_at_source, capture_offset_min,
-                         capture_offset_source, file_mtime)
-     VALUES ($1, $2, $3, $3, 'arw', 'photo', $4, $5, $6, $7, $8, '2026-11-20T08:00:00Z')
+                         capture_offset_source, file_mtime, gps, gps_source, track_import_id,
+                         phash)
+     VALUES ($1, $2, $3, $3, 'arw', 'photo', $4, $5, $6, $7, $8, '2026-11-20T08:00:00Z',
+             $9::jsonb, $10, $11, $12::bigint)
      RETURNING id`,
     [
       s.session ?? sessionId,
@@ -75,7 +82,11 @@ async function seed(s: Seed): Promise<number> {
       s.at,
       s.source ?? "exif-wall",
       s.offset ?? null,
-      s.offset != null ? "gps" : null,
+      s.offsetSource !== undefined ? s.offsetSource : s.offset != null ? "gps" : null,
+      s.gps ? JSON.stringify(s.gps) : null,
+      s.gpsSource ?? null,
+      s.trackImport ?? null,
+      s.phash ?? null,
     ],
   );
   return row!.id;
@@ -212,7 +223,7 @@ test("Undo puts back what it replaced, and leaves what a later gesture moved", {
 
   // Undoing the first: x now belongs to the second gesture and is left alone.
   const u1 = await cc.undoCorrection(first.id);
-  assert.deepEqual(u1, { restored: 1, skipped: 1 });
+  assert.deepEqual([u1.restored, u1.skipped], [1, 1]);
   assert.equal((await read(y)).shift, null);
   assert.equal((await read(x)).shift, 10 * 3600);
   await assert.rejects(cc.undoCorrection(first.id), cc.CorrectionError);
@@ -220,7 +231,7 @@ test("Undo puts back what it replaced, and leaves what a later gesture moved", {
   // Undoing the second puts x back to +9 h — the first's value, though the
   // first was undone: Undo restores what it replaced, nothing more.
   const u2 = await cc.undoCorrection(second.id);
-  assert.deepEqual(u2, { restored: 1, skipped: 0 });
+  assert.deepEqual([u2.restored, u2.skipped], [1, 0]);
   const rx = await read(x);
   assert.equal(rx.shift, NINE_H);
   assert.equal(rx.corr, null, "no standing gesture owns it any more");
@@ -236,7 +247,8 @@ test("a stacked Undo hands the row back to the gesture before it", { skip: skipW
   const second = await cc.applyCorrection({ ids: [x], mode: "shift", shiftS: 60 }, who);
   await cc.undoCorrection(second.id);
   assert.equal((await read(x)).corr, first.id);
-  assert.deepEqual(await cc.undoCorrection(first.id), { restored: 1, skipped: 0 });
+  const u = await cc.undoCorrection(first.id);
+  assert.deepEqual([u.restored, u.skipped], [1, 0]);
   assert.equal((await read(x)).at, "2026-11-11T20:41:00");
 });
 
@@ -282,4 +294,221 @@ test("reconcile matches an edit to its source on what the FILES say", { skip: sk
   );
   assert.equal(linked!.o, a);
   await db.q("DELETE FROM sessions WHERE id = $1", [finals!.id]);
+});
+
+// --- Phase 2: time zone, match a frame, track positions, Immich -------------
+
+const zoneOf = (id: number) =>
+  db.one<{ off: number | null; src: string | null; day: string; at: string }>(
+    `SELECT capture_offset_min AS off, capture_offset_source AS src, capture_date::text AS day,
+            to_char(captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') AS at
+       FROM assets WHERE id = $1`,
+    [id],
+  ) as Promise<{ off: number | null; src: string | null; day: string; at: string }>;
+
+test("a time-zone correction shifts a wall clock and only re-zones a file that wrote its zone", { skip: skipWithoutDb }, async () => {
+  // In November Paris is UTC+1 and Brisbane UTC+10.
+  const wall = await seed({ at: "2026-11-11T20:41:00Z", source: "exif-wall" });
+  // A zoned instant (19:41 UTC) the camera filed on its own +01:00: 11 Nov.
+  const zoned = await seed({ at: "2026-11-11T19:41:00Z", source: "exif", offset: 60, offsetSource: "exif" });
+  assert.equal((await zoneOf(zoned)).day, "2026-11-11");
+  const req = { ids: [wall, zoned], mode: "zone" as const, zone: { from: "Europe/Paris", to: "Australia/Brisbane" } };
+  const plan = await cc.planCorrection(req);
+  assert.deepEqual([plan.shifted, plan.zoneOnly, plan.moving], [1, 1, 2]);
+  const done = await cc.applyCorrection(req, who);
+
+  const w = await read(wall);
+  assert.equal(w.shift, NINE_H, "the wall clock moves by the zones' difference");
+  assert.equal(w.at, "2026-11-12T05:41:00");
+  const z = await zoneOf(zoned);
+  assert.equal(z.at, "2026-11-11T19:41:00", "the zoned instant does not move");
+  assert.deepEqual([z.off, z.src, z.day], [600, "manual", "2026-11-12"]);
+
+  await cc.undoCorrection(done.id);
+  const back = await zoneOf(zoned);
+  assert.deepEqual([back.off, back.src], [60, "exif"], "Undo puts the zone back");
+  assert.equal((await read(wall)).shift, null);
+});
+
+test("a zone set by hand outranks the frame's own position (C3)", { skip: skipWithoutDb }, async () => {
+  const cd = await import("./captureDays");
+  const zoned = await seed({ at: "2026-11-11T19:41:00Z", source: "exif", offset: 60, offsetSource: "exif" });
+  await cc.applyCorrection(
+    { ids: [zoned], mode: "zone", zone: { from: "Europe/Paris", to: "Australia/Brisbane" } },
+    who,
+  );
+  // A position in Paris arrives later (a pin, a re-index): the zone stays.
+  await db.q(`UPDATE assets SET gps = '{"lat":48.85,"lon":2.35}' WHERE id = $1`, [zoned]);
+  await cd.applyOwnZones([zoned]);
+  await cd.inheritNeighbourZones({ ids: [zoned], reconsider: true });
+  const z = await zoneOf(zoned);
+  assert.deepEqual([z.off, z.src], [600, "manual"]);
+});
+
+test("Back to the file also takes off a zone a correction set", { skip: skipWithoutDb }, async () => {
+  const zoned = await seed({ at: "2026-11-11T19:41:00Z", source: "exif", offset: 60, offsetSource: "exif" });
+  await cc.applyCorrection(
+    { ids: [zoned], mode: "zone", zone: { from: "Europe/Paris", to: "Australia/Brisbane" } },
+    who,
+  );
+  await cc.applyCorrection({ ids: [zoned], mode: "revert" }, who);
+  const z = await zoneOf(zoned);
+  assert.notEqual(z.src, "manual");
+});
+
+test("matching two frames of one moment measures the shift", { skip: skipWithoutDb }, async () => {
+  const sony = await seed({ at: "2026-11-11T20:38:12Z", source: "exif-wall" });
+  const other = await seed({ at: "2026-11-11T20:50:00Z", source: "exif-wall" });
+  // The phone: 19:38:35 UTC, filed in Brisbane → 05:38:35 local on the 12th.
+  const phone = await seed({ at: "2026-11-11T19:38:35Z", device: PHONE, source: "exif", offset: 600 });
+  const exact = await cc.planCorrection({
+    ids: [sony, other],
+    mode: "match",
+    pair: { wrongId: sony, rightId: phone, round: false },
+  });
+  assert.equal(exact.deltaS, NINE_H + 23);
+  assert.equal(exact.pair?.measuredS, NINE_H + 23);
+  const rounded = await cc.planCorrection({
+    ids: [sony, other],
+    mode: "match",
+    pair: { wrongId: sony, rightId: phone, round: true },
+  });
+  assert.equal(rounded.deltaS, NINE_H);
+  await assert.rejects(
+    cc.planCorrection({ ids: [sony, other], mode: "match", pair: { wrongId: sony, rightId: other, round: true } }),
+    /same camera/,
+  );
+});
+
+test("Match a frame offers the most alike frames of other bodies", { skip: skipWithoutDb }, async () => {
+  // Far from every other test's dates: candidates are looked up library-wide.
+  const sony = await seed({ at: "2033-05-01T10:00:00Z", phash: "255" });
+  const near = await seed({ at: "2033-05-01T19:00:00Z", device: PHONE, phash: "254" });
+  const far = await seed({ at: "2033-05-01T10:05:00Z", device: PHONE, phash: "-1" });
+  await seed({ at: "2033-05-01T10:01:00Z" }); // the same body: never offered
+  const hasClip = (await db.one<{ ok: boolean }>("SELECT to_regclass('asset_clip') IS NOT NULL AS ok"))!.ok;
+  if (hasClip) {
+    await db.q(
+      `INSERT INTO asset_clip (asset_id, embedding, model) VALUES
+         ($1, '[1,0,0]', 'test'), ($2, '[0.99,0.1,0]', 'test'), ($3, '[0,1,0]', 'test')`,
+      [sony, near, far],
+    );
+  }
+  const plan = await cc.planCorrection({ ids: [sony], mode: "match" });
+  assert.equal(plan.moving, 0, "no pair yet: nothing moves");
+  assert.deepEqual(
+    plan.candidates.map((c) => c.id),
+    [near, far],
+    "most alike first, the same body never offered",
+  );
+  if (hasClip) assert.ok((plan.candidates[0].similarity ?? 0) > 0.9);
+});
+
+test("a frame a GPS track placed is matched again at its new moment, and Undo puts it back", { skip: skipWithoutDb }, async () => {
+  const imp = await db.one<{ id: number }>(
+    `INSERT INTO track_imports (name, kind, span_start, span_end, point_count, report)
+     VALUES ('test', 'gpx', '2032-03-01T00:00Z', '2032-03-02T00:00Z', 3, '{"match":{}}') RETURNING id`,
+  );
+  const importId = imp!.id;
+  try {
+    await db.q(
+      `INSERT INTO track_points (import_id, t, lat, lon) VALUES
+         ($1, '2032-03-01T10:00Z', -27.0, 153.0),
+         ($1, '2032-03-01T10:30Z', -27.1, 153.1),
+         ($1, '2032-03-01T11:00Z', -27.2, 153.2)`,
+      [importId],
+    );
+    const id = await seed({
+      at: "2032-03-01T10:00:00Z",
+      source: "exif",
+      gps: { lat: -27.0, lon: 153.0 },
+      gpsSource: "track",
+      trackImport: importId,
+    });
+    const plan = await cc.planCorrection({ ids: [id], mode: "shift", shiftS: 3600 });
+    assert.deepEqual(plan.track, { moved: 1, same: 0, cleared: 0 });
+    const done = await cc.applyCorrection({ ids: [id], mode: "shift", shiftS: 3600 }, who);
+    const at = await db.one<{ lat: number; src: string }>(
+      "SELECT gps_lat AS lat, gps_source AS src FROM assets WHERE id = $1",
+      [id],
+    );
+    assert.deepEqual([Number(at!.lat), at!.src], [-27.2, "track"]);
+
+    // Ten hours later the track has no fix: the position is taken off.
+    const plan2 = await cc.planCorrection({ ids: [id], mode: "shift", shiftS: 10 * 3600 });
+    assert.deepEqual(plan2.track, { moved: 0, same: 0, cleared: 1 });
+
+    await cc.undoCorrection(done.id);
+    const back = await db.one<{ lat: number; src: string }>(
+      "SELECT gps_lat AS lat, gps_source AS src FROM assets WHERE id = $1",
+      [id],
+    );
+    assert.deepEqual([Number(back!.lat), back!.src], [-27.0, "track"]);
+  } finally {
+    await db.q("DELETE FROM assets WHERE track_import_id = $1", [importId]);
+    await db.q("DELETE FROM track_imports WHERE id = $1", [importId]);
+  }
+});
+
+test("the copies already in Immich are given the corrected date", { skip: skipWithoutDb }, async () => {
+  const im = await import("./immichDates");
+  const id = await seed({ at: "2026-11-11T19:41:00Z", source: "exif", offset: 600 });
+  await db.q(
+    "INSERT INTO exports (source_asset_id, kind, output_key) VALUES ($1, 'immich', 'imm-1')",
+    [id],
+  );
+  const plan = await cc.planCorrection({ ids: [id], mode: "shift", shiftS: 3600 });
+  assert.equal(plan.inImmich, 1);
+  await cc.applyCorrection({ ids: [id], mode: "shift", shiftS: 3600 }, who);
+  const sent: Array<[string, string]> = [];
+  const report = await im.pushCapturedDates([id], async (key, iso) => {
+    sent.push([key, iso]);
+  });
+  assert.deepEqual(report, { updated: 1, failed: 0, error: null });
+  assert.deepEqual(sent, [["imm-1", "2026-11-12T06:41:00+10:00"]]);
+  const failing = await im.pushCapturedDates([id], async () => {
+    throw new Error("Immich said no");
+  });
+  assert.deepEqual(failing, { updated: 0, failed: 1, error: "Immich said no" });
+});
+
+// --- Phase 3: clocks that look wrong -----------------------------------------
+
+test("two bodies whose look-alike photos disagree by 9 h make a suggestion", { skip: skipWithoutDb }, async () => {
+  const hasClip = (await db.one<{ ok: boolean }>("SELECT to_regclass('asset_clip') IS NOT NULL AS ok"))!.ok;
+  if (!hasClip) return; // pgvector absent: the pairs evidence is off, by design
+  const sug = await import("./clockSuggestions");
+  const s2 = await db.one<{ id: number }>(
+    "INSERT INTO sessions (root_id, name, source_path) VALUES ($1, 'Lookout', '/capture-shift-test/l') RETURNING id",
+    [rootId],
+  );
+  const sid = s2!.id;
+  try {
+    const vecs = ["[1,0,0,0]", "[0,1,0,0]", "[0,0,1,0]", "[0,0,0,1]"];
+    for (let i = 0; i < 4; i++) {
+      // The Sony on Paris time (wall clock), the phone in Brisbane with GPS.
+      const sony = await seed({ at: `2031-11-11T2${i}:00:00Z`, session: sid });
+      const phone = await seed({
+        at: `2031-11-12T0${5 + i}:00:00Z`,
+        device: PHONE,
+        source: "exif-wall",
+        session: sid,
+        gps: { lat: -27.47, lon: 153.02 },
+      });
+      await db.q(
+        "INSERT INTO asset_clip (asset_id, embedding, model) VALUES ($1, $3, 'test'), ($2, $3, 'test')",
+        [sony, phone, vecs[i]],
+      );
+    }
+    const found = await sug.sessionSuggestions(sid);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].device, SONY, "the body with no position of its own moves");
+    assert.equal(found[0].shiftS, NINE_H);
+    assert.equal(found[0].evidence.kind, "pairs");
+
+    await sug.dismissSuggestion({ sessionId: sid, device: SONY, shiftS: NINE_H, userId: null });
+    assert.equal((await sug.sessionSuggestions(sid)).length, 0, "Not a mistake is remembered");
+  } finally {
+    await db.q("DELETE FROM sessions WHERE id = $1", [sid]);
+  }
 });

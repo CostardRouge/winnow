@@ -8,8 +8,10 @@ import {
   CorrectionError,
   correctionAssetIds,
   movedRows,
+  recordImmich,
   undoCorrection,
 } from "@/lib/captureCorrections";
+import { pushCapturedDates } from "@/lib/immichDates";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +34,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const id = parseId((await params).id);
     if (id == null) return badRequest("Invalid id");
-    const undone = await undoCorrection(id);
-    return json({ undone, moved: await movedRows(await correctionAssetIds(id)) });
+    const { ids, ...undone } = await undoCorrection(id);
+    // The copies in Immich go back with the rows (lib/immichDates.ts).
+    const immich = await pushCapturedDates(ids);
+    if (immich) await recordImmich(id, "undoImmich", immich);
+    return json({ undone, immich, moved: await movedRows(await correctionAssetIds(id)) });
   } catch (err) {
     if (err instanceof CorrectionError) return badRequest(err.message);
     return serverError(err);

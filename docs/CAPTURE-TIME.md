@@ -2,8 +2,10 @@
 
 *Written 2026-11-24. §3 answers the question the maintainer asked (which date
 can be changed); §10 lists the calls that are his. **C1 answered the same day:
-database only. Phase 1 (§9) is built** — migration `0061_capture_shift`,
-`lib/captureCorrections.ts`, `app/CaptureTimeModal.tsx`; phases 2–4 are open.
+database only. Phases 1–3 (§9) are built** — migrations `0061_capture_shift`
+and `0062_capture_zone_manual`, `lib/captureCorrections.ts`,
+`lib/clockSuggestions.ts`, `lib/immichDates.ts`, `app/CaptureTimeModal.tsx`;
+phase 4 (writing into the originals) is not, by C1.
 Mockups: the "Winnow — Capture time correction" canvas (five boards: the field
 decision, the viewer, the dialog, a session page, the corrections list in
 Settings).*
@@ -213,7 +215,24 @@ pre-filled (board 4 on a session page, board 5 in Settings):
   within a minute of look-alike frames of body Y (CLIP). Δ is the suggestion.
 - **Camera zone ≠ place zone** (fault A): `exif_offset` disagrees with a `gps`
   or `track` offset over a whole session. This is a diagnostic, since 0046
-  already files those days right where a place is known.
+  already files those days right where a place is known. **Not built**: once a
+  place's offset replaces the camera's, the camera's own `OffsetTimeOriginal`
+  is no longer stored anywhere (0046 keeps one offset per row), so this needs
+  a column and a re-read first.
+
+As built (2026-11-25, `lib/clockSuggestions.ts`): the pairs evidence samples
+up to 80 photos per body per session, takes each one's most alike photo of
+another body within ±26 h (CLIP cosine ≥ 0.9, same model), rounds the gaps to
+15 min and suggests the gap at least three twins and 60 % of them agree on;
+the body that moves is the one whose files carry the fewest positions of their
+own. The track evidence needs three frames with their own position in
+conflict (> 25 km) and a shift of whole half-hours (±14 h) that puts four in
+five back. A session's page shows its own suggestions under the toolbar band
+(Review opens the dialog pre-filled over the whole session); Settings ›
+Pipeline › Dates & places looks over the 60 most recent sessions with two
+bodies or more, or own positions beside a track, on demand, and says so.
+*Not a mistake* is remembered per session, body and shift
+(`capture_clock_dismissals`). Without pgvector the pairs evidence is off.
 
 ## 8. Writing into the original, later (opt-in, maintainer's call)
 
@@ -248,10 +267,26 @@ Not in phases 1–3.
    `capture_correction_assets` so Undo restores exactly what it replaced, and
    `'track'` positions placed at the old moment keep it — the dialog counts
    them; re-matching is phase 2.
-2. **The other two ways**: *Time zone* with per-frame A/B resolution and the
-   `'manual'` zone, *Match a frame* with CLIP pairs, the track re-match
-   report, Immich `dateTimeOriginal`.
-3. **Suggestions** (§7).
+2. **The other two ways — built 2026-11-25.** *Time zone*: a file that wrote
+   its zone (`'exif'`, or the mtime of a `'file'` row) keeps its moment and
+   gets the place's zone as `'manual'` (0062); a wall clock (`'exif-wall'`)
+   is shifted by `offset(to) − offset(from)` at its own date and zoned the
+   same way. *Match a frame*: the gap between the two frames' local wall
+   clocks, rounded to 15 min unless unticked; candidates are other bodies'
+   photos within ±26 h, CLIP first, then the perceptual hash, then time.
+   *Back to the file* left the segmented control (four methods fit it, five
+   would turn it into a menu) for a link beside it; it also takes off a
+   `'manual'` zone. A `'track'` position is matched against its own import at
+   the new moment on Apply — moved, or taken off when the track has no fix
+   then — and `capture_correction_assets` keeps the before/after zone and
+   position so Undo restores them exactly instead of re-deriving them.
+   Immich: after the commit, every moved media with an `exports.kind =
+   'immich'` row gets `dateTimeOriginal` (PUT /api/assets/:id, its own
+   "Change date", with the place's offset); a push of a corrected media does
+   the same right after the upload. A refusal is counted on the correction's
+   report and never fails the gesture. Untested against a real Immich: the
+   call is the one its web UI makes, checked by a fake in the tests.
+3. **Suggestions — built 2026-11-25** (§7, "As built").
 4. **Optional write-back** (§8), if the maintainer asks for it.
 
 ## 10. The maintainer's calls
@@ -259,10 +294,13 @@ Not in phases 1–3.
 - **C1** — *answered 2026-11-24: database only.* Database-only, as §3
   recommends, or the write-back of §8 from the start?
 - **C2**: should Immich be corrected through its API, for future pushes and
-  for media already pushed?
+  for media already pushed? *Built as proposed with phase 2 (both), on the
+  maintainer's "go phase 2 et 3".*
 - **C3**: does a hand-set zone (`'manual'`) beat the frame's own GPS zone?
   Proposed: yes. A human who says "I was in Brisbane" knows better than a
-  zone lookup at a border.
+  zone lookup at a border. *Built as proposed: `'manual'` is rank 5 in
+  `lib/captureZone.ts`, and a track import places such a frame without
+  re-zoning it.*
 - **C4**: who may correct: editor (proposed, like geotag) or admin? *Built as
   proposed (editor); his to overturn.*
 - **C5**: the key, **T** in the viewer? *Built as proposed.*

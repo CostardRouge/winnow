@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   applyMoved,
   formatShift,
+  immichDateIso,
   instantMs,
   localWallMs,
   nextShift,
@@ -66,9 +67,21 @@ test("moved rows patch a list in place and leave the rest", () => {
       capture_shift_s: 60,
       capture_offset_min: null,
       capture_offset_source: null,
+      gps: null,
+      gps_source: null,
+      place_city: null,
+      place_country: null,
     },
   ]);
   assert.equal(out[0], items[0]);
   assert.equal(out[1].captured_at, "c");
   assert.equal(out[1].filename, "y");
+});
+
+test("Immich is given the local wall clock with the place's offset", () => {
+  const at = Date.UTC(2026, 10, 11, 19, 41);
+  assert.equal(immichDateIso(at, "exif", 600), "2026-11-12T05:41:00+10:00");
+  assert.equal(immichDateIso(at, "exif-wall", 600), "2026-11-11T19:41:00+10:00");
+  assert.equal(immichDateIso(at, "exif", -330), "2026-11-11T14:11:00-05:30");
+  assert.equal(immichDateIso(at, "exif", null), "2026-11-11T19:41:00Z");
 });

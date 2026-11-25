@@ -10392,6 +10392,87 @@ html[data-theme="dark"] .btn-primary:hover {
     @apply m-0 flex list-disc flex-col gap-1 pl-5 text-[12px];
     color: var(--color-muted);
   }
+  .ctime-label-row {
+    @apply flex items-baseline justify-between gap-3;
+  }
+  /* A quiet text button: "Back to the file…", "Choose a method instead". */
+  .ctime-link {
+    @apply cursor-pointer border-0 bg-transparent p-0 text-[12px] underline underline-offset-2;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12px;
+  }
+  .ctime-check {
+    @apply flex flex-wrap items-center gap-2 text-[13px];
+    color: var(--color-text);
+  }
+  /* Match a frame: the frame of the wrong clock = one of the candidates. */
+  .ctime-match {
+    @apply grid items-start gap-3;
+    grid-template-columns: minmax(0, 9rem) auto minmax(0, 1fr);
+  }
+  @media (max-width: 560px) {
+    .ctime-match {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ctime-eq {
+      @apply hidden;
+    }
+  }
+  .ctime-frame {
+    @apply m-0 flex flex-col gap-1 text-[12px];
+    color: var(--color-text);
+  }
+  .ctime-frame img,
+  .ctime-cand img {
+    @apply block aspect-[3/2] w-full rounded-[var(--radius-sm)] object-cover;
+    background: var(--color-surface-2);
+  }
+  .ctime-frame figcaption {
+    @apply flex min-w-0 flex-col;
+  }
+  .ctime-frame strong {
+    @apply truncate;
+    font-family: var(--font-mono);
+  }
+  .ctime-eq {
+    @apply self-center text-xl;
+    color: var(--color-muted);
+  }
+  .ctime-cands {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  }
+  .ctime-cand {
+    @apply flex cursor-pointer flex-col gap-1 rounded-[var(--radius)] border p-1.5 text-left text-[12px];
+    border-color: var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+  .ctime-cand.is-on {
+    border-color: var(--color-text);
+    box-shadow: 0 0 0 1px var(--color-text);
+  }
+  .ctime-cand-text {
+    @apply flex min-w-0 flex-col;
+  }
+  .ctime-cand-text > span {
+    @apply truncate;
+  }
+  .ctime-cand-time {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .ctime-zones {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  }
+  .ctime-zone {
+    @apply flex flex-col gap-1;
+  }
+  .ctime-zone .input {
+    @apply w-full;
+  }
 
   /* The viewer's Date and Day rows: what Winnow uses, then what the file
      says when a human corrected it, and the two links. */
@@ -10402,5 +10483,44 @@ html[data-theme="dark"] .btn-primary:hover {
   .asset-meta-action {
     @apply cursor-pointer border-0 bg-transparent p-0;
     font: inherit;
+  }
+}
+
+/* =========================================================================
+   "Clocks that look wrong" (ClockSuggestionCards, lib/clockSuggestions.ts):
+   a suggestion card — what is off, the evidence in words, two verbs.
+   ========================================================================= */
+@layer components {
+  .clock-cards {
+    @apply flex flex-col gap-2;
+  }
+  .clock-card {
+    @apply flex flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3;
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+  }
+  .clock-card-ic {
+    @apply shrink-0;
+    color: var(--color-text);
+  }
+  .clock-card-text {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5 text-[14px];
+    flex-basis: 16rem;
+    color: var(--color-text);
+  }
+  .clock-card-actions {
+    @apply flex shrink-0 gap-2;
+  }
+}
+@layer components {
+  /* The session page's clock hints sit under its toolbar band, above the grid. */
+  .session-clock-hints {
+    @apply px-4 pt-3 sm:px-6;
+  }
+}
+@layer components {
+  .clock-subhead {
+    @apply mb-0 mt-4 text-[15px] font-semibold;
+    color: var(--color-text);
   }
 }

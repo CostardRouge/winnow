@@ -22,7 +22,12 @@ import ViewerActions from "@/app/ViewerActions";
 import BulkActionBar from "@/app/BulkActionBar";
 import GeotagRecapModal from "@/app/GeotagRecapModal";
 import CaptureTimeModal from "@/app/CaptureTimeModal";
-import { applyMoved, type CorrectionMode } from "@/lib/captureCorrectionTypes";
+import ClockSuggestionCards, { suggestionKey } from "@/app/ClockSuggestionCards";
+import {
+  applyMoved,
+  type ClockSuggestion,
+  type CorrectionMode,
+} from "@/lib/captureCorrectionTypes";
 import DevicePickerModal, {
   applyDeviceChange,
   deviceSelectionCounts,
@@ -815,7 +820,55 @@ export default function SessionGrid({
   const [captureFlow, setCaptureFlow] = useState<{
     ids: number[];
     mode: CorrectionMode;
+    devices?: string[];
+    shiftS?: number;
   } | null>(null);
+
+  // Clocks that look wrong in this session (lib/clockSuggestions.ts): read
+  // once the session is there, never blocking the grid. Suggestions only —
+  // Review opens the dialog pre-filled over the WHOLE session.
+  const [clockHints, setClockHints] = useState<ClockSuggestion[]>([]);
+  const loadClockHints = useCallback(async () => {
+    try {
+      const r = await fetchJson<{ suggestions: ClockSuggestion[] }>(
+        `/api/assets/capture-time/suggestions?session=${encodeURIComponent(String(id))}`,
+      );
+      setClockHints(r.suggestions);
+    } catch {
+      setClockHints([]); // a hint that cannot be read is no hint
+    }
+  }, [id]);
+  useEffect(() => {
+    void loadClockHints();
+  }, [loadClockHints]);
+  const reviewClockHint = useCallback(
+    async (s: ClockSuggestion) => {
+      try {
+        const all = await geotagTargets([Number(id)]);
+        setCaptureFlow({
+          ids: all.map((a) => a.id),
+          mode: "shift",
+          devices: [s.device],
+          shiftS: s.shiftS,
+        });
+      } catch (e) {
+        setNotice((e as Error).message);
+      }
+    },
+    [id],
+  );
+  const dismissClockHint = useCallback(async (s: ClockSuggestion) => {
+    try {
+      await fetchJson("/api/assets/capture-time/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: s.sessionId, device: s.device, shift_s: s.shiftS }),
+      });
+      setClockHints((cur) => cur.filter((c) => suggestionKey(c) !== suggestionKey(s)));
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }, []);
 
   // Header action: the WHOLE session, not just the loaded page — the same
   // paged id list the session-wide geotag reads.
@@ -1125,6 +1178,16 @@ export default function SessionGrid({
           {selectMode ? "Done" : "Select"}
         </button>
       </div>
+
+      {clockHints.length > 0 && (
+        <div className="session-clock-hints">
+          <ClockSuggestionCards
+            suggestions={clockHints}
+            onReview={(s) => void reviewClockHint(s)}
+            onDismiss={(s) => void dismissClockHint(s)}
+          />
+        </div>
+      )}
 
       <PullToRefresh className="session-view-body" onRefresh={refresh}>
         {selectMode && (
@@ -1445,12 +1508,16 @@ export default function SessionGrid({
         <CaptureTimeModal
           ids={captureFlow.ids}
           initialMode={captureFlow.mode}
+          initialDevices={captureFlow.devices}
+          initialShiftS={captureFlow.shiftS}
           onClose={() => setCaptureFlow(null)}
           onApplied={({ message, moved }) => {
             setCaptureFlow(null);
             setNotice(message);
-            // The session's span moved with its frames.
+            // The session's span moved with its frames, and the hint that
+            // led here has nothing left to say.
             void loadSession();
+            void loadClockHints();
             if (moved) setAssets((prev) => applyMoved(prev, moved));
             else {
               reset();

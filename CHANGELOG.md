@@ -19,6 +19,16 @@ were given after the fact to the history's turning points.
   nothing is written into the files. The viewer's Date row says "corrected +9 h — file says …" and can revert it; a
   new Day row says which time zone filed the day and where that zone came from. Every correction is listed, and can
   be undone, under Settings › Pipeline › Dates & places.
+- Correct capture time has two more ways to state the right time. *Match a frame*: pick, among the photos another
+  camera took within a day, the one of the same moment — the most alike come first — and the gap between them is the
+  correction. *Time zone*: say which zone the camera was on and where you were; a file that wrote its zone keeps its
+  moment and is filed on the right day, a file without one is moved by the difference, summer time included. A
+  position a GPS track gave a frame at its wrong time follows it to the right one, and the copies already sent to
+  Immich get the corrected date there too.
+- Clocks that look wrong: a session whose two cameras' look-alike photos keep disagreeing by the same amount, or whose
+  camera positions sit away from your GPS track until shifted, shows a suggestion under its toolbar — Review opens the
+  correction already filled in, Not a mistake hides it for good. Settings › Pipeline › Dates & places can look over the
+  most recent sessions at once.
 - Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
   account menu (Sésame › Link, while signed in with its password), /login offers Sign in with Sésame beside the
   password, which keeps working. Whether someone may enter is decided in Sésame, and so is their role: each Sésame

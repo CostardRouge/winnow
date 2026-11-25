@@ -218,7 +218,11 @@ export async function runTrackImport(
     // No position, or a previous import's: the track decides.
     let offset: number | null = null;
     if (fix) {
-      offset = placeOffsetMinutes(fix.lat, fix.lon, new Date(instant));
+      // A zone a human set (a clock correction's 'manual', migration 0062)
+      // outranks the track's: the frame is placed, its zone is kept.
+      offset = outranks("track", r.capture_offset_source)
+        ? placeOffsetMinutes(fix.lat, fix.lon, new Date(instant))
+        : null;
       placed.push({ id, lat: fix.lat, lon: fix.lon, offset });
       report.located[fix.method]++;
     } else {
