@@ -9,6 +9,8 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-25 — Teff
+
 ### Added
 
 - Correct capture time: when a camera's clock was wrong (its zone left at home, a summer-time change missed), its
