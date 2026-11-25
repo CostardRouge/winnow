@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import AssetMeta, { type AssetMetaInput } from "./gallery/AssetMeta";
+import type { CorrectionMode } from "@/lib/captureCorrectionTypes";
 import { Icons } from "./ui";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
@@ -184,6 +185,7 @@ export default function MediaViewer<T extends ViewerItem>({
   posterSrc = (it) => `/api/assets/${it.id}/thumb`,
   renderInfo,
   renderActions,
+  onCorrectTime,
   onKeyDown,
   onContextMenu,
   currentPersonId,
@@ -210,6 +212,10 @@ export default function MediaViewer<T extends ViewerItem>({
   /** Extra key handling (e.g. rating shortcuts); skipped while typing. */
   onKeyDown?: (e: KeyboardEvent, item: T) => void;
   onContextMenu?: (e: React.MouseEvent, item: T) => void;
+  /** Opens "Correct capture time…" (CaptureTimeModal) on the media on screen —
+   *  a burst frame's own id when one is shown. Wires the Date row's links and
+   *  the T key; omitted where the host offers no correction. */
+  onCorrectTime?: (id: number, mode: CorrectionMode) => void;
   /** When the host page IS one person's page (people/[id]), that person's id:
    *  their own face boxes/chips then CLOSE the viewer (you are already where
    *  the link would go) instead of dead-navigating to the same route; every
@@ -224,6 +230,9 @@ export default function MediaViewer<T extends ViewerItem>({
   // This instance's place in the viewer stack (see viewerStack above): pushed
   // on mount, removed on unmount, checked before handling any key.
   const stackId = useRef(Symbol("viewer"));
+  // The id of the file on screen (a burst frame's own), for the T key: the
+  // key handler is registered before `displayed` is derived below.
+  const shownIdRef = useRef<number | null>(null);
   useEffect(() => {
     const id = stackId.current;
     viewerStack.push(id);
@@ -527,6 +536,8 @@ export default function MediaViewer<T extends ViewerItem>({
       if (e.key === "+" || e.key === "=") return zoomBy(1.15);
       if (e.key === "-") return zoomBy(1 / 1.15);
       if (e.key === "Home") return resetZoom();
+      if ((e.key === "t" || e.key === "T") && onCorrectTime && !e.metaKey && !e.ctrlKey)
+        return onCorrectTime(shownIdRef.current ?? it.id, "shift");
       onKeyDown?.(e, it);
     };
     window.addEventListener("keydown", onKey);
@@ -541,6 +552,7 @@ export default function MediaViewer<T extends ViewerItem>({
     setPanel,
     zoomBy,
     resetZoom,
+    onCorrectTime,
   ]);
 
   // Wheel zoom. Trackpad pinch reaches the browser as ctrl+wheel with fine
@@ -819,6 +831,7 @@ export default function MediaViewer<T extends ViewerItem>({
               : null,
           }
         : item;
+  shownIdRef.current = (displayed as { id?: number }).id ?? item.id;
 
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
@@ -1259,7 +1272,14 @@ export default function MediaViewer<T extends ViewerItem>({
                 ×
               </button>
             </div>
-            <AssetMeta asset={displayed} />
+            <AssetMeta
+              asset={displayed}
+              onCorrectTime={
+                onCorrectTime
+                  ? (mode) => onCorrectTime((displayed as { id?: number }).id ?? item.id, mode)
+                  : undefined
+              }
+            />
             {hasCompanion && (
               // Group info: a pair is one logical media made of two files —
               // RAW+JPEG, or an iPhone Live Photo (still + .mov motion). Surface

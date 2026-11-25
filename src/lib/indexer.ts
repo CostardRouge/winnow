@@ -231,9 +231,10 @@ export async function indexRoot(
       gps_source: string | null;
       capture_offset_min: number | null;
       capture_offset_source: OffsetSource | null;
+      capture_shift_s: number | null;
     }>(
       `SELECT id, file_size, file_mtime, gps_lat, gps_lon, gps_source,
-              capture_offset_min, capture_offset_source
+              capture_offset_min, capture_offset_source, capture_shift_s
          FROM assets WHERE abs_path = $1`,
       [absPath],
     );
@@ -268,8 +269,11 @@ export async function indexRoot(
       existing.gps_lat != null &&
       existing.gps_source != null &&
       ["manual", "inferred", "track"].includes(existing.gps_source);
+    // A human clock correction (migration 0061) survives the re-index: the
+    // zone is looked up at the corrected moment, the one the frame was shot at.
+    const shiftMs = (existing?.capture_shift_s ?? 0) * 1000;
     const zone = decideOwnZone({
-      capturedAt: new Date(capturedAt),
+      capturedAt: new Date(new Date(capturedAt).getTime() + shiftMs),
       capturedAtSource,
       lat: meta.gps?.lat ?? (keptPosition ? existing!.gps_lat : null),
       lon: meta.gps?.lon ?? (keptPosition ? existing!.gps_lon : null),
@@ -314,7 +318,10 @@ export async function indexRoot(
            -- What the file itself says, whatever won above: the viewer prints
            -- it beside an override, and "Revert to the file" restores it.
            device_exif=$6, camera_model_exif=$11,
-           file_size=$7, file_mtime=$8, content_hash=$9, captured_at=$10,
+           -- What the FILE says (migration 0061): the trigger re-applies a
+           -- human clock shift on top, so captured_at = this + capture_shift_s
+           -- and a correction survives the re-index.
+           file_size=$7, file_mtime=$8, content_hash=$9, captured_at_file=$10,
            camera_model=CASE WHEN device_source = 'override' THEN camera_model
                              WHEN $11::text IS NOT NULL THEN $11
                              WHEN device_source IN ('derived','manual','embedded','named')

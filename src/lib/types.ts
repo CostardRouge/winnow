@@ -102,6 +102,14 @@ export type Asset = {
   file_mtime: string | null;
   content_hash: string | null;
   captured_at: string | null;
+  // The capture time's provenance (0046) and its human clock correction
+  // (0061, lib/captureCorrections.ts): captured_at = captured_at_file +
+  // capture_shift_s. The viewer prints "corrected — file says …" from these.
+  captured_at_file?: string | null;
+  capture_shift_s?: number | null;
+  captured_at_source?: string | null;
+  capture_offset_min?: number | null;
+  capture_offset_source?: string | null;
   camera_model: string | null;
   lens: string | null;
   iso: number | null;

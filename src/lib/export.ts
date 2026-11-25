@@ -27,8 +27,10 @@ import {
   immichConfigured,
   immichFindOrCreateAlbum,
   immichUpload,
+  immichSetDateTimeOriginal,
 } from "./immich";
 import type { ExportCategory, ExportInclude } from "./exportTypes";
+import { immichDateIso } from "./captureCorrectionTypes";
 
 // Atomic + verified copy: we write to a `.part`, check size + partial hash,
 // then rename (atomic on the same FS). A crash in progress never leaves a
@@ -91,6 +93,10 @@ export type ExportFileRow = {
   group_id: number | null;
   group_kind: string | null;
   captured_at: Date | null;
+  // The date Immich should show when a human corrected this media's camera
+  // clock (migration 0061, lib/immichDates.ts) — Immich reads the file's own
+  // date otherwise. Null for every media nobody corrected.
+  corrected_date?: string | null;
 };
 
 // Where a candidate media file falls in the picker taxonomy. Pure so the
@@ -144,6 +150,11 @@ export async function collectExportFiles(
     group_kind: string | null;
     group_role: string | null;
     captured_at: Date | null;
+    captured_ms: number | null;
+    captured_at_source: string | null;
+    capture_offset_min: number | null;
+    capture_offset_source: string | null;
+    capture_shift_s: number | null;
   }>(
     `WITH matched AS (
        SELECT a.id, a.group_id
@@ -153,7 +164,10 @@ export async function collectExportFiles(
      ),
      grp AS (SELECT DISTINCT group_id FROM matched WHERE group_id IS NOT NULL)
      SELECT a.id, a.ext, a.filename, a.abs_path, a.file_size, a.media_type,
-            a.group_id, g.kind AS group_kind, a.group_role, a.captured_at
+            a.group_id, g.kind AS group_kind, a.group_role, a.captured_at,
+            (extract(epoch FROM a.captured_at) * 1000)::float8 AS captured_ms,
+            a.captured_at_source, a.capture_offset_min, a.capture_offset_source,
+            a.capture_shift_s
      FROM assets a
      LEFT JOIN asset_groups g ON g.id = a.group_id
      WHERE a.deleted_at IS NULL AND (
@@ -179,6 +193,11 @@ export async function collectExportFiles(
       group_id: a.group_id,
       group_kind: a.group_kind,
       captured_at: a.captured_at,
+      corrected_date:
+        a.captured_ms != null &&
+        (a.capture_shift_s != null || a.capture_offset_source === "manual")
+          ? immichDateIso(Number(a.captured_ms), a.captured_at_source, a.capture_offset_min)
+          : null,
     });
     if (a.media_type === "video") videoIds.push(a.id);
   }
@@ -505,6 +524,17 @@ async function pushToImmich(
         status = res.status;
         if (res.status === "duplicate") duplicates++;
         else uploaded++;
+      }
+
+      // A corrected camera clock (migration 0061): Immich read the file's
+      // own date, so it is told the right one. Counted as an error of this
+      // file when refused, never a reason to drop the upload.
+      if (file.corrected_date) {
+        try {
+          await immichSetDateTimeOriginal(assetId, file.corrected_date);
+        } catch (err) {
+          errors.push({ asset_id: file.asset_id, error: `date: ${(err as Error).message}` });
+        }
       }
 
       if (file.category === "live_motion" && file.group_id != null) {

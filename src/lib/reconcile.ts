@@ -47,8 +47,11 @@ export type ReconcileResult = {
 function matchCTE(rootScoped: boolean): string {
   const finalScope = rootScoped ? "AND rt.id = $1" : "";
   return `
+    -- Both sides compare what the FILE says (migration 0061): a Capture One
+    -- export carries its source's original date, so a source whose clock a
+    -- human corrected would otherwise stop matching its own edit.
     finals AS (
-      SELECT a.id, a.captured_at, a.media_type,
+      SELECT a.id, a.captured_at_file AS captured_at, a.media_type,
              lower(regexp_replace(a.filename, '\\.[^.]+$', '')) AS base
       FROM assets a
       JOIN sessions s ON s.id = a.session_id
@@ -59,7 +62,7 @@ function matchCTE(rootScoped: boolean): string {
         ${finalScope}
     ),
     sources AS (
-      SELECT a.id, a.captured_at, a.media_type, a.group_id, a.group_role,
+      SELECT a.id, a.captured_at_file AS captured_at, a.media_type, a.group_id, a.group_role,
              lower(regexp_replace(a.filename, '\\.[^.]+$', '')) AS base
       FROM assets a
       JOIN sessions s ON s.id = a.session_id

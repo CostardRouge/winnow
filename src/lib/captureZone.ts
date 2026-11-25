@@ -12,10 +12,15 @@
 import tzLookup from "@photostructure/tz-lookup";
 
 export type CapturedAtSource = "exif" | "exif-wall" | "file";
-export type OffsetSource = "gps" | "track" | "neighbour" | "exif";
+export type OffsetSource = "manual" | "gps" | "track" | "neighbour" | "exif";
 
-/** Strongest first: a higher rank never yields to a lower one. */
+/** Strongest first: a higher rank never yields to a lower one. 'manual' is a
+ * zone a human set while correcting a camera clock (migration 0062,
+ * lib/captureCorrections.ts): it outranks even the frame's own position — the
+ * maintainer's call C3 in docs/CAPTURE-TIME.md — and only its own Undo or a
+ * later correction takes it back. */
 const RANK: Record<OffsetSource, number> = {
+  manual: 5,
   gps: 4,
   track: 3,
   neighbour: 2,

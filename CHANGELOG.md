@@ -11,6 +11,24 @@ were given after the fact to the history's turning points.
 
 ### Added
 
+- Correct capture time: when a camera's clock was wrong (its zone left at home, a summer-time change missed), its
+  media can be moved to the right time from the viewer (⋯ or the T key), a right-click on a tile, the selection bar
+  of the Gallery and of a session, or a session's ⋯ for the whole folder. Shift them by hours and minutes, or type the
+  time one frame was really taken and the others keep their gaps; untick the body whose clock was right (the phone)
+  and it stays put. A preview shows the days before and after, burst piles and RAW+JPEG pairs move whole, and
+  nothing is written into the files. The viewer's Date row says "corrected +9 h — file says …" and can revert it; a
+  new Day row says which time zone filed the day and where that zone came from. Every correction is listed, and can
+  be undone, under Settings › Pipeline › Dates & places.
+- Correct capture time has two more ways to state the right time. *Match a frame*: pick, among the photos another
+  camera took within a day, the one of the same moment — the most alike come first — and the gap between them is the
+  correction. *Time zone*: say which zone the camera was on and where you were; a file that wrote its zone keeps its
+  moment and is filed on the right day, a file without one is moved by the difference, summer time included. A
+  position a GPS track gave a frame at its wrong time follows it to the right one, and the copies already sent to
+  Immich get the corrected date there too.
+- Clocks that look wrong: a session whose two cameras' look-alike photos keep disagreeing by the same amount, or whose
+  camera positions sit away from your GPS track until shifted, shows a suggestion under its toolbar — Review opens the
+  correction already filled in, Not a mistake hides it for good. Settings › Pipeline › Dates & places can look over the
+  most recent sessions at once.
 - A session can be filtered like the library: the panel button at the start of its toolbar opens the Gallery's
   filters — type, extension, camera, lens, places, people, faces, text, tags, stars, dates, bursts… — listing and
   counting only what that folder holds, and leaving out what every file in it shares. The filters combine with the

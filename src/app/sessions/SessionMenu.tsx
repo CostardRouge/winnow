@@ -27,6 +27,7 @@ export default function SessionMenu({
   onIgnore,
   onExportPicks,
   onGeotag,
+  onCorrectTime,
   onRestack,
   onDelete,
   download,
@@ -40,6 +41,9 @@ export default function SessionMenu({
   /** When provided, adds Geotag: set the capture location of the whole
    * session (location picker + per-media before/after recap). */
   onGeotag?: () => void;
+  /** When provided, adds "Correct capture time…" over the whole session —
+   * a camera clock that was wrong (CaptureTimeModal, migration 0061). */
+  onCorrectTime?: () => void;
   /** When provided, adds Restack: re-cluster the session's burst piles from
    * scratch with the current thresholds (cf. lib/bursts.ts). Non-destructive —
    * ratings are per-frame and survive. */
@@ -78,6 +82,17 @@ export default function SessionMenu({
             hint: "One location for every frame, with a recap",
             icon: Icons.mapPin,
             onSelect: onGeotag,
+          } as MenuItem,
+        ]
+      : []),
+    ...(onCorrectTime
+      ? [
+          {
+            key: "capture-time",
+            label: "Correct capture time…",
+            hint: "A camera clock that was wrong, body by body",
+            icon: "◷",
+            onSelect: onCorrectTime,
           } as MenuItem,
         ]
       : []),

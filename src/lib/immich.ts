@@ -216,6 +216,22 @@ export async function immichUpload(
   };
 }
 
+// --- Capture dates ----------------------------------------------------------
+
+/**
+ * Set an asset's date in Immich (its own "Change date": `dateTimeOriginal` on
+ * PUT /assets/:id). Immich reads the date out of the uploaded file, so a media
+ * whose camera clock was corrected in Winnow (migration 0061) arrives there on
+ * the wrong day unless it is told; `iso` carries the place's offset
+ * ("2026-11-12T05:41:00+10:00") so Immich files it on the right local day.
+ */
+export async function immichSetDateTimeOriginal(assetId: string, iso: string): Promise<void> {
+  await call(`/assets/${encodeURIComponent(assetId)}`, {
+    method: "PUT",
+    body: { dateTimeOriginal: iso },
+  });
+}
+
 // --- Albums -----------------------------------------------------------------
 
 export type ImmichAlbum = { id: string; albumName: string };

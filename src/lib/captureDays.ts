@@ -35,6 +35,9 @@ const BATCH = 500;
 type ZoneRow = {
   id: string | number;
   captured_ms: string | number;
+  // What the file says (migration 0061): differs from captured_ms only on a
+  // row whose clock a human corrected.
+  file_ms: string | number | null;
   captured_at_source: CapturedAtSource | null;
   mtime_ms: string | number | null;
   gps_lat: number | null;
@@ -46,6 +49,7 @@ type ZoneRow = {
 
 const ZONE_COLUMNS = `id,
   (extract(epoch FROM captured_at) * 1000)::float8 AS captured_ms,
+  (extract(epoch FROM captured_at_file) * 1000)::float8 AS file_ms,
   captured_at_source,
   (extract(epoch FROM file_mtime) * 1000)::float8 AS mtime_ms,
   gps_lat, gps_lon, gps_source, capture_offset_min, capture_offset_source`;
@@ -87,10 +91,11 @@ function ownZoneUpdate(r: ZoneRow): ZoneUpdate | null {
   // instant — 'file' when the time is the mtime fallback, 'exif' otherwise.
   const fromFile = r.gps_lat != null && r.gps_source == null;
   const capturedMs = Number(r.captured_ms);
+  const fileMs = r.file_ms != null ? Number(r.file_ms) : capturedMs;
   const inferredSource: CapturedAtSource | null =
     r.captured_at_source ??
     (fromFile
-      ? r.mtime_ms != null && Number(r.mtime_ms) === capturedMs
+      ? r.mtime_ms != null && Number(r.mtime_ms) === fileMs
         ? "file"
         : "exif"
       : null);
@@ -183,10 +188,21 @@ const INSTANT = (alias: string, offsetExpr: string) =>
  * day's slack and then checked on true instants). Never overrides a place.
  */
 export async function inheritNeighbourZones(
-  opts: { ids?: number[]; windowHours?: number } = {},
+  opts: {
+    ids?: number[];
+    windowHours?: number;
+    // Also reconsider rows that already borrowed a neighbour's zone: their
+    // moment moved (a clock correction, lib/captureCorrections.ts), so the
+    // nearest donor may be another one. Without a donor in the new window
+    // they keep the zone they had.
+    reconsider?: boolean;
+  } = {},
   db: Exec = pool,
 ): Promise<number> {
   const windowHours = opts.windowHours ?? NEIGHBOUR_WINDOW_HOURS;
+  const borrowable = opts.reconsider
+    ? "(c.capture_offset_source IS NULL OR c.capture_offset_source IN ('exif', 'neighbour'))"
+    : "(c.capture_offset_source IS NULL OR c.capture_offset_source = 'exif')";
   const slackHours = windowHours + 15; // a wall clock is at most 14 h off UTC
   const pass = async (where: string, params: unknown[]) => {
     const res = await db.query(
@@ -196,7 +212,7 @@ export async function inheritNeighbourZones(
           WHERE ${where}
             AND c.deleted_at IS NULL AND c.captured_at IS NOT NULL
             AND c.captured_at_source IS NOT NULL
-            AND (c.capture_offset_source IS NULL OR c.capture_offset_source = 'exif')
+            AND ${borrowable}
        ), pick AS (
          SELECT cand.id, nb.off, nb.gap
            FROM cand
@@ -279,7 +295,7 @@ export async function captureDayStats(): Promise<CaptureDayStats> {
               ) AS moved,
               count(*) FILTER (
                 WHERE captured_at_source IS NULL
-                   OR (captured_at_source = 'file' AND captured_at IS DISTINCT FROM file_mtime)
+                   OR (captured_at_source = 'file' AND captured_at_file IS DISTINCT FROM file_mtime)
               ) AS to_read
          FROM assets
         WHERE deleted_at IS NULL AND captured_at IS NOT NULL
@@ -383,7 +399,7 @@ export async function runCaptureDayBackfill(
     const mislabelled = await client.query(
       `UPDATE assets SET captured_at_source = NULL
         WHERE captured_at_source = 'file' AND deleted_at IS NULL
-          AND captured_at IS DISTINCT FROM file_mtime`,
+          AND captured_at_file IS DISTINCT FROM file_mtime`,
     );
     report.relabelled = mislabelled.rowCount ?? 0;
     // 1. What the database already knows: the mtime fallback is exact, and a
@@ -391,7 +407,7 @@ export async function runCaptureDayBackfill(
     const cls = await client.query(
       `UPDATE assets SET captured_at_source = 'file'
         WHERE captured_at_source IS NULL AND deleted_at IS NULL
-          AND captured_at IS NOT NULL AND captured_at = file_mtime`,
+          AND captured_at IS NOT NULL AND captured_at_file = file_mtime`,
     );
     report.classifiedFromDb += cls.rowCount ?? 0;
     // 2. Positions → offsets (classifies the file-positioned rows too).
@@ -429,7 +445,9 @@ export async function runCaptureDayBackfill(
         capture_offset_source: OffsetSource | null;
       }>(
         `SELECT id, abs_path,
-                (extract(epoch FROM captured_at) * 1000)::float8 AS captured_ms,
+                -- What the file said, which is what a re-read compares with:
+                -- a human clock shift (0061) is not a changed file.
+                (extract(epoch FROM captured_at_file) * 1000)::float8 AS captured_ms,
                 (extract(epoch FROM file_mtime) * 1000)::float8 AS mtime_ms,
                 capture_offset_source FROM assets
           WHERE id > $1 AND captured_at_source IS NULL AND deleted_at IS NULL
@@ -472,7 +490,7 @@ export async function runCaptureDayBackfill(
           r.capture_offset_source != null && r.capture_offset_source !== "exif";
         await pool.query(
           `UPDATE assets SET
-             captured_at = COALESCE($2::timestamptz, captured_at),
+             captured_at_file = COALESCE($2::timestamptz, captured_at_file),
              captured_at_source = $3,
              capture_offset_min = CASE WHEN $5 THEN capture_offset_min ELSE $4::smallint END,
              capture_offset_source = CASE WHEN $5 THEN capture_offset_source
