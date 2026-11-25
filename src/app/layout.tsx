@@ -114,11 +114,13 @@ export default async function RootLayout({
             the tree paints — means a sidebar the user collapsed stays collapsed
             on reload with no open→closed reflow. Desktop only (min-width:761px);
             phones use the transient slide-in drawer. Keep the key and query in
-            sync with ASIDE_KEY/ASIDE_MQ in GalleryShell.tsx. */}
+            sync with ASIDE_KEY/ASIDE_MQ in GalleryShell.tsx. The session
+            page's panel rides the same script with its own key and the
+            opposite default (closed): SESSION_ASIDE_KEY in SessionGrid.tsx. */}
         <script
           // biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script of ours, the pre-paint sidebar state — no data reaches it
           dangerouslySetInnerHTML={{
-            __html: `try{if(window.matchMedia("(min-width: 761px)").matches&&localStorage.getItem("winnow.gallery.aside")==="closed"){document.documentElement.setAttribute("data-gallery-aside","closed")}}catch(e){}`,
+            __html: `try{if(window.matchMedia("(min-width: 761px)").matches){if(localStorage.getItem("winnow.gallery.aside")==="closed"){document.documentElement.setAttribute("data-gallery-aside","closed")}if(localStorage.getItem("winnow.session.aside")==="open"){document.documentElement.setAttribute("data-session-aside","open")}}}catch(e){}`,
           }}
         />
         <FeaturesProvider value={features}>

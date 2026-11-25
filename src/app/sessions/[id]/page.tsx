@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { one } from "@/lib/db";
 import SessionGrid from "./SessionGrid";
 
@@ -23,5 +24,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default function SessionRoute({ params }: Params) {
-  return <SessionGrid params={params} />;
+  // Suspense: the grid reads useSearchParams (its filters live in the URL),
+  // which a route may only do behind a boundary.
+  return (
+    <Suspense>
+      <SessionGrid params={params} />
+    </Suspense>
+  );
 }

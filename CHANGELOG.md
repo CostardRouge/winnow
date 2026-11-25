@@ -29,6 +29,11 @@ were given after the fact to the history's turning points.
   camera positions sit away from your GPS track until shifted, shows a suggestion under its toolbar — Review opens the
   correction already filled in, Not a mistake hides it for good. Settings › Pipeline › Dates & places can look over the
   most recent sessions at once.
+- A session can be filtered like the library: the panel button at the start of its toolbar opens the Gallery's
+  filters — type, extension, camera, lens, places, people, faces, text, tags, stars, dates, bursts… — listing and
+  counting only what that folder holds, and leaving out what every file in it shares. The filters combine with the
+  verdict tabs, sit in the address bar (a filtered session is a link and survives a reload), and Select all then
+  takes only what the filters show. The panel starts closed and, on a computer, remembers being opened.
 - Sign in with Sésame, the portfolio's own sign-in with passkeys: once an account has linked its Sésame from the
   account menu (Sésame › Link, while signed in with its password), /login offers Sign in with Sésame beside the
   password, which keeps working. Whether someone may enter is decided in Sésame, and so is their role: each Sésame
