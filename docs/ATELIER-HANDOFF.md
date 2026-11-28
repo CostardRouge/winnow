@@ -5,7 +5,9 @@ repositories carry — Winnow's "which surfaces get *Edit in Atelier*"
 (Atelier's `docs/winnow-bridge.md` §10) and Atelier's "Winnow's entry points
 into Atelier are undesigned, deliberately" (its `docs/memory/architecture.md`,
 2026-09-02) — with one mechanism, a **hand-off**, and lists the calls that are
-the maintainer's (§10).
+the maintainer's (§10). Mockups of §4.3 and §4.4 (the dialog on desktop, when
+a check fails, on a phone; the session's band; the viewer's line) are on the
+"Winnow — Open in Atelier" canvas.
 
 The ask, in his words: develop a session, a video or an image "directly, via a
 link to the other tool"; pass arguments (the folder path, the session name…);
