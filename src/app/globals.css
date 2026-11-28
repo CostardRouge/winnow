@@ -2632,6 +2632,28 @@ html[data-theme="dark"] .btn-primary:hover {
     opacity: 1;
     box-shadow: inset 0 0 0 2px var(--color-accent);
   }
+  /* A frame's own verdict on the strip: a pile is culled frame by frame, so
+     the keeper and the frames thrown out read without opening each one. */
+  .viewer-burst-thumb.pick {
+    box-shadow: inset 0 0 0 2px var(--color-pick);
+  }
+  .viewer-burst-thumb.reject img {
+    filter: grayscale(0.7);
+  }
+  .viewer-burst-thumb.active.pick,
+  .viewer-burst-thumb.active.reject {
+    box-shadow: inset 0 0 0 2px var(--color-accent);
+  }
+  .viewer-burst-mark {
+    @apply absolute right-0.5 bottom-0.5 flex h-4 w-4 items-center justify-center
+      rounded-full text-[11px] leading-none font-semibold;
+    background: var(--color-pick);
+    color: var(--color-pick-fg);
+  }
+  .viewer-burst-thumb.reject .viewer-burst-mark {
+    background: var(--color-reject);
+    color: var(--color-reject-fg);
+  }
 
   /* RAW+JPEG group block: the two files of one logical media, side by side, so
      the pairing is explicit and either side can be selected from the panel. The

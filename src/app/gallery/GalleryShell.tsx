@@ -42,6 +42,7 @@ import {
   favouriteAssets,
   geocodeAssets,
   mlAnalyzeAssets,
+  rateAsset,
   rateAssets,
   tagAssets,
   regenerateAssets,
@@ -258,7 +259,14 @@ export default function GalleryShell({
   const [treeKey, setTreeKey] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  // `label` is set when the menu was opened on a media the feed may not hold
+  // (a burst frame shown in the viewer while its pile is folded).
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    id: number;
+    label?: string;
+  } | null>(null);
   // Ids awaiting export: non-null opens the export modal (dynamic file picker).
   const [exportIds, setExportIds] = useState<number[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -493,18 +501,33 @@ export default function GalleryShell({
     [items],
   );
 
+  // One media's verdict / stars. The id may be a burst frame the feed does not
+  // hold (picked in the viewer's filmstrip while its pile is folded): then only
+  // the viewer's own copy changes (lib/assetChanges.ts) — the frame is rated
+  // alone, never its pile.
   const rate = useCallback(
     async (assetId: number, patch: { verdict?: Row["verdict"]; star?: number }) => {
       if (readOnly) return;
-      setItems((prev) => prev.map((a) => (a.id === assetId ? { ...a, ...patch } : a)));
+      const before = new Map<number, Pick<Row, "verdict" | "star">>();
+      const put = (a: Row): Row => {
+        before.set(a.id, { verdict: a.verdict, star: a.star });
+        return { ...a, ...patch };
+      };
+      setItems((prev) => prev.map((a) => (a.id === assetId ? put(a) : a)));
       // The map-opened asset lives outside the feed: patch it too, or its own
       // rating buttons wouldn't light up.
-      setMapAsset((cur) => (cur && cur.id === assetId ? { ...cur, ...patch } : cur));
-      await fetch(`/api/assets/${assetId}/rating`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
+      setMapAsset((cur) => (cur && cur.id === assetId ? put(cur) : cur));
+      try {
+        await rateAsset(assetId, patch);
+      } catch (e) {
+        const back = (a: Row): Row => {
+          const was = before.get(a.id);
+          return was ? { ...a, ...was } : a;
+        };
+        setItems((prev) => prev.map(back));
+        setMapAsset((cur) => (cur ? back(cur) : cur));
+        setNotice((e as Error).message);
+      }
     },
     [readOnly],
   );
@@ -1417,10 +1440,13 @@ export default function GalleryShell({
             gridRef.current?.scrollToIndex(viewerIndex);
             setViewer(null);
           }}
+          // A frame picked in the filmstrip is what the keys, buttons and
+          // menu act on: cherry-picking a burst's keeper is THE culling gesture.
+          frameActions
           onKeyDown={onViewerKey}
           onContextMenu={(e, it) => {
             e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY, id: it.id });
+            setMenu({ x: e.clientX, y: e.clientY, id: it.id, label: it.filename });
           }}
           onCorrectTime={(id, mode) => setCaptureFlow({ ids: [id], mode })}
           renderInfo={(it) => (
@@ -1477,7 +1503,10 @@ export default function GalleryShell({
                     onCorrectTime={() => setCaptureFlow({ ids: [it.id], mode: "shift" })}
                     onMl={() => mlSelection([it.id])}
                     onDelete={async () => {
-                      if (await removeAssets([it.id])) {
+                      // A burst frame the feed does not hold leaves the list as
+                      // it is: the viewer stays on its pile, which re-reads.
+                      const listed = items.some((x) => x.id === it.id);
+                      if ((await removeAssets([it.id])) && listed) {
                         // Keep the viewer open on the previous item rather than
                         // closing it; only bail out if nothing is left.
                         setViewer((cur) => {
@@ -1500,8 +1529,9 @@ export default function GalleryShell({
           x={menu.x}
           y={menu.y}
           label={
-            // Right-clicking inside the viewer can target the map-opened media,
-            // which is not in the feed — look there too.
+            // Right-clicking inside the viewer can target the map-opened media
+            // or a burst frame, neither of which is in the feed — look there too.
+            menu.label ??
             (mapAsset?.id === menu.id
               ? mapAsset
               : items.find((i) => i.id === menu.id))?.filename

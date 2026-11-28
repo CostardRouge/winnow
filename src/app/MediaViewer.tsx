@@ -22,6 +22,8 @@ import type { CorrectionMode } from "@/lib/captureCorrectionTypes";
 import { Icons } from "./ui";
 import { formatBytes, formatDimensions } from "@/lib/format";
 import { fetchAllPages, fetchJson } from "@/lib/fetchJson";
+import { applyAssetChange, subscribeAssetChanges, writesInFlight } from "@/lib/assetChanges";
+import { viewerSubject } from "./viewerSubject";
 import { useFeatures } from "./FeaturesProvider";
 
 // One face detected in the current asset (GET /api/assets/:id/faces): who it
@@ -95,6 +97,12 @@ type BurstFrame = AssetMetaInput & {
   filename: string;
   media_type?: "photo" | "video";
   derivative_status?: string;
+  // The frame's OWN cull state — each frame of a pile is rated on its own
+  // (lib/bursts.ts), and the filmstrip marks it.
+  verdict?: string | null;
+  star?: number | null;
+  favourite?: boolean | null;
+  tags?: string[] | null;
 };
 
 // "jpg"/"DNG" segment label from an extension (".jpg" → "JPG").
@@ -188,6 +196,7 @@ export default function MediaViewer<T extends ViewerItem>({
   onCorrectTime,
   onKeyDown,
   onContextMenu,
+  frameActions = false,
   currentPersonId,
 }: {
   items: T[];
@@ -212,6 +221,13 @@ export default function MediaViewer<T extends ViewerItem>({
   /** Extra key handling (e.g. rating shortcuts); skipped while typing. */
   onKeyDown?: (e: KeyboardEvent, item: T) => void;
   onContextMenu?: (e: React.MouseEvent, item: T) => void;
+  /** When true, a burst frame picked in the filmstrip IS the item handed to
+   *  onKeyDown / renderActions / renderInfo / onContextMenu — rating it rates
+   *  that frame alone, never its pile. Opt-in because the frame is a grid row
+   *  (GRID_SELECT): a host whose items carry fields of their own (a search
+   *  hit's `distance`) would read the cover's for it. Off, the callbacks get
+   *  the host's own item, as they always did. */
+  frameActions?: boolean;
   /** Opens "Correct capture time…" (CaptureTimeModal) on the media on screen —
    *  a burst frame's own id when one is shown. Wires the Date row's links and
    *  the T key; omitted where the host offers no correction. */
@@ -233,6 +249,9 @@ export default function MediaViewer<T extends ViewerItem>({
   // The id of the file on screen (a burst frame's own), for the T key: the
   // key handler is registered before `displayed` is derived below.
   const shownIdRef = useRef<number | null>(null);
+  // What the host's callbacks act on (see `frameActions`), for the same
+  // reason: the key handler is registered before it is derived.
+  const subjectRef = useRef<T | null>(null);
   useEffect(() => {
     const id = stackId.current;
     viewerStack.push(id);
@@ -278,6 +297,11 @@ export default function MediaViewer<T extends ViewerItem>({
   const [burstMembers, setBurstMembers] = useState<BurstFrame[] | null>(null);
   const [burstFrameId, setBurstFrameId] = useState<number | null>(null);
   const burstCache = useRef<Map<number, BurstFrame[]>>(new Map());
+  // Bumped to re-read the current pile once a write that touched one of its
+  // frames has settled (see the assetChanges subscription below).
+  const [pileReload, setPileReload] = useState(0);
+  const burstMembersRef = useRef<BurstFrame[] | null>(null);
+  burstMembersRef.current = burstMembers;
 
   // Whether ← → (buttons, arrow keys, swipe) step through a pile's own frames
   // before moving on to the next item. Off by default: plain component state,
@@ -366,7 +390,32 @@ export default function MediaViewer<T extends ViewerItem>({
     return () => {
       cancelled = true;
     };
-  }, [items, index]);
+  }, [items, index, pileReload]);
+
+  // Keep the filmstrip's frames in step with the writes made from here or
+  // anywhere else on the page (lib/assetChanges.ts): the optimistic patch at
+  // once, then — once the last write in flight has settled — a re-read of the
+  // pile on screen if it holds a touched frame, which also undoes a refused
+  // write and catches the whole-pile gestures. Other cached piles holding a
+  // touched frame are dropped and re-read on the next visit.
+  useEffect(
+    () =>
+      subscribeAssetChanges((change) => {
+        const cache = burstCache.current;
+        if (change.patch) {
+          for (const [bid, rows] of cache) cache.set(bid, applyAssetChange(rows, change));
+          setBurstMembers((prev) => (prev ? applyAssetChange(prev, change) : prev));
+          return;
+        }
+        if (writesInFlight() > 0) return;
+        const ids = new Set(change.ids);
+        for (const [bid, rows] of cache)
+          if (rows.some((r) => ids.has(r.id))) cache.delete(bid);
+        if (burstMembersRef.current?.some((r) => ids.has(r.id)))
+          setPileReload((n) => n + 1);
+      }),
+    [],
+  );
 
   // Prefetch the next page as navigation nears the end of the loaded window.
   // The grid's own paging is scroll-driven, so it stalls while the viewer is
@@ -520,6 +569,8 @@ export default function MediaViewer<T extends ViewerItem>({
       if (viewerStack[viewerStack.length - 1] !== stackId.current) return;
       const it = items[index];
       if (!it) return;
+      // The frame on screen when the host opted into frame actions.
+      const subject = subjectRef.current ?? it;
       // Don't hijack keys while the user is typing in a field (e.g. a tag input).
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -538,7 +589,7 @@ export default function MediaViewer<T extends ViewerItem>({
       if (e.key === "Home") return resetZoom();
       if ((e.key === "t" || e.key === "T") && onCorrectTime && !e.metaKey && !e.ctrlKey)
         return onCorrectTime(shownIdRef.current ?? it.id, "shift");
-      onKeyDown?.(e, it);
+      onKeyDown?.(e, subject);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -832,6 +883,10 @@ export default function MediaViewer<T extends ViewerItem>({
           }
         : item;
   shownIdRef.current = (displayed as { id?: number }).id ?? item.id;
+  // The item the host's actions act on: the frame on screen when the host
+  // opted in, else its own item (viewerSubject.ts).
+  const subject = viewerSubject(item, burstFrame, frameActions);
+  subjectRef.current = subject;
 
   const transform = {
     transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
@@ -947,7 +1002,7 @@ export default function MediaViewer<T extends ViewerItem>({
           onTouchEnd={onTouchEnd}
           onTouchCancel={onTouchCancel}
           onDoubleClick={onDoubleClick}
-          onContextMenu={onContextMenu ? (e) => onContextMenu(e, item) : undefined}
+          onContextMenu={onContextMenu ? (e) => onContextMenu(e, subject) : undefined}
         >
           {/* Swipe track: prev · current · next, translated as one strip so a
               one-finger drag slides the current media out while the neighbour
@@ -1236,13 +1291,19 @@ export default function MediaViewer<T extends ViewerItem>({
             <div className="viewer-burst-thumbs">
               {burstMembers.map((m) => {
                 const active = (burstFrameId ?? item.id) === m.id;
+                // Each frame's own verdict, so a cherry-picked keeper (and the
+                // frames already thrown out) read at a glance on the strip.
+                const mark =
+                  m.verdict === "pick" ? "pick" : m.verdict === "reject" ? "reject" : null;
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    className={`viewer-burst-thumb${active ? " active" : ""}`}
+                    className={`viewer-burst-thumb${active ? " active" : ""}${mark ? ` ${mark}` : ""}`}
                     aria-pressed={active}
-                    title={m.filename}
+                    title={
+                      mark ? `${m.filename} · ${mark === "pick" ? "picked" : "rejected"}` : m.filename
+                    }
                     onClick={() => {
                       setShowCompanion(false);
                       setShowCounterpart(false);
@@ -1251,6 +1312,11 @@ export default function MediaViewer<T extends ViewerItem>({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`/api/assets/${m.id}/thumb`} alt={m.filename} loading="lazy" />
+                    {mark && (
+                      <span className="viewer-burst-mark" aria-hidden>
+                        {mark === "pick" ? "✓" : "✕"}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -1462,7 +1528,7 @@ export default function MediaViewer<T extends ViewerItem>({
                 </div>
               </div>
             )}
-            {renderInfo?.(item)}
+            {renderInfo?.(subject)}
           </aside>
         )}
       </div>
@@ -1519,7 +1585,7 @@ export default function MediaViewer<T extends ViewerItem>({
         >
           ←
         </button>
-        {renderActions?.(item)}
+        {renderActions?.(subject)}
         <button
           className="btn viewer-step"
           onClick={() => stepBurst(1)}

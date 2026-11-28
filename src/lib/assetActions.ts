@@ -3,6 +3,7 @@
 // optimistic local state; these only own the API calls so the three surfaces —
 // context menu, detailed viewer, bulk selection — stay consistent and DRY.
 import type { Verdict } from "./types";
+import { trackAssetWrite } from "./assetChanges";
 
 const HEADERS = { "Content-Type": "application/json" };
 
@@ -27,16 +28,39 @@ export async function rateAssets(
   opts: { expandBursts?: boolean } = {},
 ): Promise<void> {
   if (!ids.length || (patch.verdict == null && patch.star == null)) return;
-  const res = await fetch("/api/ratings/bulk", {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify({
-      ids,
-      ...patch,
-      ...(opts.expandBursts ? { expand_bursts: true } : {}),
-    }),
+  // A whole-pile write reaches frames these ids do not name: no per-id patch
+  // can describe it, so listeners only hear the settle and re-read.
+  await trackAssetWrite(ids, opts.expandBursts ? undefined : () => patch, async () => {
+    const res = await fetch("/api/ratings/bulk", {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        ids,
+        ...patch,
+        ...(opts.expandBursts ? { expand_bursts: true } : {}),
+      }),
+    });
+    await ensureOk(res, "save the rating");
   });
-  await ensureOk(res, "save the rating");
+}
+
+// The same verdict / stars on ONE media through its own route (PATCH
+// /api/assets/:id/rating) — what the viewer's keys and buttons call. Only the
+// pair companion follows server-side: a burst frame is rated alone, never its
+// pile (the pile gestures go through rateAssets with `expandBursts`).
+export async function rateAsset(
+  id: number,
+  patch: { verdict?: Verdict; star?: number },
+): Promise<void> {
+  if (patch.verdict == null && patch.star == null) return;
+  await trackAssetWrite([id], () => patch, async () => {
+    const res = await fetch(`/api/assets/${id}/rating`, {
+      method: "PATCH",
+      headers: HEADERS,
+      body: JSON.stringify(patch),
+    });
+    await ensureOk(res, "save the rating");
+  });
 }
 
 // Set or clear the ♥ (migration 0058, POST /api/favourites) on one media or
@@ -44,12 +68,14 @@ export async function rateAssets(
 // takes it too. Each pair's companion follows server-side.
 export async function favouriteAssets(ids: number[], favourite: boolean): Promise<void> {
   if (!ids.length) return;
-  const res = await fetch("/api/favourites", {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify({ ids, favourite }),
+  await trackAssetWrite(ids, () => ({ favourite }), async () => {
+    const res = await fetch("/api/favourites", {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ ids, favourite }),
+    });
+    await ensureOk(res, favourite ? "add the favourite" : "remove the favourite");
   });
-  await ensureOk(res, favourite ? "add the favourite" : "remove the favourite");
 }
 
 // Pull the indexed original (abs_path) for a single asset down to the browser as
@@ -146,12 +172,19 @@ export async function tagAssets(
 ): Promise<void> {
   const tag = name.trim();
   if (!ids.length || !tag) return;
-  const res = await fetch("/api/tags/assign", {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
+  const patch = (r: { tags?: string[] | null }) => ({
+    tags: add
+      ? Array.from(new Set([...(r.tags ?? []), tag])).sort()
+      : (r.tags ?? []).filter((t) => t !== tag),
   });
-  await ensureOk(res, "save the tag");
+  await trackAssetWrite(ids, patch, async () => {
+    const res = await fetch("/api/tags/assign", {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ ids, [add ? "add" : "remove"]: [tag] }),
+    });
+    await ensureOk(res, "save the tag");
+  });
 }
 
 // Soft delete (or restore). Hides from the library; never touches the original.
@@ -160,12 +193,14 @@ export async function deleteAssets(
   restore = false,
 ): Promise<void> {
   if (!ids.length) return;
-  const res = await fetch("/api/assets/delete", {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify({ ids, restore }),
+  await trackAssetWrite(ids, undefined, async () => {
+    const res = await fetch("/api/assets/delete", {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ ids, restore }),
+    });
+    await ensureOk(res, restore ? "restore" : "delete");
   });
-  await ensureOk(res, restore ? "restore" : "delete");
 }
 
 // Soft delete (or restore) every asset matching a filter — e.g.
