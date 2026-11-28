@@ -70,6 +70,7 @@ import {
   selectionZipUnavailable,
   sessionDownloadFiles,
   geotagTargets,
+  rateAsset,
   tagAssets,
   type GeotagAsset,
   type GeotagSource,
@@ -295,7 +296,14 @@ export default function SessionGrid({
   const [facets, setFacets] = useState<Facets | null>(null);
   const [facetsError, setFacetsError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  // `row` is set when the menu was opened on a row the grid may not hold — a
+  // burst frame shown in the viewer while its pile is collapsed.
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    id: number;
+    row?: AssetRow;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -567,16 +575,32 @@ export default function SessionGrid({
     return () => obs.disconnect();
   }, [cursor, hasMore, fetchPage]);
 
+  // One media's verdict / stars. The id may be a burst frame the grid does not
+  // hold (picked in the viewer's filmstrip while its pile is collapsed): then
+  // only the viewer's own copy changes (lib/assetChanges.ts), and the pile
+  // stays rated frame by frame — never as a whole.
   const rate = useCallback(
     async (assetId: number, patch: { verdict?: Verdict; star?: number }) => {
+      // What the row held, to put back if the server refuses.
+      const before = new Map<number, Pick<AssetRow, "verdict" | "star">>();
       setAssets((prev) =>
-        prev.map((a) => (a.id === assetId ? { ...a, ...patch } : a)),
+        prev.map((a) => {
+          if (a.id !== assetId) return a;
+          before.set(a.id, { verdict: a.verdict, star: a.star });
+          return { ...a, ...patch };
+        }),
       );
-      await fetch(`/api/assets/${assetId}/rating`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
+      try {
+        await rateAsset(assetId, patch);
+      } catch (e) {
+        setAssets((prev) =>
+          prev.map((a) => {
+            const was = before.get(a.id);
+            return was ? { ...a, ...was } : a;
+          }),
+        );
+        setNotice((e as Error).message);
+      }
       // Keep the header's verdict counts in step with the grid.
       void loadSession();
     },
@@ -1165,8 +1189,8 @@ export default function SessionGrid({
   // Dispatch a context-menu action onto a single asset. The pile_* kinds need
   // the full row (burst_id), so they resolve it from the loaded grid.
   const onMenuAction = useCallback(
-    (id: number, action: AssetMenuAction) => {
-      const row = assets.find((a) => a.id === id);
+    (id: number, action: AssetMenuAction, known?: AssetRow) => {
+      const row = known ?? assets.find((a) => a.id === id);
       switch (action.kind) {
         case "verdict":
           return void rate(id, { verdict: action.verdict });
@@ -1659,10 +1683,13 @@ export default function SessionGrid({
             scrollToViewed(viewer);
             setViewer(null);
           }}
+          // A frame picked in the filmstrip is what the keys, buttons and
+          // menu act on: cherry-picking a burst's keeper is THE culling gesture.
+          frameActions
           onKeyDown={onViewerKey}
           onContextMenu={(e, a) => {
             e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY, id: a.id });
+            setMenu({ x: e.clientX, y: e.clientY, id: a.id, row: a });
           }}
           onCorrectTime={(assetId, mode) => setCaptureFlow({ ids: [assetId], mode })}
           renderInfo={(a) => <SimilarStrip assetId={a.id} />}
@@ -1683,7 +1710,10 @@ export default function SessionGrid({
               onCorrectTime={() => setCaptureFlow({ ids: [a.id], mode: "shift" })}
               onMl={() => mlAnalyze([a.id])}
               onDelete={async () => {
-                if (await removeAssets([a.id])) {
+                // A burst frame the grid does not hold leaves the list as it
+                // is: the viewer stays on its pile, which re-reads without it.
+                const listed = assets.some((x) => x.id === a.id);
+                if ((await removeAssets([a.id])) && listed) {
                   // Keep the viewer open on the previous item rather than
                   // closing it; only bail out if nothing is left.
                   setViewer((cur) => {
@@ -1702,7 +1732,7 @@ export default function SessionGrid({
 
       {menu &&
         (() => {
-          const target = assets.find((a) => a.id === menu.id);
+          const target = menu.row ?? assets.find((a) => a.id === menu.id);
           return (
             <AssetActionMenu
               x={menu.x}
@@ -1713,7 +1743,7 @@ export default function SessionGrid({
                   ? { count: target!.burst_count! }
                   : null
               }
-              onAction={(action) => onMenuAction(menu.id, action)}
+              onAction={(action) => onMenuAction(menu.id, action, menu.row)}
               onClose={() => setMenu(null)}
             />
           );

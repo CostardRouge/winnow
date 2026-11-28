@@ -9,6 +9,13 @@ were given after the fact to the history's turning points.
 
 ## [Unreleased]
 
+### Fixed
+
+- Culling a burst frame by frame: in the viewer, a pick, reject, stars, ♥ or tag given to a frame chosen in the
+  burst's filmstrip now goes to that frame alone. It used to land on the frame the viewer had opened on (the pile's
+  cover), so every frame seemed to share one verdict. The filmstrip marks each frame picked (✓) or rejected (✕), and
+  in a session "Keep this one" from the viewer's right-click menu keeps the frame on screen.
+
 ## [1.2.0] - 2026-11-25 — Teff
 
 ### Added

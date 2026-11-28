@@ -12,7 +12,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchJson } from "@/lib/fetchJson";
-import { geotagTargets, type GeotagAsset, type GeotagSource } from "@/lib/assetActions";
+import {
+  geotagTargets,
+  rateAsset,
+  type GeotagAsset,
+  type GeotagSource,
+} from "@/lib/assetActions";
 import { distanceM, UNPLACED_RULES } from "@/lib/unplacedTypes";
 import type {
   ChapterMode,
@@ -319,17 +324,39 @@ export default function TimelinePanel() {
 
   // Optimistic rating, the gallery's own shape (GalleryShell.rate): patch the
   // open viewer's row, then the server. Chapter tiles re-read their rows from
-  // the same object, so the border follows.
+  // the same object, so the border follows. A burst frame picked in the
+  // viewer's filmstrip is not among the rows: only it is rated, never its pile.
   const rate = useCallback(
     async (id: number, patch: { verdict?: GalleryAsset["verdict"]; star?: number }) => {
+      const before = new Map<number, Pick<GalleryAsset, "verdict" | "star">>();
       setViewer((v) =>
-        v ? { ...v, rows: v.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) } : v,
+        v
+          ? {
+              ...v,
+              rows: v.rows.map((r) => {
+                if (r.id !== id) return r;
+                before.set(r.id, { verdict: r.verdict, star: r.star });
+                return { ...r, ...patch };
+              }),
+            }
+          : v,
       );
-      await fetch(`/api/assets/${id}/rating`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
+      try {
+        await rateAsset(id, patch);
+      } catch (e) {
+        setViewer((v) =>
+          v
+            ? {
+                ...v,
+                rows: v.rows.map((r) => {
+                  const was = before.get(r.id);
+                  return was ? { ...r, ...was } : r;
+                }),
+              }
+            : v,
+        );
+        setNotice((e as Error).message);
+      }
     },
     [],
   );
@@ -566,6 +593,8 @@ export default function TimelinePanel() {
           index={viewer.index}
           onIndexChange={(i) => setViewer((v) => (v ? { ...v, index: i } : v))}
           onClose={() => setViewer(null)}
+          // A frame picked in the filmstrip is what the keys and buttons rate.
+          frameActions
           onKeyDown={(e, it) => {
             // P/X/U/0-5 — the gallery's shortcuts, so the hands do not relearn.
             const k = e.key.toLowerCase();

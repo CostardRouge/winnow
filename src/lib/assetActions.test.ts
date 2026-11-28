@@ -56,3 +56,60 @@ test("a selection past the ZIP's limit says why instead of linking to a 400", ()
   assert.equal(selectionZipUnavailable(1000), null);
   assert.match(selectionZipUnavailable(1001) ?? "", /Up to 1,000 files per ZIP — 1,001 selected/);
 });
+
+// A verdict given in the viewer rates ONE media through its own route — the
+// frame picked in a burst's filmstrip, never its pile — and tells the page
+// (lib/assetChanges.ts) so the viewer's copy of the frame lights up at once,
+// then re-reads once the write settles, refused or not.
+test("rating one frame hits its own route, alone, and announces patch then settle", async () => {
+  const { subscribeAssetChanges, writesInFlight } = await import("./assetChanges");
+  const { rateAsset } = await import("./assetActions");
+  const calls: { url: string; body: unknown }[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, body: JSON.parse(String(init?.body)) });
+    assert.equal(writesInFlight(), 1);
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  const seen: string[] = [];
+  const off = subscribeAssetChanges((c) => {
+    seen.push(c.patch ? `patch ${c.ids} ${JSON.stringify(c.patch({ id: 4 }))}` : `settle ${c.ids}`);
+  });
+  try {
+    await rateAsset(4, { verdict: "pick" });
+  } finally {
+    off();
+  }
+  assert.deepEqual(calls, [{ url: "/api/assets/4/rating", body: { verdict: "pick" } }]);
+  assert.deepEqual(seen, ['patch 4 {"verdict":"pick"}', "settle 4"]);
+  assert.equal(writesInFlight(), 0);
+});
+
+test("a refused single rating throws and still settles, so the viewer re-reads", async () => {
+  const { subscribeAssetChanges } = await import("./assetChanges");
+  const { rateAsset } = await import("./assetActions");
+  answer(403, { error: "Viewer accounts cannot rate" });
+  const settled: number[][] = [];
+  const off = subscribeAssetChanges((c) => {
+    if (!c.patch) settled.push(c.ids);
+  });
+  try {
+    await assert.rejects(rateAsset(7, { star: 3 }), /Viewer accounts cannot rate/);
+  } finally {
+    off();
+  }
+  assert.deepEqual(settled, [[7]]);
+});
+
+test("a whole-pile verdict announces no per-id patch: it reaches frames the ids do not name", async () => {
+  const { subscribeAssetChanges } = await import("./assetChanges");
+  answer(200, { updated: 1 });
+  const seen: string[] = [];
+  const off = subscribeAssetChanges((c) => seen.push(c.patch ? "patch" : "settle"));
+  try {
+    await rateAssets([1], { verdict: "reject" }, { expandBursts: true });
+    await rateAssets([1], { verdict: "pick" });
+  } finally {
+    off();
+  }
+  assert.deepEqual(seen, ["settle", "patch", "settle"]);
+});
